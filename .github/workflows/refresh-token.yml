@@ -1,0 +1,51 @@
+name: Daily Token Refresh + Batch Scan
+
+on:
+  schedule:
+    # Morning batch: 8:30 AM IST = 3:00 AM UTC (Mon-Fri)
+    - cron: '0 3 * * 1-5'
+    # Evening batch: 4:30 PM IST = 11:00 AM UTC (Mon-Fri)
+    - cron: '0 11 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  refresh-token:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install playwright aiohttp requests
+      - name: Install Playwright
+        run: playwright install chromium && playwright install-deps chromium
+
+      - name: Refresh Upstox token (if using standard token)
+        if: env.UPSTOX_MOBILE != ''
+        env:
+          UPSTOX_CLIENT_ID:     ${{ secrets.UPSTOX_CLIENT_ID }}
+          UPSTOX_CLIENT_SECRET: ${{ secrets.UPSTOX_CLIENT_SECRET }}
+          UPSTOX_REDIRECT_URI:  ${{ secrets.UPSTOX_REDIRECT_URI }}
+          UPSTOX_MOBILE:        ${{ secrets.UPSTOX_MOBILE }}
+          UPSTOX_PIN:           ${{ secrets.UPSTOX_PIN }}
+          UPSTOX_TOTP_SECRET:   ${{ secrets.UPSTOX_TOTP_SECRET }}
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          VERCEL_TOKEN:         ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID:    ${{ secrets.VERCEL_PROJECT_ID }}
+        run: python scripts/refresh_token.py
+
+      - name: Trigger Railway redeploy (restart live server)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+        run: |
+          if [ -n "$RAILWAY_TOKEN" ]; then
+            curl -X POST "https://backboard.railway.app/graphql/v2" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\": \"mutation { serviceInstanceRedeploy(serviceId: \\\"$RAILWAY_SERVICE_ID\\\") }\"}"
+            echo "✅ Railway redeploy triggered"
+          fi
