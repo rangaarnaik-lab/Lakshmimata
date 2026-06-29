@@ -616,49 +616,81 @@ function StockCard({s,i}){
 
 function DesktopRow({s,i}){
   const [open,setOpen]=useState(false)
+  // Grid: # | Symbol+Sector+Badges | RS | Trend | Price | Chg% | PP 10d | RS 7d | expand
+  const COLS='32px 180px 80px 70px 90px 70px 130px 190px 24px'
   return(
     <div style={{borderBottom:`1px solid ${C.border}22`}}>
       <div onClick={()=>setOpen(o=>!o)}
-        style={{display:'grid',gridTemplateColumns:'28px 110px 75px 58px 55px 70px 68px 100px 90px 28px',
-          padding:'9px 12px',alignItems:'center',cursor:'pointer',
+        style={{display:'grid',gridTemplateColumns:COLS,
+          padding:'7px 14px',alignItems:'center',cursor:'pointer',gap:4,
           background:open?C.border+'44':'transparent'}}
-        onMouseEnter={e=>{if(!open)e.currentTarget.style.background=C.border+'33'}}
+        onMouseEnter={e=>{if(!open)e.currentTarget.style.background=C.border+'22'}}
         onMouseLeave={e=>{if(!open)e.currentTarget.style.background='transparent'}}>
-        <span style={{color:C.muted,fontSize:11}}>{i+1}</span>
-        <div>
-          <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
-          <div style={{fontSize:9,color:C.muted,marginBottom:2}}>{s.sector}</div>
-          <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
+
+        {/* # */}
+        <span style={{color:C.muted,fontSize:11,textAlign:'center'}}>{i+1}</span>
+
+        {/* Symbol + Sector + Badges */}
+        <div style={{minWidth:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+            <span style={{fontWeight:800,fontSize:13,color:C.text}}>{s.sym}</span>
+            <span style={{fontSize:10,color:C.muted,fontWeight:500}}>{s.sector}</span>
+          </div>
+          <div style={{display:'flex',gap:3,marginTop:3,flexWrap:'wrap'}}>
             {s.pp.isPP&&<Badge color={C.orange}>🔥PP</Badge>}
-            {s.nearEMA9.isNearEMA9&&<Badge color={C.green} glow>⚡</Badge>}
+            {s.nearEMA9.isNearEMA9&&<Badge color={C.green} glow>⚡EMA9</Badge>}
             {s.hy.isHY&&<Badge color={C.blue}>HY</Badge>}
             {s.ht.isHT&&<Badge color={C.purple}>HT</Badge>}
           </div>
         </div>
+
+        {/* RS */}
+        <div style={{textAlign:'center'}}>
+          <div style={{fontWeight:900,fontSize:20,color:rsColor(s.rs),lineHeight:1}}>{s.rs}</div>
+          <div style={{fontSize:9,color:C.muted,marginTop:1}}>{rsLabel(s.rs)}</div>
+        </div>
+
+        {/* Slope/Trend */}
+        <div style={{textAlign:'center'}}>
+          <div style={{fontWeight:700,fontSize:14,color:trendColor(s.rsTrend.trend)}}>{trendIcon(s.rsTrend.trend)}</div>
+          <div style={{fontSize:9,color:C.muted}}>{s.rsTrend.slope>0?'+':''}{s.rsTrend.slope}/d</div>
+        </div>
+
+        {/* Price */}
         <div style={{textAlign:'right'}}>
-          <span style={{fontWeight:800,fontSize:17,color:rsColor(s.rs)}}>{s.rs}</span>
-          <div style={{fontSize:9,color:C.muted}}>{rsLabel(s.rs)}</div>
+          <div style={{fontWeight:700,fontSize:13}}>{fmtP(s.last)}</div>
+          <div style={{fontSize:10,fontWeight:700,color:s.chg>=0?C.green:C.red}}>
+            {s.chg>=0?'+':''}{s.chg.toFixed(2)}%</div>
         </div>
-        <div style={{textAlign:'center',fontWeight:800,fontSize:13,color:trendColor(s.rsTrend.trend)}}>
-          {trendIcon(s.rsTrend.trend)}
-          <div style={{fontSize:8,color:C.muted}}>{s.rsTrend.slope>0?'+':''}{s.rsTrend.slope}</div>
+
+        {/* Chg% badge */}
+        <div style={{textAlign:'center'}}>
+          <span style={{padding:'3px 7px',borderRadius:6,fontSize:11,fontWeight:700,
+            background:(s.chg>=0?C.green:C.red)+'22',color:s.chg>=0?C.green:C.red}}>
+            {s.chg>=0?'+':''}{s.chg.toFixed(1)}%
+          </span>
         </div>
-        <span style={{textAlign:'right',fontWeight:600,fontSize:12}}>{fmtP(s.last)}</span>
-        <span style={{textAlign:'right',fontWeight:700,fontSize:12,color:s.chg>=0?C.green:C.red}}>
-          {s.chg>=0?'+':''}{s.chg.toFixed(2)}%</span>
+
+        {/* PP 10 days */}
         <div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'center'}}>
           <PPDots ppHistory={s.pp.ppHistory||[]}/>
-          <span style={{fontSize:9,color:s.pp.ppCount10d>0?C.orange:C.muted,fontWeight:700}}>{s.pp.ppCount10d}× PP</span>
+          <span style={{fontSize:9,color:s.pp.ppCount10d>0?C.orange:C.muted,fontWeight:700,whiteSpace:'nowrap'}}>
+            {s.pp.ppCount10d}× PP
+          </span>
         </div>
-        <div style={{display:'flex',gap:2}}>
+
+        {/* RS Last 7d */}
+        <div style={{display:'flex',gap:2,alignItems:'center'}}>
           {s.hist.slice(-7).map((v,idx)=>{
             const color=v===null?C.border:v>=90?C.green:v>=70?C.accent:v>=50?C.yellow:C.red
-            return<div key={idx} style={{width:22,height:22,borderRadius:4,background:color+'28',
+            return<div key={idx} style={{flex:1,height:24,borderRadius:4,background:color+'28',
               border:`1px solid ${color}55`,display:'flex',alignItems:'center',justifyContent:'center',
-              fontSize:8,fontWeight:800,color}}>{v??'—'}</div>
+              fontSize:9,fontWeight:800,color}}>{v??'—'}</div>
           })}
         </div>
-        <span style={{textAlign:'right',fontSize:11,color:C.muted}}>{open?'▲':'▼'}</span>
+
+        {/* Expand */}
+        <span style={{textAlign:'center',fontSize:10,color:C.muted}}>{open?'▲':'▼'}</span>
       </div>
       {open&&<StockDetail s={s}/>}
     </div>
@@ -813,7 +845,7 @@ function AuthScreen({onLogin}){
             borderRadius:18,display:'inline-flex',alignItems:'center',justifyContent:'center',
             fontWeight:900,color:'#000',fontSize:30,marginBottom:14,
             boxShadow:`0 8px 32px ${C.accent}44`}}>P</div>
-          <div style={{fontWeight:800,fontSize:26,letterSpacing:'-0.03em'}}>PocketRS Pro</div>
+          <div style={{fontWeight:800,fontSize:26,letterSpacing:'-0.03em'}}>Lakshmimata</div>
           <div style={{color:C.muted,fontSize:13,marginTop:4}}>NSE Stock Scanner</div>
           {ownerMode&&(
             <div style={{marginTop:10,padding:'6px 14px',borderRadius:20,
@@ -1310,7 +1342,7 @@ export default function App(){
           <div style={{width:28,height:28,background:C.accent,borderRadius:7,display:'flex',
             alignItems:'center',justifyContent:'center',fontWeight:900,color:'#000',fontSize:13}}>P</div>
           <div>
-            <div style={{fontWeight:800,fontSize:isMobile?13:15,letterSpacing:'-0.03em'}}>PocketRS Pro</div>
+            <div style={{fontWeight:800,fontSize:isMobile?13:15,letterSpacing:'-0.03em'}}>Lakshmimata</div>
             {!isMobile&&<div style={{fontSize:10,color:C.muted}}>{scanLabel} · {session.user.email}</div>}
           </div>
         </div>
@@ -1543,14 +1575,18 @@ export default function App(){
             {displayedRS.length>0&&(
               isMobile?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i}/>):(
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
-                  <div style={{display:'grid',gridTemplateColumns:'28px 110px 75px 58px 55px 70px 68px 100px 90px 28px',
-                    padding:'9px 12px',borderBottom:`1px solid ${C.border}`,
+                  <div style={{display:'grid',gridTemplateColumns:'32px 180px 80px 70px 90px 70px 130px 190px 24px',
+                    padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
                     fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.07em'}}>
-                    <span>#</span><span>Symbol</span><span>Sector</span>
-                    <span style={{textAlign:'right'}}>RS</span><span style={{textAlign:'center'}}>Slope</span>
-                    <span style={{textAlign:'right'}}>Price</span><span style={{textAlign:'right'}}>Chg%</span>
+                    <span style={{textAlign:'center'}}>#</span>
+                    <span>Symbol / Sector</span>
+                    <span style={{textAlign:'center'}}>RS</span>
+                    <span style={{textAlign:'center'}}>Trend</span>
+                    <span style={{textAlign:'right'}}>Price</span>
+                    <span style={{textAlign:'center'}}>Chg%</span>
                     <span style={{textAlign:'center'}}>PP 10 Days</span>
-                    <span style={{textAlign:'center'}}>RS Last 7d</span><span/>
+                    <span style={{textAlign:'center'}}>RS Last 7 Days</span>
+                    <span/>
                   </div>
                   {displayedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i}/>)}
                 </div>
