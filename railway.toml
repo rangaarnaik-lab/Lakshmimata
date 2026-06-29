@@ -1,0 +1,11 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "pip install aiohttp && python scripts/live_server.py"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+[environments.production.variables]
+PYTHONUNBUFFERED = "1"
+TZ = "Asia/Kolkata"
