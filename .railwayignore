@@ -1,0 +1,8 @@
+package.json
+package-lock.json
+node_modules
+src
+index.html
+vite.config.js
+vercel.json
+public
