@@ -29,7 +29,155 @@ const trendColor = t => t==='improving'?C.green:t==='declining'?C.red:C.muted
 const fmtP   = v => `₹${v>=1000?v.toFixed(0):v.toFixed(2)}`
 const fmtVol = v => v>=1e7?`${(v/1e7).toFixed(1)}Cr`:v>=1e5?`${(v/1e5).toFixed(1)}L`:`${(v/1e3).toFixed(0)}K`
 const fmtDT  = d => d?new Date(d).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—'
-const REFRESH_OPTIONS=[{label:'5 min',ms:300000},{label:'10 min',ms:600000},{label:'15 min',ms:900000},{label:'30 min',ms:1800000}]
+const REFRESH_OPTIONS=[{label:'1 min',ms:60000},{label:'5 min',ms:300000},{label:'10 min',ms:600000},{label:'30 min',ms:1800000}]
+
+// ── Weinstein Stage Detection ─────────────────────────────────────────
+// Stage 1: Basing — price flat near lows, RS weak/flat
+// Stage 2: Uptrend — price above 30W MA, RS improving/strong ← best buys
+// Stage 3: Topping — price extended above MA, RS may be declining
+// Stage 4: Downtrend — price below 30W MA, RS declining
+function calcWeinsteinStage(s){
+  const rs = s.rs || 0
+  const trend = s.rsTrend?.trend || 'flat'
+  const chg = s.chg || 0
+  const pctFromHigh = s.pctFromHigh || 0  // negative = below high
+  const hist = s.hist || []
+  const recentRS = hist.filter(Boolean).slice(-5)
+  const avgRecentRS = recentRS.length ? recentRS.reduce((a,b)=>a+b,0)/recentRS.length : rs
+
+  // Stage 2: Strong RS + improving trend + not too extended
+  if(rs >= 70 && (trend === 'improving' || trend === 'flat') && pctFromHigh >= -30){
+    if(pctFromHigh >= -5) return {stage:3, label:'S3 Top', color:C.orange, desc:'Topping — extended'}
+    return {stage:2, label:'S2 Up', color:C.green, desc:'Uptrend — best buys'}
+  }
+  // Stage 3: High RS but declining
+  if(rs >= 70 && trend === 'declining'){
+    return {stage:3, label:'S3 Top', color:C.orange, desc:'Topping — RS declining'}
+  }
+  // Stage 4: Weak RS + declining
+  if(rs < 40 && (trend === 'declining' || avgRecentRS < 40)){
+    return {stage:4, label:'S4 Down', color:C.red, desc:'Downtrend — avoid'}
+  }
+  // Stage 1: Weak/flat RS, flat trend, near lows
+  if(rs < 50 && trend === 'flat'){
+    return {stage:1, label:'S1 Base', color:C.yellow, desc:'Basing — watch for breakout'}
+  }
+  // Default: Stage 1/2 transition
+  if(rs >= 50 && rs < 70){
+    return {stage:2, label:'S2 Early', color:C.teal, desc:'Early uptrend'}
+  }
+  return {stage:1, label:'S1 Base', color:C.yellow, desc:'Basing'}
+}
+
+// ── Volume vs Average ─────────────────────────────────────────────────
+function calcVolAnalysis(s){
+  const vol = s.hy?.todayVol || 0
+  const pctOfMax = s.hy?.pctOfMax || 0
+  // Classify volume
+  if(pctOfMax >= 95) return {label:'🔥 Surge', color:C.orange, pct:pctOfMax}
+  if(pctOfMax >= 70) return {label:'↑ High', color:C.green, pct:pctOfMax}
+  if(pctOfMax >= 40) return {label:'→ Avg', color:C.muted, pct:pctOfMax}
+  return {label:'↓ Low', color:C.red, pct:pctOfMax}
+}
+
+// ── IBV Detection (Institutional Buying Volume) ──────────────────────
+// 3+ big up days with volume > down days volume in last 10 days
+function calcIBV(s){
+  const hist = s.hist || []
+  // We need price + volume history — use rs_hist as proxy
+  // IBV score = count of big up days with high volume vs down days
+  const rs = s.rs || 0
+  const trend = s.rsTrend?.trend || 'flat'
+  const ppCount = s.pp?.ppCount10d || 0
+  const chg = s.chg || 0
+
+  // IBV signals:
+  // 1. Multiple PP days in last 10 (institutional buying)
+  // 2. RS improving
+  // 3. Price up today
+  const ibvScore = (ppCount >= 3 ? 3 : ppCount) +
+                   (trend === 'improving' ? 2 : 0) +
+                   (chg > 0 ? 1 : 0) +
+                   (rs >= 70 ? 1 : 0)
+
+  const isIBV = ppCount >= 2 && trend !== 'declining' && rs >= 50
+  return {
+    isIBV,
+    ibvScore,
+    ppCount,
+    label: ibvScore >= 5 ? '🏛️ Strong IBV' : ibvScore >= 3 ? '🏛️ IBV' : 'No IBV',
+    color: ibvScore >= 5 ? C.purple : ibvScore >= 3 ? C.blue : C.muted,
+    desc: `${ppCount} PP days, score ${ibvScore}/7`
+  }
+}
+
+// ── HY/HT Breakout Scanner ────────────────────────────────────────────
+// Had HY or HT in last 5 days + price breaking out today
+function calcHYHTBreakout(s){
+  const ppHist = s.pp?.ppHistory || []
+  const rs = s.rs || 0
+  const chg = s.chg || 0
+  const trend = s.rsTrend?.trend || 'flat'
+
+  // Recent HY/HT signal = PP in last 5 days (proxy for high volume event)
+  const recentPP = ppHist.slice(-5).some(Boolean)
+  const todayPP  = ppHist[ppHist.length-1] || false
+  const isHY     = s.hy?.isHY || false
+  const isHT     = s.ht?.isHT || false
+
+  // Breakout conditions:
+  // 1. Had HY or HT in last 5 days
+  // 2. Price is up today (breaking out)
+  // 3. RS is strong
+  const hadRecentHighVol = recentPP || isHY || isHT
+  const priceBreaking    = chg > 1.0   // price up > 1% today
+  const rsStrong         = rs >= 60
+  const isBreakout       = hadRecentHighVol && priceBreaking && rsStrong
+
+  // Breakout strength
+  let strength = 'Weak'
+  let color    = C.muted
+  if(isBreakout){
+    if(rs >= 80 && chg >= 3)  { strength = '🚀 Power'; color = C.accent }
+    else if(rs >= 70 && chg >= 2){ strength = '⭐ Strong'; color = C.green }
+    else                         { strength = '✅ Valid';  color = C.teal }
+  }
+
+  return {
+    isBreakout,
+    hadRecentHighVol,
+    priceBreaking,
+    strength,
+    color,
+    chg: chg.toFixed(2),
+    recentPPCount: ppHist.slice(-5).filter(Boolean).length,
+    isHY,
+    isHT,
+    desc: isBreakout
+      ? `${strength} breakout — +${chg.toFixed(1)}% with recent high vol`
+      : 'No breakout signal'
+  }
+}
+
+// ── Preset filter definitions ─────────────────────────────────────────
+const PRESETS = [
+  {id:'all',       label:'All',          icon:'🌐', desc:'Show all stocks'},
+  {id:'s2',        label:'Stage 2',      icon:'🚀', desc:'Weinstein Stage 2 uptrend — best buys'},
+  {id:'breakout',  label:'HY/HT Break',  icon:'💥', desc:'Had HY/HT in last 5 days + breaking out today'},
+  {id:'ibv',       label:'IBV',          icon:'🏛️', desc:'Institutional Buying Volume — 2+ PP days'},
+  {id:'pp',        label:'PP Today',     icon:'🔥', desc:'Pocket Pivot today'},
+  {id:'ema9',      label:'EMA9',         icon:'⚡', desc:'RS 90+ near 9-day EMA'},
+  {id:'hy',        label:'HY Vol',       icon:'📊', desc:'Today volume > 52W max volume'},
+  {id:'ht',        label:'HT Vol',       icon:'🎯', desc:'Today volume > all-time high volume'},
+  {id:'rs90',      label:'RS 90+',       icon:'👑', desc:'Elite RS rating'},
+  {id:'rs80',      label:'RS 80+',       icon:'⭐', desc:'Strong RS rating'},
+  {id:'impr',      label:'Improving',    icon:'↑↑', desc:'RS trend improving'},
+  {id:'power',     label:'Power',        icon:'💎', desc:'PP + RS 80+ together'},
+  {id:'s1',        label:'Stage 1',      icon:'👀', desc:'Weinstein Stage 1 basing — watch for breakout'},
+  {id:'s3',        label:'Stage 3',      icon:'⚠️', desc:'Weinstein Stage 3 topping — be careful'},
+  {id:'s4',        label:'Stage 4',      icon:'🔴', desc:'Weinstein Stage 4 downtrend — avoid'},
+  {id:'surge',     label:'Vol Surge',    icon:'🌊', desc:'Volume surge today'},
+]
 
 // ── Hooks ─────────────────────────────────────────────────────────────
 function useIsMobile(){
@@ -289,6 +437,86 @@ function LastUpdatedBar({scanMeta,lastRefresh,loading,autoRefresh,setAutoRefresh
   )
 }
 
+// ── Stage Badge ──────────────────────────────────────────────────────
+function StageBadge({stage}){
+  return(
+    <div title={stage.desc}
+      style={{display:'inline-flex',alignItems:'center',gap:3,
+        padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:800,
+        background:stage.color+'22',color:stage.color,
+        border:`1px solid ${stage.color}44`,whiteSpace:'nowrap',cursor:'help'}}>
+      {stage.label}
+    </div>
+  )
+}
+
+// ── Volume Badge ──────────────────────────────────────────────────────
+function VolBadge({vol}){
+  return(
+    <div style={{display:'inline-flex',alignItems:'center',gap:3,
+      padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
+      background:vol.color+'18',color:vol.color,whiteSpace:'nowrap'}}>
+      {vol.label} <span style={{fontSize:8,opacity:0.7}}>{vol.pct}%</span>
+    </div>
+  )
+}
+
+// ── Preset Filter Bar ─────────────────────────────────────────────────
+function PresetFilterBar({active,setActive,stocks}){
+  const counts = {}
+  PRESETS.forEach(p => {
+    if(p.id === 'all')       counts[p.id] = stocks.length
+    else if(p.id === 'pp')       counts[p.id] = stocks.filter(s=>s.pp?.isPP).length
+    else if(p.id === 'ema9')     counts[p.id] = stocks.filter(s=>s.nearEMA9?.isNearEMA9).length
+    else if(p.id === 'hy')       counts[p.id] = stocks.filter(s=>s.hy?.isHY).length
+    else if(p.id === 'ht')       counts[p.id] = stocks.filter(s=>s.ht?.isHT).length
+    else if(p.id === 'rs90')     counts[p.id] = stocks.filter(s=>s.rs>=90).length
+    else if(p.id === 'rs80')     counts[p.id] = stocks.filter(s=>s.rs>=80).length
+    else if(p.id === 'impr')     counts[p.id] = stocks.filter(s=>s.rsTrend?.trend==='improving').length
+    else if(p.id === 'power')    counts[p.id] = stocks.filter(s=>s.pp?.isPP&&s.rs>=80).length
+    else if(p.id === 's2')       counts[p.id] = stocks.filter(s=>calcWeinsteinStage(s).stage===2).length
+    else if(p.id === 's1')       counts[p.id] = stocks.filter(s=>calcWeinsteinStage(s).stage===1).length
+    else if(p.id === 's3')       counts[p.id] = stocks.filter(s=>calcWeinsteinStage(s).stage===3).length
+    else if(p.id === 's4')       counts[p.id] = stocks.filter(s=>calcWeinsteinStage(s).stage===4).length
+    else if(p.id === 'surge')    counts[p.id] = stocks.filter(s=>s.hy?.pctOfMax>=95).length
+    else if(p.id === 'ibv')      counts[p.id] = stocks.filter(s=>calcIBV(s).isIBV).length
+    else if(p.id === 'breakout') counts[p.id] = stocks.filter(s=>calcHYHTBreakout(s).isBreakout).length
+  })
+
+  return(
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,
+      padding:'12px 14px',marginBottom:12}}>
+      <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:10,textTransform:'uppercase',letterSpacing:'0.08em'}}>
+        ⚡ Quick Filters
+      </div>
+      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+        {PRESETS.map(p=>(
+          <button key={p.id} onClick={()=>setActive(p.id)}
+            title={p.desc}
+            style={{display:'flex',alignItems:'center',gap:5,
+              padding:'7px 12px',borderRadius:8,cursor:'pointer',
+              border:`1px solid ${active===p.id?C.accent:C.border}`,
+              background:active===p.id?C.accent+'22':'transparent',
+              color:active===p.id?C.accent:C.muted,
+              fontWeight:active===p.id?700:500,fontSize:12,
+              transition:'all 0.15s'}}>
+            <span>{p.icon}</span>
+            <span>{p.label}</span>
+            {counts[p.id]!=null&&(
+              <span style={{fontSize:10,fontWeight:800,
+                color:active===p.id?C.accent:C.muted,
+                background:active===p.id?C.accent+'22':C.border+'88',
+                padding:'1px 5px',borderRadius:99}}>
+                {counts[p.id]}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Watchlist Manager ─────────────────────────────────────────────────
 function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKnownStocks}){
   const [showCreate,setShowCreate]=useState(false)
@@ -533,6 +761,10 @@ function StockDetail({s}){
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         {[
           ['RS Today',s.rs,rsColor(s.rs)],
+          ['RS in Sector',s.rsSector??'—',s.rsSector!=null?rsColor(s.rsSector):C.muted],
+          ['RS in Midcap',s.rsMidcap??'—',s.rsMidcap!=null?rsColor(s.rsMidcap):C.muted],
+          ['RS in Smallcap',s.rsSmallcap??'—',s.rsSmallcap!=null?rsColor(s.rsSmallcap):C.muted],
+          ['RS in Microcap',s.rsMicrocap??'—',s.rsMicrocap!=null?rsColor(s.rsMicrocap):C.muted],
           ['15D High RS',Math.max(...s.hist.filter(Boolean)),C.green],
           ['15D Low RS',Math.min(...s.hist.filter(Boolean)),C.red],
           ['15D Avg RS',Math.round(s.hist.filter(Boolean).reduce((a,b)=>a+b,0)/Math.max(1,s.hist.filter(Boolean).length)),C.accent],
@@ -575,6 +807,9 @@ function StockCard({s,i}){
                 {s.ht.isHT&&<Badge color={C.purple}>🚀HT</Badge>}
                 {s.nearEMA9.isNearEMA9&&<Badge color={C.green} glow>⚡EMA9</Badge>}
                 {s.pp.isPP&&s.rs>=80&&<Badge color={C.accent} glow>⭐Power</Badge>}
+                    <StageBadge stage={calcWeinsteinStage(s)}/>
+                    {calcIBV(s).isIBV&&<Badge color={C.purple}>🏛️IBV</Badge>}
+                    {calcHYHTBreakout(s).isBreakout&&<Badge color={C.accent} glow>💥Break</Badge>}
               </div>
             </div>
           </div>
@@ -614,10 +849,23 @@ function StockCard({s,i}){
   )
 }
 
+function SortableHeader({label,sortKey,sortBy,sortDir,onSort,align='left'}){
+  const active = sortBy===sortKey
+  return(
+    <span onClick={()=>onSort(sortKey)}
+      style={{cursor:'pointer',userSelect:'none',display:'flex',alignItems:'center',
+        gap:3,justifyContent:align==='right'?'flex-end':align==='center'?'center':'flex-start',
+        color:active?C.accent:C.muted}}>
+      {label}
+      <span style={{fontSize:8,opacity:active?1:0.3}}>{active&&sortDir==='asc'?'▲':'▼'}</span>
+    </span>
+  )
+}
+
 function DesktopRow({s,i}){
   const [open,setOpen]=useState(false)
   // Grid: # | Symbol+Sector+Badges | RS | Trend | Price | Chg% | PP 10d | RS 7d | expand
-  const COLS='32px 180px 80px 70px 90px 70px 130px 190px 24px'
+  const COLS='32px 140px 50px 50px 50px 50px 55px 60px 75px 60px 120px 150px 95px 24px'
   return(
     <div style={{borderBottom:`1px solid ${C.border}22`}}>
       <div onClick={()=>setOpen(o=>!o)}
@@ -644,10 +892,38 @@ function DesktopRow({s,i}){
           </div>
         </div>
 
-        {/* RS */}
+        {/* RS (overall) */}
         <div style={{textAlign:'center'}}>
-          <div style={{fontWeight:900,fontSize:20,color:rsColor(s.rs),lineHeight:1}}>{s.rs}</div>
-          <div style={{fontSize:9,color:C.muted,marginTop:1}}>{rsLabel(s.rs)}</div>
+          <div style={{fontWeight:900,fontSize:18,color:rsColor(s.rs),lineHeight:1}}>{s.rs}</div>
+          <div style={{fontSize:8,color:C.muted,marginTop:1}}>{rsLabel(s.rs)}</div>
+        </div>
+
+        {/* RS within Midcap */}
+        <div style={{textAlign:'center'}}>
+          {s.rsMidcap!=null?(
+            <div style={{fontWeight:800,fontSize:14,color:rsColor(s.rsMidcap)}}>{s.rsMidcap}</div>
+          ):<span style={{color:C.border,fontSize:11}}>—</span>}
+        </div>
+
+        {/* RS within Smallcap */}
+        <div style={{textAlign:'center'}}>
+          {s.rsSmallcap!=null?(
+            <div style={{fontWeight:800,fontSize:14,color:rsColor(s.rsSmallcap)}}>{s.rsSmallcap}</div>
+          ):<span style={{color:C.border,fontSize:11}}>—</span>}
+        </div>
+
+        {/* RS within Microcap */}
+        <div style={{textAlign:'center'}}>
+          {s.rsMicrocap!=null?(
+            <div style={{fontWeight:800,fontSize:14,color:rsColor(s.rsMicrocap)}}>{s.rsMicrocap}</div>
+          ):<span style={{color:C.border,fontSize:11}}>—</span>}
+        </div>
+
+        {/* RS within Sector */}
+        <div style={{textAlign:'center'}}>
+          {s.rsSector!=null?(
+            <div style={{fontWeight:800,fontSize:14,color:rsColor(s.rsSector)}}>{s.rsSector}</div>
+          ):<span style={{color:C.border,fontSize:11}}>—</span>}
         </div>
 
         {/* Slope/Trend */}
@@ -687,6 +963,26 @@ function DesktopRow({s,i}){
               border:`1px solid ${color}55`,display:'flex',alignItems:'center',justifyContent:'center',
               fontSize:9,fontWeight:800,color}}>{v??'—'}</div>
           })}
+        </div>
+
+        {/* Stage + IBV + Breakout */}
+        <div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'flex-start'}}>
+          <StageBadge stage={calcWeinsteinStage(s)}/>
+          {(()=>{const ibv=calcIBV(s);return ibv.isIBV&&(
+            <div style={{padding:'2px 6px',borderRadius:5,fontSize:9,fontWeight:700,
+              background:ibv.color+'22',color:ibv.color,border:`1px solid ${ibv.color}44`}}
+              title={ibv.desc}>
+              🏛️ IBV {ibv.ppCount}d
+            </div>
+          )})()}
+          {(()=>{const bo=calcHYHTBreakout(s);return bo.isBreakout&&(
+            <div style={{padding:'2px 6px',borderRadius:5,fontSize:9,fontWeight:700,
+              background:bo.color+'22',color:bo.color,border:`1px solid ${bo.color}44`}}
+              title={bo.desc}>
+              💥 {bo.strength}
+            </div>
+          )})()}
+          <VolBadge vol={calcVolAnalysis(s)}/>
         </div>
 
         {/* Expand */}
@@ -1179,6 +1475,7 @@ export default function App(){
   }
 
   // PP filters per tab
+  const [presetFilter,setPresetFilter]=useState('all')
   const [ppFilterRS,setPpFilterRS]=useState('all')
   const [ppFilter52WL,setPpFilter52WL]=useState('all')
   const [ppFilterWeak,setPpFilterWeak]=useState('all')
@@ -1188,6 +1485,14 @@ export default function App(){
   const [rsImprFilter,setRsImprFilter]=useState('all')
   const [sigFilter,setSigFilter]=useState('all')
   const [search,setSearch]=useState(''),[sortBy,setSortBy]=useState('rs')
+  const [sortDir,setSortDir]=useState('desc')
+  const handleSort = useCallback(key=>{
+    setSortBy(prev=>{
+      if(prev===key){ setSortDir(d=>d==='desc'?'asc':'desc'); return prev }
+      setSortDir('desc')
+      return key
+    })
+  },[])
   const [showFilters,setShowFilters]=useState(false)
   const [wlSearch,setWlSearch]=useState(''),[wlSigOnly,setWlSigOnly]=useState(false)
   const [weakSearch,setWeakSearch]=useState(''),[weakSigOnly,setWeakSigOnly]=useState(false)
@@ -1301,14 +1606,51 @@ export default function App(){
   const rsBase=stocks.filter(s=>{
     if(!s.sym.toLowerCase().includes(search.toLowerCase()))return false
     if(s.rs<rsMin||s.rs>rsMax)return false
-    if(rsImprFilter!=='all'&&s.rsTrend.trend!==rsImprFilter)return false
-    if(sigFilter==='pp'&&!s.pp.isPP)return false
-    if(sigFilter==='hy'&&!s.hy.isHY)return false
-    if(sigFilter==='ht'&&!s.ht.isHT)return false
-    if(sigFilter==='ema9'&&!s.nearEMA9.isNearEMA9)return false
-    if(sigFilter==='power'&&!(s.pp.isPP&&s.rs>=80))return false
+    if(rsImprFilter!=='all'&&s.rsTrend?.trend!==rsImprFilter)return false
+    if(sigFilter==='pp'&&!s.pp?.isPP)return false
+    if(sigFilter==='hy'&&!s.hy?.isHY)return false
+    if(sigFilter==='ht'&&!s.ht?.isHT)return false
+    if(sigFilter==='ema9'&&!s.nearEMA9?.isNearEMA9)return false
+    if(sigFilter==='power'&&!(s.pp?.isPP&&s.rs>=80))return false
+    // Preset filter
+    if(presetFilter==='pp'&&!s.pp?.isPP)return false
+    if(presetFilter==='ema9'&&!s.nearEMA9?.isNearEMA9)return false
+    if(presetFilter==='hy'&&!s.hy?.isHY)return false
+    if(presetFilter==='ht'&&!s.ht?.isHT)return false
+    if(presetFilter==='rs90'&&s.rs<90)return false
+    if(presetFilter==='rs80'&&s.rs<80)return false
+    if(presetFilter==='impr'&&s.rsTrend?.trend!=='improving')return false
+    if(presetFilter==='power'&&!(s.pp?.isPP&&s.rs>=80))return false
+    if(presetFilter==='s2'&&calcWeinsteinStage(s).stage!==2)return false
+    if(presetFilter==='s1'&&calcWeinsteinStage(s).stage!==1)return false
+    if(presetFilter==='s3'&&calcWeinsteinStage(s).stage!==3)return false
+    if(presetFilter==='s4'&&calcWeinsteinStage(s).stage!==4)return false
+    if(presetFilter==='surge'&&(s.hy?.pctOfMax||0)<95)return false
+    if(presetFilter==='ibv'&&!calcIBV(s).isIBV)return false
+    if(presetFilter==='breakout'&&!calcHYHTBreakout(s).isBreakout)return false
     return true
-  }).sort((a,b)=>sortBy==='rs'?b.rs-a.rs:sortBy==='slope'?b.rsTrend.slope-a.rsTrend.slope:sortBy==='pp10'?b.pp.ppCount10d-a.pp.ppCount10d:sortBy==='chg'?b.chg-a.chg:a.sym.localeCompare(b.sym))
+  }).sort((a,b)=>{
+    const dir = sortDir==='asc'?1:-1
+    const getVal = (s,key)=>{
+      if(key==='rs') return s.rs??-1
+      if(key==='rsMidcap') return s.rsMidcap??-1
+      if(key==='rsSmallcap') return s.rsSmallcap??-1
+      if(key==='rsMicrocap') return s.rsMicrocap??-1
+      if(key==='rsSector') return s.rsSector??-1
+      if(key==='slope') return s.rsTrend?.slope??0
+      if(key==='pp10') return s.pp?.ppCount10d??0
+      if(key==='chg') return s.chg??0
+      if(key==='last') return s.last??0
+      if(key==='sym') return s.sym
+      return 0
+    }
+    const av=getVal(a,sortBy), bv=getVal(b,sortBy)
+    if(sortBy==='sym') return dir===1?av.localeCompare(bv):bv.localeCompare(av)
+    // nulls always sort to bottom regardless of direction
+    if(av===-1&&bv!==-1) return 1
+    if(bv===-1&&av!==-1) return -1
+    return dir===1?(av-bv):(bv-av)
+  })
   const displayedRS=applyPP(rsBase,ppFilterRS)
 
   const wlBase=stocks.filter(s=>s.scanner52wl.near52wLow&&s.sym.toLowerCase().includes(wlSearch.toLowerCase())&&(!wlSigOnly||s.scanner52wl.isSignal)).sort((a,b)=>a.scanner52wl.pctFrom52wLow-b.scanner52wl.pctFrom52wLow)
@@ -1317,7 +1659,7 @@ export default function App(){
   const weakBase=stocks.filter(s=>s.weakRS.chg1d>=weakThreshold&&s.rs<50&&s.sym.toLowerCase().includes(weakSearch.toLowerCase())&&(!weakSigOnly||s.weakRS.isSignal)).sort((a,b)=>b.weakRS.chg1d-a.weakRS.chg1d)
   const displayedWeak=applyPP(weakBase,ppFilterWeak)
 
-  const tabs=[['rs','📊','RS'],['52wl','🎯','52WL'],['weak','🚨','Weak'],['sector','🏭','Sectors'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
+  const tabs=[['rs','📊','RS'],['squeeze','🌀','Squeeze'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['weak','🚨','Weak'],['sector','🏭','Sectors'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
 
   if(authLoading)return(
     <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -1469,6 +1811,17 @@ export default function App(){
               </div>
             )}
 
+            {/* RS methodology legend */}
+            {stocks.length>0&&(
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
+                padding:'10px 14px',marginBottom:12,fontSize:11,color:C.muted,lineHeight:1.7}}>
+                <strong style={{color:C.text}}>RS</strong> = percentile rank (1-99) vs ALL scanned stocks, weighted price performance (40% last 3mo + 20% each prior quarter) &nbsp;·&nbsp;
+                <strong style={{color:C.text}}>Mid/Small/Micro</strong> = same calc, ranked only against peers in that index &nbsp;·&nbsp;
+                <strong style={{color:C.text}}>Sector</strong> = ranked only against peers in the same sector &nbsp;·&nbsp;
+                <span style={{color:C.border}}>—</span> = stock not in that group or pool too small
+              </div>
+            )}
+
             {/* TV copy for full RS list */}
             {displayedRS.length>0&&<TVCopyPanel stocks={displayedRS} label={`RS Scanner — ${scanLabel}`}/>}
 
@@ -1575,23 +1928,294 @@ export default function App(){
             {displayedRS.length>0&&(
               isMobile?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i}/>):(
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
-                  <div style={{display:'grid',gridTemplateColumns:'32px 180px 80px 70px 90px 70px 130px 190px 24px',
+                  <div style={{display:'grid',gridTemplateColumns:'32px 140px 50px 50px 50px 50px 55px 60px 75px 60px 120px 150px 95px 24px',
                     padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
-                    fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.07em'}}>
-                    <span style={{textAlign:'center'}}>#</span>
-                    <span>Symbol / Sector</span>
-                    <span style={{textAlign:'center'}}>RS</span>
-                    <span style={{textAlign:'center'}}>Trend</span>
-                    <span style={{textAlign:'right'}}>Price</span>
-                    <span style={{textAlign:'center'}}>Chg%</span>
-                    <span style={{textAlign:'center'}}>PP 10 Days</span>
-                    <span style={{textAlign:'center'}}>RS Last 7 Days</span>
+                    fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
+                    <span style={{textAlign:'center',color:C.muted}}>#</span>
+                    <SortableHeader label="Symbol" sortKey="sym" sortBy={sortBy} sortDir={sortDir} onSort={handleSort}/>
+                    <SortableHeader label="RS" sortKey="rs" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+                    <SortableHeader label="Mid" sortKey="rsMidcap" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+                    <SortableHeader label="Small" sortKey="rsSmallcap" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+                    <SortableHeader label="Micro" sortKey="rsMicrocap" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+                    <SortableHeader label="Sector" sortKey="rsSector" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+                    <SortableHeader label="Trend" sortKey="slope" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+                    <SortableHeader label="Price" sortKey="last" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>
+                    <SortableHeader label="Chg%" sortKey="chg" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+                    <SortableHeader label="PP 10d" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+                    <span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>
+                    <span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>
                     <span/>
                   </div>
                   {displayedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i}/>)}
                 </div>
               )
             )}
+          </div>
+        )}
+
+        {/* ══ SQUEEZE ══ */}
+        {mainTab==='squeeze'&&(
+          <div>
+            <LastUpdatedBar
+              scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
+              autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
+              refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
+              onRefresh={runDBScan}
+            />
+            <div style={{background:C.card,border:`1px solid ${C.teal}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:15,color:C.teal,marginBottom:6}}>🌀 Squeeze Scanner</div>
+              <div style={{fontSize:12,color:C.muted,marginBottom:12}}>
+                Bollinger Band Squeeze (volatility contraction) + VCP (Volatility Contraction Pattern, Minervini style)
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8}}>
+                {[
+                  {l:'🔵 BB In Squeeze',v:stocks.filter(s=>s.squeeze?.inSqueeze).length,c:C.blue},
+                  {l:'🟢 BB Fired',v:stocks.filter(s=>s.squeeze?.squeezeFired).length,c:C.green},
+                  {l:'📐 VCP Forming',v:stocks.filter(s=>s.vcp?.isVCP).length,c:C.purple},
+                  {l:'🚀 VCP Fired',v:stocks.filter(s=>s.vcp?.vcpFired).length,c:C.accent},
+                ].map(({l,v,c})=>(
+                  <div key={l} style={{background:C.bg,borderRadius:8,padding:'12px',textAlign:'center'}}>
+                    <div style={{fontSize:24,fontWeight:900,color:c}}>{v}</div>
+                    <div style={{fontSize:10,color:C.muted,marginTop:3}}>{l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Section 1: Currently in squeeze (coiled) */}
+            <div style={{marginBottom:20}}>
+              <div style={{fontWeight:800,fontSize:14,color:C.blue,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
+                🔵 In Squeeze — Coiled, Waiting to Fire
+              </div>
+              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+                Low volatility, BB inside Keltner Channel — often precedes a big move
+              </div>
+              {(()=>{
+                const inSqueeze = stocks.filter(s=>s.squeeze?.inSqueeze || s.vcp?.isVCP).sort((a,b)=>b.rs-a.rs)
+                if(inSqueeze.length===0) return(
+                  <div style={{textAlign:'center',padding:'30px 0',color:C.muted,fontSize:12}}>
+                    No stocks currently in squeeze
+                  </div>
+                )
+                return(
+                  <>
+                    <TVCopyPanel stocks={inSqueeze} label="In Squeeze"/>
+                    <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:8}}>
+                      {inSqueeze.slice(0,30).map(s=>(
+                        <div key={s.sym} style={{background:C.card,border:`1px solid ${C.blue}33`,
+                          borderRadius:10,padding:'12px'}}>
+                          <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+                            <div>
+                              <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
+                              <div style={{fontSize:10,color:C.muted}}>{s.sector}</div>
+                            </div>
+                            <div style={{textAlign:'right'}}>
+                              <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
+                              <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(1)}%</div>
+                            </div>
+                          </div>
+                          <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                            {s.squeeze?.inSqueeze&&(
+                              <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
+                                background:C.blue+'22',color:C.blue}}>
+                                BB {s.squeeze.squeezeDays}d · {s.squeeze.bbWidthPct}%
+                              </div>
+                            )}
+                            {s.vcp?.isVCP&&(
+                              <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
+                                background:C.purple+'22',color:C.purple}}>
+                                VCP {s.vcp.vcpStage} contractions
+                              </div>
+                            )}
+                          </div>
+                          {s.vcp?.contractions?.length>0&&(
+                            <div style={{fontSize:9,color:C.muted,marginTop:4}}>
+                              Pullbacks: {s.vcp.contractions.map(c=>`${c}%`).join(' → ')}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
+
+            {/* Section 2: Just fired (breaking out) */}
+            <div>
+              <div style={{fontWeight:800,fontSize:14,color:C.green,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
+                🟢 Firing Now — Breaking Out of Squeeze
+              </div>
+              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+                Was in squeeze, now expanding with volume — the move is starting
+              </div>
+              {(()=>{
+                const fired = stocks.filter(s=>s.squeeze?.squeezeFired || s.vcp?.vcpFired).sort((a,b)=>b.rs-a.rs)
+                if(fired.length===0) return(
+                  <div style={{textAlign:'center',padding:'40px 0',color:C.muted}}>
+                    <div style={{fontSize:36,marginBottom:10}}>🌀</div>
+                    <div style={{fontSize:13,fontWeight:700,color:C.text}}>No squeeze fires yet</div>
+                    <div style={{fontSize:11,marginTop:4}}>Check back after market activity</div>
+                  </div>
+                )
+                return(
+                  <>
+                    <TVCopyPanel stocks={fired} label="Squeeze Fired"/>
+                    {fired.map(s=>(
+                      <div key={s.sym} style={{background:C.card,border:`2px solid ${C.green}44`,
+                        borderRadius:12,marginBottom:10,padding:'14px'}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                          <div>
+                            <div style={{fontWeight:800,fontSize:16}}>{s.sym}</div>
+                            <div style={{fontSize:11,color:C.muted}}>{s.sector}</div>
+                            <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
+                              {s.squeeze?.squeezeFired&&<Badge color={C.green} glow>🟢 BB Fired</Badge>}
+                              {s.vcp?.vcpFired&&<Badge color={C.accent} glow>🚀 VCP Fired</Badge>}
+                              {s.pp?.isPP&&<Badge color={C.orange}>🔥PP</Badge>}
+                            </div>
+                          </div>
+                          <div style={{textAlign:'right'}}>
+                            <div style={{fontWeight:900,fontSize:20,color:rsColor(s.rs)}}>{s.rs}</div>
+                            <div style={{fontWeight:700,fontSize:13,color:s.chg>=0?C.green:C.red}}>
+                              {s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
+                            <div style={{fontSize:11,color:C.muted}}>{fmtP(s.last)}</div>
+                          </div>
+                        </div>
+                        {s.vcp?.contractions?.length>0&&(
+                          <div style={{fontSize:10,color:C.muted}}>
+                            VCP pullbacks: {s.vcp.contractions.map(c=>`${c}%`).join(' → ')} (contracting)
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </>
+                )
+              })()}
+            </div>
+          </div>
+        )}
+
+        {/* ══ BREAKOUT ══ */}
+        {mainTab==='breakout'&&(
+          <div>
+            <LastUpdatedBar
+              scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
+              autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
+              refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
+              onRefresh={runDBScan}
+            />
+            {/* Stats */}
+            <div style={{background:C.card,border:`1px solid ${C.accent}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:15,color:C.accent,marginBottom:6}}>💥 HY/HT Breakout Scanner</div>
+              <div style={{fontSize:12,color:C.muted,marginBottom:12}}>
+                Stocks that had High Year (HY) or High Time (HT) volume in last 5 days and are breaking out today
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+                {[
+                  {l:'🚀 Power Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&s.rs>=80&&s.chg>=3).length,c:C.accent},
+                  {l:'⭐ Strong Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&s.rs>=70&&s.chg>=2).length,c:C.green},
+                  {l:'✅ All Breakouts',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout).length,c:C.teal},
+                  {l:'🏛️ IBV Signals',v:stocks.filter(s=>calcIBV(s).isIBV).length,c:C.purple},
+                  {l:'🔥 PP + Break',v:stocks.filter(s=>s.pp?.isPP&&calcHYHTBreakout(s).isBreakout).length,c:C.orange},
+                  {l:'👑 RS 90+ Break',v:stocks.filter(s=>s.rs>=90&&calcHYHTBreakout(s).isBreakout).length,c:C.yellow},
+                ].map(({l,v,c})=>(
+                  <div key={l} style={{background:C.bg,borderRadius:8,padding:'10px',textAlign:'center'}}>
+                    <div style={{fontSize:22,fontWeight:900,color:c}}>{v}</div>
+                    <div style={{fontSize:10,color:C.muted,marginTop:3}}>{l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* IBV Section */}
+            <div style={{background:C.card,border:`1px solid ${C.purple}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:14,color:C.purple,marginBottom:4}}>🏛️ IBV — Institutional Buying Volume</div>
+              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+                Stocks with 2+ Pocket Pivot days in last 10 days = institutional accumulation
+              </div>
+              <TVCopyPanel stocks={stocks.filter(s=>calcIBV(s).isIBV)} label="IBV Stocks"/>
+              <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
+                {stocks.filter(s=>calcIBV(s).isIBV).slice(0,20).map(s=>{
+                  const ibv=calcIBV(s)
+                  return(
+                    <div key={s.sym} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
+                      display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <div>
+                        <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
+                        <div style={{fontSize:10,color:C.muted}}>{s.sector} · {ibv.ppCount} PP days · score {ibv.ibvScore}/7</div>
+                      </div>
+                      <div style={{textAlign:'right'}}>
+                        <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
+                        <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* HY/HT Breakout list */}
+            <TVCopyPanel stocks={stocks.filter(s=>calcHYHTBreakout(s).isBreakout)} label="HY/HT Breakouts"/>
+            {stocks.filter(s=>calcHYHTBreakout(s).isBreakout).length===0?(
+              <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
+                <div style={{fontSize:42,marginBottom:12}}>💥</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No breakouts today</div>
+                <div style={{fontSize:12,marginTop:6,color:C.muted}}>
+                  Stocks need HY/HT volume in last 5 days + price up &gt;1% today
+                </div>
+              </div>
+            ):stocks.filter(s=>calcHYHTBreakout(s).isBreakout)
+              .sort((a,b)=>b.rs-a.rs)
+              .map((s,i)=>{
+                const bo=calcHYHTBreakout(s)
+                const ibv=calcIBV(s)
+                const stage=calcWeinsteinStage(s)
+                return(
+                  <div key={s.sym} style={{background:C.card,
+                    border:`2px solid ${bo.color}55`,
+                    borderRadius:12,marginBottom:10,padding:'14px'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                      <div>
+                        <div style={{fontWeight:800,fontSize:16}}>{s.sym}</div>
+                        <div style={{fontSize:11,color:C.muted}}>{s.sector}</div>
+                        <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
+                          <div style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:800,
+                            background:bo.color+'22',color:bo.color}}>{bo.strength}</div>
+                          <StageBadge stage={stage}/>
+                          {ibv.isIBV&&<div style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:700,
+                            background:C.purple+'22',color:C.purple}}>🏛️ IBV {ibv.ppCount}d</div>}
+                          {s.pp?.isPP&&<Badge color={C.orange}>🔥PP</Badge>}
+                          {s.hy?.isHY&&<Badge color={C.blue}>📊HY</Badge>}
+                          {s.ht?.isHT&&<Badge color={C.purple}>🎯HT</Badge>}
+                        </div>
+                      </div>
+                      <div style={{textAlign:'right'}}>
+                        <div style={{fontWeight:900,fontSize:22,color:rsColor(s.rs)}}>{s.rs}</div>
+                        <div style={{fontWeight:700,fontSize:14,color:C.green}}>+{bo.chg}%</div>
+                        <div style={{fontSize:11,color:C.muted}}>{fmtP(s.last)}</div>
+                      </div>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
+                      {[
+                        ['RS',s.rs,rsColor(s.rs)],
+                        ['Chg',`+${bo.chg}%`,C.green],
+                        ['PP 5d',`${bo.recentPPCount}×`,C.orange],
+                        ['Trend',trendIcon(s.rsTrend?.trend||'flat'),trendColor(s.rsTrend?.trend||'flat')],
+                      ].map(([k,v,c])=>(
+                        <div key={k} style={{background:C.bg,borderRadius:7,padding:'8px',textAlign:'center'}}>
+                          <div style={{fontSize:9,color:C.muted,marginBottom:2}}>{k}</div>
+                          <div style={{fontWeight:800,fontSize:13,color:c}}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{marginTop:8,display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{fontSize:10,color:C.muted}}>PP 10d:</span>
+                      <PPDots ppHistory={s.pp?.ppHistory||[]}/>
+                    </div>
+                  </div>
+                )
+              })
+            }
           </div>
         )}
 
