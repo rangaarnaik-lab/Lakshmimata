@@ -33,6 +33,11 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
   return (data || []).map(row => ({
     sym:        row.sym,
     rs:         row.rs || 0,
+    rsNifty50:  row.rs_nifty50,
+    rsMidcap:   row.rs_midcap,
+    rsSmallcap: row.rs_smallcap,
+    rsMicrocap: row.rs_microcap,
+    rsSector:   row.rs_sector,
     last:       row.last_price || 0,
     chg:        row.chg_pct || 0,
     pctFromHigh: row.high_52w ? ((row.last_price - row.high_52w) / row.high_52w * 100) : 0,
@@ -81,6 +86,20 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
       chg5d:      row.weak_chg_5d || 0,
       volSpike:   row.weak_vol_spike || 0,
       isVolSpike: (row.weak_vol_spike || 0) >= 1.5,
+    },
+    squeeze: {
+      inSqueeze:    row.in_squeeze || false,
+      squeezeFired: row.squeeze_fired || false,
+      bbWidthPct:   row.bb_width_pct,
+      squeezeDays:  row.squeeze_days || 0,
+    },
+    vcp: {
+      isVCP:        row.is_vcp || false,
+      vcpStage:     row.vcp_stage || 0,
+      vcpFired:     row.vcp_fired || false,
+      contractions: typeof row.vcp_contractions === 'string'
+        ? JSON.parse(row.vcp_contractions || '[]')
+        : (row.vcp_contractions || []),
     },
     lastUpdated: row.last_updated,
     scanType:   row.scan_type,
