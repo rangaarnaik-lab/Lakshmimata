@@ -5,13 +5,21 @@ import { supabase } from './supabase'
 
 /**
  * Fetch all stocks from Supabase DB (pre-computed by live server)
- * Returns processed stock array ready for the UI
+ * Returns processed stock array ready for the UI.
+ *
+ * Pass historyDate (format 'YYYY-MM-DD') to replay any past trading day
+ * from the stock_history archive instead of today's live `stocks` table.
  */
-export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = null } = {}) {
+export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = null, historyDate = null } = {}) {
+  const table = historyDate ? 'stock_history' : 'stocks'
   let query = supabase
-    .from('stocks')
+    .from(table)
     .select('*')
     .order('rs', { ascending: false })
+
+  if (historyDate) {
+    query = query.eq('snapshot_date', historyDate)
+  }
 
   // Filter by index
   if (watchlistSyms && watchlistSyms.length > 0) {
@@ -33,6 +41,7 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
   return (data || []).map(row => ({
     sym:        row.sym,
     rs:         row.rs || 0,
+    rsTv:       row.rs_tv,        // TradingView / Lakshmi Mata Pine Script RS
     rsNifty50:  row.rs_nifty50,
     rsMidcap:   row.rs_midcap,
     rsSmallcap: row.rs_smallcap,
@@ -109,11 +118,11 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
 /**
  * Fetch sector RS data from Supabase
  */
-export async function fetchSectorsFromDB() {
-  const { data, error } = await supabase
-    .from('sectors')
-    .select('*')
-    .order('rank', { ascending: true })
+export async function fetchSectorsFromDB(historyDate = null) {
+  const table = historyDate ? 'sector_history' : 'sectors'
+  let query = supabase.from(table).select('*').order('rank', { ascending: true })
+  if (historyDate) query = query.eq('snapshot_date', historyDate)
+  const { data, error } = await query
   if (error) throw error
   return (data || []).map(row => ({
     sector:    row.sector,
@@ -126,8 +135,25 @@ export async function fetchSectorsFromDB() {
       ? JSON.parse(row.top_stocks)
       : (row.top_stocks || []),
     members:   [], // loaded separately when expanded
-    lastUpdated: row.last_updated,
+    lastUpdated: row.last_updated || row.snapshot_date,
   }))
+}
+
+/**
+ * Fetch the list of trading dates that have a complete EOD snapshot
+ * archived in stock_history — used to populate the date picker.
+ * Most recent first.
+ */
+export async function fetchAvailableHistoryDates() {
+  const { data, error } = await supabase
+    .from('available_history_dates')
+    .select('snapshot_date')
+    .order('snapshot_date', { ascending: false })
+  if (error) {
+    console.warn('Could not fetch available history dates:', error.message)
+    return []
+  }
+  return (data || []).map(r => r.snapshot_date)
 }
 
 /**
@@ -160,5 +186,37 @@ export async function fetchSectorStocks(sector) {
     chg:    row.chg_pct || 0,
     pp:     { isPP: row.is_pp || false },
     rsTrend: { trend: row.rs_trend || 'flat' },
+  }))
+}
+
+/**
+ * Fetch index dashboard data — all indices with their daily/weekly/monthly
+ * performance, RS-TV rating, Weinstein stage, and top/bottom constituent stocks.
+ */
+export async function fetchIndexDashboard() {
+  const { data, error } = await supabase
+    .from('index_dashboard')
+    .select('*')
+    .order('rs_tv', { ascending: false, nullsLast: true })
+  if (error) throw error
+  return (data || []).map(row => ({
+    name:          row.name,
+    lastPrice:     row.last_price,
+    chgD:          row.chg_d,
+    chgW:          row.chg_w,
+    chgM:          row.chg_m,
+    chgQ:          row.chg_q,
+    chgY:          row.chg_y,
+    rsTv:          row.rs_tv,
+    stage:         row.stage,
+    stageLabel:    row.stage_label,
+    aboveMa10:     row.above_ma10,
+    aboveMa30:     row.above_ma30,
+    high52w:       row.high_52w,
+    low52w:        row.low_52w,
+    pctFromHigh:   row.pct_from_high,
+    topStocks:     typeof row.top_stocks === 'string' ? JSON.parse(row.top_stocks||'[]') : (row.top_stocks||[]),
+    botStocks:     typeof row.bot_stocks === 'string' ? JSON.parse(row.bot_stocks||'[]') : (row.bot_stocks||[]),
+    lastUpdated:   row.last_updated,
   }))
 }
