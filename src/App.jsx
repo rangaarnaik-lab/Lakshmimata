@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard } from './lib/db'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
   detectPP, calcHY, calcHT, calcNearEMA9,
@@ -197,13 +197,83 @@ function useCopy(){
 
 // ── TV Copy Panel ─────────────────────────────────────────────────────
 // shows two copy buttons: Pine Script list + NSE:SYM format
-function TVCopyPanel({stocks,label}){
+function TVCopyPanel({stocks,label,compact}){
+  // compact=true → single "Export to TradingView" button style (for top bar)
   const {copy,copied}=useCopy()
   if(!stocks||stocks.length===0)return null
   const syms=stocks.map(s=>s.sym)
   const pineScript=syms.join(',')
   const tvFormat=syms.map(s=>`NSE:${s}`).join(',')
   const alertStr=syms.map(s=>`NSE:${s}`).join('\n')
+  if(compact){
+    return(
+      <div style={{display:'flex',gap:4}}>
+        <button onClick={()=>copy(pineScript,'pine')} title="Copy Pine Script watchlist"
+          style={{padding:'5px 10px',borderRadius:6,border:'none',cursor:'pointer',
+            background:copied==='pine'?C.green:C.teal,color:'#000',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
+          {copied==='pine'?'✅ Copied':'📋 Pine'}
+        </button>
+        <button onClick={()=>copy(tvFormat,'tv')} title="Copy NSE:SYM format"
+          style={{padding:'5px 10px',borderRadius:6,border:'none',cursor:'pointer',
+            background:copied==='tv'?C.green:C.teal,color:'#000',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
+          {copied==='tv'?'✅':'🔗 TV'} <span style={{background:'#00000033',borderRadius:4,padding:'0 4px',fontSize:10}}>{syms.length}</span>
+        </button>
+      </div>
+    )
+  }
+  return(
+    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',
+      background:C.card,border:`1px solid ${C.teal}33`,borderRadius:8,
+      padding:'6px 12px',marginBottom:10,fontSize:11}}>
+      <span style={{color:C.teal,fontWeight:700,whiteSpace:'nowrap'}}>
+        📊 TV ({syms.length})
+      </span>
+      <button onClick={()=>copy(pineScript,'pine')} title="Paste in watchlist box"
+        style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.teal}33`,cursor:'pointer',
+          background:copied==='pine'?C.teal+'22':'transparent',
+          color:copied==='pine'?C.teal:C.muted,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>
+        {copied==='pine'?'✅ Copied':'📋 Pine'}
+      </button>
+      <button onClick={()=>copy(tvFormat,'tv')} title="Paste in TV symbol search"
+        style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.teal}33`,cursor:'pointer',
+          background:copied==='tv'?C.teal+'22':'transparent',
+          color:copied==='tv'?C.teal:C.muted,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>
+        {copied==='tv'?'✅ Copied':'🔗 NSE:SYM'}
+      </button>
+      <button onClick={()=>copy(alertStr,'alert')} title="One symbol per line for alert wizard"
+        style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.teal}33`,cursor:'pointer',
+          background:copied==='alert'?C.teal+'22':'transparent',
+          color:copied==='alert'?C.teal:C.muted,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>
+        {copied==='alert'?'✅ Copied':'🔔 Alerts'}
+      </button>
+      {label&&<span style={{color:C.muted,fontSize:10,marginLeft:'auto',whiteSpace:'nowrap'}}>{label}</span>}
+    </div>
+  )
+}
+
+function _TVCopyPanelOld({stocks,label}){
+  const {copy,copied}=useCopy()
+  if(!stocks||stocks.length===0)return null
+  const syms=stocks.map(s=>s.sym)
+  const pineScript=syms.join(',')
+  const tvFormat=syms.map(s=>`NSE:${s}`).join(',')
+  const alertStr=syms.map(s=>`NSE:${s}`).join('\n')
+  if(compact){
+    return(
+      <div style={{display:'flex',gap:4}}>
+        <button onClick={()=>copy(pineScript,'pine')} title="Copy Pine Script watchlist"
+          style={{padding:'5px 10px',borderRadius:6,border:'none',cursor:'pointer',
+            background:copied==='pine'?C.green:C.teal,color:'#000',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
+          {copied==='pine'?'✅ Copied':'📋 Pine'}
+        </button>
+        <button onClick={()=>copy(tvFormat,'tv')} title="Copy NSE:SYM format"
+          style={{padding:'5px 10px',borderRadius:6,border:'none',cursor:'pointer',
+            background:copied==='tv'?C.green:C.teal,color:'#000',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
+          {copied==='tv'?'✅':'🔗 TV'} <span style={{background:'#00000033',borderRadius:4,padding:'0 4px',fontSize:10}}>{syms.length}</span>
+        </button>
+      </div>
+    )
+  }
   return(
     <div style={{background:C.card,border:`1px solid ${C.teal}44`,borderRadius:10,
       padding:'10px 14px',marginBottom:12}}>
@@ -368,54 +438,50 @@ function LastUpdatedBar({scanMeta,lastRefresh,loading,autoRefresh,setAutoRefresh
   const pct=lastRefresh?Math.min(100,((now-lastRefresh)/refreshInterval)*100):0
 
   return(
-    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
-      padding:'10px 14px',marginBottom:12}}>
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
+      padding:'7px 12px',marginBottom:10}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
-        flexWrap:'wrap',gap:8,marginBottom:6}}>
+        flexWrap:'wrap',gap:6}}>
         {/* Status */}
-        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-          <div style={{display:'flex',alignItems:'center',gap:6}}>
-            <div style={{width:8,height:8,borderRadius:'50%',
+        <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',fontSize:11}}>
+          <div style={{display:'flex',alignItems:'center',gap:5}}>
+            <div style={{width:7,height:7,borderRadius:'50%',
               background:loading?C.yellow:marketOpen?C.green:C.muted,
-              boxShadow:`0 0 6px ${loading?C.yellow:marketOpen?C.green:C.muted}`,
+              boxShadow:`0 0 5px ${loading?C.yellow:marketOpen?C.green:C.muted}`,
               animation:loading?'pulse 1s infinite':'none'}}/>
-            <span style={{fontSize:12,fontWeight:700,color:C.text}}>
-              {loading?'Updating…':marketOpen?'Market Open — Live':'Market Closed'}
+            <span style={{fontWeight:700,color:C.text}}>
+              {loading?'Updating…':marketOpen?'Live':'Closed'}
             </span>
           </div>
-          <span style={{fontSize:11,color:C.muted}}>
-            Last update: <strong style={{color:C.text}}>{lastScanStr}</strong>
-          </span>
+          <span style={{color:C.muted}}>· {lastScanStr}</span>
           {scanMeta?.stocks_count&&(
-            <span style={{fontSize:11,color:C.muted}}>
-              · <strong style={{color:C.accent}}>{scanMeta.stocks_count}</strong> stocks
-            </span>
+            <span style={{color:C.muted}}>· <strong style={{color:C.accent}}>{scanMeta.stocks_count}</strong></span>
           )}
           {scanMeta?.scan_type&&(
-            <span style={{padding:'2px 8px',borderRadius:20,fontSize:10,fontWeight:600,
+            <span style={{padding:'1px 6px',borderRadius:20,fontSize:9,fontWeight:600,
               background:C.accent+'22',color:C.accent}}>
-              {scanMeta.scan_type==='live'?'⚡ Live':scanMeta.scan_type==='batch_morning'?'🌅 Morning':'🌆 EOD'}
+              {scanMeta.scan_type==='live'?'⚡':scanMeta.scan_type==='batch_morning'?'🌅':'🌆'}
             </span>
           )}
         </div>
         {/* Controls */}
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
           {remaining!=null&&!loading&&(
-            <span style={{fontSize:11,color:C.muted}}>
-              Next: <span style={{color:C.accent,fontWeight:700}}>{mm}:{ss}</span>
+            <span style={{fontSize:10,color:C.muted}}>
+              <span style={{color:C.accent,fontWeight:700}}>{mm}:{ss}</span>
             </span>
           )}
           <button onClick={onRefresh} disabled={loading}
-            style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.accent}44`,
-              background:'transparent',color:C.accent,fontSize:11,fontWeight:600,cursor:'pointer'}}>
-            ↻ Now
+            style={{padding:'3px 8px',borderRadius:5,border:`1px solid ${C.accent}44`,
+              background:'transparent',color:C.accent,fontSize:10,fontWeight:600,cursor:'pointer'}}>
+            ↻
           </button>
           <button onClick={()=>setAutoRefresh(v=>!v)}
-            style={{padding:'4px 10px',borderRadius:6,
+            style={{padding:'3px 8px',borderRadius:5,
               border:`1px solid ${autoRefresh?C.green:C.border}`,
               background:autoRefresh?C.green+'22':'transparent',
-              color:autoRefresh?C.green:C.muted,fontSize:11,fontWeight:600,cursor:'pointer'}}>
-            {autoRefresh?'⏸ Auto ON':'▶ Auto OFF'}
+              color:autoRefresh?C.green:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
+            {autoRefresh?'⏸':'▶'}
           </button>
           <select value={refreshInterval} onChange={e=>setRefreshInterval(+e.target.value)}
             style={{padding:'4px 7px',background:C.card,border:`1px solid ${C.border}`,
@@ -426,12 +492,6 @@ function LastUpdatedBar({scanMeta,lastRefresh,loading,autoRefresh,setAutoRefresh
             <option value={600000}>10 min</option>
           </select>
         </div>
-      </div>
-      {/* Progress bar */}
-      <div style={{width:'100%',background:C.border,borderRadius:99,height:3,overflow:'hidden'}}>
-        <div style={{width:`${pct}%`,height:'100%',
-          background:loading?C.yellow:C.accent,
-          borderRadius:99,transition:'width 0.5s linear'}}/>
       </div>
     </div>
   )
@@ -470,8 +530,8 @@ function PresetFilterBar({active,setActive,stocks}){
     else if(p.id === 'ema9')     counts[p.id] = stocks.filter(s=>s.nearEMA9?.isNearEMA9).length
     else if(p.id === 'hy')       counts[p.id] = stocks.filter(s=>s.hy?.isHY).length
     else if(p.id === 'ht')       counts[p.id] = stocks.filter(s=>s.ht?.isHT).length
-    else if(p.id === 'rs90')     counts[p.id] = stocks.filter(s=>s.rs>=90).length
-    else if(p.id === 'rs80')     counts[p.id] = stocks.filter(s=>s.rs>=80).length
+    else if(p.id === 'rs90')     counts[p.id] = stocks.filter(s=>(s.rsTv??s.rs)>=90).length
+    else if(p.id === 'rs80')     counts[p.id] = stocks.filter(s=>(s.rsTv??s.rs)>=80).length
     else if(p.id === 'impr')     counts[p.id] = stocks.filter(s=>s.rsTrend?.trend==='improving').length
     else if(p.id === 'power')    counts[p.id] = stocks.filter(s=>s.pp?.isPP&&s.rs>=80).length
     else if(p.id === 's2')       counts[p.id] = stocks.filter(s=>calcWeinsteinStage(s).stage===2).length
@@ -760,7 +820,7 @@ function StockDetail({s}){
       {/* Stats */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         {[
-          ['RS Today',s.rs,rsColor(s.rs)],
+          ['RS-TV',s.rsTv??'—',s.rsTv!=null?rsColor(s.rsTv):C.muted],
           ['RS in Sector',s.rsSector??'—',s.rsSector!=null?rsColor(s.rsSector):C.muted],
           ['RS in Midcap',s.rsMidcap??'—',s.rsMidcap!=null?rsColor(s.rsMidcap):C.muted],
           ['RS in Smallcap',s.rsSmallcap??'—',s.rsSmallcap!=null?rsColor(s.rsSmallcap):C.muted],
@@ -865,7 +925,7 @@ function SortableHeader({label,sortKey,sortBy,sortDir,onSort,align='left'}){
 function DesktopRow({s,i}){
   const [open,setOpen]=useState(false)
   // Grid: # | Symbol+Sector+Badges | RS | Trend | Price | Chg% | PP 10d | RS 7d | expand
-  const COLS='32px 140px 50px 50px 50px 50px 55px 60px 75px 60px 120px 150px 95px 24px'
+  const COLS='32px 140px 55px 50px 50px 50px 55px 60px 75px 60px 120px 150px 90px 24px'
   return(
     <div style={{borderBottom:`1px solid ${C.border}22`}}>
       <div onClick={()=>setOpen(o=>!o)}
@@ -892,11 +952,17 @@ function DesktopRow({s,i}){
           </div>
         </div>
 
-        {/* RS (overall) */}
+        {/* RS-TV (TradingView / Lakshmi Mata formula — primary) */}
         <div style={{textAlign:'center'}}>
-          <div style={{fontWeight:900,fontSize:18,color:rsColor(s.rs),lineHeight:1}}>{s.rs}</div>
-          <div style={{fontSize:8,color:C.muted,marginTop:1}}>{rsLabel(s.rs)}</div>
+          {s.rsTv!=null?(
+            <>
+              <div style={{fontWeight:900,fontSize:18,color:rsColor(s.rsTv),lineHeight:1}}>{s.rsTv}</div>
+              <div style={{fontSize:7,color:C.teal,marginTop:1,fontWeight:700}}>TV</div>
+            </>
+          ):<span style={{color:C.border,fontSize:10}}>—</span>}
         </div>
+
+
 
         {/* RS within Midcap */}
         <div style={{textAlign:'center'}}>
@@ -1409,6 +1475,16 @@ const WL_KEY='pocketrs_watchlists'
 function loadWatchlists(){try{return JSON.parse(localStorage.getItem(WL_KEY)||'[]')}catch{return[]}}
 function saveWatchlists(wls){localStorage.setItem(WL_KEY,JSON.stringify(wls))}
 
+
+// ── Market open check for sidebar dot ────────────────────────────────
+function isMarketOpen(){
+  const ist = new Date(Date.now() + ((330 + new Date().getTimezoneOffset())*60000))
+  const day = ist.getDay()
+  if(day===0||day===6) return false
+  const mins = ist.getHours()*60 + ist.getMinutes()
+  return mins >= 555 && mins <= 930
+}
+
 // ── Main App ──────────────────────────────────────────────────────────
 export default function App(){
   const isMobile=useIsMobile()
@@ -1498,15 +1574,23 @@ export default function App(){
   const [weakSearch,setWeakSearch]=useState(''),[weakSigOnly,setWeakSigOnly]=useState(false)
 
   // ── DB-powered scan (reads from Supabase, pre-computed by live server) ──
+  const [indexData,setIndexData]=useState([])
+  const [historyDate,setHistoryDate]=useState(null) // null = live today, else 'YYYY-MM-DD'
+  const [availableDates,setAvailableDates]=useState([])
+
+  useEffect(()=>{
+    fetchAvailableHistoryDates().then(setAvailableDates)
+  },[])
+
   const runDBScan=useCallback(async()=>{
-    setLoading(true);setProgress(0);setProgressMsg('Loading from database…')
+    setLoading(true);setProgress(0);setProgressMsg(historyDate?`Loading ${historyDate}…`:'Loading from database…')
     try{
       const activeWlObj=watchlists.find(w=>w.id===activeWl)
       const syms=activeWlObj?.stocks||null
       const [dbStocks,dbSectors,meta]=await Promise.all([
-        fetchStocksFromDB({indexFilter,watchlistSyms:syms}),
-        fetchSectorsFromDB(),
-        fetchScanMeta(),
+        fetchStocksFromDB({indexFilter,watchlistSyms:syms,historyDate}),
+        fetchSectorsFromDB(historyDate),
+        historyDate?Promise.resolve(null):fetchScanMeta(),
       ])
       setStocks(dbStocks)
       setSectorData(dbSectors)
@@ -1518,7 +1602,7 @@ export default function App(){
       console.error(e)
     }
     setLoading(false)
-  },[indexFilter,activeWl,watchlists])
+  },[indexFilter,activeWl,watchlists,historyDate])
 
   const fetchStock=async(sym,tok)=>{
     const to=new Date().toISOString().split('T')[0]
@@ -1586,19 +1670,26 @@ export default function App(){
     setStocks(processed);setLastRefresh(Date.now());setLoading(false)
   },[session,indexFilter,weakThreshold,activeWl,watchlists])
 
-  // Auto-refresh from DB every 1 minute
+  // Auto-refresh from DB every 1 minute — disabled while viewing a past date
   useEffect(()=>{
     clearInterval(refreshTimer.current)
-    if(autoRefresh){
+    if(autoRefresh&&!historyDate){
       refreshTimer.current=setInterval(()=>runDBScan(),refreshInterval)
     }
     return()=>clearInterval(refreshTimer.current)
-  },[autoRefresh,refreshInterval,runDBScan])
+  },[autoRefresh,refreshInterval,runDBScan,historyDate])
 
-  // Load from DB on mount
+  // Load from DB on mount, and whenever the selected history date changes
   useEffect(()=>{
     if(session)runDBScan()
-  },[session])
+  },[session,historyDate])
+
+  // Load index dashboard whenever its tab is opened
+  useEffect(()=>{
+    if(session&&mainTab==='indices'){
+      fetchIndexDashboard().then(setIndexData).catch(e=>console.error('Index fetch:',e))
+    }
+  },[session,mainTab])
 
   // Filter helpers
   const applyPP=(list,f)=>f==='yes'?list.filter(s=>s.pp?.isPP):f==='no'?list.filter(s=>!s.pp?.isPP):list
@@ -1617,8 +1708,8 @@ export default function App(){
     if(presetFilter==='ema9'&&!s.nearEMA9?.isNearEMA9)return false
     if(presetFilter==='hy'&&!s.hy?.isHY)return false
     if(presetFilter==='ht'&&!s.ht?.isHT)return false
-    if(presetFilter==='rs90'&&s.rs<90)return false
-    if(presetFilter==='rs80'&&s.rs<80)return false
+    if(presetFilter==='rs90'&&(s.rsTv??s.rs)<90)return false
+    if(presetFilter==='rs80'&&(s.rsTv??s.rs)<80)return false
     if(presetFilter==='impr'&&s.rsTrend?.trend!=='improving')return false
     if(presetFilter==='power'&&!(s.pp?.isPP&&s.rs>=80))return false
     if(presetFilter==='s2'&&calcWeinsteinStage(s).stage!==2)return false
@@ -1633,6 +1724,7 @@ export default function App(){
     const dir = sortDir==='asc'?1:-1
     const getVal = (s,key)=>{
       if(key==='rs') return s.rs??-1
+      if(key==='rsTv') return s.rsTv??-1
       if(key==='rsMidcap') return s.rsMidcap??-1
       if(key==='rsSmallcap') return s.rsSmallcap??-1
       if(key==='rsMicrocap') return s.rsMicrocap??-1
@@ -1659,7 +1751,7 @@ export default function App(){
   const weakBase=stocks.filter(s=>s.weakRS.chg1d>=weakThreshold&&s.rs<50&&s.sym.toLowerCase().includes(weakSearch.toLowerCase())&&(!weakSigOnly||s.weakRS.isSignal)).sort((a,b)=>b.weakRS.chg1d-a.weakRS.chg1d)
   const displayedWeak=applyPP(weakBase,ppFilterWeak)
 
-  const tabs=[['rs','📊','RS'],['squeeze','🌀','Squeeze'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['weak','🚨','Weak'],['sector','🏭','Sectors'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
+  const tabs=[['rs','📊','RS'],['indices','🗂','Indices'],['squeeze','🌀','Squeeze'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['weak','🚨','Weak'],['sector','🏭','Sectors'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
 
   if(authLoading)return(
     <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -1674,9 +1766,186 @@ export default function App(){
 
   return(
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:"'Inter','SF Pro Display',sans-serif",
-      color:C.text,fontSize:13,paddingBottom:isMobile?72:0}}>
+      color:C.text,fontSize:13,display:'flex',flexDirection:'row'}}>
 
-      {/* Top bar */}
+      {/* ── Icon sidebar ── */}
+      {!isMobile&&(
+        <div style={{width:52,minWidth:52,background:C.card,borderRight:`1px solid ${C.border}`,
+          display:'flex',flexDirection:'column',alignItems:'center',
+          position:'sticky',top:0,height:'100vh',zIndex:40,paddingTop:8}}>
+
+          {/* Logo */}
+          <div style={{width:34,height:34,background:C.accent,borderRadius:9,
+            display:'flex',alignItems:'center',justifyContent:'center',
+            fontWeight:900,color:'#000',fontSize:16,marginBottom:16,flexShrink:0}}>L</div>
+
+          {/* Nav items */}
+          <div style={{flex:1,display:'flex',flexDirection:'column',gap:2,width:'100%',padding:'0 6px'}}>
+            {[
+              {id:'rs',      icon:'📊', label:'RS'},
+              {id:'indices', icon:'🗂',  label:'Indices'},
+              {id:'squeeze', icon:'🌀', label:'Squeeze'},
+              {id:'breakout',icon:'💥', label:'Break'},
+              {id:'52wl',    icon:'🎯', label:'52WL'},
+              {id:'weak',    icon:'🚨', label:'Weak'},
+            ].map(({id,icon,label})=>(
+              <div key={id} onClick={()=>setMainTab(id)}
+                title={label}
+                style={{width:'100%',padding:'8px 0',borderRadius:8,cursor:'pointer',
+                  display:'flex',flexDirection:'column',alignItems:'center',gap:2,
+                  background:mainTab===id?C.accent+'22':'transparent',
+                  border:mainTab===id?`1px solid ${C.accent}44`:'1px solid transparent',
+                  transition:'all 0.15s'}}>
+                <span style={{fontSize:16}}>{icon}</span>
+                <span style={{fontSize:8,fontWeight:mainTab===id?700:500,
+                  color:mainTab===id?C.accent:C.muted}}>{label}</span>
+              </div>
+            ))}
+
+            {/* Divider */}
+            <div style={{height:1,background:C.border,margin:'6px 4px'}}/>
+
+            {[
+              {id:'sector',   icon:'🏭', label:'Sectors'},
+              {id:'watchlist',icon:'📋', label:'Watch'},
+            ].map(({id,icon,label})=>(
+              <div key={id} onClick={()=>setMainTab(id)}
+                title={label}
+                style={{width:'100%',padding:'8px 0',borderRadius:8,cursor:'pointer',
+                  display:'flex',flexDirection:'column',alignItems:'center',gap:2,
+                  background:mainTab===id?C.accent+'22':'transparent',
+                  border:mainTab===id?`1px solid ${C.accent}44`:'1px solid transparent',
+                  transition:'all 0.15s'}}>
+                <span style={{fontSize:16}}>{icon}</span>
+                <span style={{fontSize:8,fontWeight:mainTab===id?700:500,
+                  color:mainTab===id?C.accent:C.muted}}>{label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Bottom: market status + settings */}
+          <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,
+            padding:'8px 6px',width:'100%'}}>
+            {/* Market open/closed dot */}
+            <div title={isMarketOpen()?'Market Open':'Market Closed'}
+              style={{width:8,height:8,borderRadius:'50%',
+                background:isMarketOpen()?C.green:C.muted,
+                boxShadow:isMarketOpen()?`0 0 6px ${C.green}`:'none',marginBottom:4}}/>
+            <div onClick={()=>setMainTab('settings')}
+              title="Account"
+              style={{width:'100%',padding:'8px 0',borderRadius:8,cursor:'pointer',
+                display:'flex',flexDirection:'column',alignItems:'center',gap:2,
+                background:mainTab==='settings'?C.accent+'22':'transparent',
+                border:mainTab==='settings'?`1px solid ${C.accent}44`:'1px solid transparent'}}>
+              <span style={{fontSize:16}}>⚙</span>
+              <span style={{fontSize:8,color:mainTab==='settings'?C.accent:C.muted}}>Account</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main area ── */}
+      <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,
+        paddingBottom:isMobile?72:0}}>
+
+        {/* Top bar */}
+        <div style={{borderBottom:`1px solid ${C.border}`,
+          padding:'9px 16px',
+          display:'flex',alignItems:'center',justifyContent:'space-between',
+          background:C.card,position:'sticky',top:0,zIndex:30,gap:10}}>
+
+          {/* Mobile menu + page title */}
+          <div style={{display:'flex',alignItems:'center',gap:8,minWidth:0}}>
+            {isMobile&&(
+              <div style={{width:28,height:28,background:C.accent,borderRadius:7,display:'flex',
+                alignItems:'center',justifyContent:'center',fontWeight:900,color:'#000',fontSize:13,flexShrink:0}}>L</div>
+            )}
+            <div style={{minWidth:0}}>
+              <div style={{fontWeight:700,fontSize:15,color:C.text,lineHeight:1.2}}>
+                {mainTab==='rs'?'RS Rating':mainTab==='indices'?'Indices':mainTab==='squeeze'?'Squeeze':
+                 mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
+                 mainTab==='weak'?'Weak RS':mainTab==='sector'?'Sectors':
+                 mainTab==='watchlist'?'Watchlist':'Account'}
+              </div>
+              {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1}}>
+                {session?.user?.email} · {scanLabel}
+              </div>}
+            </div>
+          </div>
+
+          {/* Controls */}
+          {mainTab!=='settings'&&mainTab!=='watchlist'&&(
+            <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
+
+              {/* Watchlist OR index selector */}
+              {!isMobile&&(activeWl?(
+                <button onClick={()=>setActiveWl(null)}
+                  style={{padding:'5px 10px',borderRadius:6,border:`1px solid ${C.accent}44`,
+                    background:C.accent+'22',color:C.accent,fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>
+                  📋 {activeWlObj?.name} ×
+                </button>
+              ):(
+                <select value={indexFilter} onChange={e=>setIndexFilter(e.target.value)}
+                  style={{padding:'5px 8px',background:C.card,border:`1px solid ${C.border}`,
+                    borderRadius:6,color:C.text,fontSize:11,outline:'none',cursor:'pointer'}}>
+                  <option value="all">All stocks</option>
+                  <option value="nifty50">Nifty 50</option>
+                  <option value="midcap">Midcap 150</option>
+                  <option value="smallcap">Smallcap 250</option>
+                  <option value="microcap">Microcap 250</option>
+                </select>
+              ))}
+
+              {/* History date picker */}
+              {!isMobile&&(
+                <select value={historyDate||''} onChange={e=>setHistoryDate(e.target.value||null)}
+                  style={{padding:'5px 8px',background:historyDate?C.purple+'22':C.card,
+                    border:`1px solid ${historyDate?C.purple+'66':C.border}`,
+                    borderRadius:6,color:historyDate?C.purple:C.text,fontSize:11,outline:'none',cursor:'pointer',
+                    fontWeight:historyDate?700:400}}>
+                  <option value="">📅 Today</option>
+                  {availableDates.map(d=>(
+                    <option key={d} value={d}>{new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</option>
+                  ))}
+                </select>
+              )}
+
+              {/* Auto refresh toggle */}
+              {lastRefresh&&!isMobile&&(
+                <button onClick={()=>setAutoRefresh(v=>!v)}
+                  style={{padding:'5px 10px',borderRadius:6,
+                    border:`1px solid ${autoRefresh?C.green:C.border}`,
+                    background:autoRefresh?C.green+'22':'transparent',
+                    color:autoRefresh?C.green:C.muted,fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>
+                  {autoRefresh?'⏸ Auto':'▶ Auto'}
+                </button>
+              )}
+
+              {/* Export to TradingView */}
+              {displayedRS&&displayedRS.length>0&&mainTab==='rs'&&(
+                <TVCopyPanel stocks={displayedRS} label={null} compact/>
+              )}
+
+              {/* Scan button */}
+              <button onClick={()=>runDBScan()} disabled={loading}
+                style={{padding:'6px 14px',borderRadius:6,border:'none',cursor:'pointer',
+                  background:loading?C.border:C.accent,color:loading?C.muted:'#000',
+                  fontWeight:700,fontSize:12,whiteSpace:'nowrap'}}>
+                {loading?`${progress}%…`:'🚀 Scan'}
+              </button>
+
+              {/* Demo */}
+              {!isMobile&&(
+                <button onClick={()=>runScan(true)} disabled={loading}
+                  style={{padding:'6px 10px',borderRadius:6,border:`1px solid ${C.border}`,
+                    background:'transparent',color:C.muted,fontWeight:600,fontSize:11,cursor:'pointer'}}>
+                  👁 Demo
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
       <div style={{borderBottom:`1px solid ${C.border}`,padding:isMobile?'11px 14px':'12px 18px',
         display:'flex',alignItems:'center',justifyContent:'space-between',
         background:C.card,position:'sticky',top:0,zIndex:30}}>
@@ -1710,12 +1979,23 @@ export default function App(){
               <select value={indexFilter} onChange={e=>setIndexFilter(e.target.value)}
                 style={{padding:'5px 8px',background:C.card,border:`1px solid ${C.border}`,
                   borderRadius:6,color:C.text,fontSize:11,outline:'none',cursor:'pointer'}}>
-                <option value="all">All Indices</option>
-                <option value="nifty50">Nifty 50</option>
-                <option value="midcap">Midcap</option>
-                <option value="smallcap">Smallcap</option>
+                <option value="microcap">Microcap</option>
               </select>
             )}
+            {/* History date picker — pick a past date to replay all scanners as of that day */}
+            <select value={historyDate||''} onChange={e=>setHistoryDate(e.target.value||null)}
+              title="View any past trading day's scanner results"
+              style={{padding:'5px 8px',background:historyDate?C.purple+'22':C.card,
+                border:`1px solid ${historyDate?C.purple+'66':C.border}`,
+                borderRadius:6,color:historyDate?C.purple:C.text,fontSize:11,outline:'none',cursor:'pointer',
+                fontWeight:historyDate?700:400}}>
+              <option value="">📅 Today (Live)</option>
+              {availableDates.map(d=>(
+                <option key={d} value={d}>
+                  {new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
+                </option>
+              ))}
+            </select>
             {lastRefresh&&(
               <>
                 <button onClick={()=>setAutoRefresh(v=>!v)}
@@ -1745,8 +2025,30 @@ export default function App(){
         )}
       </div>
 
-      {/* Content */}
-      <div style={{padding:isMobile?'12px':'14px',maxWidth:isMobile?'100%':1300,margin:'0 auto'}}>
+
+        {/* ── Page content ── */}
+        <div style={{padding:isMobile?'10px':'12px 16px',flex:1,overflowY:'auto'}}>
+
+
+        {/* History mode banner — unmistakable when not viewing live data */}
+        {historyDate&&(
+          <div style={{background:C.purple+'18',border:`1px solid ${C.purple}55`,borderRadius:10,
+            padding:'10px 14px',marginBottom:14,display:'flex',alignItems:'center',
+            justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontSize:16}}>📅</span>
+              <span style={{fontWeight:700,color:C.purple,fontSize:13}}>
+                Viewing history — {new Date(historyDate).toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}
+              </span>
+              <span style={{fontSize:11,color:C.muted}}>(not live, all scanners frozen as of this day's close)</span>
+            </div>
+            <button onClick={()=>setHistoryDate(null)}
+              style={{padding:'5px 12px',borderRadius:6,border:`1px solid ${C.purple}66`,
+                background:'transparent',color:C.purple,fontSize:11,fontWeight:700,cursor:'pointer'}}>
+              ← Back to Live
+            </button>
+          </div>
+        )}
 
         {/* ══ WATCHLIST TAB ══ */}
         {mainTab==='watchlist'&&(
@@ -1789,6 +2091,15 @@ export default function App(){
                     <option value="microcap">🔬 Microcap</option>
                   </select>
                 )}
+                <select value={historyDate||''} onChange={e=>setHistoryDate(e.target.value||null)}
+                  style={{padding:'8px',background:historyDate?C.purple+'22':C.card,
+                    border:`1px solid ${historyDate?C.purple+'66':C.border}`,borderRadius:8,
+                    color:historyDate?C.purple:C.text,fontSize:11,outline:'none',fontWeight:historyDate?700:400}}>
+                  <option value="">📅 Live</option>
+                  {availableDates.map(d=>(
+                    <option key={d} value={d}>{new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</option>
+                  ))}
+                </select>
                 <button onClick={()=>runDBScan()} disabled={loading}
                   style={{flex:1,padding:'12px',borderRadius:8,border:'none',cursor:'pointer',
                     background:loading?C.border:C.accent,color:loading?C.muted:'#000',fontWeight:700,fontSize:13}}>
@@ -1800,26 +2111,17 @@ export default function App(){
               </div>
             )}
 
-            {lastRefresh&&autoRefresh&&<RefreshBar lastRefresh={lastRefresh} interval={refreshInterval} loading={loading} onRefresh={()=>runScan(false)}/>}
-            {lastRefresh&&!autoRefresh&&(
-              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
-                padding:'10px 14px',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
-                <div style={{fontSize:12,color:C.muted}}>Last: <span style={{color:C.text,fontWeight:600}}>{fmtDT(lastRefresh)}</span></div>
-                <button onClick={()=>setAutoRefresh(true)}
-                  style={{padding:'5px 12px',borderRadius:6,border:`1px solid ${C.green}44`,
-                    background:'transparent',color:C.green,fontSize:11,fontWeight:600,cursor:'pointer'}}>▶ Enable Auto-refresh</button>
-              </div>
-            )}
-
-            {/* RS methodology legend */}
+            {/* RS methodology legend — compact single line */}
             {stocks.length>0&&(
-              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
-                padding:'10px 14px',marginBottom:12,fontSize:11,color:C.muted,lineHeight:1.7}}>
-                <strong style={{color:C.text}}>RS</strong> = percentile rank (1-99) vs ALL scanned stocks, weighted price performance (40% last 3mo + 20% each prior quarter) &nbsp;·&nbsp;
-                <strong style={{color:C.text}}>Mid/Small/Micro</strong> = same calc, ranked only against peers in that index &nbsp;·&nbsp;
-                <strong style={{color:C.text}}>Sector</strong> = ranked only against peers in the same sector &nbsp;·&nbsp;
-                <span style={{color:C.border}}>—</span> = stock not in that group or pool too small
-              </div>
+              <details style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
+                padding:'6px 12px',marginBottom:10,fontSize:11,color:C.muted}}>
+                <summary style={{cursor:'pointer',fontWeight:600,color:C.text}}>ℹ️ How RS is calculated — two methods</summary>
+                <div style={{marginTop:6,lineHeight:1.8}}>
+                  <strong style={{color:C.teal}}>RS-TV</strong> = Lakshmi Mata / TradingView formula — benchmark-relative (stock return minus Nifty's return), normalized by this stock's own 252-day min/max. Matches your Pine Script exactly. &nbsp;·&nbsp;
+                  <strong style={{color:C.text}}>Mid/Small/Micro/Sector</strong> = same TV formula, ranked vs peers in that group. &nbsp;·&nbsp;
+                  <span style={{color:C.border}}>—</span> = insufficient data
+                </div>
+              </details>
             )}
 
             {/* TV copy for full RS list */}
@@ -1856,11 +2158,6 @@ export default function App(){
                 <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>
                   <input placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)}
                     style={{flex:1,minWidth:100,padding:'8px 12px',background:C.card,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:13,outline:'none'}}/>
-                  <select value={sortBy} onChange={e=>setSortBy(e.target.value)}
-                    style={{padding:'8px 10px',background:C.card,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:12,outline:'none',cursor:'pointer'}}>
-                    <option value="rs">RS ↓</option><option value="slope">Improving ↓</option>
-                    <option value="pp10">PP 10d ↓</option><option value="chg">Day Chg</option><option value="sym">A–Z</option>
-                  </select>
                   <button onClick={()=>setShowFilters(v=>!v)}
                     style={{padding:'8px 14px',borderRadius:8,border:`1px solid ${showFilters?C.accent:C.border}`,
                       cursor:'pointer',fontSize:12,fontWeight:600,background:showFilters?C.accent+'22':'transparent',
@@ -1928,12 +2225,12 @@ export default function App(){
             {displayedRS.length>0&&(
               isMobile?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i}/>):(
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
-                  <div style={{display:'grid',gridTemplateColumns:'32px 140px 50px 50px 50px 50px 55px 60px 75px 60px 120px 150px 95px 24px',
+                  <div style={{display:'grid',gridTemplateColumns:'32px 140px 55px 50px 50px 50px 55px 60px 75px 60px 120px 150px 90px 24px',
                     padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
                     fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
                     <span style={{textAlign:'center',color:C.muted}}>#</span>
                     <SortableHeader label="Symbol" sortKey="sym" sortBy={sortBy} sortDir={sortDir} onSort={handleSort}/>
-                    <SortableHeader label="RS" sortKey="rs" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+                    <SortableHeader label="RS-TV" sortKey="rsTv" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
                     <SortableHeader label="Mid" sortKey="rsMidcap" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
                     <SortableHeader label="Small" sortKey="rsSmallcap" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
                     <SortableHeader label="Micro" sortKey="rsMicrocap" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
@@ -1949,6 +2246,173 @@ export default function App(){
                   {displayedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i}/>)}
                 </div>
               )
+            )}
+          </div>
+        )}
+
+        {/* ══ INDICES DASHBOARD ══ */}
+        {mainTab==='indices'&&(
+          <div>
+            <div style={{marginBottom:12}}>
+              <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>🗂 Index Performance Dashboard</div>
+              <div style={{fontSize:11,color:C.muted}}>
+                Daily · Weekly · Monthly · Quarterly · Yearly performance + RS-TV + Weinstein Stage for each index
+              </div>
+            </div>
+
+            {indexData.length===0?(
+              <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
+                <div style={{fontSize:36,marginBottom:10}}>🗂</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No index data yet</div>
+                <div style={{fontSize:12,marginTop:6}}>Data populates after the next scan cycle completes</div>
+              </div>
+            ):(
+              <>
+                {/* Summary strip */}
+                <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
+                  {[
+                    {l:'Stage 2 (Up)',   v:indexData.filter(i=>i.stage===2).length, c:C.green},
+                    {l:'Stage 1 (Base)', v:indexData.filter(i=>i.stage===1).length, c:C.yellow},
+                    {l:'Stage 3 (Top)',  v:indexData.filter(i=>i.stage===3).length, c:C.orange},
+                    {l:'Stage 4 (Down)', v:indexData.filter(i=>i.stage===4).length, c:C.red},
+                    {l:'RS-TV ≥ 70',     v:indexData.filter(i=>(i.rsTv||0)>=70).length,    c:C.accent},
+                    {l:'RS-TV < 40',     v:indexData.filter(i=>i.rsTv!=null&&i.rsTv<40).length, c:C.red},
+                  ].map(({l,v,c})=>(
+                    <div key={l} style={{background:C.card,border:`1px solid ${c}33`,
+                      borderRadius:8,padding:'8px 14px',textAlign:'center',minWidth:80}}>
+                      <div style={{fontWeight:800,fontSize:20,color:c}}>{v}</div>
+                      <div style={{fontSize:9,color:C.muted,marginTop:2}}>{l}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Index cards grid */}
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:10}}>
+                  {indexData.map(idx=>{
+                    const stageColor={1:C.yellow,2:C.green,3:C.orange,4:C.red}[idx.stage]||C.muted
+                    const rsc = idx.rsTv!=null?rsColor(idx.rsTv):C.muted
+                    const chgColor = v => v>=0?C.green:C.red
+                    const fmtChg = v => v!=null?`${v>=0?'+':''}${v.toFixed(2)}%`:'—'
+                    return(
+                      <div key={idx.name} style={{background:C.card,
+                        border:`1px solid ${stageColor}44`,borderRadius:12,padding:'14px'}}>
+
+                        {/* Header row */}
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+                          <div>
+                            <div style={{fontWeight:800,fontSize:15}}>{idx.name}</div>
+                            <div style={{fontSize:11,color:C.muted,marginTop:2}}>
+                              ₹{idx.lastPrice?.toLocaleString('en-IN')}
+                            </div>
+                            <div style={{display:'flex',gap:6,marginTop:6,flexWrap:'wrap'}}>
+                              <div style={{padding:'2px 8px',borderRadius:5,fontSize:10,fontWeight:700,
+                                background:stageColor+'22',color:stageColor}}>
+                                {idx.stageLabel}
+                              </div>
+                              {idx.aboveMa10!=null&&(
+                                <div style={{padding:'2px 8px',borderRadius:5,fontSize:10,fontWeight:600,
+                                  background:(idx.aboveMa10?C.green:C.red)+'18',
+                                  color:idx.aboveMa10?C.green:C.red}}>
+                                  {idx.aboveMa10?'↑ MA10':'↓ MA10'}
+                                </div>
+                              )}
+                              {idx.aboveMa30!=null&&(
+                                <div style={{padding:'2px 8px',borderRadius:5,fontSize:10,fontWeight:600,
+                                  background:(idx.aboveMa30?C.green:C.red)+'18',
+                                  color:idx.aboveMa30?C.green:C.red}}>
+                                  {idx.aboveMa30?'↑ MA30':'↓ MA30'}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{textAlign:'center'}}>
+                            <div style={{fontWeight:900,fontSize:28,color:rsc,lineHeight:1}}>
+                              {idx.rsTv??'—'}
+                            </div>
+                            <div style={{fontSize:9,color:C.teal,fontWeight:700}}>RS-TV</div>
+                          </div>
+                        </div>
+
+                        {/* Performance grid: Daily / Weekly / Monthly / Quarterly / Yearly */}
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:4,marginBottom:10}}>
+                          {[
+                            ['1D', idx.chgD],
+                            ['1W', idx.chgW],
+                            ['1M', idx.chgM],
+                            ['3M', idx.chgQ],
+                            ['1Y', idx.chgY],
+                          ].map(([label,val])=>(
+                            <div key={label} style={{background:C.bg,borderRadius:6,padding:'6px 4px',textAlign:'center'}}>
+                              <div style={{fontSize:8,color:C.muted,marginBottom:2}}>{label}</div>
+                              <div style={{fontWeight:700,fontSize:12,color:val!=null?chgColor(val):C.muted}}>
+                                {fmtChg(val)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* 52W range bar */}
+                        <div style={{marginBottom:8}}>
+                          <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:C.muted,marginBottom:3}}>
+                            <span>52W Low: ₹{idx.low52w?.toLocaleString('en-IN')}</span>
+                            <span style={{color:idx.pctFromHigh>=-5?C.green:C.yellow}}>
+                              {idx.pctFromHigh?.toFixed(1)}% from high
+                            </span>
+                            <span>52W High: ₹{idx.high52w?.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div style={{width:'100%',background:C.border,borderRadius:99,height:4,overflow:'hidden'}}>
+                            <div style={{
+                              width:`${Math.max(2,Math.min(100,100+(idx.pctFromHigh||0)))}%`,
+                              height:'100%',background:rsColor(idx.rsTv||50),borderRadius:99
+                            }}/>
+                          </div>
+                        </div>
+
+                        {/* Top/Bottom constituent stocks (where available) */}
+                        {(idx.topStocks?.length>0||idx.botStocks?.length>0)&&(
+                          <div style={{display:'flex',gap:8}}>
+                            {idx.topStocks?.length>0&&(
+                              <div style={{flex:1}}>
+                                <div style={{fontSize:9,color:C.green,fontWeight:700,marginBottom:4}}>
+                                  TOP RS
+                                </div>
+                                {idx.topStocks.map(s=>(
+                                  <div key={s.sym} style={{display:'flex',justifyContent:'space-between',
+                                    fontSize:10,marginBottom:2}}>
+                                    <span style={{color:C.text,fontWeight:600}}>{s.sym}</span>
+                                    <span style={{color:rsColor(s.rs),fontWeight:700}}>{s.rs}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {idx.botStocks?.length>0&&(
+                              <div style={{flex:1}}>
+                                <div style={{fontSize:9,color:C.red,fontWeight:700,marginBottom:4}}>
+                                  BOTTOM RS
+                                </div>
+                                {idx.botStocks.map(s=>(
+                                  <div key={s.sym} style={{display:'flex',justifyContent:'space-between',
+                                    fontSize:10,marginBottom:2}}>
+                                    <span style={{color:C.text,fontWeight:600}}>{s.sym}</span>
+                                    <span style={{color:rsColor(s.rs),fontWeight:700}}>{s.rs}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Last updated */}
+                        <div style={{fontSize:9,color:C.muted,marginTop:8,textAlign:'right'}}>
+                          Updated: {idx.lastUpdated?new Date(idx.lastUpdated).toLocaleString('en-IN',{
+                            day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'
+                          }):'—'}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
             )}
           </div>
         )}
@@ -2404,31 +2868,29 @@ export default function App(){
         )}
       </div>
 
+
+        </div>
+      </div>
+
       {/* Mobile bottom nav */}
       {isMobile&&(
         <div style={{position:'fixed',bottom:0,left:0,right:0,background:C.card,
           borderTop:`1px solid ${C.border}`,display:'flex',zIndex:40,
           paddingBottom:'env(safe-area-inset-bottom)'}}>
-          {tabs.map(([t,icon,label])=>(
+          {[
+            ['rs','📊','RS'],['indices','🗂','Indices'],['52wl','🎯','52WL'],
+            ['sector','🏭','Sectors'],['settings','⚙','Account']
+          ].map(([t,icon,label])=>(
             <button key={t} onClick={()=>setMainTab(t)}
-              style={{flex:1,padding:'10px 4px 8px',background:'transparent',border:'none',
-                cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3}}>
-              <span style={{fontSize:18}}>{icon}</span>
+              style={{flex:1,padding:'8px 2px 6px',background:'transparent',border:'none',
+                cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+              <span style={{fontSize:16}}>{icon}</span>
               <span style={{fontSize:9,fontWeight:600,color:mainTab===t?C.accent:C.muted}}>{label}</span>
-              {mainTab===t&&<div style={{width:18,height:2,background:C.accent,borderRadius:99}}/>}
+              {mainTab===t&&<div style={{width:16,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           ))}
         </div>
       )}
-
-      <style>{`
-        input[type=range]::-webkit-slider-thumb{appearance:none;width:18px;height:18px;
-          border-radius:50%;background:#00e5b0;border:2px solid #080c14;cursor:pointer;box-shadow:0 0 0 3px #00e5b022;}
-        input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#00e5b0;border:2px solid #080c14;cursor:pointer;}
-        *{-webkit-tap-highlight-color:transparent;}
-        @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-      `}</style>
     </div>
   )
 }
