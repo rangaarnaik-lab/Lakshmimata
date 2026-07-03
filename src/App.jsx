@@ -1845,8 +1845,7 @@ export default function App(){
       )}
 
       {/* ── Main area ── */}
-      <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,
-        paddingBottom:isMobile?72:0}}>
+      <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,paddingBottom:isMobile?72:0}}>
 
         {/* Top bar */}
         <div style={{borderBottom:`1px solid ${C.border}`,
@@ -1946,89 +1945,8 @@ export default function App(){
           )}
         </div>
 
-      <div style={{borderBottom:`1px solid ${C.border}`,padding:isMobile?'11px 14px':'12px 18px',
-        display:'flex',alignItems:'center',justifyContent:'space-between',
-        background:C.card,position:'sticky',top:0,zIndex:30}}>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <div style={{width:28,height:28,background:C.accent,borderRadius:7,display:'flex',
-            alignItems:'center',justifyContent:'center',fontWeight:900,color:'#000',fontSize:13}}>P</div>
-          <div>
-            <div style={{fontWeight:800,fontSize:isMobile?13:15,letterSpacing:'-0.03em'}}>Lakshmimata</div>
-            {!isMobile&&<div style={{fontSize:10,color:C.muted}}>{scanLabel} · {session.user.email}</div>}
-          </div>
-        </div>
-        {!isMobile&&(
-          <div style={{display:'flex',gap:5}}>
-            {tabs.map(([t,,label])=>(
-              <button key={t} onClick={()=>setMainTab(t)}
-                style={{padding:'6px 13px',borderRadius:6,border:'none',cursor:'pointer',fontSize:12,fontWeight:600,
-                  background:mainTab===t?C.accent:'transparent',color:mainTab===t?'#000':C.muted}}>{label}</button>
-            ))}
-          </div>
-        )}
-        {!isMobile&&mainTab!=='settings'&&mainTab!=='watchlist'&&(
-          <div style={{display:'flex',gap:8,alignItems:'center'}}>
-            {/* Index OR watchlist selector */}
-            {activeWl?(
-              <button onClick={()=>setActiveWl(null)}
-                style={{padding:'5px 12px',borderRadius:6,border:`1px solid ${C.accent}44`,
-                  background:C.accent+'22',color:C.accent,fontSize:11,fontWeight:600,cursor:'pointer'}}>
-                📋 {activeWlObj?.name} ×
-              </button>
-            ):(
-              <select value={indexFilter} onChange={e=>setIndexFilter(e.target.value)}
-                style={{padding:'5px 8px',background:C.card,border:`1px solid ${C.border}`,
-                  borderRadius:6,color:C.text,fontSize:11,outline:'none',cursor:'pointer'}}>
-                <option value="microcap">Microcap</option>
-              </select>
-            )}
-            {/* History date picker — pick a past date to replay all scanners as of that day */}
-            <select value={historyDate||''} onChange={e=>setHistoryDate(e.target.value||null)}
-              title="View any past trading day's scanner results"
-              style={{padding:'5px 8px',background:historyDate?C.purple+'22':C.card,
-                border:`1px solid ${historyDate?C.purple+'66':C.border}`,
-                borderRadius:6,color:historyDate?C.purple:C.text,fontSize:11,outline:'none',cursor:'pointer',
-                fontWeight:historyDate?700:400}}>
-              <option value="">📅 Today (Live)</option>
-              {availableDates.map(d=>(
-                <option key={d} value={d}>
-                  {new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
-                </option>
-              ))}
-            </select>
-            {lastRefresh&&(
-              <>
-                <button onClick={()=>setAutoRefresh(v=>!v)}
-                  style={{padding:'5px 11px',borderRadius:6,border:`1px solid ${autoRefresh?C.green:C.border}`,
-                    background:autoRefresh?C.green+'22':'transparent',color:autoRefresh?C.green:C.muted,
-                    fontSize:11,fontWeight:600,cursor:'pointer'}}>
-                  {autoRefresh?'⏸ Auto':'▶ Auto'}
-                </button>
-                <select value={refreshInterval} onChange={e=>setRefreshInterval(+e.target.value)}
-                  style={{padding:'5px 8px',background:C.card,border:`1px solid ${C.border}`,
-                    borderRadius:6,color:C.text,fontSize:11,outline:'none',cursor:'pointer'}}>
-                  {REFRESH_OPTIONS.map(({label,ms})=><option key={ms} value={ms}>{label}</option>)}
-                </select>
-              </>
-            )}
-            <button onClick={()=>runDBScan()} disabled={loading}
-              style={{padding:'7px 14px',borderRadius:6,border:'none',cursor:'pointer',
-                background:loading?C.border:C.accent,color:loading?C.muted:'#000',fontWeight:700,fontSize:12}}>
-              {loading?`${progress}%…`:'🚀 Scan'}
-            </button>
-            <button onClick={()=>runScan(true)} disabled={loading}
-              style={{padding:'7px 12px',borderRadius:6,border:`1px solid ${C.border}`,
-                background:'transparent',color:C.muted,fontWeight:600,fontSize:11,cursor:'pointer'}}>
-              👁 Demo
-            </button>
-          </div>
-        )}
-      </div>
-
-
         {/* ── Page content ── */}
         <div style={{padding:isMobile?'10px':'12px 16px',flex:1,overflowY:'auto'}}>
-
 
         {/* History mode banner — unmistakable when not viewing live data */}
         {historyDate&&(
@@ -2866,9 +2784,9 @@ export default function App(){
         {mainTab==='settings'&&(
           <SettingsPanel session={session} onUpdate={s=>setSession(s)} onLogout={()=>setSession(null)}/>
         )}
-      </div>
-      </div>
 
+      </div>
+      </div>
       {/* Mobile bottom nav */}
       {isMobile&&(
         <div style={{position:'fixed',bottom:0,left:0,right:0,background:C.card,
