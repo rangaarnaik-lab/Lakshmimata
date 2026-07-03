@@ -959,37 +959,47 @@ function DesktopRow({s,i}){
               <div style={{fontWeight:900,fontSize:18,color:rsColor(s.rsTv),lineHeight:1}}>{s.rsTv}</div>
               <div style={{fontSize:7,color:C.teal,marginTop:1,fontWeight:700}}>TV</div>
             </>
-          ):<span style={{color:C.border,fontSize:10}}>—</span>}
+          ):<span style={{color:C.muted,fontSize:9}} title="RS-TV needs 504+ days of price history">N/A</span>}
         </div>
 
-
-
         {/* RS within Midcap */}
-        <div style={{textAlign:'center'}}>
+        <div style={{textAlign:'center'}} title={s.rsMidcap!=null?`RS vs Midcap 150 peers: ${s.rsMidcap}`:'Not in Nifty Midcap 150'}>
           {s.rsMidcap!=null?(
-            <div style={{fontWeight:800,fontSize:14,color:rsColor(s.rsMidcap)}}>{s.rsMidcap}</div>
-          ):<span style={{color:C.border,fontSize:11}}>—</span>}
+            <>
+              <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsMidcap)}}>{s.rsMidcap}</div>
+              <div style={{fontSize:7,color:C.blue,marginTop:1,fontWeight:600}}>MID</div>
+            </>
+          ):<span style={{color:C.border,fontSize:9}}>—</span>}
         </div>
 
         {/* RS within Smallcap */}
-        <div style={{textAlign:'center'}}>
+        <div style={{textAlign:'center'}} title={s.rsSmallcap!=null?`RS vs Smallcap 250 peers: ${s.rsSmallcap}`:'Not in Nifty Smallcap 250'}>
           {s.rsSmallcap!=null?(
-            <div style={{fontWeight:800,fontSize:14,color:rsColor(s.rsSmallcap)}}>{s.rsSmallcap}</div>
-          ):<span style={{color:C.border,fontSize:11}}>—</span>}
+            <>
+              <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsSmallcap)}}>{s.rsSmallcap}</div>
+              <div style={{fontSize:7,color:C.yellow,marginTop:1,fontWeight:600}}>SML</div>
+            </>
+          ):<span style={{color:C.border,fontSize:9}}>—</span>}
         </div>
 
         {/* RS within Microcap */}
-        <div style={{textAlign:'center'}}>
+        <div style={{textAlign:'center'}} title={s.rsMicrocap!=null?`RS vs Microcap 250 peers: ${s.rsMicrocap}`:'Not in Nifty Microcap 250'}>
           {s.rsMicrocap!=null?(
-            <div style={{fontWeight:800,fontSize:14,color:rsColor(s.rsMicrocap)}}>{s.rsMicrocap}</div>
-          ):<span style={{color:C.border,fontSize:11}}>—</span>}
+            <>
+              <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsMicrocap)}}>{s.rsMicrocap}</div>
+              <div style={{fontSize:7,color:C.purple,marginTop:1,fontWeight:600}}>MCR</div>
+            </>
+          ):<span style={{color:C.border,fontSize:9}}>—</span>}
         </div>
 
         {/* RS within Sector */}
-        <div style={{textAlign:'center'}}>
+        <div style={{textAlign:'center'}} title={s.rsSector!=null?`RS vs ${s.sector} sector peers: ${s.rsSector}`:'Sector pool too small (<5 stocks)'}>
           {s.rsSector!=null?(
-            <div style={{fontWeight:800,fontSize:14,color:rsColor(s.rsSector)}}>{s.rsSector}</div>
-          ):<span style={{color:C.border,fontSize:11}}>—</span>}
+            <>
+              <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsSector)}}>{s.rsSector}</div>
+              <div style={{fontSize:7,color:C.orange,marginTop:1,fontWeight:600}}>SEC</div>
+            </>
+          ):<span style={{color:C.border,fontSize:9}}>—</span>}
         </div>
 
         {/* Slope/Trend */}
@@ -2149,10 +2159,22 @@ export default function App(){
                     <span style={{textAlign:'center',color:C.muted}}>#</span>
                     <SortableHeader label="Symbol" sortKey="sym" sortBy={sortBy} sortDir={sortDir} onSort={handleSort}/>
                     <SortableHeader label="RS-TV" sortKey="rsTv" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
-                    <SortableHeader label="Mid" sortKey="rsMidcap" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
-                    <SortableHeader label="Small" sortKey="rsSmallcap" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
-                    <SortableHeader label="Micro" sortKey="rsMicrocap" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
-                    <SortableHeader label="Sector" sortKey="rsSector" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+                    <div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsMidcap')}>
+                      <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsMidcap'?C.accent:C.muted}}>MID ↕</div>
+                      <div style={{fontSize:7,color:C.blue,fontWeight:600}}>Midcap</div>
+                    </div>
+                    <div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsSmallcap')}>
+                      <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsSmallcap'?C.accent:C.muted}}>SML ↕</div>
+                      <div style={{fontSize:7,color:C.yellow,fontWeight:600}}>Small</div>
+                    </div>
+                    <div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsMicrocap')}>
+                      <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsMicrocap'?C.accent:C.muted}}>MCR ↕</div>
+                      <div style={{fontSize:7,color:C.purple,fontWeight:600}}>Micro</div>
+                    </div>
+                    <div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsSector')}>
+                      <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsSector'?C.accent:C.muted}}>SEC ↕</div>
+                      <div style={{fontSize:7,color:C.orange,fontWeight:600}}>Sector</div>
+                    </div>
                     <SortableHeader label="Trend" sortKey="slope" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
                     <SortableHeader label="Price" sortKey="last" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>
                     <SortableHeader label="Chg%" sortKey="chg" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
