@@ -2867,9 +2867,6 @@ export default function App(){
           <SettingsPanel session={session} onUpdate={s=>setSession(s)} onLogout={()=>setSession(null)}/>
         )}
       </div>
-
-
-        </div>
       </div>
 
       {/* Mobile bottom nav */}
