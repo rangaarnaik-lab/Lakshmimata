@@ -2859,6 +2859,18 @@ export default function App(){
                 </>
               )
             })()}
+          {/* Historical Breadth Charts */}
+          <div style={{marginTop:16}}>
+            <div style={{fontWeight:700,fontSize:14,color:C.text,marginBottom:2}}>
+              📅 Historical Trends — Last 90 Days
+            </div>
+            <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+              {(breadthData||[]).length>1
+                ?`Showing ${(breadthData||[]).length} trading days`
+                :'Historical data builds daily — check back tomorrow'}
+            </div>
+            <BreadthCharts history={breadthData||[]}/>
+          </div>
           </div>
         )}
 
