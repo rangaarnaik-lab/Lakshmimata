@@ -2882,22 +2882,12 @@ export default function App(){
           <div style={{padding:isMobile?'10px':'12px 16px'}}>
 
             {/* Timeframe tabs */}
-            {(()=>{
-              const [sqTab,setSqTab]=window._sqTabState||(window._sqTabState=[useState('daily')])[0]
-                ? window._sqTabState : ['daily',()=>{}]
 
-              const daily   = stocks.filter(s=>s.inSqueeze||s.squeezeFired)
-              const weekly  = stocks.filter(s=>s.sqWeeklyIn||s.sqWeeklyFired)
-              const hourly  = stocks.filter(s=>s.sqHourlyIn||s.sqHourlyFired)
-              const allFired= stocks.filter(s=>s.sqFiredBullish||s.sqFiredBearish||s.sqWeeklyBullish||s.sqHourlyBullish)
-
-              return null
-            })()}
 
             {/* Use local state via ref trick */}
             {(()=>{
-              const [sqTf,setSqTf] = useState('daily')
-              window.__setSqTf = setSqTf
+              const sqTf = sqTab
+              const setSqTf = setSqTab
 
               const filterStocks = (tf) => {
                 if(tf==='daily')  return stocks.filter(s=>s.inSqueeze||s.squeezeFired)
@@ -2907,7 +2897,7 @@ export default function App(){
                 return []
               }
 
-              const sqStocks = filterStocks(sqTf)
+              const sqStocks = filterStocks(sqTab)
               const firedNow = stocks.filter(s=>s.sqFiredBullish||s.sqFiredBearish)
               const multiTF  = stocks.filter(s=>
                 (s.inSqueeze||s.sqWeeklyIn)&&(s.inSqueeze&&s.sqWeeklyIn)
@@ -2952,11 +2942,11 @@ export default function App(){
                       {id:'hourly', label:'⏱ Hourly',        count:stocks.filter(s=>s.sqHourlyIn).length,    c:C.yellow},
                       {id:'multi',  label:'⭐ Multi-TF',      count:multiTF.length,                           c:C.accent},
                     ].map(({id,label,count,c})=>(
-                      <button key={id} onClick={()=>setSqTf(id)}
+                      <button key={id} onClick={()=>setSqTab(id)}
                         style={{padding:'6px 12px',borderRadius:7,cursor:'pointer',
-                          border:`1px solid ${sqTf===id?c:C.border}`,
-                          background:sqTf===id?c+'22':'transparent',
-                          color:sqTf===id?c:C.muted,fontSize:11,fontWeight:sqTf===id?700:400}}>
+                          border:`1px solid ${sqTab===id?c:C.border}`,
+                          background:sqTab===id?c+'22':'transparent',
+                          color:sqTab===id?c:C.muted,fontSize:11,fontWeight:sqTab===id?700:400}}>
                         {label}
                         <span style={{marginLeft:5,background:c+'33',color:c,
                           padding:'1px 5px',borderRadius:10,fontSize:10}}>{count}</span>
@@ -2965,7 +2955,7 @@ export default function App(){
                   </div>
 
                   {/* Fired Now — special view */}
-                  {sqTf==='fired'&&(
+                  {sqTab==='fired'&&(
                     <div>
                       <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:10}}>
                         🟢 Squeeze Fired — Breaking Out Now
@@ -3068,19 +3058,19 @@ export default function App(){
                   )}
 
                   {/* Daily / Weekly / Hourly / Multi-TF stock lists */}
-                  {sqTf!=='fired'&&(
+                  {sqTab!=='fired'&&(
                     <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:8}}>
-                      {(sqTf==='multi'?multiTF:filterStocks(sqTf))
+                      {(sqTab==='multi'?multiTF:filterStocks(sqTab))
                         .sort((a,b)=>(b.sqStrength||0)-(a.sqStrength||0))
                         .map(s=>{
-                          const inSq = sqTf==='weekly'?s.sqWeeklyIn:
-                                       sqTf==='hourly'?s.sqHourlyIn:s.inSqueeze
-                          const days = sqTf==='weekly'?s.sqWeeklyDays:
-                                       sqTf==='hourly'?s.sqHourlyDays:s.squeezeDays
-                          const mom  = sqTf==='weekly'?s.sqWeeklyMom:
-                                       sqTf==='hourly'?s.sqHourlyMom:s.sqMomentum
-                          const momDir=sqTf==='weekly'?s.sqWeeklyMomDir:
-                                       sqTf==='hourly'?s.sqHourlyMomDir:s.sqMomentumDir
+                          const inSq = sqTab==='weekly'?s.sqWeeklyIn:
+                                       sqTab==='hourly'?s.sqHourlyIn:s.inSqueeze
+                          const days = sqTab==='weekly'?s.sqWeeklyDays:
+                                       sqTab==='hourly'?s.sqHourlyDays:s.squeezeDays
+                          const mom  = sqTab==='weekly'?s.sqWeeklyMom:
+                                       sqTab==='hourly'?s.sqHourlyMom:s.sqMomentum
+                          const momDir=sqTab==='weekly'?s.sqWeeklyMomDir:
+                                       sqTab==='hourly'?s.sqHourlyMomDir:s.sqMomentumDir
                           return(
                             <div key={s.sym} style={{background:C.card,
                               border:`1px solid ${inSq?C.red:C.green}33`,
@@ -3113,13 +3103,13 @@ export default function App(){
                                   background:C.card,color:C.muted,border:`1px solid ${C.border}`}}>
                                   {days}d
                                 </span>
-                                {sqTf==='multi'&&(
+                                {sqTab==='multi'&&(
                                   <span style={{padding:'2px 7px',borderRadius:4,fontSize:9,fontWeight:600,
                                     background:C.accent+'18',color:C.accent}}>⭐ D+W</span>
                                 )}
                               </div>
                               {/* Dots */}
-                              {s.sqDotsD&&s.sqDotsD.length>0&&sqTf==='daily'&&(
+                              {s.sqDotsD&&s.sqDotsD.length>0&&sqTab==='daily'&&(
                                 <div style={{display:'flex',gap:2,alignItems:'center',marginBottom:4}}>
                                   {s.sqDotsD.slice(-15).map((dot,i)=>(
                                     <div key={i} style={{width:6,height:6,borderRadius:'50%',
@@ -3510,6 +3500,187 @@ export default function App(){
             />
 
             <SectorPanel sectorData={sectorData} isMobile={isMobile}/>
+          </div>
+        )}
+
+        {/* ══ PORTFOLIO ══ */}
+        {mainTab==='portfolio'&&(
+          <div style={{padding:isMobile?'10px':'12px 16px'}}>
+            <div style={{marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:16}}>Portfolio Tracker</div>
+                <div style={{fontSize:11,color:C.muted}}>Track holdings · Stage exit signals · RS monitoring</div>
+              </div>
+              <button onClick={()=>{
+                const sym=prompt('Enter NSE symbol (e.g. RELIANCE):')?.toUpperCase().trim()
+                if(sym&&!portfolioHoldings.find(h=>h.sym===sym))
+                  setPortfolioHoldings(h=>[...h,{sym,addedAt:new Date().toISOString()}])
+              }} style={{padding:'7px 14px',borderRadius:7,border:'none',
+                background:C.accent,color:'#000',fontWeight:700,fontSize:12,cursor:'pointer'}}>
+                + Add Stock
+              </button>
+            </div>
+            {portfolioHoldings.length===0?(
+              <div style={{textAlign:'center',padding:'60px 20px',color:C.muted}}>
+                <div style={{fontSize:36,marginBottom:10}}>💼</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No holdings yet</div>
+                <div style={{fontSize:12,marginTop:6}}>Click + Add Stock to start tracking</div>
+              </div>
+            ):(
+              <div>
+                {portfolioHoldings.map(h=>{
+                  const s=stocks.find(x=>x.sym===h.sym)
+                  const stage=s?calcWeinsteinStage(s):null
+                  const danger=stage&&(stage.stage===3||stage.stage===4)
+                  return(
+                    <div key={h.sym} style={{background:C.card,
+                      border:`1px solid ${danger?C.red+'55':C.divider}`,
+                      borderRadius:10,padding:'14px',marginBottom:8,
+                      display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
+                      <div style={{display:'flex',alignItems:'center',gap:12,flex:1,minWidth:0}}>
+                        <div>
+                          <div onClick={()=>s&&setChartSym(s.sym)}
+                            style={{fontWeight:700,fontSize:14,color:C.accent,cursor:'pointer'}}>
+                            {h.sym}
+                          </div>
+                          <div style={{fontSize:10,color:C.muted,marginTop:1}}>{s?.sector||'—'}</div>
+                        </div>
+                        {s&&(
+                          <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                            <div>
+                              <div style={{fontWeight:700,fontSize:18,
+                                color:(s.rsTv||s.rs)>=90?C.green:(s.rsTv||s.rs)>=70?C.accent:C.yellow}}>
+                                {s.rsTv||s.rs||'—'}
+                              </div>
+                              <div style={{fontSize:8,color:C.teal}}>RS-TV</div>
+                            </div>
+                            {stage&&<span style={{padding:'2px 6px',borderRadius:3,fontSize:9,fontWeight:700,
+                              background:{1:C.yellow,2:C.green,3:C.orange,4:C.red}[stage.stage]+'18',
+                              color:{1:C.yellow,2:C.green,3:C.orange,4:C.red}[stage.stage]}}>
+                              {stage.label}
+                            </span>}
+                            {danger&&<span style={{padding:'3px 8px',borderRadius:5,fontSize:10,
+                              fontWeight:700,background:C.red+'18',color:C.red,
+                              border:`1px solid ${C.red}44`}}>⚠️ EXIT</span>}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                        {s&&<>
+                          <span style={{fontWeight:600,fontSize:13}}>₹{s.last?.toLocaleString('en-IN')}</span>
+                          <span style={{fontWeight:700,fontSize:12,color:s.chg>=0?C.green:C.red}}>
+                            {s.chg>=0?'+':''}{s.chg?.toFixed(2)}%
+                          </span>
+                        </>}
+                        <button onClick={()=>setPortfolioHoldings(h2=>h2.filter(x=>x.sym!==h.sym))}
+                          style={{background:'transparent',border:`1px solid ${C.border}`,
+                            color:C.muted,fontSize:12,padding:'3px 8px',borderRadius:5,cursor:'pointer'}}>
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ COMPARE ══ */}
+        {mainTab==='compare'&&(
+          <div style={{padding:isMobile?'10px':'12px 16px'}}>
+            <div style={{marginBottom:12}}>
+              <div style={{fontWeight:700,fontSize:16}}>Stock Comparison</div>
+              <div style={{fontSize:11,color:C.muted}}>Compare up to 4 stocks side by side</div>
+            </div>
+            <div style={{display:'flex',gap:8,marginBottom:14}}>
+              <input value={compareInput} onChange={e=>setCompareInput(e.target.value.toUpperCase())}
+                onKeyDown={e=>{
+                  if(e.key==='Enter'&&compareInput.trim()&&compareSyms.length<4){
+                    setCompareSyms(s=>[...new Set([...s,compareInput.trim()])])
+                    setCompareInput('')
+                  }
+                }}
+                placeholder="Type symbol + Enter (max 4)"
+                style={{flex:1,padding:'8px 12px',background:C.card,
+                  border:`1px solid ${C.border}`,borderRadius:7,
+                  color:C.text,fontSize:12,outline:'none'}}/>
+              <button onClick={()=>setCompareSyms([])}
+                style={{padding:'8px 14px',borderRadius:7,border:`1px solid ${C.border}`,
+                  background:'transparent',color:C.muted,fontSize:12,cursor:'pointer'}}>
+                Clear
+              </button>
+            </div>
+            {compareSyms.length===0?(
+              <div style={{textAlign:'center',padding:'60px 20px',color:C.muted}}>
+                <div style={{fontSize:36,marginBottom:10}}>⚖️</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>Type a symbol and press Enter</div>
+                <div style={{fontSize:12,marginTop:6}}>Add up to 4 stocks to compare</div>
+              </div>
+            ):(
+              <div style={{display:'grid',
+                gridTemplateColumns:`repeat(${Math.min(compareSyms.length,4)},1fr)`,gap:10}}>
+                {compareSyms.map(sym=>{
+                  const s=stocks.find(x=>x.sym===sym)
+                  const stage=s?calcWeinsteinStage(s):null
+                  return(
+                    <div key={sym} style={{background:C.card,
+                      border:`1px solid ${C.divider}`,borderRadius:12,overflow:'hidden'}}>
+                      <div style={{padding:'10px 14px',borderBottom:`1px solid ${C.divider}`,
+                        display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                        <span onClick={()=>setChartSym(sym)}
+                          style={{fontWeight:700,fontSize:14,color:C.accent,cursor:'pointer'}}>
+                          {sym}
+                        </span>
+                        <button onClick={()=>setCompareSyms(s=>s.filter(x=>x!==sym))}
+                          style={{background:'transparent',border:'none',
+                            color:C.muted,fontSize:16,cursor:'pointer'}}>×</button>
+                      </div>
+                      {s?(
+                        <div style={{padding:'12px 14px'}}>
+                          <div style={{display:'flex',justifyContent:'space-between',marginBottom:10}}>
+                            <div>
+                              <div style={{fontWeight:700,fontSize:22,
+                                color:(s.rsTv||s.rs)>=90?C.green:(s.rsTv||s.rs)>=70?C.accent:C.yellow}}>
+                                {s.rsTv||s.rs||'—'}
+                              </div>
+                              <div style={{fontSize:9,color:C.teal}}>RS-TV</div>
+                            </div>
+                            {stage&&<span style={{padding:'2px 6px',borderRadius:3,fontSize:9,
+                              fontWeight:700,alignSelf:'flex-start',
+                              background:{1:C.yellow,2:C.green,3:C.orange,4:C.red}[stage.stage]+'18',
+                              color:{1:C.yellow,2:C.green,3:C.orange,4:C.red}[stage.stage]}}>
+                              {stage.label}
+                            </span>}
+                          </div>
+                          {[
+                            ['Price',    `₹${s.last?.toLocaleString('en-IN')}`,               C.text],
+                            ['Chg%',     `${s.chg>=0?'+':''}${s.chg?.toFixed(2)}%`,           s.chg>=0?C.green:C.red],
+                            ['MID RS',   s.rsMidcap??'—',  s.rsMidcap?rsColor(s.rsMidcap):C.muted],
+                            ['SML RS',   s.rsSmallcap??'—',s.rsSmallcap?rsColor(s.rsSmallcap):C.muted],
+                            ['Sector RS',s.rsSector??'—',  s.rsSector?rsColor(s.rsSector):C.muted],
+                            ['MCap',     s.marketCap?`₹${s.marketCap>=100000?(s.marketCap/100000).toFixed(1)+'L':(s.marketCap/1000).toFixed(0)+'K'} Cr`:'—', C.text],
+                            ['P/E',      s.pe?.toFixed(1)??'—', s.pe?s.pe<25?C.green:s.pe<50?C.yellow:C.red:C.muted],
+                            ['ROE',      s.roe?`${s.roe.toFixed(1)}%`:'—', s.roe?s.roe>20?C.green:C.yellow:C.muted],
+                            ['Promoter', s.promoter?`${s.promoter.toFixed(1)}%`:'—', s.promoter?s.promoter>55?C.green:C.yellow:C.muted],
+                          ].map(([k,v,c])=>(
+                            <div key={k} style={{display:'flex',justifyContent:'space-between',
+                              padding:'4px 0',borderBottom:`1px solid ${C.divider}`,fontSize:11}}>
+                              <span style={{color:C.muted}}>{k}</span>
+                              <span style={{fontWeight:600,color:c}}>{v}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ):(
+                        <div style={{padding:'20px',textAlign:'center',color:C.muted,fontSize:11}}>
+                          Not found in current scan
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 
