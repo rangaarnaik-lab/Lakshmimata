@@ -832,7 +832,7 @@ function StockDetail({s}){
       {/* Stats */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         {[
-          ['RS-TV (Pine)',s.rsTv!=null?s.rsTv:'Pending next scan',s.rsTv!=null?rsColor(s.rsTv):C.muted],
+          ['RS-TV',s.rsTv!=null?s.rsTv:'—',s.rsTv!=null?rsColor(s.rsTv):C.muted],
           ['RS (IBD)',s.rs,rsColor(s.rs)],
           ['RS in Sector',s.rsSector??'—',s.rsSector!=null?rsColor(s.rsSector):C.muted],
           ['RS in Midcap',s.rsMidcap??'—',s.rsMidcap!=null?rsColor(s.rsMidcap):C.muted],
@@ -1018,7 +1018,7 @@ function DesktopRow({s,i,onChart}){
               <div style={{fontWeight:700,fontSize:15,color:rsColor(s.rsTv),lineHeight:1}}>{s.rsTv}</div>
               <div style={{fontSize:7,color:C.teal,marginTop:1,fontWeight:700}}>TV</div>
             </>
-          ):<span style={{color:C.muted,fontSize:9}}>…</span>}
+          ):<span style={{color:C.muted,fontSize:11}} title="Using IBD RS as proxy">—</span>}
         </div>
 
         {/* RS within Midcap */}
