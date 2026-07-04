@@ -1011,17 +1011,12 @@ function DesktopRow({s,i,onChart}){
           </div>
         </div>
 
-        {/* RS-TV (TradingView / Lakshmi Mata formula — primary) */}
+        {/* RS-TV — Pine Script / Lakshmi Mata formula only */}
         <div style={{textAlign:'center'}}>
           {(s.rsTv!=null&&s.rsTv>0)?(
             <>
               <div style={{fontWeight:700,fontSize:15,color:rsColor(s.rsTv),lineHeight:1}}>{s.rsTv}</div>
               <div style={{fontSize:7,color:C.teal,marginTop:1,fontWeight:700}}>TV</div>
-            </>
-          ):s.rs?(
-            <>
-              <div style={{fontWeight:700,fontSize:15,color:rsColor(s.rs),lineHeight:1}}>{s.rs}</div>
-              <div style={{fontSize:7,color:C.muted,marginTop:1,fontWeight:600}}>IBD</div>
             </>
           ):<span style={{color:C.muted,fontSize:11}}>—</span>}
         </div>
