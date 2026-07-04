@@ -3346,17 +3346,31 @@ export default function App(){
       {isMobile&&(
         <div style={{position:'fixed',bottom:0,left:0,right:0,background:C.card,
           borderTop:`1px solid ${C.border}`,display:'flex',zIndex:40,
-          paddingBottom:'env(safe-area-inset-bottom)'}}>
+          overflowX:'auto',paddingBottom:'env(safe-area-inset-bottom)',
+          WebkitOverflowScrolling:'touch'}}>
           {[
-            ['rs','📊','RS'],['indices','🗂','Indices'],['52wl','🎯','52WL'],
-            ['sector','🏭','Sectors'],['settings','⚙','Account']
+            ['rs','📊','RS'],
+            ['indices','🗂','IX'],
+            ['breadth','📈','Breadth'],
+            ['squeeze','🌀','Squeeze'],
+            ['breakout','💥','Break'],
+            ['52wl','🎯','52WL'],
+            ['weak','🚨','Weak'],
+            ['sector','🏭','Sectors'],
+            ['portfolio','💼','Portfolio'],
+            ['compare','⚖','Compare'],
+            ['watchlist','📋','Watch'],
+            ['settings','⚙','Account'],
           ].map(([t,icon,label])=>(
             <button key={t} onClick={()=>setMainTab(t)}
-              style={{flex:1,padding:'8px 2px 6px',background:'transparent',border:'none',
-                cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-              <span style={{fontSize:16}}>{icon}</span>
-              <span style={{fontSize:9,fontWeight:600,color:mainTab===t?C.accent:C.muted}}>{label}</span>
-              {mainTab===t&&<div style={{width:16,height:2,background:C.accent,borderRadius:99}}/>}
+              style={{flex:'0 0 auto',minWidth:56,padding:'6px 4px 5px',
+                background:'transparent',border:'none',
+                cursor:'pointer',display:'flex',flexDirection:'column',
+                alignItems:'center',gap:1}}>
+              <span style={{fontSize:14}}>{icon}</span>
+              <span style={{fontSize:8,fontWeight:600,color:mainTab===t?C.accent:C.muted,
+                whiteSpace:'nowrap'}}>{label}</span>
+              {mainTab===t&&<div style={{width:16,height:2,background:C.accent,borderRadius:99,marginTop:1}}/>}
             </button>
           ))}
         </div>
