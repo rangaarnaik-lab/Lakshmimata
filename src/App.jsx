@@ -2886,9 +2886,6 @@ export default function App(){
 
             {/* Use local state via ref trick */}
             {(()=>{
-              const sqTf = sqTab
-              const setSqTf = setSqTab
-
               const filterStocks = (tf) => {
                 if(tf==='daily')  return stocks.filter(s=>s.inSqueeze||s.squeezeFired)
                 if(tf==='weekly') return stocks.filter(s=>s.sqWeeklyIn||s.sqWeeklyFired)
