@@ -2147,11 +2147,10 @@ export default function App(){
         </div>
 
         {/* ── Page content ── */}
-        {/* Non-RS tabs: normal scrollable content */}
-        {mainTab!=='rs'&&(
-          <div style={{flex:1,overflowY:'auto',padding:isMobile?'10px':'12px 16px'}}>
+        <div style={{padding:isMobile?'10px':'0',flex:1,overflowY:'auto',
+          minHeight:0}}>
 
-          {/* History mode banner */}
+        {/* History mode banner — unmistakable when not viewing live data */}
         {historyDate&&(
           <div style={{background:C.purple+'18',border:`1px solid ${C.purple}55`,borderRadius:10,
             padding:'10px 14px',marginBottom:14,display:'flex',alignItems:'center',
@@ -2187,7 +2186,7 @@ export default function App(){
 
         {/* ══ RS SCANNER ══ */}
         {mainTab==='rs'&&(
-          <div style={{display:'flex',flex:1,gap:0,overflow:'hidden'}}>
+          <div style={{display:'flex',gap:0,height:'calc(100vh - 52px)',overflow:'hidden'}}>
 
           {/* Left pane — stock list */}
           <div style={{flex:1,overflowY:'auto',minWidth:0,
@@ -2438,9 +2437,6 @@ export default function App(){
             </div>
           )}
         </div>
-        )}
-
-          </div>
         )}
 
         {/* ══ INDICES DASHBOARD ══ */}
@@ -3345,7 +3341,7 @@ export default function App(){
         )}
 
       </div>
-
+      </div>
       {/* Mobile bottom nav */}
       {isMobile&&(
         <div style={{position:'fixed',bottom:0,left:0,right:0,background:C.card,
