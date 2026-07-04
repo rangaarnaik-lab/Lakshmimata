@@ -225,6 +225,7 @@ export async function fetchIndexDashboard() {
     aboveMa10:     row.above_ma10,
     aboveMa30:     row.above_ma30,
     high52w:       row.high_52w,
+    pctFrom52wh:   row.pct_from_52wh,
     low52w:        row.low_52w,
     pctFromHigh:   row.pct_from_high,
     topStocks:     typeof row.top_stocks === 'string' ? JSON.parse(row.top_stocks||'[]') : (row.top_stocks||[]),
