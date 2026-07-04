@@ -1480,67 +1480,163 @@ function SettingsPanel({session,onUpdate,onLogout}){
   const [newToken,setNewToken]=useState('')
   const [msg,setMsg]=useState('')
   const [loading,setLoading]=useState(false)
-  const ownerMode=!!OWNER_TOKEN
+  const [profile,setProfile]=useState(null)
+  const [sessionInfo,setSessionInfo]=useState(null)
 
-  const saveToken=async()=>{
-    if(!newToken){setMsg('❌ Enter a token');return}
+  // Load profile + session info
+  useEffect(()=>{
+    if(!session) return
+    // Load profile
+    supabase.from('profiles').select('*').eq('id',session.user.id).single()
+      .then(({data})=>setProfile(data))
+    // Load session info
+    supabase.from('user_sessions').select('*').eq('user_id',session.user.id).single()
+      .then(({data})=>setSessionInfo(data))
+  },[session])
+
+  const saveToken = async()=>{
     setLoading(true)
-    const{error}=await supabase.from('user_tokens')
-      .upsert({user_id:session.user.id,upstox_token:newToken},{onConflict:'user_id'})
-    if(error)setMsg('❌ '+error.message)
-    else{setMsg('✅ Token saved!');onUpdate({...session,token:newToken});setNewToken('')}
+    try{
+      const {error}=await supabase.auth.updateUser({data:{upstox_token:newToken}})
+      if(error) setMsg('Error: '+error.message)
+      else{ setMsg('Token saved!'); onUpdate&&onUpdate({...session,user:{...session.user,user_metadata:{...session.user.user_metadata,upstox_token:newToken}}}) }
+    }catch(e){ setMsg('Error saving') }
     setLoading(false)
   }
-  const handleLogout=async()=>{await supabase.auth.signOut();onLogout()}
+
+  const logoutAllDevices = async()=>{
+    if(!confirm('This will log out ALL devices including this one. Continue?')) return
+    // Delete session record — all devices will be forced out on next check
+    await supabase.from('user_sessions').delete().eq('user_id',session.user.id)
+    await supabase.auth.signOut()
+    onLogout&&onLogout()
+  }
+
+  const user = session?.user
+  const meta = user?.user_metadata||{}
+  const createdAt = user?.created_at?new Date(user.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—'
+  const lastSeen = sessionInfo?.last_seen?new Date(sessionInfo.last_seen).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—'
 
   return(
-    <div style={{maxWidth:480,margin:'32px auto',padding:'0 16px'}}>
-      <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:24}}>
-        <div style={{fontWeight:800,fontSize:18,marginBottom:4}}>Account Settings</div>
-        <div style={{color:C.muted,fontSize:12,marginBottom:16}}>
-          Signed in as <strong style={{color:C.accent}}>{session.user.email}</strong>
-        </div>
-        {ownerMode&&(
-          <div style={{background:C.green+'18',border:`1px solid ${C.green}33`,borderRadius:8,
-            padding:'10px 12px',marginBottom:16,fontSize:12,color:C.green}}>
-            ✅ Using owner's Upstox token — scanner works without your own token.
-            You can optionally override with your own below.
+    <div style={{maxWidth:500,margin:'0 auto',padding:'0 0 40px'}}>
+
+      {/* Profile card */}
+      <div style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:12,
+        padding:'20px',marginBottom:12}}>
+        <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:16}}>
+          <div style={{width:48,height:48,borderRadius:'50%',
+            background:`linear-gradient(135deg,${C.accent},#7c3aed)`,
+            display:'flex',alignItems:'center',justifyContent:'center',
+            fontWeight:700,fontSize:20,color:'#fff',flexShrink:0}}>
+            {(meta.full_name||user?.email||'U')[0].toUpperCase()}
           </div>
-        )}
-        {msg&&<div style={{background:(msg.startsWith('✅')?C.green:C.red)+'18',
-          border:`1px solid ${(msg.startsWith('✅')?C.green:C.red)}44`,
-          borderRadius:8,padding:'10px 12px',marginBottom:14,fontSize:12,
-          color:msg.startsWith('✅')?C.green:C.red,fontWeight:600}}>{msg}</div>}
-        <div style={{marginBottom:20}}>
-          <label style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:'uppercase',
-            letterSpacing:'0.08em',display:'block',marginBottom:6}}>
-            {ownerMode?'Override with your own Upstox Token (optional)':'Update Upstox Token'}
-          </label>
-          <input type="password" value={newToken} placeholder="eyJ0eXAiOiJKV1Q…"
-            onChange={e=>setNewToken(e.target.value)}
-            style={{width:'100%',padding:'11px 13px',background:C.bg,border:`1px solid ${C.border}`,
-              borderRadius:8,color:C.text,fontSize:13,outline:'none',boxSizing:'border-box',
-              fontFamily:'monospace',marginBottom:10}}/>
-          <button onClick={saveToken} disabled={loading}
-            style={{width:'100%',padding:'11px',background:C.accent,color:'#000',border:'none',
-              borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer'}}>💾 Save Token</button>
-        </div>
-        <div style={{padding:'12px',background:C.accent+'10',border:`1px solid ${C.accent}22`,borderRadius:8,marginBottom:16}}>
-          <div style={{fontSize:11,color:C.muted,lineHeight:1.7}}>
-            <strong style={{color:C.accent}}>🔒</strong> Tokens encrypted in Supabase Postgres with Row Level Security.
+          <div>
+            <div style={{fontWeight:700,fontSize:15,color:C.text}}>
+              {meta.full_name||'User'}
+            </div>
+            <div style={{fontSize:12,color:C.muted,marginTop:2}}>{user?.email}</div>
+            {(meta.mobile||profile?.mobile)&&(
+              <div style={{fontSize:11,color:C.muted,marginTop:1}}>
+                📱 {meta.mobile||profile?.mobile}
+              </div>
+            )}
           </div>
         </div>
-        <button onClick={handleLogout}
-          style={{width:'100%',padding:'11px',background:'transparent',color:C.red,
-            border:`1px solid ${C.red}44`,borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer'}}>
-          🚪 Sign Out
+
+        {/* Account info grid */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+          {[
+            {l:'Member Since', v:createdAt,       icon:'📅'},
+            {l:'Last Login',   v:lastSeen,         icon:'🕐'},
+            {l:'Device',       v:sessionInfo?.device_info?.split('(')[0]?.trim()?.slice(0,20)||'—', icon:'📱'},
+            {l:'Status',       v:'Active',          icon:'🟢'},
+          ].map(({l,v,icon})=>(
+            <div key={l} style={{background:C.bg,borderRadius:8,padding:'10px'}}>
+              <div style={{fontSize:9,color:C.muted,marginBottom:3}}>{icon} {l}</div>
+              <div style={{fontSize:11,fontWeight:600,color:C.text}}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Security section */}
+      <div style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:12,
+        padding:'16px',marginBottom:12}}>
+        <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:12}}>
+          🔒 Security
+        </div>
+
+        {/* Password reset */}
+        <button onClick={async()=>{
+          const {error}=await supabase.auth.resetPasswordForEmail(user?.email,{
+            redirectTo: window.location.origin
+          })
+          if(!error) setMsg('Password reset email sent to '+user?.email)
+          else setMsg('Error: '+error.message)
+        }}
+          style={{width:'100%',padding:'10px',borderRadius:8,
+            border:`1px solid ${C.border}`,background:'transparent',
+            color:C.text,fontSize:13,cursor:'pointer',textAlign:'left',marginBottom:8,
+            display:'flex',alignItems:'center',gap:8}}>
+          <span>🔑</span>
+          <span>Reset Password</span>
+          <span style={{marginLeft:'auto',color:C.muted,fontSize:11}}>Send email link</span>
+        </button>
+
+        {/* Logout all devices */}
+        <button onClick={logoutAllDevices}
+          style={{width:'100%',padding:'10px',borderRadius:8,
+            border:`1px solid ${C.red}44`,background:C.red+'11',
+            color:C.red,fontSize:13,cursor:'pointer',textAlign:'left',
+            display:'flex',alignItems:'center',gap:8}}>
+          <span>🚪</span>
+          <span>Log Out All Devices</span>
+          <span style={{marginLeft:'auto',fontSize:11,opacity:0.7}}>Forces logout everywhere</span>
+        </button>
+
+        {msg&&<div style={{fontSize:11,color:C.green,marginTop:8,padding:'6px 10px',
+          background:C.green+'11',borderRadius:6}}>{msg}</div>}
+      </div>
+
+      {/* Upstox token */}
+      <div style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:12,
+        padding:'16px',marginBottom:12}}>
+        <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:4}}>
+          🔗 Upstox Token
+        </div>
+        <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+          {meta.upstox_token?'Token saved ✅ — paste new one to update':'No token saved yet'}
+        </div>
+        <textarea value={newToken} onChange={e=>setNewToken(e.target.value)}
+          placeholder="Paste your Upstox access token here…"
+          rows={3}
+          style={{width:'100%',padding:'10px',background:C.bg,border:`1px solid ${C.border}`,
+            borderRadius:8,color:C.text,fontSize:11,outline:'none',
+            resize:'vertical',boxSizing:'border-box',fontFamily:'monospace'}}/>
+        <button onClick={saveToken} disabled={loading||!newToken.trim()}
+          style={{marginTop:8,width:'100%',padding:'10px',borderRadius:8,border:'none',
+            background:newToken.trim()?C.accent:C.border,
+            color:newToken.trim()?'#000':C.muted,
+            fontWeight:700,fontSize:13,cursor:newToken.trim()?'pointer':'not-allowed'}}>
+          {loading?'Saving…':'Save Token'}
         </button>
       </div>
+
+      {/* Logout */}
+      <button onClick={async()=>{
+        await supabase.auth.signOut()
+        onLogout&&onLogout()
+      }}
+        style={{width:'100%',padding:'12px',borderRadius:8,
+          border:`1px solid ${C.border}`,background:'transparent',
+          color:C.muted,fontSize:13,cursor:'pointer',fontWeight:600}}>
+        Sign Out This Device
+      </button>
     </div>
   )
 }
 
-// ── Demo generators ───────────────────────────────────────────────────
+
 function genC(days=320,trend=0.0003,vol=0.018){
   const p=[100],v=[500000]
   for(let i=1;i<days;i++){
