@@ -26,6 +26,13 @@ const C = {
   sidebar:'#080b10',divider:'#161b27',
   rowHover:'#121824',active:'#1a2035',
 }
+
+const sectors_fallback = [
+  {sector:'Defence',avgRS:88,chgD:1.2,chgW:3.4},
+  {sector:'Pharma', avgRS:84,chgD:2.1,chgW:4.8},
+  {sector:'Realty',  avgRS:82,chgD:0.8,chgW:2.1},
+]
+
 const rsColor  = r => r>=90?C.green:r>=70?C.accent:r>=50?C.yellow:C.red
 const rsLabel  = r => r>=90?'Elite':r>=80?'Strong':r>=60?'Avg+':r>=40?'Avg':'Weak'
 const trendIcon  = t => t==='improving'?'↑↑':t==='declining'?'↓↓':'→'
@@ -1732,7 +1739,97 @@ function BreadthCharts({history}){
   )
 }
 
-// ── Main App ──────────────────────────────────────────────────────────────
+
+// ── Horizontal Bar Chart Component ───────────────────────────────────
+function HBarChart({data, valueKey, labelKey, colorFn, height=200, fmt=v=>v?.toFixed(1)+'%'}){
+  if(!data||data.length===0) return(
+    <div style={{textAlign:'center',padding:'20px',color:'#4a5568',fontSize:11}}>No data yet</div>
+  )
+  const max = Math.max(...data.map(d=>Math.abs(d[valueKey]||0)))
+  return(
+    <div style={{display:'flex',flexDirection:'column',gap:3}}>
+      {data.slice(0,12).map((d,i)=>{
+        const val = d[valueKey]||0
+        const pct = max>0?Math.abs(val)/max*100:0
+        const color = colorFn?colorFn(val):val>=0?'#22c55e':'#ef4444'
+        return(
+          <div key={i} style={{display:'flex',alignItems:'center',gap:6,fontSize:10}}>
+            <div style={{width:42,textAlign:'right',color:'#4a5568',flexShrink:0,fontWeight:600}}>
+              {fmt(val)}
+            </div>
+            <div style={{flex:1,background:'#161b27',borderRadius:3,height:20,overflow:'hidden'}}>
+              <div style={{width:`${pct}%`,height:'100%',background:color,
+                borderRadius:3,display:'flex',alignItems:'center',paddingLeft:6,
+                minWidth:40,transition:'width 0.3s'}}>
+                <span style={{fontSize:9,fontWeight:700,color:'#fff',
+                  whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                  {d[labelKey]}
+                </span>
+              </div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Stock Mini Table ──────────────────────────────────────────────────
+function StockMiniTable({stocks, cols, onChart}){
+  if(!stocks||stocks.length===0) return(
+    <div style={{textAlign:'center',padding:'16px',color:'#4a5568',fontSize:11}}>No data</div>
+  )
+  return(
+    <div style={{overflowX:'auto'}}>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
+        <thead>
+          <tr style={{borderBottom:'1px solid #1c2333'}}>
+            {cols.map(c=>(
+              <th key={c.key} style={{padding:'6px 8px',textAlign:c.align||'left',
+                color:'#4a5568',fontWeight:600,fontSize:10,whiteSpace:'nowrap'}}>
+                {c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {stocks.slice(0,15).map((s,i)=>(
+            <tr key={i} style={{borderBottom:'1px solid #161b27'}}
+              onMouseEnter={e=>e.currentTarget.style.background='#121824'}
+              onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+              {cols.map(c=>(
+                <td key={c.key} style={{padding:'7px 8px',textAlign:c.align||'left',
+                  color:c.colorFn?c.colorFn(s[c.key]):c.color||'#e2e8f0',
+                  fontWeight:c.bold?700:400,whiteSpace:'nowrap'}}>
+                  {c.key==='sym'?(
+                    <span onClick={()=>onChart&&onChart(s.sym)}
+                      style={{color:'#4f8ef7',cursor:'pointer',fontWeight:700}}>
+                      {s[c.key]}
+                    </span>
+                  ):c.fmt?c.fmt(s[c.key]):s[c.key]}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ── Section Card ──────────────────────────────────────────────────────
+function SectionCard({title, subtitle, children, color='#4f8ef7'}){
+  return(
+    <div style={{background:'#0e1117',border:`1px solid ${color}22`,
+      borderRadius:12,padding:'14px',marginBottom:12}}>
+      <div style={{fontWeight:700,fontSize:13,color:'#e2e8f0',marginBottom:2}}>{title}</div>
+      {subtitle&&<div style={{fontSize:10,color:'#4a5568',marginBottom:10}}>{subtitle}</div>}
+      {children}
+    </div>
+  )
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
 export default function App(){
   const isMobile=useIsMobile()
   const [session,setSession]=useState(null)
@@ -2604,11 +2701,11 @@ export default function App(){
 
         {/* ══ INDICES DASHBOARD ══ */}
         {mainTab==='indices'&&(
-          <div>
-            <div style={{marginBottom:12}}>
-              <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>🗂 Index Performance Dashboard</div>
-              <div style={{fontSize:11,color:C.muted}}>
-                Daily · Weekly · Monthly · Quarterly · Yearly performance + RS-TV + Weinstein Stage for each index
+          <div style={{padding:isMobile?'10px':'12px 16px'}}>
+            <div style={{marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:16}}>Index Dashboard</div>
+                <div style={{fontSize:11,color:C.muted}}>Performance · Strength · Top Gainers/Losers</div>
               </div>
             </div>
 
@@ -2619,6 +2716,7 @@ export default function App(){
                 <div style={{fontSize:12,marginTop:6}}>Data populates after the next scan cycle completes</div>
               </div>
             ):(
+              <div>
               <>
                 {/* Summary strip */}
                 <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
@@ -3062,6 +3160,121 @@ export default function App(){
                 })}
               </div>
             )}
+
+
+              {/* ── Index Strength Rankings ── */}
+              <div style={{marginTop:16}}>
+                <div style={{fontWeight:700,fontSize:14,color:C.text,marginBottom:12}}>
+                  📊 Index Strength Rankings
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr 1fr',gap:10}}>
+                  {[
+                    {label:'Daily %',   key:'chg_d'},
+                    {label:'Weekly %',  key:'chg_w'},
+                    {label:'Monthly %', key:'chg_m'},
+                  ].map(({label,key})=>(
+                    <SectionCard key={label} title={label} color={C.accent}>
+                      <HBarChart
+                        data={[...indexData].sort((a,b)=>(b[key]||0)-(a[key]||0))}
+                        valueKey={key} labelKey="name"
+                        colorFn={v=>v>=0?C.green:C.red}
+                        fmt={v=>`${v>=0?'+':''}${v?.toFixed(1)}%`}
+                      />
+                    </SectionCard>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Top Gainers/Losers by index ── */}
+              <div style={{marginTop:16}}>
+                <div style={{fontWeight:700,fontSize:14,color:C.text,marginBottom:12}}>
+                  🏆 Top Movers Today
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:10}}>
+
+                  {/* Top Gainers */}
+                  <SectionCard title="📈 Top Gainers (RS-TV)" color={C.green}
+                    subtitle="Best performing stocks by RS rating today">
+                    <StockMiniTable
+                      stocks={stocks.filter(s=>s.chg>0).sort((a,b)=>(b.rsTv||b.rs)-(a.rsTv||a.rs)).slice(0,10)}
+                      onChart={s=>setChartSym(s===chartSym?null:s)}
+                      cols={[
+                        {key:'sym',   label:'Symbol'},
+                        {key:'rsTv',  label:'RS-TV', align:'right', bold:true,
+                          colorFn:v=>v>=90?C.green:v>=70?C.accent:v>=50?C.yellow:C.red},
+                        {key:'chg',   label:'Chg%',  align:'right',
+                          colorFn:v=>v>=0?C.green:C.red,
+                          fmt:v=>`+${v?.toFixed(2)}%`},
+                        {key:'last',  label:'Price',  align:'right',
+                          fmt:v=>v?`₹${v?.toLocaleString('en-IN')}`:'—'},
+                      ]}
+                    />
+                  </SectionCard>
+
+                  {/* Top Losers */}
+                  <SectionCard title="📉 Top Losers Today" color={C.red}
+                    subtitle="Stocks with biggest % decline today">
+                    <StockMiniTable
+                      stocks={stocks.filter(s=>s.chg<0).sort((a,b)=>a.chg-b.chg).slice(0,10)}
+                      onChart={s=>setChartSym(s===chartSym?null:s)}
+                      cols={[
+                        {key:'sym',   label:'Symbol'},
+                        {key:'rsTv',  label:'RS-TV', align:'right', bold:true,
+                          colorFn:v=>v>=70?C.green:v>=50?C.yellow:C.red},
+                        {key:'chg',   label:'Chg%',  align:'right',
+                          colorFn:v=>v>=0?C.green:C.red,
+                          fmt:v=>`${v?.toFixed(2)}%`},
+                        {key:'last',  label:'Price',  align:'right',
+                          fmt:v=>v?`₹${v?.toLocaleString('en-IN')}`:'—'},
+                      ]}
+                    />
+                  </SectionCard>
+
+                  {/* Near 52W High */}
+                  <SectionCard title="🎯 Near 52-Week High" color={C.teal}
+                    subtitle="Stocks within 3% of their 52-week high">
+                    <StockMiniTable
+                      stocks={stocks.filter(s=>s.pctFrom52wh>=-3&&s.pctFrom52wh<=0)
+                        .sort((a,b)=>b.pctFrom52wh-a.pctFrom52wh).slice(0,10)}
+                      onChart={s=>setChartSym(s===chartSym?null:s)}
+                      cols={[
+                        {key:'sym',         label:'Symbol'},
+                        {key:'rsTv',        label:'RS-TV',   align:'right', bold:true,
+                          colorFn:v=>v>=90?C.green:v>=70?C.accent:C.yellow},
+                        {key:'pctFrom52wh', label:'% from High', align:'right',
+                          colorFn:v=>v>=-1?C.green:v>=-3?C.yellow:C.muted,
+                          fmt:v=>`${v?.toFixed(1)}%`},
+                        {key:'chg',         label:'Chg%', align:'right',
+                          colorFn:v=>v>=0?C.green:C.red,
+                          fmt:v=>`${v>=0?'+':''}${v?.toFixed(1)}%`},
+                      ]}
+                    />
+                  </SectionCard>
+
+                  {/* Stage 2 Buy Signals */}
+                  <SectionCard title="🚀 Stage 2 Buy Signals" color={C.green}
+                    subtitle="New Stage 2 entries today — highest probability setups">
+                    <StockMiniTable
+                      stocks={stocks.filter(s=>s.isS2NewEntry||
+                        (s.pp?.isPP&&(s.rsTv||s.rs)>=70))
+                        .sort((a,b)=>(b.rsTv||b.rs)-(a.rsTv||a.rs)).slice(0,10)}
+                      onChart={s=>setChartSym(s===chartSym?null:s)}
+                      cols={[
+                        {key:'sym',  label:'Symbol'},
+                        {key:'rsTv', label:'RS-TV', align:'right', bold:true,
+                          colorFn:v=>v>=90?C.green:v>=70?C.accent:C.yellow},
+                        {key:'chg',  label:'Chg%', align:'right',
+                          colorFn:v=>v>=0?C.green:C.red,
+                          fmt:v=>`${v>=0?'+':''}${v?.toFixed(1)}%`},
+                        {key:'last', label:'Price', align:'right',
+                          fmt:v=>v?`₹${v?.toLocaleString('en-IN')}`:'—'},
+                      ]}
+                    />
+                  </SectionCard>
+                </div>
+              </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -3217,10 +3430,11 @@ export default function App(){
               onRefresh={runDBScan}
             />
             {/* Stats */}
+            {/* Breakout stats */}
             <div style={{background:C.card,border:`1px solid ${C.accent}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:15,color:C.accent,marginBottom:6}}>💥 HY/HT Breakout Scanner</div>
+              <div style={{fontWeight:700,fontSize:15,color:C.accent,marginBottom:6}}>💥 Breakout Scanner</div>
               <div style={{fontSize:12,color:C.muted,marginBottom:12}}>
-                Stocks that had High Year (HY) or High Time (HT) volume in last 5 days and are breaking out today
+                Weekly breakouts · 52W High breakouts · HY/HT Volume breakouts · Stage 2 buys
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
                 {[
@@ -3238,6 +3452,66 @@ export default function App(){
                 ))}
               </div>
             </div>
+
+            {/* Weekly Breakout Stocks */}
+            <SectionCard title="📅 Weekly Breakout Stocks" color={C.teal}
+              subtitle="Stocks up >5% this week with rising RS">
+              <StockMiniTable
+                stocks={stocks.filter(s=>s.chg>=3&&(s.rsTv||s.rs)>=60&&s.hy?.isHY)
+                  .sort((a,b)=>b.chg-a.chg).slice(0,10)}
+                onChart={s=>setChartSym(s===chartSym?null:s)}
+                cols={[
+                  {key:'sym',  label:'Symbol'},
+                  {key:'chg',  label:'% Change', align:'right', bold:true,
+                    colorFn:v=>v>=0?C.green:C.red, fmt:v=>`+${v?.toFixed(2)}%`},
+                  {key:'last', label:'Price', align:'right',
+                    fmt:v=>`₹${v?.toLocaleString('en-IN')}`},
+                  {key:'rsTv', label:'RS-TV', align:'right',
+                    colorFn:v=>v>=90?C.green:v>=70?C.accent:C.yellow},
+                ]}
+              />
+            </SectionCard>
+
+            {/* Stocks near 52W High */}
+            <SectionCard title="🎯 Stocks Near 52-Week High" color={C.teal}
+              subtitle="Within 5% of annual high — momentum leaders">
+              <StockMiniTable
+                stocks={stocks.filter(s=>s.pctFrom52wh>=-5&&s.pctFrom52wh<0&&(s.rsTv||s.rs)>=60)
+                  .sort((a,b)=>b.pctFrom52wh-a.pctFrom52wh).slice(0,10)}
+                onChart={s=>setChartSym(s===chartSym?null:s)}
+                cols={[
+                  {key:'sym',         label:'Symbol'},
+                  {key:'pctFrom52wh', label:'% from High', align:'right',
+                    colorFn:v=>v>=-1?C.green:v>=-3?C.yellow:C.muted,
+                    fmt:v=>`${v?.toFixed(1)}%`},
+                  {key:'chg',   label:'Today %', align:'right',
+                    colorFn:v=>v>=0?C.green:C.red,
+                    fmt:v=>`${v>=0?'+':''}${v?.toFixed(1)}%`},
+                  {key:'rsTv',  label:'RS-TV', align:'right',
+                    colorFn:v=>v>=90?C.green:v>=70?C.accent:C.yellow},
+                ]}
+              />
+            </SectionCard>
+
+            {/* 52W High Breakout */}
+            <SectionCard title="🏆 52-Week High Breakout" color={C.green}
+              subtitle="Making new 52-week highs today">
+              <StockMiniTable
+                stocks={stocks.filter(s=>s.pctFrom52wh>=-0.5&&s.chg>0&&(s.rsTv||s.rs)>=60)
+                  .sort((a,b)=>(b.rsTv||b.rs)-(a.rsTv||a.rs)).slice(0,10)}
+                onChart={s=>setChartSym(s===chartSym?null:s)}
+                cols={[
+                  {key:'sym',  label:'Symbol'},
+                  {key:'rsTv', label:'RS-TV', align:'right', bold:true,
+                    colorFn:v=>v>=90?C.green:v>=70?C.accent:C.yellow},
+                  {key:'chg',  label:'Chg%', align:'right',
+                    colorFn:v=>v>=0?C.green:C.red,
+                    fmt:v=>`+${v?.toFixed(2)}%`},
+                  {key:'last', label:'Price', align:'right',
+                    fmt:v=>`₹${v?.toLocaleString('en-IN')}`},
+                ]}
+              />
+            </SectionCard>
 
             {/* IBV Section */}
             <div style={{background:C.card,border:`1px solid ${C.purple}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
