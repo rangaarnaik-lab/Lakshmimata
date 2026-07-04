@@ -3345,7 +3345,7 @@ export default function App(){
         )}
 
       </div>
-      </div>
+
       {/* Mobile bottom nav */}
       {isMobile&&(
         <div style={{position:'fixed',bottom:0,left:0,right:0,background:C.card,
