@@ -2097,6 +2097,55 @@ export default function App(){
       runDBScan()  // always load immediately on login
     }
   },[session,historyDate])
+
+  // ── Single device enforcement ─────────────────────────────────────
+  // Generate a unique token for this browser tab/device
+  const deviceToken = useRef(
+    sessionStorage.getItem('lm_device_token') || 
+    (()=>{ const t = Math.random().toString(36).slice(2)+Date.now(); sessionStorage.setItem('lm_device_token',t); return t })()
+  )
+  const [forcedOut, setForcedOut] = useState(false)
+
+  // On login — register this device as the active session
+  useEffect(()=>{
+    if(!session) return
+    const userId = session.user.id
+    const token  = deviceToken.current
+
+    // Write our token to Supabase
+    const registerDevice = async()=>{
+      await supabase.from('user_sessions').upsert({
+        user_id:    userId,
+        token:      token,
+        last_seen:  new Date().toISOString(),
+        device_info: navigator.userAgent.slice(0,100),
+      }, {onConflict: 'user_id'})
+    }
+    registerDevice()
+
+    // Poll every 30s — check if our token is still the active one
+    const checkSession = async()=>{
+      const {data} = await supabase
+        .from('user_sessions')
+        .select('token')
+        .eq('user_id', userId)
+        .single()
+      if(data && data.token !== token){
+        // Another device logged in — force logout
+        setForcedOut(true)
+        await supabase.auth.signOut()
+        setSession(null)
+      } else if(data) {
+        // Still active — update last_seen
+        await supabase.from('user_sessions').update({
+          last_seen: new Date().toISOString()
+        }).eq('user_id', userId)
+      }
+    }
+
+    const timer = setInterval(checkSession, 30000)
+    return ()=>clearInterval(timer)
+  },[session])
   
   // Auto-refresh every minute when market is open
   useEffect(()=>{
