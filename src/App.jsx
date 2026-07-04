@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
+  Tooltip, ResponsiveContainer, ReferenceLine, Legend } from 'recharts'
 import { supabase, fetchOwnerToken } from './lib/supabase'
 import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard } from './lib/db'
 import {
@@ -1580,7 +1582,156 @@ function isMarketOpen(){
   return mins >= 555 && mins <= 930
 }
 
-// ── Main App ──────────────────────────────────────────────────────────
+// ── Breadth Charts Component ─────────────────────────────────────────
+function BreadthCharts({history}){
+  if(!history||history.length===0) return(
+    <div style={{textAlign:'center',padding:'40px 20px',color:'#4a5568'}}>
+      <div style={{fontSize:13}}>Historical data builds up daily after market close.</div>
+      <div style={{fontSize:11,marginTop:4}}>Come back tomorrow to see trends!</div>
+    </div>
+  )
+
+  const fmt = d => {
+    const date = new Date(d)
+    return `${date.getDate()}/${date.getMonth()+1}`
+  }
+
+  const chartStyle = {
+    fontSize:9, fill:'#4a5568'
+  }
+
+  const CustomTooltip = ({active,payload,label})=>{
+    if(!active||!payload?.length) return null
+    return(
+      <div style={{background:'#0e1117',border:'1px solid #1c2333',borderRadius:8,
+        padding:'8px 12px',fontSize:11}}>
+        <div style={{color:'#4a5568',marginBottom:4}}>{label}</div>
+        {payload.map(p=>(
+          <div key={p.name} style={{color:p.color,fontWeight:600}}>
+            {p.name}: {typeof p.value==='number'?p.value.toFixed(2):p.value}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  return(
+    <div>
+      {/* Chart 1: A/D Ratio trend */}
+      <div style={{background:'#0e1117',border:'1px solid #1c2333',borderRadius:12,
+        padding:'14px',marginBottom:12}}>
+        <div style={{fontWeight:700,fontSize:13,color:'#e2e8f0',marginBottom:4}}>
+          📈 Advance/Decline Ratio — 90 Days
+        </div>
+        <div style={{fontSize:10,color:'#4a5568',marginBottom:10}}>
+          Above 1.0 = more stocks rising than falling (healthy)
+        </div>
+        <ResponsiveContainer width="100%" height={160}>
+          <LineChart data={history} margin={{top:5,right:5,left:-20,bottom:0}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1c2333"/>
+            <XAxis dataKey="scan_date" tickFormatter={fmt} tick={chartStyle} interval="preserveStartEnd"/>
+            <YAxis tick={chartStyle} domain={['auto','auto']}/>
+            <Tooltip content={<CustomTooltip/>}/>
+            <ReferenceLine y={1} stroke="#4a5568" strokeDasharray="4 4"/>
+            <Line type="monotone"
+              dataKey={d=>d.advances&&d.declines?+(d.advances/d.declines).toFixed(2):null}
+              name="A/D Ratio" stroke="#22c55e" dot={false} strokeWidth={2}/>
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Chart 2: Advancing vs Declining bars */}
+      <div style={{background:'#0e1117',border:'1px solid #1c2333',borderRadius:12,
+        padding:'14px',marginBottom:12}}>
+        <div style={{fontWeight:700,fontSize:13,color:'#e2e8f0',marginBottom:4}}>
+          📊 Advancing vs Declining Stocks
+        </div>
+        <div style={{fontSize:10,color:'#4a5568',marginBottom:10}}>
+          Green bars = stocks up, Red bars = stocks down each day
+        </div>
+        <ResponsiveContainer width="100%" height={160}>
+          <BarChart data={history} margin={{top:5,right:5,left:-20,bottom:0}} barGap={0}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1c2333"/>
+            <XAxis dataKey="scan_date" tickFormatter={fmt} tick={chartStyle} interval="preserveStartEnd"/>
+            <YAxis tick={chartStyle}/>
+            <Tooltip content={<CustomTooltip/>}/>
+            <Bar dataKey="advances" name="Advancing" fill="#22c55e" opacity={0.8}/>
+            <Bar dataKey="declines" name="Declining" fill="#ef4444" opacity={0.8}/>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Chart 3: RS Improving vs Declining */}
+      <div style={{background:'#0e1117',border:'1px solid #1c2333',borderRadius:12,
+        padding:'14px',marginBottom:12}}>
+        <div style={{fontWeight:700,fontSize:13,color:'#e2e8f0',marginBottom:4}}>
+          ⚡ RS Improving vs Declining
+        </div>
+        <div style={{fontSize:10,color:'#4a5568',marginBottom:10}}>
+          Rising blue line = more stocks gaining momentum (buy signal)
+        </div>
+        <ResponsiveContainer width="100%" height={160}>
+          <LineChart data={history} margin={{top:5,right:5,left:-20,bottom:0}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1c2333"/>
+            <XAxis dataKey="scan_date" tickFormatter={fmt} tick={chartStyle} interval="preserveStartEnd"/>
+            <YAxis tick={chartStyle}/>
+            <Tooltip content={<CustomTooltip/>}/>
+            <Line type="monotone" dataKey="rs_improving" name="RS Improving"
+              stroke="#4f8ef7" dot={false} strokeWidth={2}/>
+            <Line type="monotone" dataKey="rs_declining" name="RS Declining"
+              stroke="#f97316" dot={false} strokeWidth={2}/>
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Chart 4: PP count + RS>=70 count */}
+      <div style={{background:'#0e1117',border:'1px solid #1c2333',borderRadius:12,
+        padding:'14px',marginBottom:12}}>
+        <div style={{fontWeight:700,fontSize:13,color:'#e2e8f0',marginBottom:4}}>
+          🔥 PP Signals + Strong RS (≥70) Stocks
+        </div>
+        <div style={{fontSize:10,color:'#4a5568',marginBottom:10}}>
+          Rising PP count = institutional buying increasing
+        </div>
+        <ResponsiveContainer width="100%" height={160}>
+          <LineChart data={history} margin={{top:5,right:5,left:-20,bottom:0}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1c2333"/>
+            <XAxis dataKey="scan_date" tickFormatter={fmt} tick={chartStyle} interval="preserveStartEnd"/>
+            <YAxis tick={chartStyle}/>
+            <Tooltip content={<CustomTooltip/>}/>
+            <Line type="monotone" dataKey="pp_count" name="PP Signals"
+              stroke="#eab308" dot={false} strokeWidth={2}/>
+            <Line type="monotone" dataKey="rs_above_70" name="RS ≥ 70"
+              stroke="#22c55e" dot={false} strokeWidth={2}/>
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Chart 5: New 52W Highs vs Lows */}
+      <div style={{background:'#0e1117',border:'1px solid #1c2333',borderRadius:12,
+        padding:'14px'}}>
+        <div style={{fontWeight:700,fontSize:13,color:'#e2e8f0',marginBottom:4}}>
+          🎯 New 52-Week Highs vs Lows
+        </div>
+        <div style={{fontSize:10,color:'#4a5568',marginBottom:10}}>
+          More new highs than lows = bull market confirmation
+        </div>
+        <ResponsiveContainer width="100%" height={160}>
+          <BarChart data={history} margin={{top:5,right:5,left:-20,bottom:0}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1c2333"/>
+            <XAxis dataKey="scan_date" tickFormatter={fmt} tick={chartStyle} interval="preserveStartEnd"/>
+            <YAxis tick={chartStyle}/>
+            <Tooltip content={<CustomTooltip/>}/>
+            <Bar dataKey="new_52w_high" name="52W Highs" fill="#14b8a6" opacity={0.8}/>
+            <Bar dataKey="new_52w_low"  name="52W Lows"  fill="#ef4444" opacity={0.8}/>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  )
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────
 export default function App(){
   const isMobile=useIsMobile()
   const [session,setSession]=useState(null)
@@ -1854,8 +2005,8 @@ export default function App(){
       fetchIndexDashboard().then(setIndexData).catch(e=>console.error('Index fetch:',e))
     }
     if(mainTab==='breadth'){
-      // Fetch market breadth from Supabase
-      supabase.from('market_breadth').select('*').order('scan_date',{ascending:false}).limit(30)
+      supabase.from('market_breadth').select('*')
+        .order('scan_date',{ascending:true}).limit(90)
         .then(({data})=>setBreadthData(data||[]))
         .catch(e=>console.error('Breadth fetch:',e))
     }
@@ -2609,7 +2760,7 @@ export default function App(){
 
         {/* ══ MARKET BREADTH ══ */}
         {mainTab==='breadth'&&(
-          <div style={{padding:'0 0 20px'}}>
+          <div style={{padding:isMobile?'10px':'12px 16px 20px'}}>
             <div style={{marginBottom:14}}>
               <div style={{fontWeight:700,fontSize:16,color:C.text}}>Market Breadth</div>
               <div style={{fontSize:11,color:C.muted}}>Daily market health indicators for NSE</div>
