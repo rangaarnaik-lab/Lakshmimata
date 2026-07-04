@@ -50,7 +50,19 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
     last:       row.last_price || 0,
     chg:        row.chg_pct || 0,
     pctFromHigh: row.high_52w ? ((row.last_price - row.high_52w) / row.high_52w * 100) : 0,
-    sector:     row.sector || 'Other',
+    sector:      row.sector || 'Other',
+    rvol:        row.rvol,
+    volSignal:   row.vol_signal,
+    rsLineNewHigh: row.rs_line_new_high || false,
+    rsLineTrend:   row.rs_line_trend || 'flat',
+    rsLineValue:   row.rs_line_value,
+    isS2NewEntry:  row.is_s2_new_entry || false,
+    marketCap:  row.market_cap,   // ₹ Cr
+    pe:         row.pe,
+    roe:        row.roe,          // %
+    eps:        row.eps,          // ₹
+    debtEq:     row.debt_eq,
+    promoter:   row.promoter,     // %
     hist:       row.rs_hist || [],
     rsTrend: {
       trend: row.rs_trend || 'flat',
