@@ -825,7 +825,8 @@ function StockDetail({s}){
       {/* Stats */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         {[
-          ['RS-TV',s.rsTv??'—',s.rsTv!=null?rsColor(s.rsTv):C.muted],
+          ['RS-TV (Pine)',s.rsTv!=null?s.rsTv:'Pending next scan',s.rsTv!=null?rsColor(s.rsTv):C.muted],
+          ['RS (IBD)',s.rs,rsColor(s.rs)],
           ['RS in Sector',s.rsSector??'—',s.rsSector!=null?rsColor(s.rsSector):C.muted],
           ['RS in Midcap',s.rsMidcap??'—',s.rsMidcap!=null?rsColor(s.rsMidcap):C.muted],
           ['RS in Smallcap',s.rsSmallcap??'—',s.rsSmallcap!=null?rsColor(s.rsSmallcap):C.muted],
@@ -1004,13 +1005,13 @@ function DesktopRow({s,i,onChart}){
         </div>
 
         {/* RS-TV (TradingView / Lakshmi Mata formula — primary) */}
-        <div style={{textAlign:'center'}}>
+        <div style={{textAlign:'center'}} title={s.rsTv!=null?`RS-TV: ${s.rsTv}`:'Calculating after next scan...'}>
           {s.rsTv!=null?(
             <>
               <div style={{fontWeight:700,fontSize:15,color:rsColor(s.rsTv),lineHeight:1}}>{s.rsTv}</div>
               <div style={{fontSize:7,color:C.teal,marginTop:1,fontWeight:700}}>TV</div>
             </>
-          ):<span style={{color:C.muted,fontSize:9}} title="RS-TV needs 504+ days of price history">N/A</span>}
+          ):<span style={{color:C.muted,fontSize:9}}>…</span>}
         </div>
 
         {/* RS within Midcap */}
@@ -1993,10 +1994,21 @@ export default function App(){
     return()=>clearInterval(refreshTimer.current)
   },[autoRefresh,refreshInterval,runDBScan,historyDate])
 
-  // Load from DB on mount, and whenever the selected history date changes
+  // Auto-load data on mount and every time session/date changes
   useEffect(()=>{
-    if(session)runDBScan()
+    if(session){
+      runDBScan()  // always load immediately on login
+    }
   },[session,historyDate])
+  
+  // Auto-refresh every minute when market is open
+  useEffect(()=>{
+    if(!session||!autoRefresh||historyDate) return
+    const timer = setInterval(()=>{
+      if(isMarketOpen()) runDBScan()
+    }, refreshInterval)
+    return ()=>clearInterval(timer)
+  },[session,autoRefresh,refreshInterval,historyDate,runDBScan])
 
   // Load index dashboard and breadth data on tab switch
   useEffect(()=>{
