@@ -2877,145 +2877,275 @@ export default function App(){
           </div>
         )}
 
-        {/* ══ SQUEEZE ══ */}
+        {/* ══ SQUEEZE SCANNER (John Carter TTM) ══ */}
         {mainTab==='squeeze'&&(
-          <div>
-            <LastUpdatedBar
-              scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
-              autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
-              refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
-              onRefresh={runDBScan}
-            />
-            <div style={{background:C.card,border:`1px solid ${C.teal}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:15,color:C.teal,marginBottom:6}}>🌀 Squeeze Scanner</div>
-              <div style={{fontSize:12,color:C.muted,marginBottom:12}}>
-                Bollinger Band Squeeze (volatility contraction) + VCP (Volatility Contraction Pattern, Minervini style)
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8}}>
-                {[
-                  {l:'🔵 BB In Squeeze',v:stocks.filter(s=>s.squeeze?.inSqueeze).length,c:C.blue},
-                  {l:'🟢 BB Fired',v:stocks.filter(s=>s.squeeze?.squeezeFired).length,c:C.green},
-                  {l:'📐 VCP Forming',v:stocks.filter(s=>s.vcp?.isVCP).length,c:C.purple},
-                  {l:'🚀 VCP Fired',v:stocks.filter(s=>s.vcp?.vcpFired).length,c:C.accent},
-                ].map(({l,v,c})=>(
-                  <div key={l} style={{background:C.bg,borderRadius:8,padding:'12px',textAlign:'center'}}>
-                    <div style={{fontSize:24,fontWeight:900,color:c}}>{v}</div>
-                    <div style={{fontSize:10,color:C.muted,marginTop:3}}>{l}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div style={{padding:isMobile?'10px':'12px 16px'}}>
 
-            {/* Section 1: Currently in squeeze (coiled) */}
-            <div style={{marginBottom:20}}>
-              <div style={{fontWeight:800,fontSize:14,color:C.blue,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
-                🔵 In Squeeze — Coiled, Waiting to Fire
-              </div>
-              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
-                Low volatility, BB inside Keltner Channel — often precedes a big move
-              </div>
-              {(()=>{
-                const inSqueeze = stocks.filter(s=>s.squeeze?.inSqueeze || s.vcp?.isVCP).sort((a,b)=>b.rs-a.rs)
-                if(inSqueeze.length===0) return(
-                  <div style={{textAlign:'center',padding:'30px 0',color:C.muted,fontSize:12}}>
-                    No stocks currently in squeeze
+            {/* Timeframe tabs */}
+            {(()=>{
+              const [sqTab,setSqTab]=window._sqTabState||(window._sqTabState=[useState('daily')])[0]
+                ? window._sqTabState : ['daily',()=>{}]
+
+              const daily   = stocks.filter(s=>s.inSqueeze||s.squeezeFired)
+              const weekly  = stocks.filter(s=>s.sqWeeklyIn||s.sqWeeklyFired)
+              const hourly  = stocks.filter(s=>s.sqHourlyIn||s.sqHourlyFired)
+              const allFired= stocks.filter(s=>s.sqFiredBullish||s.sqFiredBearish||s.sqWeeklyBullish||s.sqHourlyBullish)
+
+              return null
+            })()}
+
+            {/* Use local state via ref trick */}
+            {(()=>{
+              const [sqTf,setSqTf] = useState('daily')
+              window.__setSqTf = setSqTf
+
+              const filterStocks = (tf) => {
+                if(tf==='daily')  return stocks.filter(s=>s.inSqueeze||s.squeezeFired)
+                if(tf==='weekly') return stocks.filter(s=>s.sqWeeklyIn||s.sqWeeklyFired)
+                if(tf==='hourly') return stocks.filter(s=>s.sqHourlyIn||s.sqHourlyFired)
+                if(tf==='fired')  return stocks.filter(s=>s.sqFiredBullish||s.sqFiredBearish||s.sqWeeklyBullish||s.sqHourlyBullish)
+                return []
+              }
+
+              const sqStocks = filterStocks(sqTf)
+              const firedNow = stocks.filter(s=>s.sqFiredBullish||s.sqFiredBearish)
+              const multiTF  = stocks.filter(s=>
+                (s.inSqueeze||s.sqWeeklyIn)&&(s.inSqueeze&&s.sqWeeklyIn)
+              )
+
+              return(
+                <div>
+                  {/* Summary stats */}
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14}}>
+                    {[
+                      {l:'Daily Squeeze',  v:stocks.filter(s=>s.inSqueeze).length,       c:C.red},
+                      {l:'Weekly Squeeze', v:stocks.filter(s=>s.sqWeeklyIn).length,      c:C.orange},
+                      {l:'Hourly Squeeze', v:stocks.filter(s=>s.sqHourlyIn).length,      c:C.yellow},
+                      {l:'Fired Today',    v:firedNow.length,                             c:C.green},
+                    ].map(({l,v,c})=>(
+                      <div key={l} style={{background:C.card,border:`1px solid ${c}33`,
+                        borderRadius:8,padding:'10px',textAlign:'center'}}>
+                        <div style={{fontWeight:700,fontSize:20,color:c}}>{v}</div>
+                        <div style={{fontSize:9,color:C.muted,marginTop:2}}>{l}</div>
+                      </div>
+                    ))}
                   </div>
-                )
-                return(
-                  <>
-                    <TVCopyPanel stocks={inSqueeze} label="In Squeeze"/>
-                    <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:8}}>
-                      {inSqueeze.slice(0,30).map(s=>(
-                        <div key={s.sym} style={{background:C.card,border:`1px solid ${C.blue}33`,
-                          borderRadius:10,padding:'12px'}}>
-                          <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+
+                  {/* Multi-TF alert */}
+                  {multiTF.length>0&&(
+                    <div style={{background:C.orange+'11',border:`1px solid ${C.orange}44`,
+                      borderRadius:10,padding:'10px 14px',marginBottom:12,
+                      display:'flex',alignItems:'center',gap:8}}>
+                      <div style={{width:8,height:8,borderRadius:'50%',background:C.orange,flexShrink:0}}/>
+                      <span style={{fontWeight:700,fontSize:12,color:C.orange}}>
+                        {multiTF.length} stocks in squeeze on BOTH Daily + Weekly — highest probability setups
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Timeframe selector */}
+                  <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap'}}>
+                    {[
+                      {id:'fired',  label:'🔥 Fired Now',    count:firedNow.length,                          c:C.green},
+                      {id:'daily',  label:'📅 Daily',         count:stocks.filter(s=>s.inSqueeze).length,     c:C.red},
+                      {id:'weekly', label:'📈 Weekly',        count:stocks.filter(s=>s.sqWeeklyIn).length,    c:C.orange},
+                      {id:'hourly', label:'⏱ Hourly',        count:stocks.filter(s=>s.sqHourlyIn).length,    c:C.yellow},
+                      {id:'multi',  label:'⭐ Multi-TF',      count:multiTF.length,                           c:C.accent},
+                    ].map(({id,label,count,c})=>(
+                      <button key={id} onClick={()=>setSqTf(id)}
+                        style={{padding:'6px 12px',borderRadius:7,cursor:'pointer',
+                          border:`1px solid ${sqTf===id?c:C.border}`,
+                          background:sqTf===id?c+'22':'transparent',
+                          color:sqTf===id?c:C.muted,fontSize:11,fontWeight:sqTf===id?700:400}}>
+                        {label}
+                        <span style={{marginLeft:5,background:c+'33',color:c,
+                          padding:'1px 5px',borderRadius:10,fontSize:10}}>{count}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Fired Now — special view */}
+                  {sqTf==='fired'&&(
+                    <div>
+                      <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:10}}>
+                        🟢 Squeeze Fired — Breaking Out Now
+                      </div>
+                      {firedNow.length===0?(
+                        <div style={{textAlign:'center',padding:'40px',color:C.muted,fontSize:12}}>
+                          No squeeze fires yet today — check back during market hours
+                        </div>
+                      ):firedNow.map(s=>(
+                        <div key={s.sym} style={{background:C.card,
+                          border:`2px solid ${s.sqFiredBullish?C.green:C.red}55`,
+                          borderRadius:12,padding:'14px',marginBottom:10}}>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
                             <div>
-                              <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
-                              <div style={{fontSize:10,color:C.muted}}>{s.sector}</div>
+                              <span onClick={()=>setChartSym(s.sym===chartSym?null:s.sym)}
+                                style={{fontWeight:700,fontSize:15,color:C.accent,cursor:'pointer'}}>
+                                {s.sym}
+                              </span>
+                              <span style={{marginLeft:8,fontSize:10,color:C.muted}}>{s.sector}</span>
+                              <div style={{display:'flex',gap:6,marginTop:6,flexWrap:'wrap'}}>
+                                {s.sqFiredBullish&&<span style={{padding:'2px 8px',borderRadius:4,
+                                  fontSize:9,fontWeight:700,background:C.green+'22',color:C.green}}>
+                                  🟢 Bullish Fire
+                                </span>}
+                                {s.sqFiredBearish&&<span style={{padding:'2px 8px',borderRadius:4,
+                                  fontSize:9,fontWeight:700,background:C.red+'22',color:C.red}}>
+                                  🔴 Bearish Fire
+                                </span>}
+                                {s.sqWeeklyBullish&&<span style={{padding:'2px 8px',borderRadius:4,
+                                  fontSize:9,fontWeight:700,background:C.orange+'22',color:C.orange}}>
+                                  📈 Weekly Bullish
+                                </span>}
+                                <span style={{padding:'2px 8px',borderRadius:4,fontSize:9,
+                                  fontWeight:600,background:C.card,color:C.muted,border:`1px solid ${C.border}`}}>
+                                  {s.squeezeDays}d in squeeze
+                                </span>
+                              </div>
                             </div>
                             <div style={{textAlign:'right'}}>
-                              <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
-                              <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(1)}%</div>
+                              <div style={{fontWeight:700,fontSize:20,color:(s.rsTv||s.rs)>=90?C.green:(s.rsTv||s.rs)>=70?C.accent:C.yellow}}>
+                                {s.rsTv||s.rs}
+                              </div>
+                              <div style={{fontSize:9,color:C.teal}}>RS-TV</div>
+                              <div style={{fontWeight:700,fontSize:13,color:s.chg>=0?C.green:C.red,marginTop:4}}>
+                                {s.chg>=0?'+':''}{s.chg?.toFixed(2)}%
+                              </div>
                             </div>
                           </div>
-                          <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-                            {s.squeeze?.inSqueeze&&(
-                              <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
-                                background:C.blue+'22',color:C.blue}}>
-                                BB {s.squeeze.squeezeDays}d · {s.squeeze.bbWidthPct}%
+
+                          {/* TTM Histogram dots */}
+                          {s.sqDotsD&&s.sqDotsD.length>0&&(
+                            <div style={{marginTop:10}}>
+                              <div style={{fontSize:9,color:C.muted,marginBottom:4}}>Squeeze dots (last 20 days)</div>
+                              <div style={{display:'flex',gap:2,alignItems:'center'}}>
+                                {s.sqDotsD.map((dot,i)=>(
+                                  <div key={i} style={{width:8,height:8,borderRadius:'50%',
+                                    background:dot==='red'?C.red:dot==='green'?C.green:'#374151',
+                                    flexShrink:0}}/>
+                                ))}
+                                <span style={{fontSize:9,color:C.muted,marginLeft:6}}>
+                                  🔴=squeeze on  🟢=fired
+                                </span>
                               </div>
-                            )}
-                            {s.vcp?.isVCP&&(
-                              <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
-                                background:C.purple+'22',color:C.purple}}>
-                                VCP {s.vcp.vcpStage} contractions
-                              </div>
-                            )}
-                          </div>
-                          {s.vcp?.contractions?.length>0&&(
-                            <div style={{fontSize:9,color:C.muted,marginTop:4}}>
-                              Pullbacks: {s.vcp.contractions.map(c=>`${c}%`).join(' → ')}
+                              {/* Momentum histogram */}
+                              {s.sqHistD&&s.sqHistD.length>0&&(
+                                <div style={{marginTop:6}}>
+                                  <div style={{fontSize:9,color:C.muted,marginBottom:2}}>Momentum histogram</div>
+                                  <div style={{display:'flex',gap:1,alignItems:'flex-end',height:30}}>
+                                    {s.sqHistD.map((v,i)=>{
+                                      const max = Math.max(...s.sqHistD.map(Math.abs))
+                                      const h = max>0?Math.abs(v)/max*28:0
+                                      const c = v>0?C.green:C.red
+                                      return(
+                                        <div key={i} style={{flex:1,display:'flex',
+                                          flexDirection:'column',justifyContent:v>=0?'flex-end':'flex-start',
+                                          height:'100%'}}>
+                                          <div style={{background:c,borderRadius:1,
+                                            height:`${h}px`,minHeight:1,opacity:0.8}}/>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
+
+                          {/* Strength score */}
+                          <div style={{marginTop:8,display:'flex',gap:8,fontSize:10}}>
+                            <span style={{color:C.muted}}>Strength:</span>
+                            <span style={{fontWeight:700,color:C.accent}}>{s.sqStrength?.toFixed(0)||0}</span>
+                            <span style={{color:C.muted,marginLeft:8}}>Momentum:</span>
+                            <span style={{fontWeight:700,color:s.sqMomentumDir==='up'?C.green:s.sqMomentumDir==='down'?C.red:C.muted}}>
+                              {s.sqMomentumDir==='up'?'↑ Rising':s.sqMomentumDir==='down'?'↓ Falling':'→ Flat'}
+                            </span>
+                          </div>
                         </div>
                       ))}
                     </div>
-                  </>
-                )
-              })()}
-            </div>
+                  )}
 
-            {/* Section 2: Just fired (breaking out) */}
-            <div>
-              <div style={{fontWeight:800,fontSize:14,color:C.green,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
-                🟢 Firing Now — Breaking Out of Squeeze
-              </div>
-              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
-                Was in squeeze, now expanding with volume — the move is starting
-              </div>
-              {(()=>{
-                const fired = stocks.filter(s=>s.squeeze?.squeezeFired || s.vcp?.vcpFired).sort((a,b)=>b.rs-a.rs)
-                if(fired.length===0) return(
-                  <div style={{textAlign:'center',padding:'40px 0',color:C.muted}}>
-                    <div style={{fontSize:36,marginBottom:10}}>🌀</div>
-                    <div style={{fontSize:13,fontWeight:700,color:C.text}}>No squeeze fires yet</div>
-                    <div style={{fontSize:11,marginTop:4}}>Check back after market activity</div>
-                  </div>
-                )
-                return(
-                  <>
-                    <TVCopyPanel stocks={fired} label="Squeeze Fired"/>
-                    {fired.map(s=>(
-                      <div key={s.sym} style={{background:C.card,border:`2px solid ${C.green}44`,
-                        borderRadius:12,marginBottom:10,padding:'14px'}}>
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-                          <div>
-                            <div style={{fontWeight:800,fontSize:16}}>{s.sym}</div>
-                            <div style={{fontSize:11,color:C.muted}}>{s.sector}</div>
-                            <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
-                              {s.squeeze?.squeezeFired&&<Badge color={C.green} glow>🟢 BB Fired</Badge>}
-                              {s.vcp?.vcpFired&&<Badge color={C.accent} glow>🚀 VCP Fired</Badge>}
-                              {s.pp?.isPP&&<Badge color={C.orange}>🔥PP</Badge>}
+                  {/* Daily / Weekly / Hourly / Multi-TF stock lists */}
+                  {sqTf!=='fired'&&(
+                    <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:8}}>
+                      {(sqTf==='multi'?multiTF:filterStocks(sqTf))
+                        .sort((a,b)=>(b.sqStrength||0)-(a.sqStrength||0))
+                        .map(s=>{
+                          const inSq = sqTf==='weekly'?s.sqWeeklyIn:
+                                       sqTf==='hourly'?s.sqHourlyIn:s.inSqueeze
+                          const days = sqTf==='weekly'?s.sqWeeklyDays:
+                                       sqTf==='hourly'?s.sqHourlyDays:s.squeezeDays
+                          const mom  = sqTf==='weekly'?s.sqWeeklyMom:
+                                       sqTf==='hourly'?s.sqHourlyMom:s.sqMomentum
+                          const momDir=sqTf==='weekly'?s.sqWeeklyMomDir:
+                                       sqTf==='hourly'?s.sqHourlyMomDir:s.sqMomentumDir
+                          return(
+                            <div key={s.sym} style={{background:C.card,
+                              border:`1px solid ${inSq?C.red:C.green}33`,
+                              borderRadius:10,padding:'12px'}}>
+                              <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+                                <div>
+                                  <span onClick={()=>setChartSym(s.sym===chartSym?null:s.sym)}
+                                    style={{fontWeight:700,fontSize:13,color:C.accent,cursor:'pointer'}}>
+                                    {s.sym}
+                                  </span>
+                                  <span style={{fontSize:9,color:C.muted,marginLeft:6}}>{s.sector}</span>
+                                </div>
+                                <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                                  <span style={{fontWeight:700,fontSize:14,
+                                    color:(s.rsTv||s.rs)>=90?C.green:(s.rsTv||s.rs)>=70?C.accent:C.yellow}}>
+                                    {s.rsTv||s.rs}
+                                  </span>
+                                  <span style={{fontWeight:700,fontSize:12,color:s.chg>=0?C.green:C.red}}>
+                                    {s.chg>=0?'+':''}{s.chg?.toFixed(1)}%
+                                  </span>
+                                </div>
+                              </div>
+                              <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
+                                <span style={{padding:'2px 7px',borderRadius:4,fontSize:9,fontWeight:600,
+                                  background:(inSq?C.red:C.green)+'18',
+                                  color:inSq?C.red:C.green}}>
+                                  {inSq?'🔴 In Squeeze':'🟢 Fired'}
+                                </span>
+                                <span style={{padding:'2px 7px',borderRadius:4,fontSize:9,
+                                  background:C.card,color:C.muted,border:`1px solid ${C.border}`}}>
+                                  {days}d
+                                </span>
+                                {sqTf==='multi'&&(
+                                  <span style={{padding:'2px 7px',borderRadius:4,fontSize:9,fontWeight:600,
+                                    background:C.accent+'18',color:C.accent}}>⭐ D+W</span>
+                                )}
+                              </div>
+                              {/* Dots */}
+                              {s.sqDotsD&&s.sqDotsD.length>0&&sqTf==='daily'&&(
+                                <div style={{display:'flex',gap:2,alignItems:'center',marginBottom:4}}>
+                                  {s.sqDotsD.slice(-15).map((dot,i)=>(
+                                    <div key={i} style={{width:6,height:6,borderRadius:'50%',
+                                      background:dot==='red'?C.red:dot==='green'?C.green:'#374151'}}/>
+                                  ))}
+                                </div>
+                              )}
+                              {/* Momentum + strength */}
+                              <div style={{display:'flex',gap:8,fontSize:9,color:C.muted}}>
+                                <span>Momentum: <span style={{fontWeight:600,
+                                  color:momDir==='up'?C.green:momDir==='down'?C.red:C.muted}}>
+                                  {momDir==='up'?'↑':momDir==='down'?'↓':'→'} {mom?.toFixed(2)}
+                                </span></span>
+                                {s.sqStrength>0&&<span>Strength: <span style={{fontWeight:600,color:C.accent}}>
+                                  {s.sqStrength?.toFixed(0)}
+                                </span></span>}
+                              </div>
                             </div>
-                          </div>
-                          <div style={{textAlign:'right'}}>
-                            <div style={{fontWeight:900,fontSize:20,color:rsColor(s.rs)}}>{s.rs}</div>
-                            <div style={{fontWeight:700,fontSize:13,color:s.chg>=0?C.green:C.red}}>
-                              {s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
-                            <div style={{fontSize:11,color:C.muted}}>{fmtP(s.last)}</div>
-                          </div>
-                        </div>
-                        {s.vcp?.contractions?.length>0&&(
-                          <div style={{fontSize:10,color:C.muted}}>
-                            VCP pullbacks: {s.vcp.contractions.map(c=>`${c}%`).join(' → ')} (contracting)
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </>
-                )
-              })()}
-            </div>
+                          )
+                        })}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
           </div>
         )}
 
