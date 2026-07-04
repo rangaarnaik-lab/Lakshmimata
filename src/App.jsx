@@ -16,11 +16,13 @@ let OWNER_TOKEN = import.meta.env.VITE_OWNER_UPSTOX_TOKEN || ''
 
 // ── Colors ────────────────────────────────────────────────────────────
 const C = {
-  bg:'#080c14',card:'#0f1623',border:'#1a2540',
-  accent:'#00e5b0',text:'#dde6f0',muted:'#4a6080',
-  green:'#1fd67a',red:'#f0455a',yellow:'#f5a623',
-  purple:'#a78bfa',orange:'#fb923c',blue:'#38bdf8',
-  pink:'#f472b6',lime:'#a3e635',teal:'#2dd4bf',
+  bg:'#0a0d12',card:'#0e1117',border:'#1c2333',
+  accent:'#4f8ef7',text:'#e2e8f0',muted:'#4a5568',
+  green:'#22c55e',red:'#ef4444',yellow:'#eab308',
+  purple:'#a855f7',orange:'#f97316',blue:'#3b82f6',
+  pink:'#ec4899',lime:'#84cc16',teal:'#14b8a6',
+  sidebar:'#080b10',divider:'#161b27',
+  rowHover:'#121824',active:'#1a2035',
 }
 const rsColor  = r => r>=90?C.green:r>=70?C.accent:r>=50?C.yellow:C.red
 const rsLabel  = r => r>=90?'Elite':r>=80?'Strong':r>=60?'Avg+':r>=40?'Avg':'Weak'
@@ -501,10 +503,11 @@ function LastUpdatedBar({scanMeta,lastRefresh,loading,autoRefresh,setAutoRefresh
 function StageBadge({stage}){
   return(
     <div title={stage.desc}
-      style={{display:'inline-flex',alignItems:'center',gap:3,
-        padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:800,
-        background:stage.color+'22',color:stage.color,
-        border:`1px solid ${stage.color}44`,whiteSpace:'nowrap',cursor:'help'}}>
+      style={{display:'inline-flex',alignItems:'center',
+        padding:'1px 5px',borderRadius:3,fontSize:8,fontWeight:700,
+        background:stage.color+'18',color:stage.color,
+        border:`1px solid ${stage.color}33`,whiteSpace:'nowrap',cursor:'help',
+        letterSpacing:'0.03em'}}>
       {stage.label}
     </div>
   )
@@ -909,6 +912,47 @@ function StockCard({s,i}){
   )
 }
 
+// ── TradingView Chart Modal ──────────────────────────────────────────
+function TVChartModal({sym, onClose}){
+  if(!sym) return null
+  const tvSym = `NSE:${sym}`
+  return(
+    <div onClick={onClose}
+      style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',
+        zIndex:1000,display:'flex',flexDirection:'column'}}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{flex:1,display:'flex',flexDirection:'column',margin:'20px',
+          background:'#0e1117',borderRadius:12,border:'1px solid #1c2333',
+          overflow:'hidden'}}>
+        {/* Header */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+          padding:'10px 16px',borderBottom:'1px solid #1c2333',flexShrink:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontWeight:700,fontSize:16,color:'#e2e8f0'}}>{sym}</span>
+            <a href={`https://www.tradingview.com/chart/?symbol=${tvSym}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{fontSize:11,color:'#4f8ef7',textDecoration:'none'}}>
+              Open in TradingView ↗
+            </a>
+          </div>
+          <button onClick={onClose}
+            style={{background:'transparent',border:'1px solid #1c2333',
+              color:'#4a5568',fontSize:18,width:32,height:32,borderRadius:6,
+              cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            ×
+          </button>
+        </div>
+        {/* TradingView Widget iframe */}
+        <iframe
+          src={`https://s.tradingview.com/widgetembed/?frameElementId=tv_chart&symbol=${tvSym}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=0e1117&studies=RSI%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata&withdateranges=1&showpopupbutton=0&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=%5B%5D&disabled_features=%5B%5D&locale=en&utm_source=lakshmimata`}
+          style={{flex:1,width:'100%',border:'none'}}
+          allowFullScreen
+        />
+      </div>
+    </div>
+  )
+}
+
 function SortableHeader({label,sortKey,sortBy,sortDir,onSort,align='left'}){
   const active = sortBy===sortKey
   return(
@@ -922,33 +966,38 @@ function SortableHeader({label,sortKey,sortBy,sortDir,onSort,align='left'}){
   )
 }
 
-function DesktopRow({s,i}){
+function DesktopRow({s,i,onChart}){
   const [open,setOpen]=useState(false)
   // Grid: # | Symbol+Sector+Badges | RS | Trend | Price | Chg% | PP 10d | RS 7d | expand
-  const COLS='32px 140px 55px 50px 50px 50px 55px 60px 75px 60px 120px 150px 90px 24px'
+  const COLS='32px 130px 52px 48px 48px 52px 52px 60px 70px 58px 110px 140px 55px 55px 48px 48px 48px 55px 24px'
   return(
     <div style={{borderBottom:`1px solid ${C.border}22`}}>
       <div onClick={()=>setOpen(o=>!o)}
         style={{display:'grid',gridTemplateColumns:COLS,
-          padding:'7px 14px',alignItems:'center',cursor:'pointer',gap:4,
-          background:open?C.border+'44':'transparent'}}
-        onMouseEnter={e=>{if(!open)e.currentTarget.style.background=C.border+'22'}}
+          padding:'5px 12px',alignItems:'center',cursor:'pointer',gap:4,
+          borderBottom:`1px solid ${C.divider}`,
+          background:open?C.active:'transparent'}}
+        onMouseEnter={e=>{if(!open)e.currentTarget.style.background=C.rowHover}}
         onMouseLeave={e=>{if(!open)e.currentTarget.style.background='transparent'}}>
 
         {/* # */}
         <span style={{color:C.muted,fontSize:11,textAlign:'center'}}>{i+1}</span>
 
-        {/* Symbol + Sector + Badges */}
-        <div style={{minWidth:0}}>
-          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-            <span style={{fontWeight:800,fontSize:13,color:C.text}}>{s.sym}</span>
-            <span style={{fontSize:10,color:C.muted,fontWeight:500}}>{s.sector}</span>
+        {/* Symbol — WealthLab style: bold sym + muted sector on same line */}
+        <div style={{minWidth:0,overflow:'hidden'}}>
+          <div style={{display:'flex',alignItems:'center',gap:4}}>
+            <span onClick={e=>{e.stopPropagation();onChart&&onChart()}}
+              style={{fontWeight:600,fontSize:12,color:C.accent,
+                letterSpacing:'0.01em',cursor:'pointer',textDecoration:'underline',
+                textDecorationColor:C.accent+'55',textUnderlineOffset:'2px'}}
+              title={`Open ${s.sym} chart`}>{s.sym}</span>
+            {s.pp.isPP&&<span style={{fontSize:9,color:C.orange,fontWeight:700}}>PP</span>}
+            {s.hy.isHY&&<span style={{fontSize:9,color:C.blue,fontWeight:700}}>HY</span>}
+            {s.ht.isHT&&<span style={{fontSize:9,color:C.purple,fontWeight:700}}>HT</span>}
           </div>
-          <div style={{display:'flex',gap:3,marginTop:3,flexWrap:'wrap'}}>
-            {s.pp.isPP&&<Badge color={C.orange}>🔥PP</Badge>}
-            {s.nearEMA9.isNearEMA9&&<Badge color={C.green} glow>⚡EMA9</Badge>}
-            {s.hy.isHY&&<Badge color={C.blue}>HY</Badge>}
-            {s.ht.isHT&&<Badge color={C.purple}>HT</Badge>}
+          <div style={{fontSize:9,color:C.muted,marginTop:1,
+            overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+            {s.sector}
           </div>
         </div>
 
@@ -956,14 +1005,14 @@ function DesktopRow({s,i}){
         <div style={{textAlign:'center'}}>
           {s.rsTv!=null?(
             <>
-              <div style={{fontWeight:900,fontSize:18,color:rsColor(s.rsTv),lineHeight:1}}>{s.rsTv}</div>
+              <div style={{fontWeight:700,fontSize:15,color:rsColor(s.rsTv),lineHeight:1}}>{s.rsTv}</div>
               <div style={{fontSize:7,color:C.teal,marginTop:1,fontWeight:700}}>TV</div>
             </>
           ):<span style={{color:C.muted,fontSize:9}} title="RS-TV needs 504+ days of price history">N/A</span>}
         </div>
 
         {/* RS within Midcap */}
-        <div style={{textAlign:'center'}} title={s.rsMidcap!=null?`RS vs Midcap 150 peers: ${s.rsMidcap}`:'Not in Nifty Midcap 150'}>
+        <div style={{textAlign:'center'}} title={`RS rank if compared vs Midcap 150 stocks: ${s.rsMidcap??'N/A'}`}>
           {s.rsMidcap!=null?(
             <>
               <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsMidcap)}}>{s.rsMidcap}</div>
@@ -973,7 +1022,7 @@ function DesktopRow({s,i}){
         </div>
 
         {/* RS within Smallcap */}
-        <div style={{textAlign:'center'}} title={s.rsSmallcap!=null?`RS vs Smallcap 250 peers: ${s.rsSmallcap}`:'Not in Nifty Smallcap 250'}>
+        <div style={{textAlign:'center'}} title={`RS rank if compared vs Smallcap 250 stocks: ${s.rsSmallcap??'N/A'}`}>
           {s.rsSmallcap!=null?(
             <>
               <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsSmallcap)}}>{s.rsSmallcap}</div>
@@ -982,18 +1031,10 @@ function DesktopRow({s,i}){
           ):<span style={{color:C.border,fontSize:9}}>—</span>}
         </div>
 
-        {/* RS within Microcap */}
-        <div style={{textAlign:'center'}} title={s.rsMicrocap!=null?`RS vs Microcap 250 peers: ${s.rsMicrocap}`:'Not in Nifty Microcap 250'}>
-          {s.rsMicrocap!=null?(
-            <>
-              <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsMicrocap)}}>{s.rsMicrocap}</div>
-              <div style={{fontSize:7,color:C.purple,marginTop:1,fontWeight:600}}>MCR</div>
-            </>
-          ):<span style={{color:C.border,fontSize:9}}>—</span>}
-        </div>
+
 
         {/* RS within Sector */}
-        <div style={{textAlign:'center'}} title={s.rsSector!=null?`RS vs ${s.sector} sector peers: ${s.rsSector}`:'Sector pool too small (<5 stocks)'}>
+        <div style={{textAlign:'center'}} title={`RS rank vs ${s.sector} sector peers: ${s.rsSector??'N/A'}`}>
           {s.rsSector!=null?(
             <>
               <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsSector)}}>{s.rsSector}</div>
@@ -1041,8 +1082,8 @@ function DesktopRow({s,i}){
           })}
         </div>
 
-        {/* Stage + IBV + Breakout */}
-        <div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'flex-start'}}>
+        {/* Stage compact */}
+        <div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'flex-start'}}>
           <StageBadge stage={calcWeinsteinStage(s)}/>
           {(()=>{const ibv=calcIBV(s);return ibv.isIBV&&(
             <div style={{padding:'2px 6px',borderRadius:5,fontSize:9,fontWeight:700,
@@ -1059,6 +1100,50 @@ function DesktopRow({s,i}){
             </div>
           )})()}
           <VolBadge vol={calcVolAnalysis(s)}/>
+        </div>
+
+        {/* Market Cap */}
+        <div style={{textAlign:'right',fontSize:10}}>
+          {s.marketCap!=null?(
+            <span style={{color:C.text}}>
+              {s.marketCap>=100000?`${(s.marketCap/100000).toFixed(1)}L`:
+               s.marketCap>=1000?`${(s.marketCap/1000).toFixed(1)}K`:
+               `${s.marketCap}`}
+            </span>
+          ):<span style={{color:C.muted}}>—</span>}
+          <div style={{fontSize:8,color:C.muted}}>MCap</div>
+        </div>
+
+        {/* P/E */}
+        <div style={{textAlign:'right',fontSize:10}}>
+          {s.pe!=null?(
+            <span style={{color:s.pe<20?C.green:s.pe<40?C.yellow:C.red}}>{s.pe.toFixed(1)}</span>
+          ):<span style={{color:C.muted}}>—</span>}
+          <div style={{fontSize:8,color:C.muted}}>P/E</div>
+        </div>
+
+        {/* ROE */}
+        <div style={{textAlign:'right',fontSize:10}}>
+          {s.roe!=null?(
+            <span style={{color:s.roe>20?C.green:s.roe>10?C.yellow:C.red}}>{s.roe.toFixed(1)}%</span>
+          ):<span style={{color:C.muted}}>—</span>}
+          <div style={{fontSize:8,color:C.muted}}>ROE</div>
+        </div>
+
+        {/* Debt/Equity */}
+        <div style={{textAlign:'right',fontSize:10}}>
+          {s.debtEq!=null?(
+            <span style={{color:s.debtEq<0.5?C.green:s.debtEq<1.5?C.yellow:C.red}}>{s.debtEq.toFixed(2)}</span>
+          ):<span style={{color:C.muted}}>—</span>}
+          <div style={{fontSize:8,color:C.muted}}>D/E</div>
+        </div>
+
+        {/* Promoter % */}
+        <div style={{textAlign:'right',fontSize:10}}>
+          {s.promoter!=null?(
+            <span style={{color:s.promoter>55?C.green:s.promoter>35?C.yellow:C.red}}>{s.promoter.toFixed(1)}%</span>
+          ):<span style={{color:C.muted}}>—</span>}
+          <div style={{fontSize:8,color:C.muted}}>Prom</div>
         </div>
 
         {/* Expand */}
@@ -1562,6 +1647,68 @@ export default function App(){
 
   // PP filters per tab
   const [presetFilter,setPresetFilter]=useState('all')
+  const [chartSym,setChartSym]=useState(null)
+  const [notifPermission,setNotifPermission]=useState(
+    typeof Notification!=='undefined'?Notification.permission:'denied'
+  )
+  const lastAlertCheck = useRef(null)
+
+  // Request notification permission on mount
+  useEffect(()=>{
+    if(typeof Notification!=='undefined' && Notification.permission==='default'){
+      Notification.requestPermission().then(p=>setNotifPermission(p))
+    }
+  },[])
+
+  // Poll for new squeeze fires every minute
+  useEffect(()=>{
+    if(!session) return
+    const checkSqueezeAlerts = async()=>{
+      try{
+        const since = lastAlertCheck.current || new Date(Date.now()-90000).toISOString()
+        const {data} = await supabase
+          .from('squeeze_alerts')
+          .select('*')
+          .gte('fired_at', since)
+          .order('fired_at', {ascending:false})
+          .limit(10)
+
+        lastAlertCheck.current = new Date().toISOString()
+
+        if(data && data.length > 0){
+          data.forEach(alert=>{
+            // Browser notification
+            if(typeof Notification!=='undefined' && Notification.permission==='granted'){
+              const n = new Notification(
+                `🔥 ${alert.sym} — Squeeze Fired!`,
+                {
+                  body: `${alert.fire_type} | RS: ${alert.rs_tv||alert.rs} | ${alert.chg_pct>=0?'+':''}${alert.chg_pct?.toFixed(2)}% | ${alert.sector}`,
+                  icon: '/favicon.ico',
+                  tag: `squeeze-${alert.sym}`,  // prevents duplicate for same stock
+                  requireInteraction: false,
+                }
+              )
+              // Click notification → switch to squeeze tab
+              n.onclick = ()=>{
+                window.focus()
+                setMainTab('squeeze')
+              }
+              // Auto-close after 8 seconds
+              setTimeout(()=>n.close(), 8000)
+            }
+          })
+        }
+      }catch(e){
+        console.warn('Squeeze alert check failed:', e.message)
+      }
+    }
+
+    // Check immediately then every 60s
+    checkSqueezeAlerts()
+    const timer = setInterval(checkSqueezeAlerts, 60000)
+    return ()=>clearInterval(timer)
+  },[session])
+  const [chartWide,setChartWide]=useState(false)
   const [ppFilterRS,setPpFilterRS]=useState('all')
   const [ppFilter52WL,setPpFilter52WL]=useState('all')
   const [ppFilterWeak,setPpFilterWeak]=useState('all')
@@ -1585,6 +1732,12 @@ export default function App(){
 
   // ── DB-powered scan (reads from Supabase, pre-computed by live server) ──
   const [indexData,setIndexData]=useState([])
+  const [breadthData,setBreadthData]=useState(null)
+  const [portfolioHoldings,setPortfolioHoldings]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem('lm_portfolio')||'[]')}catch{return []}
+  })
+  const [compareSyms,setCompareSyms]=useState([])
+  const [compareInput,setCompareInput]=useState('')
   const [historyDate,setHistoryDate]=useState(null) // null = live today, else 'YYYY-MM-DD'
   const [availableDates,setAvailableDates]=useState([])
 
@@ -1694,12 +1847,24 @@ export default function App(){
     if(session)runDBScan()
   },[session,historyDate])
 
-  // Load index dashboard whenever its tab is opened
+  // Load index dashboard and breadth data on tab switch
   useEffect(()=>{
-    if(session&&mainTab==='indices'){
+    if(!session) return
+    if(mainTab==='indices'){
       fetchIndexDashboard().then(setIndexData).catch(e=>console.error('Index fetch:',e))
     }
+    if(mainTab==='breadth'){
+      // Fetch market breadth from Supabase
+      supabase.from('market_breadth').select('*').order('scan_date',{ascending:false}).limit(30)
+        .then(({data})=>setBreadthData(data||[]))
+        .catch(e=>console.error('Breadth fetch:',e))
+    }
   },[session,mainTab])
+
+  // Save portfolio to localStorage whenever it changes
+  useEffect(()=>{
+    localStorage.setItem('lm_portfolio', JSON.stringify(portfolioHoldings))
+  },[portfolioHoldings])
 
   // Filter helpers
   const applyPP=(list,f)=>f==='yes'?list.filter(s=>s.pp?.isPP):f==='no'?list.filter(s=>!s.pp?.isPP):list
@@ -1761,7 +1926,7 @@ export default function App(){
   const weakBase=stocks.filter(s=>s.weakRS.chg1d>=weakThreshold&&s.rs<50&&s.sym.toLowerCase().includes(weakSearch.toLowerCase())&&(!weakSigOnly||s.weakRS.isSignal)).sort((a,b)=>b.weakRS.chg1d-a.weakRS.chg1d)
   const displayedWeak=applyPP(weakBase,ppFilterWeak)
 
-  const tabs=[['rs','📊','RS'],['indices','🗂','Indices'],['squeeze','🌀','Squeeze'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['weak','🚨','Weak'],['sector','🏭','Sectors'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
+  const tabs=[['rs','📊','RS'],['indices','🗂','Indices'],['breadth','📈','Breadth'],['squeeze','🌀','Squeeze'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['weak','🚨','Weak'],['sector','🏭','Sectors'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
 
   if(authLoading)return(
     <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -1778,77 +1943,85 @@ export default function App(){
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:"'Inter','SF Pro Display',sans-serif",
       color:C.text,fontSize:13,display:'flex',flexDirection:'row'}}>
 
-      {/* ── Icon sidebar ── */}
+      {/* ── WealthLab-style Icon sidebar ── */}
       {!isMobile&&(
-        <div style={{width:52,minWidth:52,background:C.card,borderRight:`1px solid ${C.border}`,
+        <div style={{width:52,minWidth:52,background:C.sidebar,
+          borderRight:`1px solid ${C.divider}`,
           display:'flex',flexDirection:'column',alignItems:'center',
-          position:'sticky',top:0,height:'100vh',zIndex:40,paddingTop:8}}>
+          position:'sticky',top:0,height:'100vh',zIndex:40}}>
 
-          {/* Logo */}
-          <div style={{width:34,height:34,background:C.accent,borderRadius:9,
-            display:'flex',alignItems:'center',justifyContent:'center',
-            fontWeight:900,color:'#000',fontSize:16,marginBottom:16,flexShrink:0}}>L</div>
+          {/* Logo mark */}
+          <div style={{width:'100%',height:52,display:'flex',alignItems:'center',
+            justifyContent:'center',borderBottom:`1px solid ${C.divider}`,flexShrink:0}}>
+            <div style={{width:28,height:28,background:'linear-gradient(135deg,#4f8ef7,#7c3aed)',
+              borderRadius:6,display:'flex',alignItems:'center',justifyContent:'center',
+              fontWeight:900,color:'#fff',fontSize:13,letterSpacing:'-0.5px'}}>L</div>
+          </div>
 
-          {/* Nav items */}
-          <div style={{flex:1,display:'flex',flexDirection:'column',gap:2,width:'100%',padding:'0 6px'}}>
+          {/* Nav items — top group */}
+          <div style={{flex:1,display:'flex',flexDirection:'column',
+            alignItems:'center',width:'100%',paddingTop:8,gap:1}}>
             {[
-              {id:'rs',      icon:'📊', label:'RS'},
-              {id:'indices', icon:'🗂',  label:'Indices'},
-              {id:'squeeze', icon:'🌀', label:'Squeeze'},
-              {id:'breakout',icon:'💥', label:'Break'},
-              {id:'52wl',    icon:'🎯', label:'52WL'},
-              {id:'weak',    icon:'🚨', label:'Weak'},
-            ].map(({id,icon,label})=>(
+              {id:'rs',       label:'RS Rating', abbr:'RS'},
+              {id:'indices',  label:'Indices',   abbr:'IX'},
+              {id:'breadth',  label:'Breadth',   abbr:'BR'},
+              {id:'squeeze',  label:'Squeeze',   abbr:'SQ'},
+              {id:'breakout', label:'Breakout',  abbr:'BO'},
+              {id:'52wl',     label:'52WL',      abbr:'WL'},
+              {id:'weak',     label:'Weak RS',   abbr:'WK'},
+            ].map(({id,label,abbr})=>(
               <div key={id} onClick={()=>setMainTab(id)}
                 title={label}
-                style={{width:'100%',padding:'8px 0',borderRadius:8,cursor:'pointer',
-                  display:'flex',flexDirection:'column',alignItems:'center',gap:2,
-                  background:mainTab===id?C.accent+'22':'transparent',
-                  border:mainTab===id?`1px solid ${C.accent}44`:'1px solid transparent',
-                  transition:'all 0.15s'}}>
-                <span style={{fontSize:16}}>{icon}</span>
-                <span style={{fontSize:8,fontWeight:mainTab===id?700:500,
-                  color:mainTab===id?C.accent:C.muted}}>{label}</span>
+                style={{width:'100%',height:44,display:'flex',alignItems:'center',
+                  justifyContent:'center',cursor:'pointer',position:'relative',
+                  background:mainTab===id?C.active:'transparent',
+                  transition:'background 0.1s'}}>
+                {/* Active indicator — left edge bar like WealthLab */}
+                {mainTab===id&&<div style={{position:'absolute',left:0,top:'20%',
+                  width:3,height:'60%',background:C.accent,borderRadius:'0 2px 2px 0'}}/>}
+                <span style={{fontSize:11,fontWeight:mainTab===id?700:500,
+                  color:mainTab===id?C.accent:C.muted,
+                  letterSpacing:'0.02em'}}>{abbr}</span>
               </div>
             ))}
 
-            {/* Divider */}
-            <div style={{height:1,background:C.border,margin:'6px 4px'}}/>
+            <div style={{width:28,height:1,background:C.divider,margin:'4px 0'}}/>
 
             {[
-              {id:'sector',   icon:'🏭', label:'Sectors'},
-              {id:'watchlist',icon:'📋', label:'Watch'},
-            ].map(({id,icon,label})=>(
+              {id:'sector',    label:'Sectors',   abbr:'SEC'},
+              {id:'portfolio', label:'Portfolio', abbr:'PF'},
+              {id:'compare',   label:'Compare',   abbr:'CMP'},
+              {id:'watchlist', label:'Watchlist', abbr:'WL'},
+            ].map(({id,label,abbr})=>(
               <div key={id} onClick={()=>setMainTab(id)}
                 title={label}
-                style={{width:'100%',padding:'8px 0',borderRadius:8,cursor:'pointer',
-                  display:'flex',flexDirection:'column',alignItems:'center',gap:2,
-                  background:mainTab===id?C.accent+'22':'transparent',
-                  border:mainTab===id?`1px solid ${C.accent}44`:'1px solid transparent',
-                  transition:'all 0.15s'}}>
-                <span style={{fontSize:16}}>{icon}</span>
-                <span style={{fontSize:8,fontWeight:mainTab===id?700:500,
-                  color:mainTab===id?C.accent:C.muted}}>{label}</span>
+                style={{width:'100%',height:44,display:'flex',alignItems:'center',
+                  justifyContent:'center',cursor:'pointer',position:'relative',
+                  background:mainTab===id?C.active:'transparent',
+                  transition:'background 0.1s'}}>
+                {mainTab===id&&<div style={{position:'absolute',left:0,top:'20%',
+                  width:3,height:'60%',background:C.accent,borderRadius:'0 2px 2px 0'}}/>}
+                <span style={{fontSize:11,fontWeight:mainTab===id?700:500,
+                  color:mainTab===id?C.accent:C.muted,letterSpacing:'0.02em'}}>{abbr}</span>
               </div>
             ))}
           </div>
 
-          {/* Bottom: market status + settings */}
-          <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,
-            padding:'8px 6px',width:'100%'}}>
-            {/* Market open/closed dot */}
-            <div title={isMarketOpen()?'Market Open':'Market Closed'}
-              style={{width:8,height:8,borderRadius:'50%',
-                background:isMarketOpen()?C.green:C.muted,
-                boxShadow:isMarketOpen()?`0 0 6px ${C.green}`:'none',marginBottom:4}}/>
-            <div onClick={()=>setMainTab('settings')}
-              title="Account"
-              style={{width:'100%',padding:'8px 0',borderRadius:8,cursor:'pointer',
-                display:'flex',flexDirection:'column',alignItems:'center',gap:2,
-                background:mainTab==='settings'?C.accent+'22':'transparent',
-                border:mainTab==='settings'?`1px solid ${C.accent}44`:'1px solid transparent'}}>
-              <span style={{fontSize:16}}>⚙</span>
-              <span style={{fontSize:8,color:mainTab==='settings'?C.accent:C.muted}}>Account</span>
+          {/* Bottom: market status + account */}
+          <div style={{width:'100%',borderTop:`1px solid ${C.divider}`,paddingBottom:4}}>
+            <div title={isMarketOpen()?'Market Open — Live':'Market Closed'}
+              style={{width:'100%',height:36,display:'flex',alignItems:'center',
+                justifyContent:'center',gap:4}}>
+              <div style={{width:6,height:6,borderRadius:'50%',
+                background:isMarketOpen()?C.green:'#374151',flexShrink:0}}/>
+            </div>
+            <div onClick={()=>setMainTab('settings')} title="Account"
+              style={{width:'100%',height:44,display:'flex',alignItems:'center',
+                justifyContent:'center',cursor:'pointer',position:'relative',
+                background:mainTab==='settings'?C.active:'transparent'}}>
+              {mainTab==='settings'&&<div style={{position:'absolute',left:0,top:'20%',
+                width:3,height:'60%',background:C.accent,borderRadius:'0 2px 2px 0'}}/>}
+              <span style={{fontSize:11,color:mainTab==='settings'?C.accent:C.muted}}>AC</span>
             </div>
           </div>
         </div>
@@ -1858,8 +2031,8 @@ export default function App(){
       <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,paddingBottom:isMobile?72:0}}>
 
         {/* Top bar */}
-        <div style={{borderBottom:`1px solid ${C.border}`,
-          padding:'9px 16px',
+        <div style={{borderBottom:`1px solid ${C.divider}`,
+          padding:'0 16px',height:52,
           display:'flex',alignItems:'center',justifyContent:'space-between',
           background:C.card,position:'sticky',top:0,zIndex:30,gap:10}}>
 
@@ -1870,7 +2043,7 @@ export default function App(){
                 alignItems:'center',justifyContent:'center',fontWeight:900,color:'#000',fontSize:13,flexShrink:0}}>L</div>
             )}
             <div style={{minWidth:0}}>
-              <div style={{fontWeight:700,fontSize:15,color:C.text,lineHeight:1.2}}>
+              <div style={{fontWeight:600,fontSize:14,color:C.text,lineHeight:1}}>
                 {mainTab==='rs'?'RS Rating':mainTab==='indices'?'Indices':mainTab==='squeeze'?'Squeeze':
                  mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
                  mainTab==='weak'?'Weak RS':mainTab==='sector'?'Sectors':
@@ -1935,6 +2108,24 @@ export default function App(){
                 <TVCopyPanel stocks={displayedRS} label={null} compact/>
               )}
 
+              {/* Notification permission toggle */}
+              {typeof Notification!=='undefined'&&notifPermission!=='granted'&&(
+                <button onClick={()=>Notification.requestPermission().then(p=>setNotifPermission(p))}
+                  title="Enable squeeze fire alerts"
+                  style={{padding:'5px 10px',borderRadius:6,
+                    border:`1px solid ${C.yellow}44`,background:C.yellow+'11',
+                    color:C.yellow,fontSize:10,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>
+                  🔔 Enable Alerts
+                </button>
+              )}
+              {notifPermission==='granted'&&(
+                <span title="Squeeze fire alerts active"
+                  style={{fontSize:10,color:C.green,padding:'5px 8px',
+                    border:`1px solid ${C.green}33`,borderRadius:6,whiteSpace:'nowrap'}}>
+                  🔔 Alerts ON
+                </span>
+              )}
+
               {/* Scan button */}
               <button onClick={()=>runDBScan()} disabled={loading}
                 style={{padding:'6px 14px',borderRadius:6,border:'none',cursor:'pointer',
@@ -1994,7 +2185,12 @@ export default function App(){
 
         {/* ══ RS SCANNER ══ */}
         {mainTab==='rs'&&(
-          <div>
+          <div style={{display:'flex',gap:0,height:'calc(100vh - 52px)',overflow:'hidden'}}>
+
+          {/* Left pane — stock list */}
+          <div style={{flex:1,overflowY:'auto',minWidth:0,
+            transition:'border 0.2s',
+            borderRight:chartSym?`1px solid ${C.divider}`:'none'}}>
             <LastUpdatedBar
               scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
               autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
@@ -2046,7 +2242,7 @@ export default function App(){
                 <summary style={{cursor:'pointer',fontWeight:600,color:C.text}}>ℹ️ How RS is calculated — two methods</summary>
                 <div style={{marginTop:6,lineHeight:1.8}}>
                   <strong style={{color:C.teal}}>RS-TV</strong> = Lakshmi Mata / TradingView formula — benchmark-relative (stock return minus Nifty's return), normalized by this stock's own 252-day min/max. Matches your Pine Script exactly. &nbsp;·&nbsp;
-                  <strong style={{color:C.text}}>Mid/Small/Micro/Sector</strong> = same TV formula, ranked vs peers in that group. &nbsp;·&nbsp;
+                  <strong style={{color:C.text}}>MID/SML/SEC</strong> = IBD percentile rank vs that index pool — shown for ALL stocks regardless of index membership, so you can compare any stock against each universe. &nbsp;·&nbsp;
                   <span style={{color:C.border}}>—</span> = insufficient data
                 </div>
               </details>
@@ -2153,7 +2349,7 @@ export default function App(){
             {displayedRS.length>0&&(
               isMobile?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i}/>):(
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
-                  <div style={{display:'grid',gridTemplateColumns:'32px 140px 55px 50px 50px 50px 55px 60px 75px 60px 120px 150px 90px 24px',
+                  <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 60px 70px 58px 110px 140px 55px 55px 48px 48px 48px 55px 24px',
                     padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
                     fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
                     <span style={{textAlign:'center',color:C.muted}}>#</span>
@@ -2167,10 +2363,7 @@ export default function App(){
                       <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsSmallcap'?C.accent:C.muted}}>SML ↕</div>
                       <div style={{fontSize:7,color:C.yellow,fontWeight:600}}>Small</div>
                     </div>
-                    <div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsMicrocap')}>
-                      <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsMicrocap'?C.accent:C.muted}}>MCR ↕</div>
-                      <div style={{fontSize:7,color:C.purple,fontWeight:600}}>Micro</div>
-                    </div>
+
                     <div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsSector')}>
                       <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsSector'?C.accent:C.muted}}>SEC ↕</div>
                       <div style={{fontSize:7,color:C.orange,fontWeight:600}}>Sector</div>
@@ -2181,13 +2374,68 @@ export default function App(){
                     <SortableHeader label="PP 10d" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
                     <span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>
                     <span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>
+                    <span style={{textAlign:'right',color:C.muted,fontSize:9}}>MCap</span>
+                    <span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>
+                    <span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>
+                    <span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>
+                    <span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>
                     <span/>
                   </div>
-                  {displayedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i}/>)}
+                  {displayedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>setChartSym(s.sym)}/>)}
                 </div>
               )
             )}
           </div>
+
+          {/* Right pane — inline TradingView chart */}
+          {chartSym&&(
+            <div style={{width:chartWide?'65%':'50%',minWidth:460,flexShrink:0,
+              display:'flex',flexDirection:'column',background:C.sidebar,
+              transition:'width 0.2s ease'}}>
+
+              {/* Chart header bar */}
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+                padding:'8px 14px',borderBottom:`1px solid ${C.divider}`,flexShrink:0,height:42}}>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontWeight:700,fontSize:14,color:C.text,letterSpacing:'0.01em'}}>
+                    {chartSym}
+                  </span>
+                  <span style={{fontSize:10,color:C.muted,background:C.card,
+                    padding:'1px 5px',borderRadius:3}}>NSE</span>
+                  <a href={`https://www.tradingview.com/chart/?symbol=NSE:${chartSym}`}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{fontSize:10,color:C.accent,textDecoration:'none',
+                      padding:'2px 7px',borderRadius:4,border:`1px solid ${C.accent}33`,
+                      display:'flex',alignItems:'center',gap:3}}>
+                    TV ↗
+                  </a>
+                </div>
+                <div style={{display:'flex',gap:4,alignItems:'center'}}>
+                  <button onClick={()=>setChartWide(v=>!v)}
+                    style={{background:'transparent',border:`1px solid ${C.border}`,
+                      color:C.muted,fontSize:10,padding:'3px 8px',borderRadius:4,
+                      cursor:'pointer',whiteSpace:'nowrap'}}>
+                    {chartWide?'◀':'▶'}
+                  </button>
+                  <button onClick={()=>setChartSym(null)}
+                    style={{background:'transparent',border:`1px solid ${C.border}`,
+                      color:C.muted,fontSize:16,width:26,height:26,borderRadius:4,
+                      cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',
+                      lineHeight:1}}>×
+                  </button>
+                </div>
+              </div>
+
+              {/* TradingView iframe */}
+              <iframe
+                key={chartSym}
+                src={`https://s.tradingview.com/widgetembed/?symbol=NSE%3A${encodeURIComponent(chartSym)}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=0e1117&studies=RSI%40tv-basicstudies%1FVolume%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata&withdateranges=1&locale=en`}
+                style={{flex:1,width:'100%',border:'none'}}
+                allowFullScreen
+              />
+            </div>
+          )}
+        </div>
         )}
 
         {/* ══ INDICES DASHBOARD ══ */}
@@ -2353,6 +2601,290 @@ export default function App(){
                   })}
                 </div>
               </>
+            )}
+          </div>
+        )}
+
+
+        {/* ══ MARKET BREADTH ══ */}
+        {mainTab==='breadth'&&(
+          <div style={{padding:'0 0 20px'}}>
+            <div style={{marginBottom:14}}>
+              <div style={{fontWeight:700,fontSize:16,color:C.text}}>Market Breadth</div>
+              <div style={{fontSize:11,color:C.muted}}>Daily market health indicators for NSE</div>
+            </div>
+
+            {/* Today's snapshot from stocks already loaded */}
+            {stocks.length>0&&(()=>{
+              const tot = stocks.length
+              const adv = stocks.filter(s=>s.chg>0).length
+              const dec = stocks.filter(s=>s.chg<0).length
+              const s2  = stocks.filter(s=>s.rs>=70&&s.chg>=0).length
+              const pp  = stocks.filter(s=>s.pp?.isPP).length
+              const rsi = stocks.filter(s=>s.rsTrend?.trend==='improving').length
+              const rsd = stocks.filter(s=>s.rsTrend?.trend==='declining').length
+              const rvs = stocks.filter(s=>s.rvol>=2).length
+              const rln = stocks.filter(s=>s.rsLineNewHigh).length
+
+              const Stat=({label,value,total,color,sub})=>(
+                <div style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:10,padding:'14px'}}>
+                  <div style={{fontSize:11,color:C.muted,marginBottom:6}}>{label}</div>
+                  <div style={{fontWeight:700,fontSize:26,color:color||C.text}}>{value}</div>
+                  {total&&<div style={{fontSize:10,color:C.muted,marginTop:3}}>{((value/total)*100).toFixed(1)}% of {total}</div>}
+                  {sub&&<div style={{fontSize:10,color:C.muted,marginTop:3}}>{sub}</div>}
+                </div>
+              )
+
+              const adRatio = dec>0?(adv/dec).toFixed(2):adv>0?'∞':'0'
+              const breadthHealthy = adv > dec && s2 > tot*0.3
+
+              return(
+                <>
+                  {/* Health indicator */}
+                  <div style={{background:breadthHealthy?C.green+'11':C.red+'11',
+                    border:`1px solid ${breadthHealthy?C.green:C.red}44`,
+                    borderRadius:10,padding:'12px 16px',marginBottom:14,
+                    display:'flex',alignItems:'center',gap:10}}>
+                    <div style={{width:10,height:10,borderRadius:'50%',
+                      background:breadthHealthy?C.green:C.red,flexShrink:0}}/>
+                    <span style={{fontWeight:700,fontSize:13,
+                      color:breadthHealthy?C.green:C.red}}>
+                      Market is {breadthHealthy?'Healthy — Broad participation':'Weak — Limited breadth'}
+                    </span>
+                    <span style={{fontSize:11,color:C.muted,marginLeft:'auto'}}>
+                      A/D Ratio: {adRatio}
+                    </span>
+                  </div>
+
+                  {/* Stats grid */}
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:14}}>
+                    <Stat label="Advancing" value={adv} total={tot} color={C.green}/>
+                    <Stat label="Declining"  value={dec} total={tot} color={C.red}/>
+                    <Stat label="RS Improving" value={rsi} total={tot} color={C.accent}/>
+                    <Stat label="RS Declining" value={rsd} total={tot} color={C.orange}/>
+                    <Stat label="PP Today" value={pp} total={tot} color={C.yellow}/>
+                    <Stat label="Vol Surge (RVOL>2)" value={rvs} total={tot} color={C.purple}/>
+                    <Stat label="RS Line New High" value={rln} total={tot} color={C.teal}/>
+                    <Stat label="RS ≥ 70" value={s2} total={tot} color={C.green}/>
+                  </div>
+
+                  {/* RS Line New Highs — early leaders */}
+                  {rln>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.teal}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.teal,marginBottom:8}}>
+                        RS Line New Highs — Early Leaders ({rln})
+                      </div>
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                        {stocks.filter(s=>s.rsLineNewHigh).sort((a,b)=>(b.rsTv||b.rs)-(a.rsTv||a.rs)).slice(0,20).map(s=>(
+                          <div key={s.sym} onClick={()=>setChartSym(s.sym)}
+                            style={{padding:'4px 10px',borderRadius:6,background:C.teal+'18',
+                              border:`1px solid ${C.teal}33`,cursor:'pointer',fontSize:11,fontWeight:600,
+                              color:C.teal}}>
+                            {s.sym} <span style={{color:C.muted,fontSize:10}}>{s.rsTv||s.rs}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* New Stage 2 entries */}
+                  {stocks.filter(s=>s.isS2NewEntry).length>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
+                        New Stage 2 Entries Today ({stocks.filter(s=>s.isS2NewEntry).length})
+                      </div>
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                        {stocks.filter(s=>s.isS2NewEntry).sort((a,b)=>(b.rsTv||b.rs)-(a.rsTv||a.rs)).map(s=>(
+                          <div key={s.sym} onClick={()=>setChartSym(s.sym)}
+                            style={{padding:'4px 10px',borderRadius:6,background:C.green+'18',
+                              border:`1px solid ${C.green}33`,cursor:'pointer',fontSize:11,fontWeight:600,color:C.green}}>
+                            {s.sym} <span style={{color:C.muted,fontSize:10}}>{s.rsTv||s.rs}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+          </div>
+        )}
+
+        {/* ══ PORTFOLIO TRACKER ══ */}
+        {mainTab==='portfolio'&&(
+          <div style={{padding:'0 0 20px'}}>
+            <div style={{marginBottom:14,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:16}}>Portfolio Tracker</div>
+                <div style={{fontSize:11,color:C.muted}}>Track your holdings — RS, Stage, and exit signals</div>
+              </div>
+              <button onClick={()=>{
+                const sym=prompt('Enter stock symbol (e.g. RELIANCE):')?.toUpperCase().trim()
+                if(sym) setPortfolioHoldings(h=>[...h.filter(x=>x.sym!==sym),{sym,addedAt:new Date().toISOString()}])
+              }}
+                style={{padding:'7px 14px',borderRadius:7,border:'none',
+                  background:C.accent,color:'#000',fontWeight:700,fontSize:12,cursor:'pointer'}}>
+                + Add Stock
+              </button>
+            </div>
+
+            {portfolioHoldings.length===0?(
+              <div style={{textAlign:'center',padding:'60px 20px',color:C.muted}}>
+                <div style={{fontSize:36,marginBottom:10}}>💼</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No holdings yet</div>
+                <div style={{fontSize:12,marginTop:6}}>Click "+ Add Stock" to track your positions</div>
+              </div>
+            ):(
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {portfolioHoldings.map(h=>{
+                  const s=stocks.find(x=>x.sym===h.sym)
+                  const stage=s?calcWeinsteinStage(s):null
+                  const dangerZone=stage&&(stage.stage===3||stage.stage===4)
+                  return(
+                    <div key={h.sym} style={{background:C.card,
+                      border:`1px solid ${dangerZone?C.red+'55':C.divider}`,
+                      borderRadius:10,padding:'12px 16px',
+                      display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
+                      <div style={{display:'flex',alignItems:'center',gap:12,flex:1,minWidth:0}}>
+                        <div>
+                          <div style={{fontWeight:700,fontSize:14,color:C.text,
+                            cursor:'pointer',color:C.accent}}
+                            onClick={()=>s&&setChartSym(s.sym)}>{h.sym}</div>
+                          <div style={{fontSize:10,color:C.muted,marginTop:2}}>{s?.sector||'—'}</div>
+                        </div>
+                        {s?(
+                          <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+                            <div style={{textAlign:'center'}}>
+                              <div style={{fontWeight:700,fontSize:16,color:rsColor(s.rsTv||s.rs)}}>{s.rsTv||s.rs}</div>
+                              <div style={{fontSize:8,color:C.muted}}>RS-TV</div>
+                            </div>
+                            {stage&&<StageBadge stage={stage}/>}
+                            {s.pp?.isPP&&<Badge color={C.orange}>PP</Badge>}
+                            {dangerZone&&(
+                              <div style={{padding:'3px 8px',borderRadius:5,fontSize:10,fontWeight:700,
+                                background:C.red+'22',color:C.red,border:`1px solid ${C.red}44`}}>
+                                ⚠️ EXIT SIGNAL
+                              </div>
+                            )}
+                          </div>
+                        ):<span style={{color:C.muted,fontSize:11}}>No data</span>}
+                      </div>
+                      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                        {s&&<span style={{fontWeight:600,fontSize:13}}>{fmtP(s.last)}</span>}
+                        {s&&<span style={{fontWeight:700,fontSize:12,color:s.chg>=0?C.green:C.red}}>
+                          {s.chg>=0?'+':''}{s.chg?.toFixed(2)}%
+                        </span>}
+                        <button onClick={()=>setPortfolioHoldings(h2=>h2.filter(x=>x.sym!==h.sym))}
+                          style={{background:'transparent',border:`1px solid ${C.border}`,
+                            color:C.muted,fontSize:12,padding:'3px 8px',borderRadius:5,cursor:'pointer'}}>
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ STOCK COMPARE ══ */}
+        {mainTab==='compare'&&(
+          <div style={{padding:'0 0 20px'}}>
+            <div style={{marginBottom:14}}>
+              <div style={{fontWeight:700,fontSize:16}}>Stock Comparison</div>
+              <div style={{fontSize:11,color:C.muted}}>Compare up to 4 stocks side by side</div>
+            </div>
+            <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+              <input value={compareInput} onChange={e=>setCompareInput(e.target.value.toUpperCase())}
+                onKeyDown={e=>{
+                  if(e.key==='Enter'&&compareInput.trim()&&compareSyms.length<4){
+                    setCompareSyms(s=>[...new Set([...s,compareInput.trim()])])
+                    setCompareInput('')
+                  }
+                }}
+                placeholder="Type symbol + Enter (e.g. RELIANCE)"
+                style={{flex:1,padding:'8px 12px',background:C.card,border:`1px solid ${C.border}`,
+                  borderRadius:7,color:C.text,fontSize:12,outline:'none',minWidth:200}}/>
+              <button onClick={()=>setCompareSyms([])}
+                style={{padding:'8px 14px',borderRadius:7,border:`1px solid ${C.border}`,
+                  background:'transparent',color:C.muted,fontSize:12,cursor:'pointer'}}>
+                Clear
+              </button>
+            </div>
+
+            {compareSyms.length===0?(
+              <div style={{textAlign:'center',padding:'60px 20px',color:C.muted}}>
+                <div style={{fontSize:36,marginBottom:10}}>⚖️</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>Type a symbol and press Enter</div>
+                <div style={{fontSize:12,marginTop:6}}>Add up to 4 stocks to compare</div>
+              </div>
+            ):(
+              <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(compareSyms.length,4)},1fr)`,gap:10}}>
+                {compareSyms.map(sym=>{
+                  const s=stocks.find(x=>x.sym===sym)
+                  const stage=s?calcWeinsteinStage(s):null
+                  return(
+                    <div key={sym} style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:12,overflow:'hidden'}}>
+                      <div style={{padding:'12px 14px',borderBottom:`1px solid ${C.divider}`,
+                        display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                        <span style={{fontWeight:700,fontSize:14,color:C.accent,cursor:'pointer'}}
+                          onClick={()=>setChartSym(sym)}>{sym}</span>
+                        <button onClick={()=>setCompareSyms(s=>s.filter(x=>x!==sym))}
+                          style={{background:'transparent',border:'none',color:C.muted,
+                            fontSize:14,cursor:'pointer'}}>×</button>
+                      </div>
+                      {s?(
+                        <div style={{padding:'12px 14px'}}>
+                          <div style={{display:'flex',justifyContent:'space-between',marginBottom:12}}>
+                            <div>
+                              <div style={{fontWeight:700,fontSize:22,color:rsColor(s.rsTv||s.rs)}}>{s.rsTv||s.rs}</div>
+                              <div style={{fontSize:9,color:C.teal}}>RS-TV</div>
+                            </div>
+                            {stage&&<StageBadge stage={stage}/>}
+                          </div>
+                          {[
+                            ['Price',   fmtP(s.last),                      C.text],
+                            ['Chg%',    `${s.chg>=0?'+':''}${s.chg?.toFixed(2)}%`, s.chg>=0?C.green:C.red],
+                            ['MID RS',  s.rsMidcap??'—',                   s.rsMidcap?rsColor(s.rsMidcap):C.muted],
+                            ['SML RS',  s.rsSmallcap??'—',                 s.rsSmallcap?rsColor(s.rsSmallcap):C.muted],
+                            ['Sector',  s.rsSector??'—',                   s.rsSector?rsColor(s.rsSector):C.muted],
+                            ['Market Cap', s.marketCap?`${s.marketCap>=100000?(s.marketCap/100000).toFixed(1)+'L':s.marketCap>=1000?(s.marketCap/1000).toFixed(1)+'K':s.marketCap} Cr`:'—', C.text],
+                            ['P/E',     s.pe?.toFixed(1)??'—',             s.pe?s.pe<25?C.green:s.pe<50?C.yellow:C.red:C.muted],
+                            ['ROE',     s.roe?`${s.roe.toFixed(1)}%`:'—',  s.roe?s.roe>20?C.green:s.roe>10?C.yellow:C.red:C.muted],
+                            ['Promoter',s.promoter?`${s.promoter.toFixed(1)}%`:'—', s.promoter?s.promoter>55?C.green:C.yellow:C.muted],
+                            ['RVOL',    s.rvol?.toFixed(2)??'—',           s.rvol?s.rvol>=2?C.orange:s.rvol>=1.5?C.yellow:C.muted:C.muted],
+                            ['PP 10d',  `${s.pp?.ppCount10d||0}×`,         s.pp?.ppCount10d>0?C.orange:C.muted],
+                            ['Sector',  s.sector,                          C.muted],
+                          ].map(([k,v,c])=>(
+                            <div key={k} style={{display:'flex',justifyContent:'space-between',
+                              padding:'5px 0',borderBottom:`1px solid ${C.divider}`,fontSize:12}}>
+                              <span style={{color:C.muted}}>{k}</span>
+                              <span style={{fontWeight:600,color:c}}>{v}</span>
+                            </div>
+                          ))}
+                          <div style={{marginTop:10}}>
+                            <div style={{fontSize:10,color:C.muted,marginBottom:4}}>RS Last 7 Days</div>
+                            <div style={{display:'flex',gap:2}}>
+                              {s.hist.slice(-7).map((v,i)=>{
+                                const color=v===null?C.border:v>=90?C.green:v>=70?C.accent:v>=50?C.yellow:C.red
+                                return<div key={i} style={{flex:1,height:20,borderRadius:3,
+                                  background:color+'28',border:`1px solid ${color}44`,
+                                  display:'flex',alignItems:'center',justifyContent:'center',
+                                  fontSize:8,fontWeight:700,color}}>{v??'—'}</div>
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      ):(
+                        <div style={{padding:'20px',textAlign:'center',color:C.muted,fontSize:12}}>
+                          Symbol not found in current scan
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </div>
         )}
