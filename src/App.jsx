@@ -1248,6 +1248,7 @@ function AuthScreen({onLogin}){
   const [email,setEmail]=useState('')
   const [password,setPassword]=useState('')
   const [name,setName]=useState('')
+  const [mobile,setMobile]=useState('')
   const [upstoxToken,setUpstoxToken]=useState('')
   const [error,setError]=useState('')
   const [info,setInfo]=useState('')
