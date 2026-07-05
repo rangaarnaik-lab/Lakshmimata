@@ -3253,29 +3253,35 @@ export default function App(){
         {mainTab==='sector'&&(
           <div style={{padding:isMobile?'10px':'12px 16px'}}>
 
-            <div style={{marginBottom:14}}>
-              <div style={{fontWeight:700,fontSize:16}}>Sector Rotation</div>
-              <div style={{fontSize:11,color:C.muted}}>Where is smart money flowing?</div>
+            <div style={{marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:16}}>Sector Rotation</div>
+                <div style={{fontSize:11,color:C.muted}}>Tap any sector to see stocks</div>
+              </div>
             </div>
 
             {(()=>{
+              const [selSector, setSelSector] = useState(null)
+
               // Build sector data from stocks
               const sectorMap = {}
               stocks.forEach(s=>{
                 if(!s.sector||s.sector==='Other') return
                 if(!sectorMap[s.sector]) sectorMap[s.sector]={
-                  name:s.sector,rsArr:[],chgArr:[],chgWArr:[],chgMArr:[],ppCount:0,count:0
+                  name:s.sector, rsArr:[], chgArr:[], chgWArr:[], chgMArr:[], ppCount:0, count:0, stocks:[]
                 }
                 const sec = sectorMap[s.sector]
-                sec.rsArr.push(s.rsTv||s.rs||0)
+                const rs = s.rsTv||0
+                if(rs>0) sec.rsArr.push(rs)
                 if(s.chg!=null)  sec.chgArr.push(s.chg)
                 if(s.chgW!=null) sec.chgWArr.push(s.chgW)
                 if(s.chgM!=null) sec.chgMArr.push(s.chgM)
                 if(s.pp?.isPP)   sec.ppCount++
                 sec.count++
+                sec.stocks.push(s)
               })
 
-              const avg = arr => arr.length ? +(arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(2) : 0
+              const avg = arr => arr.length ? +(arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : 0
 
               const sectors = Object.values(sectorMap).map(s=>({
                 name:    s.name,
@@ -3285,128 +3291,252 @@ export default function App(){
                 chgM:    avg(s.chgMArr),
                 ppCount: s.ppCount,
                 count:   s.count,
-              }))
+                stocks:  s.stocks.sort((a,b)=>(b.rsTv||0)-(a.rsTv||0)),
+              })).filter(s=>s.count>=2)
 
               if(sectors.length===0) return(
-                <div style={{textAlign:'center',padding:'60px 20px',color:C.muted}}>
-                  <div style={{fontSize:36,marginBottom:10}}>🏭</div>
-                  <div style={{fontSize:13,fontWeight:700,color:C.text}}>No data yet</div>
-                  <div style={{fontSize:11,marginTop:6}}>Tap 🚀 Scan to load</div>
+                <div style={{textAlign:'center',padding:'40px',color:C.muted}}>
+                  <div style={{fontSize:13}}>Tap 🚀 Scan to load sector data</div>
                 </div>
               )
 
-              // Horizontal bar chart for one timeframe
-              const BarSection = ({title, subtitle, data, valueKey, color}) => {
+              // If a sector is selected, show its stocks
+              if(selSector){
+                const sec = sectors.find(s=>s.name===selSector)
+                if(!sec) return null
+                return(
+                  <div>
+                    {/* Back button */}
+                    <button onClick={()=>setSelSector(null)}
+                      style={{display:'flex',alignItems:'center',gap:6,padding:'8px 0',
+                        background:'transparent',border:'none',
+                        color:C.accent,fontSize:13,cursor:'pointer',marginBottom:12,fontWeight:600}}>
+                      ← Back to Sectors
+                    </button>
+
+                    {/* Sector header */}
+                    <div style={{background:C.card,border:`1px solid ${C.divider}`,
+                      borderRadius:12,padding:'14px',marginBottom:14}}>
+                      <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>{sec.name}</div>
+                      <div style={{display:'flex',gap:12,fontSize:11,flexWrap:'wrap'}}>
+                        <span>Avg RS: <span style={{fontWeight:700,
+                          color:sec.avgRS>=80?C.green:sec.avgRS>=60?C.accent:sec.avgRS>=40?C.yellow:C.red}}>
+                          {sec.avgRS}
+                        </span></span>
+                        <span style={{color:sec.chgD>=0?C.green:C.red}}>
+                          Day: {sec.chgD>=0?'+':''}{sec.chgD}%
+                        </span>
+                        <span style={{color:sec.chgW>=0?C.green:C.red}}>
+                          Week: {sec.chgW>=0?'+':''}{sec.chgW}%
+                        </span>
+                        <span style={{color:sec.chgM>=0?C.green:C.red}}>
+                          Month: {sec.chgM>=0?'+':''}{sec.chgM}%
+                        </span>
+                        {sec.ppCount>0&&<span style={{color:C.orange}}>🔥 {sec.ppCount} PP</span>}
+                      </div>
+                    </div>
+
+                    {/* Stock list */}
+                    <div style={{display:'grid',
+                      gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:8}}>
+                      {sec.stocks.map(s=>(
+                        <div key={s.sym} style={{background:C.card,
+                          border:`1px solid ${C.divider}`,borderRadius:10,padding:'12px',
+                          cursor:'pointer'}}
+                          onClick={()=>setChartSym(s.sym===chartSym?null:s.sym)}>
+                          <div style={{display:'flex',justifyContent:'space-between',
+                            alignItems:'flex-start'}}>
+                            <div>
+                              <div style={{fontWeight:700,fontSize:13,color:C.accent}}>
+                                {s.sym}
+                              </div>
+                              <div style={{fontSize:10,color:C.muted,marginTop:1}}>
+                                ₹{s.last?.toLocaleString('en-IN')||'—'}
+                              </div>
+                              <div style={{display:'flex',gap:4,marginTop:4}}>
+                                {s.pp?.isPP&&<span style={{fontSize:9,fontWeight:700,
+                                  padding:'1px 5px',borderRadius:3,
+                                  background:C.orange+'18',color:C.orange}}>PP</span>}
+                                {s.inSqueeze&&<span style={{fontSize:9,fontWeight:700,
+                                  padding:'1px 5px',borderRadius:3,
+                                  background:C.red+'18',color:C.red}}>SQ</span>}
+                              </div>
+                            </div>
+                            <div style={{textAlign:'right'}}>
+                              <div style={{fontWeight:700,fontSize:18,
+                                color:(s.rsTv||0)>=80?C.green:(s.rsTv||0)>=60?C.accent:
+                                      (s.rsTv||0)>=40?C.yellow:C.red}}>
+                                {s.rsTv||'—'}
+                              </div>
+                              <div style={{fontSize:9,color:C.teal}}>RS-TV</div>
+                              <div style={{fontSize:11,fontWeight:600,marginTop:2,
+                                color:(s.chg||0)>=0?C.green:C.red}}>
+                                {(s.chg||0)>=0?'+':''}{(s.chg||0).toFixed(1)}%
+                              </div>
+                            </div>
+                          </div>
+                          {/* Mini RS sparkline */}
+                          {s.hist&&s.hist.length>0&&(
+                            <div style={{display:'flex',gap:2,marginTop:8}}>
+                              {s.hist.slice(-10).map((v,i)=>(
+                                <div key={i} style={{flex:1,height:4,borderRadius:2,
+                                  background:(v||0)>=70?C.green:(v||0)>=50?C.accent:
+                                             (v||0)>=30?C.yellow:C.red,opacity:0.7}}/>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              }
+
+              // Main sector view
+              const BarChart = ({data, valueKey, title, subtitle, color}) => {
                 const sorted = [...data].sort((a,b)=>(b[valueKey]||0)-(a[valueKey]||0))
                 const maxAbs = Math.max(...sorted.map(s=>Math.abs(s[valueKey]||0)), 0.01)
                 return(
                   <div style={{background:C.card,border:`1px solid ${C.divider}`,
                     borderRadius:12,padding:'14px',marginBottom:12}}>
-                    <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
-                      {title}
-                    </div>
-                    <div style={{fontSize:10,color:C.muted,marginBottom:12}}>{subtitle}</div>
+                    <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>{title}</div>
+                    <div style={{fontSize:10,color:C.muted,marginBottom:10}}>{subtitle}</div>
                     {sorted.map((s,i)=>{
-                      const val  = s[valueKey]||0
-                      const pct  = Math.abs(val)/maxAbs*100
-                      const c    = val>=0?C.green:C.red
-                      const rsC  = s.avgRS>=80?C.green:s.avgRS>=60?C.accent:s.avgRS>=40?C.yellow:C.red
+                      const val = s[valueKey]||0
+                      const pct = Math.abs(val)/maxAbs*100
+                      const c   = val>=0?C.green:C.red
+                      const rsC = s.avgRS>=80?C.green:s.avgRS>=60?C.accent:s.avgRS>=40?C.yellow:C.red
                       return(
-                        <div key={s.name} style={{display:'flex',alignItems:'center',
-                          gap:8,marginBottom:5}}>
-                          {/* Value label */}
-                          <div style={{width:40,textAlign:'right',fontSize:10,
+                        <div key={s.name} onClick={()=>setSelSector(s.name)}
+                          style={{display:'flex',alignItems:'center',gap:8,
+                            marginBottom:5,cursor:'pointer'}}
+                          onMouseEnter={e=>e.currentTarget.style.opacity='0.8'}
+                          onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+                          {/* Value */}
+                          <div style={{width:44,textAlign:'right',fontSize:10,
                             fontWeight:700,color:c,flexShrink:0}}>
                             {val>=0?'+':''}{val}%
                           </div>
-                          {/* Bar */}
+                          {/* Bar with label inside */}
                           <div style={{flex:1,background:C.bg,borderRadius:4,
-                            height:22,overflow:'hidden'}}>
-                            <div style={{width:`${Math.max(pct,2)}%`,height:'100%',
-                              background:c+'bb',borderRadius:4,
-                              display:'flex',alignItems:'center',paddingLeft:6,
+                            height:24,overflow:'hidden',position:'relative'}}>
+                            <div style={{width:`${Math.max(pct,3)}%`,height:'100%',
+                              background:c+'99',borderRadius:4,
+                              display:'flex',alignItems:'center',
+                              paddingLeft:8,minWidth:60,
                               transition:'width 0.3s'}}>
-                              <span style={{fontSize:9,fontWeight:700,color:'#fff',
-                                whiteSpace:'nowrap',overflow:'hidden',
-                                textOverflow:'ellipsis'}}>
+                              <span style={{fontSize:10,fontWeight:700,
+                                color:'#fff',whiteSpace:'nowrap',
+                                overflow:'hidden',textOverflow:'ellipsis'}}>
                                 {s.name}
                               </span>
                             </div>
+                            {/* Show name outside bar if bar too small */}
+                            {pct<20&&(
+                              <span style={{position:'absolute',left:`${Math.max(pct,3)}%+4px`,
+                                top:'50%',transform:'translateY(-50%)',
+                                fontSize:10,fontWeight:600,color:C.text,
+                                marginLeft:4,whiteSpace:'nowrap'}}>
+                                {s.name}
+                              </span>
+                            )}
                           </div>
-                          {/* RS badge */}
-                          <div style={{width:32,textAlign:'right',flexShrink:0}}>
-                            <span style={{fontSize:9,fontWeight:700,color:rsC}}>{s.avgRS}</span>
+                          {/* RS */}
+                          <div style={{width:28,textAlign:'right',flexShrink:0}}>
+                            <span style={{fontSize:10,fontWeight:700,color:rsC}}>
+                              {s.avgRS}
+                            </span>
                           </div>
                           {/* PP dot */}
                           {s.ppCount>0&&(
-                            <div style={{width:16,flexShrink:0}}>
-                              <div style={{width:6,height:6,borderRadius:'50%',
-                                background:C.orange}}/>
-                            </div>
+                            <div style={{width:8,height:8,borderRadius:'50%',
+                              background:C.orange,flexShrink:0}}/>
                           )}
                         </div>
                       )
                     })}
-                    {/* Legend */}
                     <div style={{display:'flex',gap:12,marginTop:8,fontSize:9,color:C.muted}}>
-                      <span>RS = avg RS rating</span>
-                      <span>🟠 = PP signal today</span>
+                      <span>RS = avg RS-TV</span>
+                      <span>🟠 = PP signals</span>
+                      <span>Tap bar to see stocks</span>
                     </div>
+                  </div>
+                )
+              }
+
+              // RS Rankings with 15-day trend
+              const RSRankings = () => {
+                const sorted = [...sectors].sort((a,b)=>b.avgRS-a.avgRS)
+                return(
+                  <div style={{background:C.card,border:`1px solid ${C.divider}`,
+                    borderRadius:12,padding:'14px'}}>
+                    <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
+                      ⭐ RS Strength Rankings
+                    </div>
+                    <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
+                      Tap any sector to see stocks inside
+                    </div>
+                    {sorted.map((s,i)=>{
+                      const c = s.avgRS>=80?C.green:s.avgRS>=60?C.accent:s.avgRS>=40?C.yellow:C.red
+                      // 15-day RS trend: use avgChgW as proxy (positive = improving)
+                      const trend = s.chgW>0.5?'↑':s.chgW<-0.5?'↓':'→'
+                      const trendColor = s.chgW>0.5?C.green:s.chgW<-0.5?C.red:C.muted
+                      return(
+                        <div key={s.name} onClick={()=>setSelSector(s.name)}
+                          style={{display:'flex',alignItems:'center',gap:10,
+                            marginBottom:8,cursor:'pointer',padding:'4px 0',
+                            borderBottom:`1px solid ${C.divider}`}}
+                          onMouseEnter={e=>e.currentTarget.style.background=C.bg}
+                          onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                          <span style={{color:C.muted,fontSize:10,width:20,
+                            textAlign:'right',flexShrink:0}}>{i+1}</span>
+                          {/* Bar */}
+                          <div style={{flex:1,background:C.bg,borderRadius:4,
+                            height:22,overflow:'hidden'}}>
+                            <div style={{width:`${s.avgRS}%`,height:'100%',
+                              background:c+'88',borderRadius:4,
+                              display:'flex',alignItems:'center',paddingLeft:8,
+                              transition:'width 0.3s',minWidth:40}}>
+                              <span style={{fontSize:10,fontWeight:700,
+                                color:'#fff',whiteSpace:'nowrap'}}>
+                                {s.name}
+                              </span>
+                            </div>
+                          </div>
+                          {/* RS value */}
+                          <span style={{fontWeight:700,fontSize:14,color:c,
+                            width:28,textAlign:'right',flexShrink:0}}>{s.avgRS}</span>
+                          {/* 15d trend */}
+                          <span style={{fontSize:12,color:trendColor,
+                            width:16,textAlign:'center',flexShrink:0}}
+                            title={`Weekly: ${s.chgW>=0?'+':''}${s.chgW}%`}>
+                            {trend}
+                          </span>
+                          {/* Count */}
+                          <span style={{fontSize:9,color:C.muted,
+                            width:30,flexShrink:0}}>{s.count}s</span>
+                        </div>
+                      )
+                    })}
                   </div>
                 )
               }
 
               return(
                 <div>
-                  <BarSection
+                  <BarChart data={sectors} valueKey="chgD"
                     title="📅 Sector Advances — Daily %"
-                    subtitle="Which sectors are up/down today"
-                    data={sectors} valueKey="chgD" color={C.accent}/>
-
-                  <BarSection
+                    subtitle="Today's performance · tap bar to see stocks"
+                    color={C.accent}/>
+                  <BarChart data={sectors} valueKey="chgW"
                     title="📈 Sector Advances — Weekly %"
-                    subtitle="Performance over last 5 trading days"
-                    data={sectors} valueKey="chgW" color={C.teal}/>
-
-                  <BarSection
+                    subtitle="Last 5 trading days · tap bar to see stocks"
+                    color={C.teal}/>
+                  <BarChart data={sectors} valueKey="chgM"
                     title="🗓 Sector Advances — Monthly %"
-                    subtitle="Performance over last 21 trading days"
-                    data={sectors} valueKey="chgM" color={C.purple}/>
-
-                  {/* RS Rankings */}
-                  <div style={{background:C.card,border:`1px solid ${C.divider}`,
-                    borderRadius:12,padding:'14px'}}>
-                    <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
-                      ⭐ RS Strength Rankings
-                    </div>
-                    <div style={{fontSize:10,color:C.muted,marginBottom:12}}>
-                      Sorted by average RS-TV
-                    </div>
-                    {[...sectors].sort((a,b)=>b.avgRS-a.avgRS).map((s,i)=>{
-                      const c = s.avgRS>=80?C.green:s.avgRS>=60?C.accent:s.avgRS>=40?C.yellow:C.red
-                      return(
-                        <div key={s.name} style={{display:'flex',alignItems:'center',
-                          gap:10,marginBottom:6}}>
-                          <span style={{color:C.muted,fontSize:10,width:18,
-                            textAlign:'right',flexShrink:0}}>{i+1}</span>
-                          <div style={{flex:1,background:C.bg,borderRadius:4,height:20,
-                            overflow:'hidden'}}>
-                            <div style={{width:`${s.avgRS}%`,height:'100%',
-                              background:c+'99',borderRadius:4,
-                              display:'flex',alignItems:'center',paddingLeft:6,
-                              transition:'width 0.3s'}}>
-                              <span style={{fontSize:9,fontWeight:700,color:'#fff',
-                                whiteSpace:'nowrap'}}>{s.name}</span>
-                            </div>
-                          </div>
-                          <span style={{fontWeight:700,fontSize:13,color:c,
-                            width:30,textAlign:'right',flexShrink:0}}>{s.avgRS}</span>
-                          <span style={{fontSize:9,color:C.muted,
-                            width:40,flexShrink:0}}>{s.count}s</span>
-                        </div>
-                      )
-                    })}
-                  </div>
+                    subtitle="Last 21 trading days · tap bar to see stocks"
+                    color={C.purple}/>
+                  <RSRankings/>
                 </div>
               )
             })()}
