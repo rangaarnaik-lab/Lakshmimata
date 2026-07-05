@@ -833,7 +833,6 @@ function StockDetail({s}){
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         {[
           ['RS-TV',s.rsTv!=null?s.rsTv:'—',s.rsTv!=null?rsColor(s.rsTv):C.muted],
-          ['RS (IBD)',s.rs,rsColor(s.rs)],
           ['RS in Sector',s.rsSector??'—',s.rsSector!=null?rsColor(s.rsSector):C.muted],
           ['RS in Midcap',s.rsMidcap??'—',s.rsMidcap!=null?rsColor(s.rsMidcap):C.muted],
           ['RS in Smallcap',s.rsSmallcap??'—',s.rsSmallcap!=null?rsColor(s.rsSmallcap):C.muted],
@@ -2649,7 +2648,7 @@ export default function App(){
                 <summary style={{cursor:'pointer',fontWeight:600,color:C.text}}>ℹ️ How RS is calculated — two methods</summary>
                 <div style={{marginTop:6,lineHeight:1.8}}>
                   <strong style={{color:C.teal}}>RS-TV</strong> = Lakshmi Mata / TradingView formula — benchmark-relative (stock return minus Nifty's return), normalized by this stock's own 252-day min/max. Matches your Pine Script exactly. &nbsp;·&nbsp;
-                  <strong style={{color:C.text}}>MID/SML/SEC</strong> = IBD percentile rank vs that index pool — shown for ALL stocks regardless of index membership, so you can compare any stock against each universe. &nbsp;·&nbsp;
+                  <strong style={{color:C.text}}>MID/SML/SEC</strong> =  percentile rank vs that index pool — shown for ALL stocks regardless of index membership, so you can compare any stock against each universe. &nbsp;·&nbsp;
                   <span style={{color:C.border}}>—</span> = insufficient data
                 </div>
               </details>
