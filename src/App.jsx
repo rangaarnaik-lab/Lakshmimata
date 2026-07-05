@@ -3634,196 +3634,214 @@ export default function App(){
 
         {/* ══ SECTORS ══ */}
         {mainTab==='sector'&&(
-          <div>
-            <LastUpdatedBar
-              scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
-              autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
-              refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
-              onRefresh={runDBScan}
-            />
-
-            <SectorPanel sectorData={sectorData} isMobile={isMobile}/>
-          </div>
-        )}
-
-        {/* ══ PORTFOLIO ══ */}
-        {mainTab==='portfolio'&&(
-          <div style={{padding:isMobile?'10px':'12px 16px'}}>
-            <div style={{marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <div>
-                <div style={{fontWeight:700,fontSize:16}}>Portfolio Tracker</div>
-                <div style={{fontSize:11,color:C.muted}}>Track holdings · Stage exit signals · RS monitoring</div>
-              </div>
-              <button onClick={()=>{
-                const sym=prompt('Enter NSE symbol (e.g. RELIANCE):')?.toUpperCase().trim()
-                if(sym&&!portfolioHoldings.find(h=>h.sym===sym))
-                  setPortfolioHoldings(h=>[...h,{sym,addedAt:new Date().toISOString()}])
-              }} style={{padding:'7px 14px',borderRadius:7,border:'none',
-                background:C.accent,color:'#000',fontWeight:700,fontSize:12,cursor:'pointer'}}>
-                + Add Stock
-              </button>
-            </div>
-            {portfolioHoldings.length===0?(
-              <div style={{textAlign:'center',padding:'60px 20px',color:C.muted}}>
-                <div style={{fontSize:36,marginBottom:10}}>💼</div>
-                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No holdings yet</div>
-                <div style={{fontSize:12,marginTop:6}}>Click + Add Stock to start tracking</div>
-              </div>
-            ):(
-              <div>
-                {portfolioHoldings.map(h=>{
-                  const s=stocks.find(x=>x.sym===h.sym)
-                  const stage=s?calcWeinsteinStage(s):null
-                  const danger=stage&&(stage.stage===3||stage.stage===4)
-                  return(
-                    <div key={h.sym} style={{background:C.card,
-                      border:`1px solid ${danger?C.red+'55':C.divider}`,
-                      borderRadius:10,padding:'14px',marginBottom:8,
-                      display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
-                      <div style={{display:'flex',alignItems:'center',gap:12,flex:1,minWidth:0}}>
-                        <div>
-                          <div onClick={()=>s&&setChartSym(s.sym)}
-                            style={{fontWeight:700,fontSize:14,color:C.accent,cursor:'pointer'}}>
-                            {h.sym}
-                          </div>
-                          <div style={{fontSize:10,color:C.muted,marginTop:1}}>{s?.sector||'—'}</div>
-                        </div>
-                        {s&&(
-                          <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-                            <div>
-                              <div style={{fontWeight:700,fontSize:18,
-                                color:(s.rsTv||s.rs)>=90?C.green:(s.rsTv||s.rs)>=70?C.accent:C.yellow}}>
-                                {s.rsTv||s.rs||'—'}
-                              </div>
-                              <div style={{fontSize:8,color:C.teal}}>RS-TV</div>
-                            </div>
-                            {stage&&<span style={{padding:'2px 6px',borderRadius:3,fontSize:9,fontWeight:700,
-                              background:{1:C.yellow,2:C.green,3:C.orange,4:C.red}[stage.stage]+'18',
-                              color:{1:C.yellow,2:C.green,3:C.orange,4:C.red}[stage.stage]}}>
-                              {stage.label}
-                            </span>}
-                            {danger&&<span style={{padding:'3px 8px',borderRadius:5,fontSize:10,
-                              fontWeight:700,background:C.red+'18',color:C.red,
-                              border:`1px solid ${C.red}44`}}>⚠️ EXIT</span>}
-                          </div>
-                        )}
-                      </div>
-                      <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                        {s&&<>
-                          <span style={{fontWeight:600,fontSize:13}}>₹{s.last?.toLocaleString('en-IN')}</span>
-                          <span style={{fontWeight:700,fontSize:12,color:s.chg>=0?C.green:C.red}}>
-                            {s.chg>=0?'+':''}{s.chg?.toFixed(2)}%
-                          </span>
-                        </>}
-                        <button onClick={()=>setPortfolioHoldings(h2=>h2.filter(x=>x.sym!==h.sym))}
-                          style={{background:'transparent',border:`1px solid ${C.border}`,
-                            color:C.muted,fontSize:12,padding:'3px 8px',borderRadius:5,cursor:'pointer'}}>
-                          ×
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ══ COMPARE ══ */}
-        {mainTab==='compare'&&(
           <div style={{padding:isMobile?'10px':'12px 16px'}}>
             <div style={{marginBottom:12}}>
-              <div style={{fontWeight:700,fontSize:16}}>Stock Comparison</div>
-              <div style={{fontSize:11,color:C.muted}}>Compare up to 4 stocks side by side</div>
+              <div style={{fontWeight:700,fontSize:16}}>Sector Analysis</div>
+              <div style={{fontSize:11,color:C.muted}}>RS rankings · Rotation heatmap · Money flow</div>
             </div>
-            <div style={{display:'flex',gap:8,marginBottom:14}}>
-              <input value={compareInput} onChange={e=>setCompareInput(e.target.value.toUpperCase())}
-                onKeyDown={e=>{
-                  if(e.key==='Enter'&&compareInput.trim()&&compareSyms.length<4){
-                    setCompareSyms(s=>[...new Set([...s,compareInput.trim()])])
-                    setCompareInput('')
-                  }
-                }}
-                placeholder="Type symbol + Enter (max 4)"
-                style={{flex:1,padding:'8px 12px',background:C.card,
-                  border:`1px solid ${C.border}`,borderRadius:7,
-                  color:C.text,fontSize:12,outline:'none'}}/>
-              <button onClick={()=>setCompareSyms([])}
-                style={{padding:'8px 14px',borderRadius:7,border:`1px solid ${C.border}`,
-                  background:'transparent',color:C.muted,fontSize:12,cursor:'pointer'}}>
-                Clear
-              </button>
-            </div>
-            {compareSyms.length===0?(
-              <div style={{textAlign:'center',padding:'60px 20px',color:C.muted}}>
-                <div style={{fontSize:36,marginBottom:10}}>⚖️</div>
-                <div style={{fontSize:14,fontWeight:700,color:C.text}}>Type a symbol and press Enter</div>
-                <div style={{fontSize:12,marginTop:6}}>Add up to 4 stocks to compare</div>
-              </div>
-            ):(
-              <div style={{display:'grid',
-                gridTemplateColumns:`repeat(${Math.min(compareSyms.length,4)},1fr)`,gap:10}}>
-                {compareSyms.map(sym=>{
-                  const s=stocks.find(x=>x.sym===sym)
-                  const stage=s?calcWeinsteinStage(s):null
-                  return(
-                    <div key={sym} style={{background:C.card,
-                      border:`1px solid ${C.divider}`,borderRadius:12,overflow:'hidden'}}>
-                      <div style={{padding:'10px 14px',borderBottom:`1px solid ${C.divider}`,
-                        display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                        <span onClick={()=>setChartSym(sym)}
-                          style={{fontWeight:700,fontSize:14,color:C.accent,cursor:'pointer'}}>
-                          {sym}
-                        </span>
-                        <button onClick={()=>setCompareSyms(s=>s.filter(x=>x!==sym))}
-                          style={{background:'transparent',border:'none',
-                            color:C.muted,fontSize:16,cursor:'pointer'}}>×</button>
-                      </div>
-                      {s?(
-                        <div style={{padding:'12px 14px'}}>
-                          <div style={{display:'flex',justifyContent:'space-between',marginBottom:10}}>
-                            <div>
-                              <div style={{fontWeight:700,fontSize:22,
-                                color:(s.rsTv||s.rs)>=90?C.green:(s.rsTv||s.rs)>=70?C.accent:C.yellow}}>
-                                {s.rsTv||s.rs||'—'}
-                              </div>
-                              <div style={{fontSize:9,color:C.teal}}>RS-TV</div>
-                            </div>
-                            {stage&&<span style={{padding:'2px 6px',borderRadius:3,fontSize:9,
-                              fontWeight:700,alignSelf:'flex-start',
-                              background:{1:C.yellow,2:C.green,3:C.orange,4:C.red}[stage.stage]+'18',
-                              color:{1:C.yellow,2:C.green,3:C.orange,4:C.red}[stage.stage]}}>
-                              {stage.label}
-                            </span>}
-                          </div>
-                          {[
-                            ['Price',    `₹${s.last?.toLocaleString('en-IN')}`,               C.text],
-                            ['Chg%',     `${s.chg>=0?'+':''}${s.chg?.toFixed(2)}%`,           s.chg>=0?C.green:C.red],
-                            ['MID RS',   s.rsMidcap??'—',  s.rsMidcap?rsColor(s.rsMidcap):C.muted],
-                            ['SML RS',   s.rsSmallcap??'—',s.rsSmallcap?rsColor(s.rsSmallcap):C.muted],
-                            ['Sector RS',s.rsSector??'—',  s.rsSector?rsColor(s.rsSector):C.muted],
-                            ['MCap',     s.marketCap?`₹${s.marketCap>=100000?(s.marketCap/100000).toFixed(1)+'L':(s.marketCap/1000).toFixed(0)+'K'} Cr`:'—', C.text],
-                            ['P/E',      s.pe?.toFixed(1)??'—', s.pe?s.pe<25?C.green:s.pe<50?C.yellow:C.red:C.muted],
-                            ['ROE',      s.roe?`${s.roe.toFixed(1)}%`:'—', s.roe?s.roe>20?C.green:C.yellow:C.muted],
-                            ['Promoter', s.promoter?`${s.promoter.toFixed(1)}%`:'—', s.promoter?s.promoter>55?C.green:C.yellow:C.muted],
-                          ].map(([k,v,c])=>(
-                            <div key={k} style={{display:'flex',justifyContent:'space-between',
-                              padding:'4px 0',borderBottom:`1px solid ${C.divider}`,fontSize:11}}>
-                              <span style={{color:C.muted}}>{k}</span>
-                              <span style={{fontWeight:600,color:c}}>{v}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ):(
-                        <div style={{padding:'20px',textAlign:'center',color:C.muted,fontSize:11}}>
-                          Not found in current scan
-                        </div>
-                      )}
+
+            {/* ── Rotation Heatmap ── */}
+            {(()=>{
+              // Build sector data from current stocks
+              const sectorMap = {}
+              stocks.forEach(s=>{
+                if(!s.sector||s.sector==='Other') return
+                if(!sectorMap[s.sector]) sectorMap[s.sector] = {
+                  sym: s.sector, stocks:[], rsArr:[], chgArr:[], ppCount:0, improving:0
+                }
+                const rs = s.rsTv||s.rs||0
+                sectorMap[s.sector].stocks.push(s)
+                sectorMap[s.sector].rsArr.push(rs)
+                if(s.chg) sectorMap[s.sector].chgArr.push(s.chg)
+                if(s.pp?.isPP) sectorMap[s.sector].ppCount++
+                if(s.rsTrend?.trend==='improving') sectorMap[s.sector].improving++
+              })
+
+              const sectors = Object.values(sectorMap).map(s=>({
+                ...s,
+                avgRS:  s.rsArr.length  ? Math.round(s.rsArr.reduce((a,b)=>a+b,0)/s.rsArr.length)   : 0,
+                avgChg: s.chgArr.length ? +(s.chgArr.reduce((a,b)=>a+b,0)/s.chgArr.length).toFixed(2) : 0,
+                count:  s.stocks.length,
+              })).sort((a,b)=>b.avgRS-a.avgRS)
+
+              if(sectors.length===0) return(
+                <div style={{textAlign:'center',padding:'40px',color:C.muted}}>
+                  <div style={{fontSize:13}}>Click 🚀 Scan to load sector data</div>
+                </div>
+              )
+
+              const maxRS  = Math.max(...sectors.map(s=>s.avgRS))
+              const minRS  = Math.min(...sectors.map(s=>s.avgRS))
+
+              // Color based on RS strength
+              const heatColor = (rs) => {
+                const pct = maxRS===minRS ? 0.5 : (rs-minRS)/(maxRS-minRS)
+                if(pct >= 0.8) return {bg:'#22c55e22',border:'#22c55e55',text:'#22c55e'}
+                if(pct >= 0.6) return {bg:'#4f8ef722',border:'#4f8ef755',text:'#4f8ef7'}
+                if(pct >= 0.4) return {bg:'#eab30822',border:'#eab30855',text:'#eab308'}
+                if(pct >= 0.2) return {bg:'#f9731622',border:'#f9731655',text:'#f97316'}
+                return {bg:'#ef444422',border:'#ef444455',text:'#ef4444'}
+              }
+
+              return(
+                <div>
+                  {/* Heatmap grid */}
+                  <div style={{marginBottom:16}}>
+                    <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:8}}>
+                      🌡️ Sector Rotation Heatmap
                     </div>
-                  )
-                })}
-              </div>
-            )}
+                    <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
+                      Color = RS strength. Green = strong momentum, Red = weak/rotating out
+                    </div>
+
+                    {/* Legend */}
+                    <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
+                      {[
+                        {label:'Strong (RS 80+)', c:'#22c55e'},
+                        {label:'Good (RS 60+)',   c:'#4f8ef7'},
+                        {label:'Avg (RS 40+)',    c:'#eab308'},
+                        {label:'Weak (RS 20+)',   c:'#f97316'},
+                        {label:'Poor (RS <20)',   c:'#ef4444'},
+                      ].map(({label,c})=>(
+                        <div key={label} style={{display:'flex',alignItems:'center',gap:4,fontSize:9}}>
+                          <div style={{width:10,height:10,borderRadius:2,background:c+'44',
+                            border:`1px solid ${c}66`}}/>
+                          <span style={{color:C.muted}}>{label}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Heatmap tiles */}
+                    <div style={{display:'grid',
+                      gridTemplateColumns:isMobile?'repeat(2,1fr)':'repeat(4,1fr)',
+                      gap:8}}>
+                      {sectors.map(s=>{
+                        const {bg,border,text} = heatColor(s.avgRS)
+                        return(
+                          <div key={s.sym} style={{background:bg,border:`1px solid ${border}`,
+                            borderRadius:10,padding:'12px',cursor:'pointer',
+                            transition:'transform 0.1s'}}
+                            onMouseEnter={e=>e.currentTarget.style.transform='scale(1.02)'}
+                            onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
+                            <div style={{fontWeight:700,fontSize:12,color:text,marginBottom:4,
+                              whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                              {s.sym}
+                            </div>
+                            <div style={{fontWeight:900,fontSize:22,color:text,lineHeight:1}}>
+                              {s.avgRS}
+                            </div>
+                            <div style={{fontSize:9,color:C.muted,marginTop:4}}>avg RS</div>
+                            <div style={{display:'flex',justifyContent:'space-between',
+                              marginTop:6,fontSize:9}}>
+                              <span style={{color:s.avgChg>=0?C.green:C.red,fontWeight:600}}>
+                                {s.avgChg>=0?'+':''}{s.avgChg}%
+                              </span>
+                              <span style={{color:C.muted}}>{s.count} stocks</span>
+                            </div>
+                            {s.ppCount>0&&(
+                              <div style={{marginTop:4,fontSize:9,color:C.orange,fontWeight:600}}>
+                                🔥 {s.ppCount} PP
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Top/Bottom movers */}
+                  <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',
+                    gap:10,marginBottom:14}}>
+
+                    <div style={{background:C.card,border:`1px solid ${C.green}33`,
+                      borderRadius:10,padding:'14px'}}>
+                      <div style={{fontWeight:700,fontSize:12,color:C.green,marginBottom:10}}>
+                        🚀 Strongest Sectors
+                      </div>
+                      {sectors.slice(0,5).map((s,i)=>(
+                        <div key={s.sym} style={{display:'flex',justifyContent:'space-between',
+                          alignItems:'center',padding:'6px 0',
+                          borderBottom:i<4?`1px solid ${C.divider}`:'none'}}>
+                          <div style={{display:'flex',alignItems:'center',gap:8}}>
+                            <span style={{color:C.muted,fontSize:10,width:14}}>{i+1}</span>
+                            <span style={{fontSize:11,fontWeight:600}}>{s.sym}</span>
+                          </div>
+                          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                            <span style={{fontWeight:700,fontSize:13,
+                              color:s.avgRS>=70?C.green:s.avgRS>=50?C.accent:C.yellow}}>
+                              {s.avgRS}
+                            </span>
+                            <span style={{fontSize:10,
+                              color:s.avgChg>=0?C.green:C.red}}>
+                              {s.avgChg>=0?'+':''}{s.avgChg}%
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{background:C.card,border:`1px solid ${C.red}33`,
+                      borderRadius:10,padding:'14px'}}>
+                      <div style={{fontWeight:700,fontSize:12,color:C.red,marginBottom:10}}>
+                        📉 Weakest Sectors
+                      </div>
+                      {[...sectors].reverse().slice(0,5).map((s,i)=>(
+                        <div key={s.sym} style={{display:'flex',justifyContent:'space-between',
+                          alignItems:'center',padding:'6px 0',
+                          borderBottom:i<4?`1px solid ${C.divider}`:'none'}}>
+                          <div style={{display:'flex',alignItems:'center',gap:8}}>
+                            <span style={{color:C.muted,fontSize:10,width:14}}>{sectors.length-i}</span>
+                            <span style={{fontSize:11,fontWeight:600}}>{s.sym}</span>
+                          </div>
+                          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                            <span style={{fontWeight:700,fontSize:13,color:C.red}}>{s.avgRS}</span>
+                            <span style={{fontSize:10,color:s.avgChg>=0?C.green:C.red}}>
+                              {s.avgChg>=0?'+':''}{s.avgChg}%
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Detailed ranking bars */}
+                  <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:8}}>
+                    📊 Full Sector Rankings
+                  </div>
+                  {sectors.map((s,i)=>{
+                    const {text} = heatColor(s.avgRS)
+                    return(
+                      <div key={s.sym} style={{background:C.card,
+                        border:`1px solid ${C.divider}`,borderRadius:10,
+                        padding:'10px 14px',marginBottom:6}}>
+                        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}>
+                          <span style={{color:C.muted,fontSize:11,width:20}}>{i+1}</span>
+                          <div style={{flex:1}}>
+                            <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
+                              <span style={{fontWeight:600,fontSize:12}}>{s.sym}</span>
+                              <div style={{display:'flex',gap:10,fontSize:11}}>
+                                <span style={{color:C.muted}}>{s.count} stocks</span>
+                                {s.ppCount>0&&<span style={{color:C.orange}}>🔥{s.ppCount} PP</span>}
+                                {s.improving>0&&<span style={{color:C.green}}>↑{s.improving}</span>}
+                                <span style={{color:s.avgChg>=0?C.green:C.red,fontWeight:600}}>
+                                  {s.avgChg>=0?'+':''}{s.avgChg}%
+                                </span>
+                              </div>
+                            </div>
+                            <div style={{width:'100%',background:C.bg,borderRadius:99,height:6}}>
+                              <div style={{width:`${s.avgRS}%`,height:'100%',
+                                background:text,borderRadius:99,transition:'width 0.3s'}}/>
+                            </div>
+                          </div>
+                          <span style={{fontWeight:700,fontSize:16,color:text,
+                            width:36,textAlign:'right'}}>{s.avgRS}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </div>
         )}
 
