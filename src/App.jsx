@@ -3026,374 +3026,62 @@ export default function App(){
                 {/* ══ SQUEEZE SCANNER (John Carter TTM) ══ */}
         {mainTab==='squeeze'&&(
           <div style={{padding:isMobile?'10px':'12px 16px'}}>
-
-            {/* Stats */}
-            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14}}>
-              {[
-                {l:'Daily Sq',  v:stocks.filter(s=>s.inSqueeze).length,   c:C.red},
-                {l:'Weekly Sq', v:stocks.filter(s=>s.sqWeeklyIn).length,  c:C.orange},
-                {l:'Hourly Sq', v:stocks.filter(s=>s.sqHourlyIn).length,  c:C.yellow},
-                {l:'Fired',     v:stocks.filter(s=>s.sqFiredBullish||s.sqFiredBearish).length, c:C.green},
-              ].map(({l,v,c})=>(
-                <div key={l} style={{background:C.card,border:`1px solid ${c}33`,
-                  borderRadius:8,padding:'10px',textAlign:'center'}}>
-                  <div style={{fontWeight:700,fontSize:20,color:c}}>{v}</div>
-                  <div style={{fontSize:9,color:C.muted,marginTop:2}}>{l}</div>
-                </div>
-              ))}
+            <div style={{marginBottom:12}}>
+              <div style={{fontWeight:700,fontSize:16}}>TTM Squeeze Scanner</div>
+              <div style={{fontSize:11,color:C.muted}}>John Carter — scroll to see all timeframes</div>
             </div>
 
-            {/* Timeframe tabs */}
-            <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap'}}>
-              {[
-                {id:'daily',  label:'📅 Daily',    count:stocks.filter(s=>s.inSqueeze).length,   c:C.red},
-                {id:'weekly', label:'📈 Weekly',   count:stocks.filter(s=>s.sqWeeklyIn).length,  c:C.orange},
-                {id:'hourly', label:'⏱ Hourly',   count:stocks.filter(s=>s.sqHourlyIn).length,  c:C.yellow},
-                {id:'fired',  label:'🔥 Fired',    count:stocks.filter(s=>s.sqFiredBullish||s.sqFiredBearish).length, c:C.green},
-                {id:'multi',  label:'⭐ Multi-TF', count:stocks.filter(s=>s.inSqueeze&&s.sqWeeklyIn).length, c:C.accent},
-              ].map(({id,label,count,c})=>(
-                <button key={id} onClick={()=>setSqTab(id)}
-                  style={{padding:'6px 12px',borderRadius:7,cursor:'pointer',
-                    border:`1px solid ${sqTab===id?c:C.border}`,
-                    background:sqTab===id?c+'22':'transparent',
-                    color:sqTab===id?c:C.muted,
-                    fontSize:11,fontWeight:sqTab===id?700:400}}>
-                  {label}
-                  <span style={{marginLeft:5,fontSize:10,background:c+'33',
-                    color:c,padding:'1px 5px',borderRadius:10}}>{count}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* Multi-TF alert */}
-            {stocks.filter(s=>s.inSqueeze&&s.sqWeeklyIn).length>0&&(
-              <div style={{background:C.orange+'11',border:`1px solid ${C.orange}44`,
-                borderRadius:10,padding:'10px 14px',marginBottom:12,
-                display:'flex',alignItems:'center',gap:8}}>
-                <div style={{width:8,height:8,borderRadius:'50%',background:C.orange}}/>
-                <span style={{fontWeight:700,fontSize:12,color:C.orange}}>
-                  {stocks.filter(s=>s.inSqueeze&&s.sqWeeklyIn).length} stocks in squeeze on BOTH Daily + Weekly
-                </span>
-              </div>
-            )}
-
-            {/* Stock list */}
-            {(()=>{
-              const sqStocks = sqTab==='daily'  ? stocks.filter(s=>s.inSqueeze||s.squeezeFired)
-                             : sqTab==='weekly' ? stocks.filter(s=>s.sqWeeklyIn||s.sqWeeklyFired)
-                             : sqTab==='hourly' ? stocks.filter(s=>s.sqHourlyIn||s.sqHourlyFired)
-                             : sqTab==='fired'  ? stocks.filter(s=>s.sqFiredBullish||s.sqFiredBearish)
-                             : stocks.filter(s=>s.inSqueeze&&s.sqWeeklyIn)
-
-              if(sqStocks.length===0) return(
-                <div style={{textAlign:'center',padding:'40px 20px',color:C.muted}}>
-                  <div style={{fontSize:32,marginBottom:8}}>🌀</div>
-                  <div style={{fontWeight:700,fontSize:13,color:C.text}}>
-                    No {sqTab} squeeze signals
-                  </div>
-                  <div style={{fontSize:11,marginTop:4,color:C.muted}}>
-                    {sqTab==='fired'?'No fires today — check during market hours':
-                     'Check back after next scan'}
-                  </div>
+            {[
+              {title:'🔥 Fired Now',      color:C.green,  list:stocks.filter(s=>s.sqFiredBullish||s.sqFiredBearish)},
+              {title:'⭐ Multi-TF D+W',   color:C.accent, list:stocks.filter(s=>s.inSqueeze&&s.sqWeeklyIn)},
+              {title:'📅 Daily Squeeze',  color:C.red,    list:stocks.filter(s=>s.inSqueeze)},
+              {title:'📈 Weekly Squeeze', color:C.orange, list:stocks.filter(s=>s.sqWeeklyIn)},
+              {title:'⏱ Hourly Squeeze', color:C.yellow, list:stocks.filter(s=>s.sqHourlyIn)},
+            ].map(({title,color,list})=>(
+              <div key={title} style={{background:C.card,border:`1px solid ${color}33`,borderRadius:12,padding:'14px',marginBottom:12}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                  <div style={{fontWeight:700,fontSize:13,color}}>{title}</div>
+                  <span style={{fontSize:11,fontWeight:700,color,background:color+'18',padding:'2px 8px',borderRadius:10}}>{list.length}</span>
                 </div>
-              )
-
-              return(
-                <div style={{display:'grid',
-                  gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:8}}>
-                  {sqStocks
-                    .sort((a,b)=>(b.sqStrength||0)-(a.sqStrength||0))
-                    .map(s=>{
-                      const inSq   = sqTab==='weekly'?s.sqWeeklyIn:sqTab==='hourly'?s.sqHourlyIn:s.inSqueeze
-                      const days   = sqTab==='weekly'?s.sqWeeklyDays:sqTab==='hourly'?s.sqHourlyDays:s.squeezeDays||0
-                      const momDir = sqTab==='weekly'?s.sqWeeklyMomDir:sqTab==='hourly'?s.sqHourlyMomDir:s.sqMomentumDir||'flat'
-                      const rs     = s.rsTv||s.rs||0
-                      return(
-                        <div key={s.sym} style={{background:C.card,
-                          border:`2px solid ${(s.sqFiredBullish||s.sqFiredBearish)?C.green:inSq?C.red+'66':C.divider}`,
-                          borderRadius:10,padding:'12px'}}>
-
-                          <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
-                            <div>
-                              <span onClick={()=>setChartSym(s.sym===chartSym?null:s.sym)}
-                                style={{fontWeight:700,fontSize:14,color:C.accent,cursor:'pointer'}}>
-                                {s.sym}
-                              </span>
-                              <span style={{fontSize:10,color:C.muted,marginLeft:6}}>{s.sector}</span>
-                              <div style={{display:'flex',gap:4,marginTop:4,flexWrap:'wrap'}}>
-                                <span style={{padding:'2px 7px',borderRadius:4,fontSize:9,
-                                  fontWeight:700,
-                                  background:(inSq?C.red:C.green)+'18',
-                                  color:inSq?C.red:C.green}}>
-                                  {inSq?'🔴 In Squeeze':'🟢 Fired'}
-                                </span>
-                                {days>0&&<span style={{padding:'2px 6px',borderRadius:4,
-                                  fontSize:9,background:C.card,color:C.muted,
-                                  border:`1px solid ${C.border}`}}>
-                                  {days}d
-                                </span>}
-                                {s.sqFiredBullish&&<span style={{padding:'2px 6px',borderRadius:4,
-                                  fontSize:9,fontWeight:700,background:C.green+'18',color:C.green}}>
-                                  ↑ Bullish
-                                </span>}
-                                {s.sqFiredBearish&&<span style={{padding:'2px 6px',borderRadius:4,
-                                  fontSize:9,fontWeight:700,background:C.red+'18',color:C.red}}>
-                                  ↓ Bearish
-                                </span>}
-                              </div>
-                            </div>
-                            <div style={{textAlign:'right'}}>
-                              <div style={{fontWeight:700,fontSize:18,
-                                color:rs>=90?C.green:rs>=70?C.accent:rs>=50?C.yellow:C.red}}>
-                                {rs}
-                              </div>
-                              <div style={{fontSize:8,color:C.teal}}>RS-TV</div>
-                              <div style={{fontSize:11,fontWeight:600,
-                                color:(s.chg||0)>=0?C.green:C.red,marginTop:2}}>
-                                {(s.chg||0)>=0?'+':''}{(s.chg||0).toFixed(1)}%
-                              </div>
-                            </div>
+                {list.length===0
+                  ?<div style={{textAlign:'center',padding:'14px',color:C.muted,fontSize:11}}>No signals</div>
+                  :<div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:8}}>
+                    {list.sort((a,b)=>(b.sqStrength||0)-(a.sqStrength||0)).slice(0,10).map(s=>(
+                      <div key={s.sym} style={{background:C.bg,border:`1px solid ${color}33`,borderRadius:8,padding:'10px'}}>
+                        <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                          <div>
+                            <span onClick={()=>setChartSym(s.sym===chartSym?null:s.sym)} style={{fontWeight:700,fontSize:13,color:C.accent,cursor:'pointer'}}>{s.sym}</span>
+                            <span style={{fontSize:9,color:C.muted,marginLeft:4}}>{s.sector}</span>
                           </div>
-
-                          {/* Squeeze dots */}
-                          {s.sqDotsD&&s.sqDotsD.length>0&&(
-                            <div style={{marginBottom:6}}>
-                              <div style={{fontSize:8,color:C.muted,marginBottom:2}}>
-                                Dots: 🔴=squeeze on 🟢=fired
-                              </div>
-                              <div style={{display:'flex',gap:2}}>
-                                {s.sqDotsD.slice(-15).map((dot,i)=>(
-                                  <div key={i} style={{width:8,height:8,borderRadius:'50%',
-                                    background:dot==='red'?C.red:dot==='green'?C.green:'#374151'}}/>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Momentum histogram */}
-                          {s.sqHistD&&s.sqHistD.length>0&&(
-                            <div style={{marginBottom:6}}>
-                              <div style={{display:'flex',gap:1,alignItems:'flex-end',height:20}}>
-                                {s.sqHistD.slice(-15).map((v,i)=>{
-                                  const max=Math.max(...s.sqHistD.map(Math.abs),0.001)
-                                  const h=Math.abs(v)/max*18
-                                  return(
-                                    <div key={i} style={{flex:1,display:'flex',
-                                      flexDirection:'column',
-                                      justifyContent:v>=0?'flex-end':'flex-start',
-                                      height:'100%'}}>
-                                      <div style={{background:v>=0?C.green:C.red,
-                                        borderRadius:1,height:`${h}px`,minHeight:1}}/>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Strength + momentum */}
-                          <div style={{display:'flex',gap:10,fontSize:10,color:C.muted}}>
-                            {(s.sqStrength||0)>0&&<span>
-                              Strength: <span style={{fontWeight:600,color:C.accent}}>
-                                {(s.sqStrength||0).toFixed(0)}
-                              </span>
-                            </span>}
-                            <span>Mom: <span style={{fontWeight:600,
-                              color:momDir==='up'?C.green:momDir==='down'?C.red:C.muted}}>
-                              {momDir==='up'?'↑':momDir==='down'?'↓':'→'} {momDir}
-                            </span></span>
+                          <div style={{textAlign:'right'}}>
+                            <div style={{fontWeight:700,fontSize:15,color:(s.rsTv||s.rs||0)>=80?C.green:(s.rsTv||s.rs||0)>=60?C.accent:C.yellow}}>{s.rsTv||s.rs||0}</div>
+                            <div style={{fontSize:9,color:(s.chg||0)>=0?C.green:C.red}}>{(s.chg||0)>=0?'+':''}{(s.chg||0).toFixed(1)}%</div>
                           </div>
                         </div>
-                      )
-                    })}
-                </div>
-              )
-            })()}
-          </div>
-        )}
-
-{/* ══ BREAKOUT ══ */}
-        {mainTab==='breakout'&&(
-          <div>
-            <LastUpdatedBar
-              scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
-              autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
-              refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
-              onRefresh={runDBScan}
-            />
-            {/* Stats */}
-            {/* Breakout stats */}
-            <div style={{background:C.card,border:`1px solid ${C.accent}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{fontWeight:700,fontSize:15,color:C.accent,marginBottom:6}}>💥 Breakout Scanner</div>
-              <div style={{fontSize:12,color:C.muted,marginBottom:12}}>
-                Weekly breakouts · 52W High breakouts · HY/HT Volume breakouts · Stage 2 buys
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
-                {[
-                  {l:'🚀 Power Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&s.rs>=80&&s.chg>=3).length,c:C.accent},
-                  {l:'⭐ Strong Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&s.rs>=70&&s.chg>=2).length,c:C.green},
-                  {l:'✅ All Breakouts',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout).length,c:C.teal},
-                  {l:'🏛️ IBV Signals',v:stocks.filter(s=>calcIBV(s).isIBV).length,c:C.purple},
-                  {l:'🔥 PP + Break',v:stocks.filter(s=>s.pp?.isPP&&calcHYHTBreakout(s).isBreakout).length,c:C.orange},
-                  {l:'👑 RS 90+ Break',v:stocks.filter(s=>s.rs>=90&&calcHYHTBreakout(s).isBreakout).length,c:C.yellow},
-                ].map(({l,v,c})=>(
-                  <div key={l} style={{background:C.bg,borderRadius:8,padding:'10px',textAlign:'center'}}>
-                    <div style={{fontSize:22,fontWeight:900,color:c}}>{v}</div>
-                    <div style={{fontSize:10,color:C.muted,marginTop:3}}>{l}</div>
+                        {s.sqDotsD&&s.sqDotsD.length>0&&(
+                          <div style={{display:'flex',gap:2,marginBottom:3}}>
+                            {s.sqDotsD.slice(-12).map((d,i)=>(
+                              <div key={i} style={{width:7,height:7,borderRadius:'50%',background:d==='red'?C.red:d==='green'?C.green:'#374151'}}/>
+                            ))}
+                          </div>
+                        )}
+                        {s.sqHistD&&s.sqHistD.length>0&&(
+                          <div style={{display:'flex',gap:1,alignItems:'flex-end',height:16}}>
+                            {s.sqHistD.slice(-12).map((v,i)=>{
+                              const mx=Math.max(...s.sqHistD.map(Math.abs),0.001)
+                              return <div key={i} style={{flex:1,display:'flex',flexDirection:'column',justifyContent:v>=0?'flex-end':'flex-start',height:'100%'}}><div style={{background:v>=0?C.green:C.red,height:`${Math.abs(v)/mx*14}px`,minHeight:1,borderRadius:1}}/></div>
+                            })}
+                          </div>
+                        )}
+                        {(s.sqStrength||0)>0&&(
+                          <div style={{fontSize:9,color:C.muted,marginTop:3}}>Str:<span style={{color:C.accent,fontWeight:600,marginLeft:3}}>{(s.sqStrength||0).toFixed(0)}</span></div>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                ))}
+                }
               </div>
-            </div>
-
-            {/* Weekly Breakout Stocks */}
-            <SectionCard title="📅 Weekly Breakout Stocks" color={C.teal}
-              subtitle="Stocks up >5% this week with rising RS">
-              <StockMiniTable
-                stocks={stocks.filter(s=>s.chg>=3&&(s.rsTv||s.rs)>=60&&s.hy?.isHY)
-                  .sort((a,b)=>b.chg-a.chg).slice(0,10)}
-                onChart={s=>setChartSym(s===chartSym?null:s)}
-                cols={[
-                  {key:'sym',  label:'Symbol'},
-                  {key:'chg',  label:'% Change', align:'right', bold:true,
-                    colorFn:v=>v>=0?C.green:C.red, fmt:v=>`+${v?.toFixed(2)}%`},
-                  {key:'last', label:'Price', align:'right',
-                    fmt:v=>`₹${v?.toLocaleString('en-IN')}`},
-                  {key:'rsTv', label:'RS-TV', align:'right',
-                    colorFn:v=>v>=90?C.green:v>=70?C.accent:C.yellow},
-                ]}
-              />
-            </SectionCard>
-
-            {/* Stocks near 52W High */}
-            <SectionCard title="🎯 Stocks Near 52-Week High" color={C.teal}
-              subtitle="Within 5% of annual high — momentum leaders">
-              <StockMiniTable
-                stocks={stocks.filter(s=>s.pctFrom52wh>=-5&&s.pctFrom52wh<0&&(s.rsTv||s.rs)>=60)
-                  .sort((a,b)=>b.pctFrom52wh-a.pctFrom52wh).slice(0,10)}
-                onChart={s=>setChartSym(s===chartSym?null:s)}
-                cols={[
-                  {key:'sym',         label:'Symbol'},
-                  {key:'pctFrom52wh', label:'% from High', align:'right',
-                    colorFn:v=>v>=-1?C.green:v>=-3?C.yellow:C.muted,
-                    fmt:v=>`${v?.toFixed(1)}%`},
-                  {key:'chg',   label:'Today %', align:'right',
-                    colorFn:v=>v>=0?C.green:C.red,
-                    fmt:v=>`${v>=0?'+':''}${v?.toFixed(1)}%`},
-                  {key:'rsTv',  label:'RS-TV', align:'right',
-                    colorFn:v=>v>=90?C.green:v>=70?C.accent:C.yellow},
-                ]}
-              />
-            </SectionCard>
-
-            {/* 52W High Breakout */}
-            <SectionCard title="🏆 52-Week High Breakout" color={C.green}
-              subtitle="Making new 52-week highs today">
-              <StockMiniTable
-                stocks={stocks.filter(s=>s.pctFrom52wh>=-0.5&&s.chg>0&&(s.rsTv||s.rs)>=60)
-                  .sort((a,b)=>(b.rsTv||b.rs)-(a.rsTv||a.rs)).slice(0,10)}
-                onChart={s=>setChartSym(s===chartSym?null:s)}
-                cols={[
-                  {key:'sym',  label:'Symbol'},
-                  {key:'rsTv', label:'RS-TV', align:'right', bold:true,
-                    colorFn:v=>v>=90?C.green:v>=70?C.accent:C.yellow},
-                  {key:'chg',  label:'Chg%', align:'right',
-                    colorFn:v=>v>=0?C.green:C.red,
-                    fmt:v=>`+${v?.toFixed(2)}%`},
-                  {key:'last', label:'Price', align:'right',
-                    fmt:v=>`₹${v?.toLocaleString('en-IN')}`},
-                ]}
-              />
-            </SectionCard>
-
-            {/* IBV Section */}
-            <div style={{background:C.card,border:`1px solid ${C.purple}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:14,color:C.purple,marginBottom:4}}>🏛️ IBV — Institutional Buying Volume</div>
-              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
-                Stocks with 2+ Pocket Pivot days in last 10 days = institutional accumulation
-              </div>
-              <TVCopyPanel stocks={stocks.filter(s=>calcIBV(s).isIBV)} label="IBV Stocks"/>
-              <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
-                {stocks.filter(s=>calcIBV(s).isIBV).slice(0,20).map(s=>{
-                  const ibv=calcIBV(s)
-                  return(
-                    <div key={s.sym} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
-                      display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                      <div>
-                        <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
-                        <div style={{fontSize:10,color:C.muted}}>{s.sector} · {ibv.ppCount} PP days · score {ibv.ibvScore}/7</div>
-                      </div>
-                      <div style={{textAlign:'right'}}>
-                        <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
-                        <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* HY/HT Breakout list */}
-            <TVCopyPanel stocks={stocks.filter(s=>calcHYHTBreakout(s).isBreakout)} label="HY/HT Breakouts"/>
-            {stocks.filter(s=>calcHYHTBreakout(s).isBreakout).length===0?(
-              <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
-                <div style={{fontSize:42,marginBottom:12}}>💥</div>
-                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No breakouts today</div>
-                <div style={{fontSize:12,marginTop:6,color:C.muted}}>
-                  Stocks need HY/HT volume in last 5 days + price up &gt;1% today
-                </div>
-              </div>
-            ):stocks.filter(s=>calcHYHTBreakout(s).isBreakout)
-              .sort((a,b)=>b.rs-a.rs)
-              .map((s,i)=>{
-                const bo=calcHYHTBreakout(s)
-                const ibv=calcIBV(s)
-                const stage=calcWeinsteinStage(s)
-                return(
-                  <div key={s.sym} style={{background:C.card,
-                    border:`2px solid ${bo.color}55`,
-                    borderRadius:12,marginBottom:10,padding:'14px'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-                      <div>
-                        <div style={{fontWeight:800,fontSize:16}}>{s.sym}</div>
-                        <div style={{fontSize:11,color:C.muted}}>{s.sector}</div>
-                        <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
-                          <div style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:800,
-                            background:bo.color+'22',color:bo.color}}>{bo.strength}</div>
-                          <StageBadge stage={stage}/>
-                          {ibv.isIBV&&<div style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:700,
-                            background:C.purple+'22',color:C.purple}}>🏛️ IBV {ibv.ppCount}d</div>}
-                          {s.pp?.isPP&&<Badge color={C.orange}>🔥PP</Badge>}
-                          {s.hy?.isHY&&<Badge color={C.blue}>📊HY</Badge>}
-                          {s.ht?.isHT&&<Badge color={C.purple}>🎯HT</Badge>}
-                        </div>
-                      </div>
-                      <div style={{textAlign:'right'}}>
-                        <div style={{fontWeight:900,fontSize:22,color:rsColor(s.rs)}}>{s.rs}</div>
-                        <div style={{fontWeight:700,fontSize:14,color:C.green}}>+{bo.chg}%</div>
-                        <div style={{fontSize:11,color:C.muted}}>{fmtP(s.last)}</div>
-                      </div>
-                    </div>
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
-                      {[
-                        ['RS',s.rs,rsColor(s.rs)],
-                        ['Chg',`+${bo.chg}%`,C.green],
-                        ['PP 5d',`${bo.recentPPCount}×`,C.orange],
-                        ['Trend',trendIcon(s.rsTrend?.trend||'flat'),trendColor(s.rsTrend?.trend||'flat')],
-                      ].map(([k,v,c])=>(
-                        <div key={k} style={{background:C.bg,borderRadius:7,padding:'8px',textAlign:'center'}}>
-                          <div style={{fontSize:9,color:C.muted,marginBottom:2}}>{k}</div>
-                          <div style={{fontWeight:800,fontSize:13,color:c}}>{v}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{marginTop:8,display:'flex',alignItems:'center',gap:8}}>
-                      <span style={{fontSize:10,color:C.muted}}>PP 10d:</span>
-                      <PPDots ppHistory={s.pp?.ppHistory||[]}/>
-                    </div>
-                  </div>
-                )
-              })
-            }
+            ))}
           </div>
         )}
 
