@@ -1,6 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
-  Tooltip, ResponsiveContainer, ReferenceLine, Legend } from 'recharts'
 import { supabase, fetchOwnerToken } from './lib/supabase'
 import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard } from './lib/db'
 import {
@@ -26,13 +24,6 @@ const C = {
   sidebar:'#080b10',divider:'#161b27',
   rowHover:'#121824',active:'#1a2035',
 }
-
-const sectors_fallback = [
-  {sector:'Defence',avgRS:88,chgD:1.2,chgW:3.4},
-  {sector:'Pharma', avgRS:84,chgD:2.1,chgW:4.8},
-  {sector:'Realty',  avgRS:82,chgD:0.8,chgW:2.1},
-]
-
 const rsColor  = r => r>=90?C.green:r>=70?C.accent:r>=50?C.yellow:C.red
 const rsLabel  = r => r>=90?'Elite':r>=80?'Strong':r>=60?'Avg+':r>=40?'Avg':'Weak'
 const trendIcon  = t => t==='improving'?'↑↑':t==='declining'?'↓↓':'→'
@@ -832,7 +823,7 @@ function StockDetail({s}){
       {/* Stats */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         {[
-          ['RS-TV',s.rsTv!=null?s.rsTv:'—',s.rsTv!=null?rsColor(s.rsTv):C.muted],
+          ['RS-TV',s.rsTv??'—',s.rsTv!=null?rsColor(s.rsTv):C.muted],
           ['RS in Sector',s.rsSector??'—',s.rsSector!=null?rsColor(s.rsSector):C.muted],
           ['RS in Midcap',s.rsMidcap??'—',s.rsMidcap!=null?rsColor(s.rsMidcap):C.muted],
           ['RS in Smallcap',s.rsSmallcap??'—',s.rsSmallcap!=null?rsColor(s.rsSmallcap):C.muted],
@@ -1010,32 +1001,32 @@ function DesktopRow({s,i,onChart}){
           </div>
         </div>
 
-        {/* RS-TV — Pine Script / Lakshmi Mata formula only */}
+        {/* RS-TV (TradingView / Lakshmi Mata formula — primary) */}
         <div style={{textAlign:'center'}}>
-          {(s.rsTv!=null&&s.rsTv>0)?(
+          {s.rsTv!=null?(
             <>
               <div style={{fontWeight:700,fontSize:15,color:rsColor(s.rsTv),lineHeight:1}}>{s.rsTv}</div>
               <div style={{fontSize:7,color:C.teal,marginTop:1,fontWeight:700}}>TV</div>
             </>
-          ):<span style={{color:C.muted,fontSize:11}}>—</span>}
+          ):<span style={{color:C.muted,fontSize:9}} title="RS-TV needs 504+ days of price history">N/A</span>}
         </div>
 
         {/* RS within Midcap */}
-        <div style={{textAlign:'center'}} title={`RS rank if compared vs Midcap 150 stocks: ${s.rsMidcap??'N/A'}`}>
+        <div style={{textAlign:'center'}} title={`RS vs Midcap 150 index as benchmark (same TV formula, Midcap index price used instead of Nifty): ${s.rsMidcap??'N/A'}`}>
           {s.rsMidcap!=null?(
             <>
               <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsMidcap)}}>{s.rsMidcap}</div>
-              <div style={{fontSize:7,color:C.blue,marginTop:1,fontWeight:600}}>MID</div>
+              <div style={{fontSize:7,color:C.blue,marginTop:1,fontWeight:600}}>vs MID</div>
             </>
           ):<span style={{color:C.border,fontSize:9}}>—</span>}
         </div>
 
         {/* RS within Smallcap */}
-        <div style={{textAlign:'center'}} title={`RS rank if compared vs Smallcap 250 stocks: ${s.rsSmallcap??'N/A'}`}>
+        <div style={{textAlign:'center'}} title={`RS vs Smallcap 250 index as benchmark (same TV formula, Smallcap index price used instead of Nifty): ${s.rsSmallcap??'N/A'}`}>
           {s.rsSmallcap!=null?(
             <>
               <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsSmallcap)}}>{s.rsSmallcap}</div>
-              <div style={{fontSize:7,color:C.yellow,marginTop:1,fontWeight:600}}>SML</div>
+              <div style={{fontSize:7,color:C.yellow,marginTop:1,fontWeight:600}}>vs SML</div>
             </>
           ):<span style={{color:C.border,fontSize:9}}>—</span>}
         </div>
@@ -1247,7 +1238,6 @@ function AuthScreen({onLogin}){
   const [email,setEmail]=useState('')
   const [password,setPassword]=useState('')
   const [name,setName]=useState('')
-  const [mobile,setMobile]=useState('')
   const [upstoxToken,setUpstoxToken]=useState('')
   const [error,setError]=useState('')
   const [info,setInfo]=useState('')
@@ -1479,163 +1469,67 @@ function SettingsPanel({session,onUpdate,onLogout}){
   const [newToken,setNewToken]=useState('')
   const [msg,setMsg]=useState('')
   const [loading,setLoading]=useState(false)
-  const [profile,setProfile]=useState(null)
-  const [sessionInfo,setSessionInfo]=useState(null)
+  const ownerMode=!!OWNER_TOKEN
 
-  // Load profile + session info
-  useEffect(()=>{
-    if(!session) return
-    // Load profile
-    supabase.from('profiles').select('*').eq('id',session.user.id).single()
-      .then(({data})=>setProfile(data))
-    // Load session info
-    supabase.from('user_sessions').select('*').eq('user_id',session.user.id).single()
-      .then(({data})=>setSessionInfo(data))
-  },[session])
-
-  const saveToken = async()=>{
+  const saveToken=async()=>{
+    if(!newToken){setMsg('❌ Enter a token');return}
     setLoading(true)
-    try{
-      const {error}=await supabase.auth.updateUser({data:{upstox_token:newToken}})
-      if(error) setMsg('Error: '+error.message)
-      else{ setMsg('Token saved!'); onUpdate&&onUpdate({...session,user:{...session.user,user_metadata:{...session.user.user_metadata,upstox_token:newToken}}}) }
-    }catch(e){ setMsg('Error saving') }
+    const{error}=await supabase.from('user_tokens')
+      .upsert({user_id:session.user.id,upstox_token:newToken},{onConflict:'user_id'})
+    if(error)setMsg('❌ '+error.message)
+    else{setMsg('✅ Token saved!');onUpdate({...session,token:newToken});setNewToken('')}
     setLoading(false)
   }
-
-  const logoutAllDevices = async()=>{
-    if(!confirm('This will log out ALL devices including this one. Continue?')) return
-    // Delete session record — all devices will be forced out on next check
-    await supabase.from('user_sessions').delete().eq('user_id',session.user.id)
-    await supabase.auth.signOut()
-    onLogout&&onLogout()
-  }
-
-  const user = session?.user
-  const meta = user?.user_metadata||{}
-  const createdAt = user?.created_at?new Date(user.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—'
-  const lastSeen = sessionInfo?.last_seen?new Date(sessionInfo.last_seen).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—'
+  const handleLogout=async()=>{await supabase.auth.signOut();onLogout()}
 
   return(
-    <div style={{maxWidth:500,margin:'0 auto',padding:'0 0 40px'}}>
-
-      {/* Profile card */}
-      <div style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:12,
-        padding:'20px',marginBottom:12}}>
-        <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:16}}>
-          <div style={{width:48,height:48,borderRadius:'50%',
-            background:`linear-gradient(135deg,${C.accent},#7c3aed)`,
-            display:'flex',alignItems:'center',justifyContent:'center',
-            fontWeight:700,fontSize:20,color:'#fff',flexShrink:0}}>
-            {(meta.full_name||user?.email||'U')[0].toUpperCase()}
+    <div style={{maxWidth:480,margin:'32px auto',padding:'0 16px'}}>
+      <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:24}}>
+        <div style={{fontWeight:800,fontSize:18,marginBottom:4}}>Account Settings</div>
+        <div style={{color:C.muted,fontSize:12,marginBottom:16}}>
+          Signed in as <strong style={{color:C.accent}}>{session.user.email}</strong>
+        </div>
+        {ownerMode&&(
+          <div style={{background:C.green+'18',border:`1px solid ${C.green}33`,borderRadius:8,
+            padding:'10px 12px',marginBottom:16,fontSize:12,color:C.green}}>
+            ✅ Using owner's Upstox token — scanner works without your own token.
+            You can optionally override with your own below.
           </div>
-          <div>
-            <div style={{fontWeight:700,fontSize:15,color:C.text}}>
-              {meta.full_name||'User'}
-            </div>
-            <div style={{fontSize:12,color:C.muted,marginTop:2}}>{user?.email}</div>
-            {(meta.mobile||profile?.mobile)&&(
-              <div style={{fontSize:11,color:C.muted,marginTop:1}}>
-                📱 {meta.mobile||profile?.mobile}
-              </div>
-            )}
+        )}
+        {msg&&<div style={{background:(msg.startsWith('✅')?C.green:C.red)+'18',
+          border:`1px solid ${(msg.startsWith('✅')?C.green:C.red)}44`,
+          borderRadius:8,padding:'10px 12px',marginBottom:14,fontSize:12,
+          color:msg.startsWith('✅')?C.green:C.red,fontWeight:600}}>{msg}</div>}
+        <div style={{marginBottom:20}}>
+          <label style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:'uppercase',
+            letterSpacing:'0.08em',display:'block',marginBottom:6}}>
+            {ownerMode?'Override with your own Upstox Token (optional)':'Update Upstox Token'}
+          </label>
+          <input type="password" value={newToken} placeholder="eyJ0eXAiOiJKV1Q…"
+            onChange={e=>setNewToken(e.target.value)}
+            style={{width:'100%',padding:'11px 13px',background:C.bg,border:`1px solid ${C.border}`,
+              borderRadius:8,color:C.text,fontSize:13,outline:'none',boxSizing:'border-box',
+              fontFamily:'monospace',marginBottom:10}}/>
+          <button onClick={saveToken} disabled={loading}
+            style={{width:'100%',padding:'11px',background:C.accent,color:'#000',border:'none',
+              borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer'}}>💾 Save Token</button>
+        </div>
+        <div style={{padding:'12px',background:C.accent+'10',border:`1px solid ${C.accent}22`,borderRadius:8,marginBottom:16}}>
+          <div style={{fontSize:11,color:C.muted,lineHeight:1.7}}>
+            <strong style={{color:C.accent}}>🔒</strong> Tokens encrypted in Supabase Postgres with Row Level Security.
           </div>
         </div>
-
-        {/* Account info grid */}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-          {[
-            {l:'Member Since', v:createdAt,       icon:'📅'},
-            {l:'Last Login',   v:lastSeen,         icon:'🕐'},
-            {l:'Device',       v:sessionInfo?.device_info?.split('(')[0]?.trim()?.slice(0,20)||'—', icon:'📱'},
-            {l:'Status',       v:'Active',          icon:'🟢'},
-          ].map(({l,v,icon})=>(
-            <div key={l} style={{background:C.bg,borderRadius:8,padding:'10px'}}>
-              <div style={{fontSize:9,color:C.muted,marginBottom:3}}>{icon} {l}</div>
-              <div style={{fontSize:11,fontWeight:600,color:C.text}}>{v}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Security section */}
-      <div style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:12,
-        padding:'16px',marginBottom:12}}>
-        <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:12}}>
-          🔒 Security
-        </div>
-
-        {/* Password reset */}
-        <button onClick={async()=>{
-          const {error}=await supabase.auth.resetPasswordForEmail(user?.email,{
-            redirectTo: window.location.origin
-          })
-          if(!error) setMsg('Password reset email sent to '+user?.email)
-          else setMsg('Error: '+error.message)
-        }}
-          style={{width:'100%',padding:'10px',borderRadius:8,
-            border:`1px solid ${C.border}`,background:'transparent',
-            color:C.text,fontSize:13,cursor:'pointer',textAlign:'left',marginBottom:8,
-            display:'flex',alignItems:'center',gap:8}}>
-          <span>🔑</span>
-          <span>Reset Password</span>
-          <span style={{marginLeft:'auto',color:C.muted,fontSize:11}}>Send email link</span>
-        </button>
-
-        {/* Logout all devices */}
-        <button onClick={logoutAllDevices}
-          style={{width:'100%',padding:'10px',borderRadius:8,
-            border:`1px solid ${C.red}44`,background:C.red+'11',
-            color:C.red,fontSize:13,cursor:'pointer',textAlign:'left',
-            display:'flex',alignItems:'center',gap:8}}>
-          <span>🚪</span>
-          <span>Log Out All Devices</span>
-          <span style={{marginLeft:'auto',fontSize:11,opacity:0.7}}>Forces logout everywhere</span>
-        </button>
-
-        {msg&&<div style={{fontSize:11,color:C.green,marginTop:8,padding:'6px 10px',
-          background:C.green+'11',borderRadius:6}}>{msg}</div>}
-      </div>
-
-      {/* Upstox token */}
-      <div style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:12,
-        padding:'16px',marginBottom:12}}>
-        <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:4}}>
-          🔗 Upstox Token
-        </div>
-        <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
-          {meta.upstox_token?'Token saved ✅ — paste new one to update':'No token saved yet'}
-        </div>
-        <textarea value={newToken} onChange={e=>setNewToken(e.target.value)}
-          placeholder="Paste your Upstox access token here…"
-          rows={3}
-          style={{width:'100%',padding:'10px',background:C.bg,border:`1px solid ${C.border}`,
-            borderRadius:8,color:C.text,fontSize:11,outline:'none',
-            resize:'vertical',boxSizing:'border-box',fontFamily:'monospace'}}/>
-        <button onClick={saveToken} disabled={loading||!newToken.trim()}
-          style={{marginTop:8,width:'100%',padding:'10px',borderRadius:8,border:'none',
-            background:newToken.trim()?C.accent:C.border,
-            color:newToken.trim()?'#000':C.muted,
-            fontWeight:700,fontSize:13,cursor:newToken.trim()?'pointer':'not-allowed'}}>
-          {loading?'Saving…':'Save Token'}
+        <button onClick={handleLogout}
+          style={{width:'100%',padding:'11px',background:'transparent',color:C.red,
+            border:`1px solid ${C.red}44`,borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer'}}>
+          🚪 Sign Out
         </button>
       </div>
-
-      {/* Logout */}
-      <button onClick={async()=>{
-        await supabase.auth.signOut()
-        onLogout&&onLogout()
-      }}
-        style={{width:'100%',padding:'12px',borderRadius:8,
-          border:`1px solid ${C.border}`,background:'transparent',
-          color:C.muted,fontSize:13,cursor:'pointer',fontWeight:600}}>
-        Sign Out This Device
-      </button>
     </div>
   )
 }
 
-
+// ── Demo generators ───────────────────────────────────────────────────
 function genC(days=320,trend=0.0003,vol=0.018){
   const p=[100],v=[500000]
   for(let i=1;i<days;i++){
@@ -1686,246 +1580,7 @@ function isMarketOpen(){
   return mins >= 555 && mins <= 930
 }
 
-// ── Breadth Charts Component ─────────────────────────────────────────
-function BreadthCharts({history}){
-  if(!history||history.length===0) return(
-    <div style={{textAlign:'center',padding:'40px 20px',color:'#4a5568'}}>
-      <div style={{fontSize:13}}>Historical data builds up daily after market close.</div>
-      <div style={{fontSize:11,marginTop:4}}>Come back tomorrow to see trends!</div>
-    </div>
-  )
-
-  const fmt = d => {
-    const date = new Date(d)
-    return `${date.getDate()}/${date.getMonth()+1}`
-  }
-
-  const chartStyle = {
-    fontSize:9, fill:'#4a5568'
-  }
-
-  const CustomTooltip = ({active,payload,label})=>{
-    if(!active||!payload?.length) return null
-    return(
-      <div style={{background:'#0e1117',border:'1px solid #1c2333',borderRadius:8,
-        padding:'8px 12px',fontSize:11}}>
-        <div style={{color:'#4a5568',marginBottom:4}}>{label}</div>
-        {payload.map(p=>(
-          <div key={p.name} style={{color:p.color,fontWeight:600}}>
-            {p.name}: {typeof p.value==='number'?p.value.toFixed(2):p.value}
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  return(
-    <div>
-      {/* Chart 1: A/D Ratio trend */}
-      <div style={{background:'#0e1117',border:'1px solid #1c2333',borderRadius:12,
-        padding:'14px',marginBottom:12}}>
-        <div style={{fontWeight:700,fontSize:13,color:'#e2e8f0',marginBottom:4}}>
-          📈 Advance/Decline Ratio — 90 Days
-        </div>
-        <div style={{fontSize:10,color:'#4a5568',marginBottom:10}}>
-          Above 1.0 = more stocks rising than falling (healthy)
-        </div>
-        <ResponsiveContainer width="100%" height={160}>
-          <LineChart data={history} margin={{top:5,right:5,left:-20,bottom:0}}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1c2333"/>
-            <XAxis dataKey="scan_date" tickFormatter={fmt} tick={chartStyle} interval="preserveStartEnd"/>
-            <YAxis tick={chartStyle} domain={['auto','auto']}/>
-            <Tooltip content={<CustomTooltip/>}/>
-            <ReferenceLine y={1} stroke="#4a5568" strokeDasharray="4 4"/>
-            <Line type="monotone"
-              dataKey={d=>d.advances&&d.declines?+(d.advances/d.declines).toFixed(2):null}
-              name="A/D Ratio" stroke="#22c55e" dot={false} strokeWidth={2}/>
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Chart 2: Advancing vs Declining bars */}
-      <div style={{background:'#0e1117',border:'1px solid #1c2333',borderRadius:12,
-        padding:'14px',marginBottom:12}}>
-        <div style={{fontWeight:700,fontSize:13,color:'#e2e8f0',marginBottom:4}}>
-          📊 Advancing vs Declining Stocks
-        </div>
-        <div style={{fontSize:10,color:'#4a5568',marginBottom:10}}>
-          Green bars = stocks up, Red bars = stocks down each day
-        </div>
-        <ResponsiveContainer width="100%" height={160}>
-          <BarChart data={history} margin={{top:5,right:5,left:-20,bottom:0}} barGap={0}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1c2333"/>
-            <XAxis dataKey="scan_date" tickFormatter={fmt} tick={chartStyle} interval="preserveStartEnd"/>
-            <YAxis tick={chartStyle}/>
-            <Tooltip content={<CustomTooltip/>}/>
-            <Bar dataKey="advances" name="Advancing" fill="#22c55e" opacity={0.8}/>
-            <Bar dataKey="declines" name="Declining" fill="#ef4444" opacity={0.8}/>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Chart 3: RS Improving vs Declining */}
-      <div style={{background:'#0e1117',border:'1px solid #1c2333',borderRadius:12,
-        padding:'14px',marginBottom:12}}>
-        <div style={{fontWeight:700,fontSize:13,color:'#e2e8f0',marginBottom:4}}>
-          ⚡ RS Improving vs Declining
-        </div>
-        <div style={{fontSize:10,color:'#4a5568',marginBottom:10}}>
-          Rising blue line = more stocks gaining momentum (buy signal)
-        </div>
-        <ResponsiveContainer width="100%" height={160}>
-          <LineChart data={history} margin={{top:5,right:5,left:-20,bottom:0}}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1c2333"/>
-            <XAxis dataKey="scan_date" tickFormatter={fmt} tick={chartStyle} interval="preserveStartEnd"/>
-            <YAxis tick={chartStyle}/>
-            <Tooltip content={<CustomTooltip/>}/>
-            <Line type="monotone" dataKey="rs_improving" name="RS Improving"
-              stroke="#4f8ef7" dot={false} strokeWidth={2}/>
-            <Line type="monotone" dataKey="rs_declining" name="RS Declining"
-              stroke="#f97316" dot={false} strokeWidth={2}/>
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Chart 4: PP count + RS>=70 count */}
-      <div style={{background:'#0e1117',border:'1px solid #1c2333',borderRadius:12,
-        padding:'14px',marginBottom:12}}>
-        <div style={{fontWeight:700,fontSize:13,color:'#e2e8f0',marginBottom:4}}>
-          🔥 PP Signals + Strong RS (≥70) Stocks
-        </div>
-        <div style={{fontSize:10,color:'#4a5568',marginBottom:10}}>
-          Rising PP count = institutional buying increasing
-        </div>
-        <ResponsiveContainer width="100%" height={160}>
-          <LineChart data={history} margin={{top:5,right:5,left:-20,bottom:0}}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1c2333"/>
-            <XAxis dataKey="scan_date" tickFormatter={fmt} tick={chartStyle} interval="preserveStartEnd"/>
-            <YAxis tick={chartStyle}/>
-            <Tooltip content={<CustomTooltip/>}/>
-            <Line type="monotone" dataKey="pp_count" name="PP Signals"
-              stroke="#eab308" dot={false} strokeWidth={2}/>
-            <Line type="monotone" dataKey="rs_above_70" name="RS ≥ 70"
-              stroke="#22c55e" dot={false} strokeWidth={2}/>
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Chart 5: New 52W Highs vs Lows */}
-      <div style={{background:'#0e1117',border:'1px solid #1c2333',borderRadius:12,
-        padding:'14px'}}>
-        <div style={{fontWeight:700,fontSize:13,color:'#e2e8f0',marginBottom:4}}>
-          🎯 New 52-Week Highs vs Lows
-        </div>
-        <div style={{fontSize:10,color:'#4a5568',marginBottom:10}}>
-          More new highs than lows = bull market confirmation
-        </div>
-        <ResponsiveContainer width="100%" height={160}>
-          <BarChart data={history} margin={{top:5,right:5,left:-20,bottom:0}}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1c2333"/>
-            <XAxis dataKey="scan_date" tickFormatter={fmt} tick={chartStyle} interval="preserveStartEnd"/>
-            <YAxis tick={chartStyle}/>
-            <Tooltip content={<CustomTooltip/>}/>
-            <Bar dataKey="new_52w_high" name="52W Highs" fill="#14b8a6" opacity={0.8}/>
-            <Bar dataKey="new_52w_low"  name="52W Lows"  fill="#ef4444" opacity={0.8}/>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  )
-}
-
-
-// ── Horizontal Bar Chart Component ───────────────────────────────────
-function HBarChart({data, valueKey, labelKey, colorFn, height=200, fmt=v=>v?.toFixed(1)+'%'}){
-  if(!data||data.length===0) return(
-    <div style={{textAlign:'center',padding:'20px',color:'#4a5568',fontSize:11}}>No data yet</div>
-  )
-  const max = Math.max(...data.map(d=>Math.abs(d[valueKey]||0)))
-  return(
-    <div style={{display:'flex',flexDirection:'column',gap:3}}>
-      {data.slice(0,12).map((d,i)=>{
-        const val = d[valueKey]||0
-        const pct = max>0?Math.abs(val)/max*100:0
-        const color = colorFn?colorFn(val):val>=0?'#22c55e':'#ef4444'
-        return(
-          <div key={i} style={{display:'flex',alignItems:'center',gap:6,fontSize:10}}>
-            <div style={{width:42,textAlign:'right',color:'#4a5568',flexShrink:0,fontWeight:600}}>
-              {fmt(val)}
-            </div>
-            <div style={{flex:1,background:'#161b27',borderRadius:3,height:20,overflow:'hidden'}}>
-              <div style={{width:`${pct}%`,height:'100%',background:color,
-                borderRadius:3,display:'flex',alignItems:'center',paddingLeft:6,
-                minWidth:40,transition:'width 0.3s'}}>
-                <span style={{fontSize:9,fontWeight:700,color:'#fff',
-                  whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-                  {d[labelKey]}
-                </span>
-              </div>
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── Stock Mini Table ──────────────────────────────────────────────────
-function StockMiniTable({stocks, cols, onChart}){
-  if(!stocks||stocks.length===0) return(
-    <div style={{textAlign:'center',padding:'16px',color:'#4a5568',fontSize:11}}>No data</div>
-  )
-  return(
-    <div style={{overflowX:'auto'}}>
-      <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
-        <thead>
-          <tr style={{borderBottom:'1px solid #1c2333'}}>
-            {cols.map(c=>(
-              <th key={c.key} style={{padding:'6px 8px',textAlign:c.align||'left',
-                color:'#4a5568',fontWeight:600,fontSize:10,whiteSpace:'nowrap'}}>
-                {c.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {stocks.slice(0,15).map((s,i)=>(
-            <tr key={i} style={{borderBottom:'1px solid #161b27'}}
-              onMouseEnter={e=>e.currentTarget.style.background='#121824'}
-              onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-              {cols.map(c=>(
-                <td key={c.key} style={{padding:'7px 8px',textAlign:c.align||'left',
-                  color:c.colorFn?c.colorFn(s[c.key]):c.color||'#e2e8f0',
-                  fontWeight:c.bold?700:400,whiteSpace:'nowrap'}}>
-                  {c.key==='sym'?(
-                    <span onClick={()=>onChart&&onChart(s.sym)}
-                      style={{color:'#4f8ef7',cursor:'pointer',fontWeight:700}}>
-                      {s[c.key]}
-                    </span>
-                  ):c.fmt?c.fmt(s[c.key]):s[c.key]}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-// ── Section Card ──────────────────────────────────────────────────────
-function SectionCard({title, subtitle, children, color='#4f8ef7'}){
-  return(
-    <div style={{background:'#0e1117',border:`1px solid ${color}22`,
-      borderRadius:12,padding:'14px',marginBottom:12}}>
-      <div style={{fontWeight:700,fontSize:13,color:'#e2e8f0',marginBottom:2}}>{title}</div>
-      {subtitle&&<div style={{fontSize:10,color:'#4a5568',marginBottom:10}}>{subtitle}</div>}
-      {children}
-    </div>
-  )
-}
-
-// ── Main App ──────────────────────────────────────────────────────────────────
+// ── Main App ──────────────────────────────────────────────────────────
 export default function App(){
   const isMobile=useIsMobile()
   const [session,setSession]=useState(null)
@@ -2187,70 +1842,10 @@ export default function App(){
     return()=>clearInterval(refreshTimer.current)
   },[autoRefresh,refreshInterval,runDBScan,historyDate])
 
-  // Auto-load data on mount and every time session/date changes
+  // Load from DB on mount, and whenever the selected history date changes
   useEffect(()=>{
-    if(session){
-      runDBScan()  // always load immediately on login
-    }
+    if(session)runDBScan()
   },[session,historyDate])
-
-  // ── Single device enforcement ─────────────────────────────────────
-  // Generate a unique token for this browser tab/device
-  const deviceToken = useRef(
-    sessionStorage.getItem('lm_device_token') || 
-    (()=>{ const t = Math.random().toString(36).slice(2)+Date.now(); sessionStorage.setItem('lm_device_token',t); return t })()
-  )
-  const [forcedOut, setForcedOut] = useState(false)
-
-  // On login — register this device as the active session
-  useEffect(()=>{
-    if(!session) return
-    const userId = session.user.id
-    const token  = deviceToken.current
-
-    // Write our token to Supabase
-    const registerDevice = async()=>{
-      await supabase.from('user_sessions').upsert({
-        user_id:    userId,
-        token:      token,
-        last_seen:  new Date().toISOString(),
-        device_info: navigator.userAgent.slice(0,100),
-      }, {onConflict: 'user_id'})
-    }
-    registerDevice()
-
-    // Poll every 30s — check if our token is still the active one
-    const checkSession = async()=>{
-      const {data} = await supabase
-        .from('user_sessions')
-        .select('token')
-        .eq('user_id', userId)
-        .single()
-      if(data && data.token !== token){
-        // Another device logged in — force logout
-        setForcedOut(true)
-        await supabase.auth.signOut()
-        setSession(null)
-      } else if(data) {
-        // Still active — update last_seen
-        await supabase.from('user_sessions').update({
-          last_seen: new Date().toISOString()
-        }).eq('user_id', userId)
-      }
-    }
-
-    const timer = setInterval(checkSession, 30000)
-    return ()=>clearInterval(timer)
-  },[session])
-  
-  // Auto-refresh every minute when market is open
-  useEffect(()=>{
-    if(!session||!autoRefresh||historyDate) return
-    const timer = setInterval(()=>{
-      if(isMarketOpen()) runDBScan()
-    }, refreshInterval)
-    return ()=>clearInterval(timer)
-  },[session,autoRefresh,refreshInterval,historyDate,runDBScan])
 
   // Load index dashboard and breadth data on tab switch
   useEffect(()=>{
@@ -2259,8 +1854,8 @@ export default function App(){
       fetchIndexDashboard().then(setIndexData).catch(e=>console.error('Index fetch:',e))
     }
     if(mainTab==='breadth'){
-      supabase.from('market_breadth').select('*')
-        .order('scan_date',{ascending:true}).limit(90)
+      // Fetch market breadth from Supabase
+      supabase.from('market_breadth').select('*').order('scan_date',{ascending:false}).limit(30)
         .then(({data})=>setBreadthData(data||[]))
         .catch(e=>console.error('Breadth fetch:',e))
     }
@@ -2552,8 +2147,7 @@ export default function App(){
         </div>
 
         {/* ── Page content ── */}
-        <div style={{padding:isMobile?'10px':'0',flex:1,overflowY:'auto',
-          minHeight:0}}>
+        <div style={{padding:isMobile?'10px':'12px 16px',flex:1,overflowY:'auto'}}>
 
         {/* History mode banner — unmistakable when not viewing live data */}
         {historyDate&&(
@@ -2648,7 +2242,7 @@ export default function App(){
                 <summary style={{cursor:'pointer',fontWeight:600,color:C.text}}>ℹ️ How RS is calculated — two methods</summary>
                 <div style={{marginTop:6,lineHeight:1.8}}>
                   <strong style={{color:C.teal}}>RS-TV</strong> = Lakshmi Mata / TradingView formula — benchmark-relative (stock return minus Nifty's return), normalized by this stock's own 252-day min/max. Matches your Pine Script exactly. &nbsp;·&nbsp;
-                  <strong style={{color:C.text}}>MID/SML/SEC</strong> =  percentile rank vs that index pool — shown for ALL stocks regardless of index membership, so you can compare any stock against each universe. &nbsp;·&nbsp;
+                  <strong style={{color:C.text}}>MID/SML/SEC</strong> = IBD percentile rank vs that index pool — shown for ALL stocks regardless of index membership, so you can compare any stock against each universe. &nbsp;·&nbsp;
                   <span style={{color:C.border}}>—</span> = insufficient data
                 </div>
               </details>
@@ -2846,241 +2440,718 @@ export default function App(){
 
         {/* ══ INDICES DASHBOARD ══ */}
         {mainTab==='indices'&&(
-          <div style={{padding:isMobile?'10px':'12px 16px'}}>
-
-            {/* Header */}
-            <div style={{marginBottom:14}}>
-              <div style={{fontWeight:700,fontSize:16}}>Index Dashboard</div>
-              <div style={{fontSize:11,color:C.muted}}>Top movers · Near 52W High · Stage 2 buys · Index strength</div>
-            </div>
-
-            {/* Summary strip */}
-            {stocks.length>0&&(
-              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14}}>
-                {[
-                  {l:'Total',    v:stocks.length,                                      c:C.accent},
-                  {l:'RS ≥ 80',  v:stocks.filter(s=>(s.rsTv||s.rs||0)>=80).length,    c:C.green},
-                  {l:'Up Today', v:stocks.filter(s=>s.chg>0).length,                  c:C.green},
-                  {l:'PP Today', v:stocks.filter(s=>s.pp?.isPP).length,               c:C.orange},
-                ].map(({l,v,c})=>(
-                  <div key={l} style={{background:C.card,border:`1px solid ${c}22`,
-                    borderRadius:8,padding:'10px',textAlign:'center'}}>
-                    <div style={{fontWeight:700,fontSize:18,color:c}}>{v}</div>
-                    <div style={{fontSize:9,color:C.muted,marginTop:2}}>{l}</div>
-                  </div>
-                ))}
+          <div>
+            <div style={{marginBottom:12}}>
+              <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>🗂 Index Performance Dashboard</div>
+              <div style={{fontSize:11,color:C.muted}}>
+                Daily · Weekly · Monthly · Quarterly · Yearly performance + RS-TV + Weinstein Stage for each index
               </div>
-            )}
-
-            {/* 4 stock tables */}
-            <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:10,marginBottom:14}}>
-
-              <SectionCard title="📈 Top Gainers Today" color={C.green}
-                subtitle="Best RS stocks up today">
-                <StockMiniTable
-                  stocks={[...stocks].filter(s=>s.chg>0).sort((a,b)=>(b.rsTv||b.rs||0)-(a.rsTv||a.rs||0)).slice(0,10)}
-                  onChart={s=>setChartSym(s===chartSym?null:s)}
-                  cols={[
-                    {key:'sym',  label:'Symbol'},
-                    {key:'rsTv', label:'RS', align:'right', bold:true,
-                      colorFn:v=>v>=90?C.green:v>=70?C.accent:v>=50?C.yellow:C.red},
-                    {key:'chg',  label:'Chg%', align:'right',
-                      colorFn:v=>v>=0?C.green:C.red,
-                      fmt:v=>`+${v?.toFixed(1)}%`},
-                    {key:'last', label:'Price', align:'right',
-                      fmt:v=>v?`₹${v?.toLocaleString('en-IN')}`:'—'},
-                  ]}/>
-              </SectionCard>
-
-              <SectionCard title="📉 Top Losers Today" color={C.red}
-                subtitle="Biggest declines today">
-                <StockMiniTable
-                  stocks={[...stocks].filter(s=>s.chg<0).sort((a,b)=>a.chg-b.chg).slice(0,10)}
-                  onChart={s=>setChartSym(s===chartSym?null:s)}
-                  cols={[
-                    {key:'sym',  label:'Symbol'},
-                    {key:'rsTv', label:'RS', align:'right', bold:true,
-                      colorFn:v=>v>=90?C.green:v>=70?C.accent:v>=50?C.yellow:C.red},
-                    {key:'chg',  label:'Chg%', align:'right',
-                      colorFn:_=>C.red,
-                      fmt:v=>`${v?.toFixed(1)}%`},
-                    {key:'last', label:'Price', align:'right',
-                      fmt:v=>v?`₹${v?.toLocaleString('en-IN')}`:'—'},
-                  ]}/>
-              </SectionCard>
-
-              <SectionCard title="🎯 Near 52-Week High" color={C.teal}
-                subtitle="Within 3% of 52W high">
-                <StockMiniTable
-                  stocks={[...stocks].filter(s=>
-                    s.pctFrom52wh!=null&&s.pctFrom52wh>=-3&&s.pctFrom52wh<=0&&
-                    (s.rsTv||s.rs||0)>=60
-                  ).sort((a,b)=>b.pctFrom52wh-a.pctFrom52wh).slice(0,10)}
-                  onChart={s=>setChartSym(s===chartSym?null:s)}
-                  cols={[
-                    {key:'sym',         label:'Symbol'},
-                    {key:'rsTv',        label:'RS',  align:'right', bold:true,
-                      colorFn:v=>v>=90?C.green:v>=70?C.accent:C.yellow},
-                    {key:'pctFrom52wh', label:'From High', align:'right',
-                      colorFn:v=>v>=-1?C.green:v>=-3?C.yellow:C.muted,
-                      fmt:v=>`${v?.toFixed(1)}%`},
-                    {key:'chg', label:'Today', align:'right',
-                      colorFn:v=>v>=0?C.green:C.red,
-                      fmt:v=>`${v>=0?'+':''}${v?.toFixed(1)}%`},
-                  ]}/>
-              </SectionCard>
-
-              <SectionCard title="🚀 Stage 2 Buy Signals" color={C.green}
-                subtitle="PP + RS ≥ 70 — best setups today">
-                <StockMiniTable
-                  stocks={[...stocks].filter(s=>s.pp?.isPP&&(s.rsTv||s.rs||0)>=70)
-                    .sort((a,b)=>(b.rsTv||b.rs||0)-(a.rsTv||a.rs||0)).slice(0,10)}
-                  onChart={s=>setChartSym(s===chartSym?null:s)}
-                  cols={[
-                    {key:'sym',  label:'Symbol'},
-                    {key:'rsTv', label:'RS',  align:'right', bold:true,
-                      colorFn:v=>v>=90?C.green:v>=70?C.accent:C.yellow},
-                    {key:'chg',  label:'Chg%', align:'right',
-                      colorFn:v=>v>=0?C.green:C.red,
-                      fmt:v=>`${v>=0?'+':''}${v?.toFixed(1)}%`},
-                    {key:'last', label:'Price', align:'right',
-                      fmt:v=>v?`₹${v?.toLocaleString('en-IN')}`:'—'},
-                  ]}/>
-              </SectionCard>
             </div>
 
-            {/* Index strength bar charts */}
-            {indexData.length>0&&(
-              <div style={{marginBottom:14}}>
-                <div style={{fontWeight:700,fontSize:14,color:C.text,marginBottom:10}}>
-                  📊 Index Strength Rankings
-                </div>
-                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr 1fr',gap:10}}>
+            {indexData.length===0?(
+              <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
+                <div style={{fontSize:36,marginBottom:10}}>🗂</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No index data yet</div>
+                <div style={{fontSize:12,marginTop:6}}>Data populates after the next scan cycle completes</div>
+              </div>
+            ):(
+              <>
+                {/* Summary strip */}
+                <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
                   {[
-                    {label:'Daily %',   key:'chgD'},
-                    {label:'Weekly %',  key:'chgW'},
-                    {label:'Monthly %', key:'chgM'},
-                  ].map(({label,key})=>(
-                    <SectionCard key={label} title={label} color={C.accent}>
-                      <HBarChart
-                        data={[...indexData].sort((a,b)=>(b[key]||0)-(a[key]||0))}
-                        valueKey={key} labelKey="name"
-                        colorFn={v=>v>=0?C.green:C.red}
-                        fmt={v=>`${v>=0?'+':''}${v?.toFixed(1)}%`}/>
-                    </SectionCard>
+                    {l:'Stage 2 (Up)',   v:indexData.filter(i=>i.stage===2).length, c:C.green},
+                    {l:'Stage 1 (Base)', v:indexData.filter(i=>i.stage===1).length, c:C.yellow},
+                    {l:'Stage 3 (Top)',  v:indexData.filter(i=>i.stage===3).length, c:C.orange},
+                    {l:'Stage 4 (Down)', v:indexData.filter(i=>i.stage===4).length, c:C.red},
+                    {l:'RS-TV ≥ 70',     v:indexData.filter(i=>(i.rsTv||0)>=70).length,    c:C.accent},
+                    {l:'RS-TV < 40',     v:indexData.filter(i=>i.rsTv!=null&&i.rsTv<40).length, c:C.red},
+                  ].map(({l,v,c})=>(
+                    <div key={l} style={{background:C.card,border:`1px solid ${c}33`,
+                      borderRadius:8,padding:'8px 14px',textAlign:'center',minWidth:80}}>
+                      <div style={{fontWeight:800,fontSize:20,color:c}}>{v}</div>
+                      <div style={{fontSize:9,color:C.muted,marginTop:2}}>{l}</div>
+                    </div>
                   ))}
                 </div>
-              </div>
-            )}
 
-            {/* Index cards */}
-            {indexData.length>0&&(
-              <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:10}}>
-                {indexData.map(idx=>{
-                  const sc={1:C.yellow,2:C.green,3:C.orange,4:C.red}[idx.stage]||C.muted
-                  const sl={1:'S1 Base',2:'S2 Up',3:'S3 Top',4:'S4 Down'}[idx.stage]||'—'
-                  return(
-                    <div key={idx.name} style={{background:C.card,
-                      border:`1px solid ${sc}33`,borderRadius:12,padding:'14px'}}>
-                      <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
-                        <div>
-                          <div style={{fontWeight:700,fontSize:14}}>{idx.name}</div>
-                          <div style={{fontSize:10,color:C.muted}}>
-                            ₹{idx.lastPrice?.toLocaleString('en-IN')}
-                          </div>
-                          <div style={{marginTop:4}}>
-                            <span style={{padding:'1px 6px',borderRadius:3,fontSize:8,
-                              fontWeight:700,background:sc+'18',color:sc,border:`1px solid ${sc}33`}}>
-                              {sl}
-                            </span>
-                          </div>
-                        </div>
-                        <div style={{textAlign:'center'}}>
-                          <div style={{fontWeight:700,fontSize:24,
-                            color:idx.rsTv>=90?C.green:idx.rsTv>=70?C.accent:idx.rsTv>=50?C.yellow:C.red,
-                            lineHeight:1}}>{idx.rsTv||'—'}</div>
-                          <div style={{fontSize:8,color:C.teal,fontWeight:600}}>RS-TV</div>
-                        </div>
-                      </div>
-                      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:3}}>
-                        {[['1D',idx.chgD],['1W',idx.chgW],['1M',idx.chgM],['3M',idx.chgQ],['1Y',idx.chgY]].map(([l,v])=>(
-                          <div key={l} style={{background:C.bg,borderRadius:4,padding:'4px 2px',textAlign:'center'}}>
-                            <div style={{fontSize:7,color:C.muted,marginBottom:1}}>{l}</div>
-                            <div style={{fontWeight:700,fontSize:10,
-                              color:v>=0?C.green:C.red}}>
-                              {v!=null?`${v>=0?'+':''}${v.toFixed(1)}%`:'—'}
+                {/* Index cards grid */}
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:10}}>
+                  {indexData.map(idx=>{
+                    const stageColor={1:C.yellow,2:C.green,3:C.orange,4:C.red}[idx.stage]||C.muted
+                    const rsc = idx.rsTv!=null?rsColor(idx.rsTv):C.muted
+                    const chgColor = v => v>=0?C.green:C.red
+                    const fmtChg = v => v!=null?`${v>=0?'+':''}${v.toFixed(2)}%`:'—'
+                    return(
+                      <div key={idx.name} style={{background:C.card,
+                        border:`1px solid ${stageColor}44`,borderRadius:12,padding:'14px'}}>
+
+                        {/* Header row */}
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+                          <div>
+                            <div style={{fontWeight:800,fontSize:15}}>{idx.name}</div>
+                            <div style={{fontSize:11,color:C.muted,marginTop:2}}>
+                              ₹{idx.lastPrice?.toLocaleString('en-IN')}
+                            </div>
+                            <div style={{display:'flex',gap:6,marginTop:6,flexWrap:'wrap'}}>
+                              <div style={{padding:'2px 8px',borderRadius:5,fontSize:10,fontWeight:700,
+                                background:stageColor+'22',color:stageColor}}>
+                                {idx.stageLabel}
+                              </div>
+                              {idx.aboveMa10!=null&&(
+                                <div style={{padding:'2px 8px',borderRadius:5,fontSize:10,fontWeight:600,
+                                  background:(idx.aboveMa10?C.green:C.red)+'18',
+                                  color:idx.aboveMa10?C.green:C.red}}>
+                                  {idx.aboveMa10?'↑ MA10':'↓ MA10'}
+                                </div>
+                              )}
+                              {idx.aboveMa30!=null&&(
+                                <div style={{padding:'2px 8px',borderRadius:5,fontSize:10,fontWeight:600,
+                                  background:(idx.aboveMa30?C.green:C.red)+'18',
+                                  color:idx.aboveMa30?C.green:C.red}}>
+                                  {idx.aboveMa30?'↑ MA30':'↓ MA30'}
+                                </div>
+                              )}
                             </div>
                           </div>
+                          <div style={{textAlign:'center'}}>
+                            <div style={{fontWeight:900,fontSize:28,color:rsc,lineHeight:1}}>
+                              {idx.rsTv??'—'}
+                            </div>
+                            <div style={{fontSize:9,color:C.teal,fontWeight:700}}>RS-TV</div>
+                          </div>
+                        </div>
+
+                        {/* Performance grid: Daily / Weekly / Monthly / Quarterly / Yearly */}
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:4,marginBottom:10}}>
+                          {[
+                            ['1D', idx.chgD],
+                            ['1W', idx.chgW],
+                            ['1M', idx.chgM],
+                            ['3M', idx.chgQ],
+                            ['1Y', idx.chgY],
+                          ].map(([label,val])=>(
+                            <div key={label} style={{background:C.bg,borderRadius:6,padding:'6px 4px',textAlign:'center'}}>
+                              <div style={{fontSize:8,color:C.muted,marginBottom:2}}>{label}</div>
+                              <div style={{fontWeight:700,fontSize:12,color:val!=null?chgColor(val):C.muted}}>
+                                {fmtChg(val)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* 52W range bar */}
+                        <div style={{marginBottom:8}}>
+                          <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:C.muted,marginBottom:3}}>
+                            <span>52W Low: ₹{idx.low52w?.toLocaleString('en-IN')}</span>
+                            <span style={{color:idx.pctFromHigh>=-5?C.green:C.yellow}}>
+                              {idx.pctFromHigh?.toFixed(1)}% from high
+                            </span>
+                            <span>52W High: ₹{idx.high52w?.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div style={{width:'100%',background:C.border,borderRadius:99,height:4,overflow:'hidden'}}>
+                            <div style={{
+                              width:`${Math.max(2,Math.min(100,100+(idx.pctFromHigh||0)))}%`,
+                              height:'100%',background:rsColor(idx.rsTv||50),borderRadius:99
+                            }}/>
+                          </div>
+                        </div>
+
+                        {/* Top/Bottom constituent stocks (where available) */}
+                        {(idx.topStocks?.length>0||idx.botStocks?.length>0)&&(
+                          <div style={{display:'flex',gap:8}}>
+                            {idx.topStocks?.length>0&&(
+                              <div style={{flex:1}}>
+                                <div style={{fontSize:9,color:C.green,fontWeight:700,marginBottom:4}}>
+                                  TOP RS
+                                </div>
+                                {idx.topStocks.map(s=>(
+                                  <div key={s.sym} style={{display:'flex',justifyContent:'space-between',
+                                    fontSize:10,marginBottom:2}}>
+                                    <span style={{color:C.text,fontWeight:600}}>{s.sym}</span>
+                                    <span style={{color:rsColor(s.rs),fontWeight:700}}>{s.rs}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {idx.botStocks?.length>0&&(
+                              <div style={{flex:1}}>
+                                <div style={{fontSize:9,color:C.red,fontWeight:700,marginBottom:4}}>
+                                  BOTTOM RS
+                                </div>
+                                {idx.botStocks.map(s=>(
+                                  <div key={s.sym} style={{display:'flex',justifyContent:'space-between',
+                                    fontSize:10,marginBottom:2}}>
+                                    <span style={{color:C.text,fontWeight:600}}>{s.sym}</span>
+                                    <span style={{color:rsColor(s.rs),fontWeight:700}}>{s.rs}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Last updated */}
+                        <div style={{fontSize:9,color:C.muted,marginTop:8,textAlign:'right'}}>
+                          Updated: {idx.lastUpdated?new Date(idx.lastUpdated).toLocaleString('en-IN',{
+                            day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'
+                          }):'—'}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+
+        {/* ══ MARKET BREADTH ══ */}
+        {mainTab==='breadth'&&(
+          <div style={{padding:'0 0 20px'}}>
+            <div style={{marginBottom:14}}>
+              <div style={{fontWeight:700,fontSize:16,color:C.text}}>Market Breadth</div>
+              <div style={{fontSize:11,color:C.muted}}>Daily market health indicators for NSE</div>
+            </div>
+
+            {/* Today's snapshot from stocks already loaded */}
+            {stocks.length>0&&(()=>{
+              const tot = stocks.length
+              const adv = stocks.filter(s=>s.chg>0).length
+              const dec = stocks.filter(s=>s.chg<0).length
+              const s2  = stocks.filter(s=>s.rs>=70&&s.chg>=0).length
+              const pp  = stocks.filter(s=>s.pp?.isPP).length
+              const rsi = stocks.filter(s=>s.rsTrend?.trend==='improving').length
+              const rsd = stocks.filter(s=>s.rsTrend?.trend==='declining').length
+              const rvs = stocks.filter(s=>s.rvol>=2).length
+              const rln = stocks.filter(s=>s.rsLineNewHigh).length
+
+              const Stat=({label,value,total,color,sub})=>(
+                <div style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:10,padding:'14px'}}>
+                  <div style={{fontSize:11,color:C.muted,marginBottom:6}}>{label}</div>
+                  <div style={{fontWeight:700,fontSize:26,color:color||C.text}}>{value}</div>
+                  {total&&<div style={{fontSize:10,color:C.muted,marginTop:3}}>{((value/total)*100).toFixed(1)}% of {total}</div>}
+                  {sub&&<div style={{fontSize:10,color:C.muted,marginTop:3}}>{sub}</div>}
+                </div>
+              )
+
+              const adRatio = dec>0?(adv/dec).toFixed(2):adv>0?'∞':'0'
+              const breadthHealthy = adv > dec && s2 > tot*0.3
+
+              return(
+                <>
+                  {/* Health indicator */}
+                  <div style={{background:breadthHealthy?C.green+'11':C.red+'11',
+                    border:`1px solid ${breadthHealthy?C.green:C.red}44`,
+                    borderRadius:10,padding:'12px 16px',marginBottom:14,
+                    display:'flex',alignItems:'center',gap:10}}>
+                    <div style={{width:10,height:10,borderRadius:'50%',
+                      background:breadthHealthy?C.green:C.red,flexShrink:0}}/>
+                    <span style={{fontWeight:700,fontSize:13,
+                      color:breadthHealthy?C.green:C.red}}>
+                      Market is {breadthHealthy?'Healthy — Broad participation':'Weak — Limited breadth'}
+                    </span>
+                    <span style={{fontSize:11,color:C.muted,marginLeft:'auto'}}>
+                      A/D Ratio: {adRatio}
+                    </span>
+                  </div>
+
+                  {/* Stats grid */}
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:14}}>
+                    <Stat label="Advancing" value={adv} total={tot} color={C.green}/>
+                    <Stat label="Declining"  value={dec} total={tot} color={C.red}/>
+                    <Stat label="RS Improving" value={rsi} total={tot} color={C.accent}/>
+                    <Stat label="RS Declining" value={rsd} total={tot} color={C.orange}/>
+                    <Stat label="PP Today" value={pp} total={tot} color={C.yellow}/>
+                    <Stat label="Vol Surge (RVOL>2)" value={rvs} total={tot} color={C.purple}/>
+                    <Stat label="RS Line New High" value={rln} total={tot} color={C.teal}/>
+                    <Stat label="RS ≥ 70" value={s2} total={tot} color={C.green}/>
+                  </div>
+
+                  {/* RS Line New Highs — early leaders */}
+                  {rln>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.teal}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.teal,marginBottom:8}}>
+                        RS Line New Highs — Early Leaders ({rln})
+                      </div>
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                        {stocks.filter(s=>s.rsLineNewHigh).sort((a,b)=>(b.rsTv||b.rs)-(a.rsTv||a.rs)).slice(0,20).map(s=>(
+                          <div key={s.sym} onClick={()=>setChartSym(s.sym)}
+                            style={{padding:'4px 10px',borderRadius:6,background:C.teal+'18',
+                              border:`1px solid ${C.teal}33`,cursor:'pointer',fontSize:11,fontWeight:600,
+                              color:C.teal}}>
+                            {s.sym} <span style={{color:C.muted,fontSize:10}}>{s.rsTv||s.rs}</span>
+                          </div>
                         ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* New Stage 2 entries */}
+                  {stocks.filter(s=>s.isS2NewEntry).length>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
+                        New Stage 2 Entries Today ({stocks.filter(s=>s.isS2NewEntry).length})
+                      </div>
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                        {stocks.filter(s=>s.isS2NewEntry).sort((a,b)=>(b.rsTv||b.rs)-(a.rsTv||a.rs)).map(s=>(
+                          <div key={s.sym} onClick={()=>setChartSym(s.sym)}
+                            style={{padding:'4px 10px',borderRadius:6,background:C.green+'18',
+                              border:`1px solid ${C.green}33`,cursor:'pointer',fontSize:11,fontWeight:600,color:C.green}}>
+                            {s.sym} <span style={{color:C.muted,fontSize:10}}>{s.rsTv||s.rs}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+          </div>
+        )}
+
+        {/* ══ PORTFOLIO TRACKER ══ */}
+        {mainTab==='portfolio'&&(
+          <div style={{padding:'0 0 20px'}}>
+            <div style={{marginBottom:14,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:16}}>Portfolio Tracker</div>
+                <div style={{fontSize:11,color:C.muted}}>Track your holdings — RS, Stage, and exit signals</div>
+              </div>
+              <button onClick={()=>{
+                const sym=prompt('Enter stock symbol (e.g. RELIANCE):')?.toUpperCase().trim()
+                if(sym) setPortfolioHoldings(h=>[...h.filter(x=>x.sym!==sym),{sym,addedAt:new Date().toISOString()}])
+              }}
+                style={{padding:'7px 14px',borderRadius:7,border:'none',
+                  background:C.accent,color:'#000',fontWeight:700,fontSize:12,cursor:'pointer'}}>
+                + Add Stock
+              </button>
+            </div>
+
+            {portfolioHoldings.length===0?(
+              <div style={{textAlign:'center',padding:'60px 20px',color:C.muted}}>
+                <div style={{fontSize:36,marginBottom:10}}>💼</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No holdings yet</div>
+                <div style={{fontSize:12,marginTop:6}}>Click "+ Add Stock" to track your positions</div>
+              </div>
+            ):(
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {portfolioHoldings.map(h=>{
+                  const s=stocks.find(x=>x.sym===h.sym)
+                  const stage=s?calcWeinsteinStage(s):null
+                  const dangerZone=stage&&(stage.stage===3||stage.stage===4)
+                  return(
+                    <div key={h.sym} style={{background:C.card,
+                      border:`1px solid ${dangerZone?C.red+'55':C.divider}`,
+                      borderRadius:10,padding:'12px 16px',
+                      display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
+                      <div style={{display:'flex',alignItems:'center',gap:12,flex:1,minWidth:0}}>
+                        <div>
+                          <div style={{fontWeight:700,fontSize:14,color:C.text,
+                            cursor:'pointer',color:C.accent}}
+                            onClick={()=>s&&setChartSym(s.sym)}>{h.sym}</div>
+                          <div style={{fontSize:10,color:C.muted,marginTop:2}}>{s?.sector||'—'}</div>
+                        </div>
+                        {s?(
+                          <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+                            <div style={{textAlign:'center'}}>
+                              <div style={{fontWeight:700,fontSize:16,color:rsColor(s.rsTv||s.rs)}}>{s.rsTv||s.rs}</div>
+                              <div style={{fontSize:8,color:C.muted}}>RS-TV</div>
+                            </div>
+                            {stage&&<StageBadge stage={stage}/>}
+                            {s.pp?.isPP&&<Badge color={C.orange}>PP</Badge>}
+                            {dangerZone&&(
+                              <div style={{padding:'3px 8px',borderRadius:5,fontSize:10,fontWeight:700,
+                                background:C.red+'22',color:C.red,border:`1px solid ${C.red}44`}}>
+                                ⚠️ EXIT SIGNAL
+                              </div>
+                            )}
+                          </div>
+                        ):<span style={{color:C.muted,fontSize:11}}>No data</span>}
+                      </div>
+                      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                        {s&&<span style={{fontWeight:600,fontSize:13}}>{fmtP(s.last)}</span>}
+                        {s&&<span style={{fontWeight:700,fontSize:12,color:s.chg>=0?C.green:C.red}}>
+                          {s.chg>=0?'+':''}{s.chg?.toFixed(2)}%
+                        </span>}
+                        <button onClick={()=>setPortfolioHoldings(h2=>h2.filter(x=>x.sym!==h.sym))}
+                          style={{background:'transparent',border:`1px solid ${C.border}`,
+                            color:C.muted,fontSize:12,padding:'3px 8px',borderRadius:5,cursor:'pointer'}}>
+                          ×
+                        </button>
                       </div>
                     </div>
                   )
                 })}
               </div>
             )}
-
           </div>
         )}
 
-                {/* ══ SQUEEZE SCANNER (John Carter TTM) ══ */}
-        {mainTab==='squeeze'&&(
-          <div style={{padding:isMobile?'10px':'12px 16px'}}>
-            <div style={{marginBottom:12}}>
-              <div style={{fontWeight:700,fontSize:16}}>TTM Squeeze Scanner</div>
-              <div style={{fontSize:11,color:C.muted}}>John Carter — scroll to see all timeframes</div>
+        {/* ══ STOCK COMPARE ══ */}
+        {mainTab==='compare'&&(
+          <div style={{padding:'0 0 20px'}}>
+            <div style={{marginBottom:14}}>
+              <div style={{fontWeight:700,fontSize:16}}>Stock Comparison</div>
+              <div style={{fontSize:11,color:C.muted}}>Compare up to 4 stocks side by side</div>
+            </div>
+            <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+              <input value={compareInput} onChange={e=>setCompareInput(e.target.value.toUpperCase())}
+                onKeyDown={e=>{
+                  if(e.key==='Enter'&&compareInput.trim()&&compareSyms.length<4){
+                    setCompareSyms(s=>[...new Set([...s,compareInput.trim()])])
+                    setCompareInput('')
+                  }
+                }}
+                placeholder="Type symbol + Enter (e.g. RELIANCE)"
+                style={{flex:1,padding:'8px 12px',background:C.card,border:`1px solid ${C.border}`,
+                  borderRadius:7,color:C.text,fontSize:12,outline:'none',minWidth:200}}/>
+              <button onClick={()=>setCompareSyms([])}
+                style={{padding:'8px 14px',borderRadius:7,border:`1px solid ${C.border}`,
+                  background:'transparent',color:C.muted,fontSize:12,cursor:'pointer'}}>
+                Clear
+              </button>
             </div>
 
-            {[
-              {title:'🔥 Fired Now',      color:C.green,  list:stocks.filter(s=>s.sqFiredBullish||s.sqFiredBearish)},
-              {title:'⭐ Multi-TF D+W',   color:C.accent, list:stocks.filter(s=>s.inSqueeze&&s.sqWeeklyIn)},
-              {title:'📅 Daily Squeeze',  color:C.red,    list:stocks.filter(s=>s.inSqueeze)},
-              {title:'📈 Weekly Squeeze', color:C.orange, list:stocks.filter(s=>s.sqWeeklyIn)},
-              {title:'⏱ Hourly Squeeze', color:C.yellow, list:stocks.filter(s=>s.sqHourlyIn)},
-            ].map(({title,color,list})=>(
-              <div key={title} style={{background:C.card,border:`1px solid ${color}33`,borderRadius:12,padding:'14px',marginBottom:12}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                  <div style={{fontWeight:700,fontSize:13,color}}>{title}</div>
-                  <span style={{fontSize:11,fontWeight:700,color,background:color+'18',padding:'2px 8px',borderRadius:10}}>{list.length}</span>
-                </div>
-                {list.length===0
-                  ?<div style={{textAlign:'center',padding:'14px',color:C.muted,fontSize:11}}>No signals</div>
-                  :<div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:8}}>
-                    {list.sort((a,b)=>(b.sqStrength||0)-(a.sqStrength||0)).slice(0,10).map(s=>(
-                      <div key={s.sym} style={{background:C.bg,border:`1px solid ${color}33`,borderRadius:8,padding:'10px'}}>
-                        <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
-                          <div>
-                            <span onClick={()=>setChartSym(s.sym===chartSym?null:s.sym)} style={{fontWeight:700,fontSize:13,color:C.accent,cursor:'pointer'}}>{s.sym}</span>
-                            <span style={{fontSize:9,color:C.muted,marginLeft:4}}>{s.sector}</span>
+            {compareSyms.length===0?(
+              <div style={{textAlign:'center',padding:'60px 20px',color:C.muted}}>
+                <div style={{fontSize:36,marginBottom:10}}>⚖️</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>Type a symbol and press Enter</div>
+                <div style={{fontSize:12,marginTop:6}}>Add up to 4 stocks to compare</div>
+              </div>
+            ):(
+              <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(compareSyms.length,4)},1fr)`,gap:10}}>
+                {compareSyms.map(sym=>{
+                  const s=stocks.find(x=>x.sym===sym)
+                  const stage=s?calcWeinsteinStage(s):null
+                  return(
+                    <div key={sym} style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:12,overflow:'hidden'}}>
+                      <div style={{padding:'12px 14px',borderBottom:`1px solid ${C.divider}`,
+                        display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                        <span style={{fontWeight:700,fontSize:14,color:C.accent,cursor:'pointer'}}
+                          onClick={()=>setChartSym(sym)}>{sym}</span>
+                        <button onClick={()=>setCompareSyms(s=>s.filter(x=>x!==sym))}
+                          style={{background:'transparent',border:'none',color:C.muted,
+                            fontSize:14,cursor:'pointer'}}>×</button>
+                      </div>
+                      {s?(
+                        <div style={{padding:'12px 14px'}}>
+                          <div style={{display:'flex',justifyContent:'space-between',marginBottom:12}}>
+                            <div>
+                              <div style={{fontWeight:700,fontSize:22,color:rsColor(s.rsTv||s.rs)}}>{s.rsTv||s.rs}</div>
+                              <div style={{fontSize:9,color:C.teal}}>RS-TV</div>
+                            </div>
+                            {stage&&<StageBadge stage={stage}/>}
                           </div>
-                          <div style={{textAlign:'right'}}>
-                            <div style={{fontWeight:700,fontSize:15,color:(s.rsTv||s.rs||0)>=80?C.green:(s.rsTv||s.rs||0)>=60?C.accent:C.yellow}}>{s.rsTv||s.rs||0}</div>
-                            <div style={{fontSize:9,color:(s.chg||0)>=0?C.green:C.red}}>{(s.chg||0)>=0?'+':''}{(s.chg||0).toFixed(1)}%</div>
+                          {[
+                            ['Price',   fmtP(s.last),                      C.text],
+                            ['Chg%',    `${s.chg>=0?'+':''}${s.chg?.toFixed(2)}%`, s.chg>=0?C.green:C.red],
+                            ['MID RS',  s.rsMidcap??'—',                   s.rsMidcap?rsColor(s.rsMidcap):C.muted],
+                            ['SML RS',  s.rsSmallcap??'—',                 s.rsSmallcap?rsColor(s.rsSmallcap):C.muted],
+                            ['Sector',  s.rsSector??'—',                   s.rsSector?rsColor(s.rsSector):C.muted],
+                            ['Market Cap', s.marketCap?`${s.marketCap>=100000?(s.marketCap/100000).toFixed(1)+'L':s.marketCap>=1000?(s.marketCap/1000).toFixed(1)+'K':s.marketCap} Cr`:'—', C.text],
+                            ['P/E',     s.pe?.toFixed(1)??'—',             s.pe?s.pe<25?C.green:s.pe<50?C.yellow:C.red:C.muted],
+                            ['ROE',     s.roe?`${s.roe.toFixed(1)}%`:'—',  s.roe?s.roe>20?C.green:s.roe>10?C.yellow:C.red:C.muted],
+                            ['Promoter',s.promoter?`${s.promoter.toFixed(1)}%`:'—', s.promoter?s.promoter>55?C.green:C.yellow:C.muted],
+                            ['RVOL',    s.rvol?.toFixed(2)??'—',           s.rvol?s.rvol>=2?C.orange:s.rvol>=1.5?C.yellow:C.muted:C.muted],
+                            ['PP 10d',  `${s.pp?.ppCount10d||0}×`,         s.pp?.ppCount10d>0?C.orange:C.muted],
+                            ['Sector',  s.sector,                          C.muted],
+                          ].map(([k,v,c])=>(
+                            <div key={k} style={{display:'flex',justifyContent:'space-between',
+                              padding:'5px 0',borderBottom:`1px solid ${C.divider}`,fontSize:12}}>
+                              <span style={{color:C.muted}}>{k}</span>
+                              <span style={{fontWeight:600,color:c}}>{v}</span>
+                            </div>
+                          ))}
+                          <div style={{marginTop:10}}>
+                            <div style={{fontSize:10,color:C.muted,marginBottom:4}}>RS Last 7 Days</div>
+                            <div style={{display:'flex',gap:2}}>
+                              {s.hist.slice(-7).map((v,i)=>{
+                                const color=v===null?C.border:v>=90?C.green:v>=70?C.accent:v>=50?C.yellow:C.red
+                                return<div key={i} style={{flex:1,height:20,borderRadius:3,
+                                  background:color+'28',border:`1px solid ${color}44`,
+                                  display:'flex',alignItems:'center',justifyContent:'center',
+                                  fontSize:8,fontWeight:700,color}}>{v??'—'}</div>
+                              })}
+                            </div>
                           </div>
                         </div>
-                        {s.sqDotsD&&s.sqDotsD.length>0&&(
-                          <div style={{display:'flex',gap:2,marginBottom:3}}>
-                            {s.sqDotsD.slice(-12).map((d,i)=>(
-                              <div key={i} style={{width:7,height:7,borderRadius:'50%',background:d==='red'?C.red:d==='green'?C.green:'#374151'}}/>
-                            ))}
+                      ):(
+                        <div style={{padding:'20px',textAlign:'center',color:C.muted,fontSize:12}}>
+                          Symbol not found in current scan
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ SQUEEZE ══ */}
+        {mainTab==='squeeze'&&(
+          <div>
+            <LastUpdatedBar
+              scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
+              autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
+              refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
+              onRefresh={runDBScan}
+            />
+            <div style={{background:C.card,border:`1px solid ${C.teal}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:15,color:C.teal,marginBottom:6}}>🌀 Squeeze Scanner</div>
+              <div style={{fontSize:12,color:C.muted,marginBottom:12}}>
+                Bollinger Band Squeeze (volatility contraction) + VCP (Volatility Contraction Pattern, Minervini style)
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8}}>
+                {[
+                  {l:'🔵 BB In Squeeze',v:stocks.filter(s=>s.squeeze?.inSqueeze).length,c:C.blue},
+                  {l:'🟢 BB Fired',v:stocks.filter(s=>s.squeeze?.squeezeFired).length,c:C.green},
+                  {l:'📐 VCP Forming',v:stocks.filter(s=>s.vcp?.isVCP).length,c:C.purple},
+                  {l:'🚀 VCP Fired',v:stocks.filter(s=>s.vcp?.vcpFired).length,c:C.accent},
+                ].map(({l,v,c})=>(
+                  <div key={l} style={{background:C.bg,borderRadius:8,padding:'12px',textAlign:'center'}}>
+                    <div style={{fontSize:24,fontWeight:900,color:c}}>{v}</div>
+                    <div style={{fontSize:10,color:C.muted,marginTop:3}}>{l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Section 1: Currently in squeeze (coiled) */}
+            <div style={{marginBottom:20}}>
+              <div style={{fontWeight:800,fontSize:14,color:C.blue,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
+                🔵 In Squeeze — Coiled, Waiting to Fire
+              </div>
+              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+                Low volatility, BB inside Keltner Channel — often precedes a big move
+              </div>
+              {(()=>{
+                const inSqueeze = stocks.filter(s=>s.squeeze?.inSqueeze || s.vcp?.isVCP).sort((a,b)=>b.rs-a.rs)
+                if(inSqueeze.length===0) return(
+                  <div style={{textAlign:'center',padding:'30px 0',color:C.muted,fontSize:12}}>
+                    No stocks currently in squeeze
+                  </div>
+                )
+                return(
+                  <>
+                    <TVCopyPanel stocks={inSqueeze} label="In Squeeze"/>
+                    <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:8}}>
+                      {inSqueeze.slice(0,30).map(s=>(
+                        <div key={s.sym} style={{background:C.card,border:`1px solid ${C.blue}33`,
+                          borderRadius:10,padding:'12px'}}>
+                          <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+                            <div>
+                              <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
+                              <div style={{fontSize:10,color:C.muted}}>{s.sector}</div>
+                            </div>
+                            <div style={{textAlign:'right'}}>
+                              <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
+                              <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(1)}%</div>
+                            </div>
                           </div>
-                        )}
-                        {s.sqHistD&&s.sqHistD.length>0&&(
-                          <div style={{display:'flex',gap:1,alignItems:'flex-end',height:16}}>
-                            {s.sqHistD.slice(-12).map((v,i)=>{
-                              const mx=Math.max(...s.sqHistD.map(Math.abs),0.001)
-                              return <div key={i} style={{flex:1,display:'flex',flexDirection:'column',justifyContent:v>=0?'flex-end':'flex-start',height:'100%'}}><div style={{background:v>=0?C.green:C.red,height:`${Math.abs(v)/mx*14}px`,minHeight:1,borderRadius:1}}/></div>
-                            })}
+                          <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                            {s.squeeze?.inSqueeze&&(
+                              <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
+                                background:C.blue+'22',color:C.blue}}>
+                                BB {s.squeeze.squeezeDays}d · {s.squeeze.bbWidthPct}%
+                              </div>
+                            )}
+                            {s.vcp?.isVCP&&(
+                              <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
+                                background:C.purple+'22',color:C.purple}}>
+                                VCP {s.vcp.vcpStage} contractions
+                              </div>
+                            )}
                           </div>
-                        )}
-                        {(s.sqStrength||0)>0&&(
-                          <div style={{fontSize:9,color:C.muted,marginTop:3}}>Str:<span style={{color:C.accent,fontWeight:600,marginLeft:3}}>{(s.sqStrength||0).toFixed(0)}</span></div>
+                          {s.vcp?.contractions?.length>0&&(
+                            <div style={{fontSize:9,color:C.muted,marginTop:4}}>
+                              Pullbacks: {s.vcp.contractions.map(c=>`${c}%`).join(' → ')}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
+
+            {/* Section 2: Just fired (breaking out) */}
+            <div>
+              <div style={{fontWeight:800,fontSize:14,color:C.green,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
+                🟢 Firing Now — Breaking Out of Squeeze
+              </div>
+              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+                Was in squeeze, now expanding with volume — the move is starting
+              </div>
+              {(()=>{
+                const fired = stocks.filter(s=>s.squeeze?.squeezeFired || s.vcp?.vcpFired).sort((a,b)=>b.rs-a.rs)
+                if(fired.length===0) return(
+                  <div style={{textAlign:'center',padding:'40px 0',color:C.muted}}>
+                    <div style={{fontSize:36,marginBottom:10}}>🌀</div>
+                    <div style={{fontSize:13,fontWeight:700,color:C.text}}>No squeeze fires yet</div>
+                    <div style={{fontSize:11,marginTop:4}}>Check back after market activity</div>
+                  </div>
+                )
+                return(
+                  <>
+                    <TVCopyPanel stocks={fired} label="Squeeze Fired"/>
+                    {fired.map(s=>(
+                      <div key={s.sym} style={{background:C.card,border:`2px solid ${C.green}44`,
+                        borderRadius:12,marginBottom:10,padding:'14px'}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                          <div>
+                            <div style={{fontWeight:800,fontSize:16}}>{s.sym}</div>
+                            <div style={{fontSize:11,color:C.muted}}>{s.sector}</div>
+                            <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
+                              {s.squeeze?.squeezeFired&&<Badge color={C.green} glow>🟢 BB Fired</Badge>}
+                              {s.vcp?.vcpFired&&<Badge color={C.accent} glow>🚀 VCP Fired</Badge>}
+                              {s.pp?.isPP&&<Badge color={C.orange}>🔥PP</Badge>}
+                            </div>
+                          </div>
+                          <div style={{textAlign:'right'}}>
+                            <div style={{fontWeight:900,fontSize:20,color:rsColor(s.rs)}}>{s.rs}</div>
+                            <div style={{fontWeight:700,fontSize:13,color:s.chg>=0?C.green:C.red}}>
+                              {s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
+                            <div style={{fontSize:11,color:C.muted}}>{fmtP(s.last)}</div>
+                          </div>
+                        </div>
+                        {s.vcp?.contractions?.length>0&&(
+                          <div style={{fontSize:10,color:C.muted}}>
+                            VCP pullbacks: {s.vcp.contractions.map(c=>`${c}%`).join(' → ')} (contracting)
+                          </div>
                         )}
                       </div>
                     ))}
-                  </div>
-                }
+                  </>
+                )
+              })()}
+            </div>
+          </div>
+        )}
+
+        {/* ══ BREAKOUT ══ */}
+        {mainTab==='breakout'&&(
+          <div>
+            <LastUpdatedBar
+              scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
+              autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
+              refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
+              onRefresh={runDBScan}
+            />
+            {/* Stats */}
+            <div style={{background:C.card,border:`1px solid ${C.accent}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:15,color:C.accent,marginBottom:6}}>💥 HY/HT Breakout Scanner</div>
+              <div style={{fontSize:12,color:C.muted,marginBottom:12}}>
+                Stocks that had High Year (HY) or High Time (HT) volume in last 5 days and are breaking out today
               </div>
-            ))}
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+                {[
+                  {l:'🚀 Power Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&s.rs>=80&&s.chg>=3).length,c:C.accent},
+                  {l:'⭐ Strong Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&s.rs>=70&&s.chg>=2).length,c:C.green},
+                  {l:'✅ All Breakouts',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout).length,c:C.teal},
+                  {l:'🏛️ IBV Signals',v:stocks.filter(s=>calcIBV(s).isIBV).length,c:C.purple},
+                  {l:'🔥 PP + Break',v:stocks.filter(s=>s.pp?.isPP&&calcHYHTBreakout(s).isBreakout).length,c:C.orange},
+                  {l:'👑 RS 90+ Break',v:stocks.filter(s=>s.rs>=90&&calcHYHTBreakout(s).isBreakout).length,c:C.yellow},
+                ].map(({l,v,c})=>(
+                  <div key={l} style={{background:C.bg,borderRadius:8,padding:'10px',textAlign:'center'}}>
+                    <div style={{fontSize:22,fontWeight:900,color:c}}>{v}</div>
+                    <div style={{fontSize:10,color:C.muted,marginTop:3}}>{l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* IBV Section */}
+            <div style={{background:C.card,border:`1px solid ${C.purple}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:14,color:C.purple,marginBottom:4}}>🏛️ IBV — Institutional Buying Volume</div>
+              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+                Stocks with 2+ Pocket Pivot days in last 10 days = institutional accumulation
+              </div>
+              <TVCopyPanel stocks={stocks.filter(s=>calcIBV(s).isIBV)} label="IBV Stocks"/>
+              <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
+                {stocks.filter(s=>calcIBV(s).isIBV).slice(0,20).map(s=>{
+                  const ibv=calcIBV(s)
+                  return(
+                    <div key={s.sym} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
+                      display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <div>
+                        <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
+                        <div style={{fontSize:10,color:C.muted}}>{s.sector} · {ibv.ppCount} PP days · score {ibv.ibvScore}/7</div>
+                      </div>
+                      <div style={{textAlign:'right'}}>
+                        <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
+                        <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* HY/HT Breakout list */}
+            <TVCopyPanel stocks={stocks.filter(s=>calcHYHTBreakout(s).isBreakout)} label="HY/HT Breakouts"/>
+            {stocks.filter(s=>calcHYHTBreakout(s).isBreakout).length===0?(
+              <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
+                <div style={{fontSize:42,marginBottom:12}}>💥</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No breakouts today</div>
+                <div style={{fontSize:12,marginTop:6,color:C.muted}}>
+                  Stocks need HY/HT volume in last 5 days + price up &gt;1% today
+                </div>
+              </div>
+            ):stocks.filter(s=>calcHYHTBreakout(s).isBreakout)
+              .sort((a,b)=>b.rs-a.rs)
+              .map((s,i)=>{
+                const bo=calcHYHTBreakout(s)
+                const ibv=calcIBV(s)
+                const stage=calcWeinsteinStage(s)
+                return(
+                  <div key={s.sym} style={{background:C.card,
+                    border:`2px solid ${bo.color}55`,
+                    borderRadius:12,marginBottom:10,padding:'14px'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                      <div>
+                        <div style={{fontWeight:800,fontSize:16}}>{s.sym}</div>
+                        <div style={{fontSize:11,color:C.muted}}>{s.sector}</div>
+                        <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
+                          <div style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:800,
+                            background:bo.color+'22',color:bo.color}}>{bo.strength}</div>
+                          <StageBadge stage={stage}/>
+                          {ibv.isIBV&&<div style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:700,
+                            background:C.purple+'22',color:C.purple}}>🏛️ IBV {ibv.ppCount}d</div>}
+                          {s.pp?.isPP&&<Badge color={C.orange}>🔥PP</Badge>}
+                          {s.hy?.isHY&&<Badge color={C.blue}>📊HY</Badge>}
+                          {s.ht?.isHT&&<Badge color={C.purple}>🎯HT</Badge>}
+                        </div>
+                      </div>
+                      <div style={{textAlign:'right'}}>
+                        <div style={{fontWeight:900,fontSize:22,color:rsColor(s.rs)}}>{s.rs}</div>
+                        <div style={{fontWeight:700,fontSize:14,color:C.green}}>+{bo.chg}%</div>
+                        <div style={{fontSize:11,color:C.muted}}>{fmtP(s.last)}</div>
+                      </div>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
+                      {[
+                        ['RS',s.rs,rsColor(s.rs)],
+                        ['Chg',`+${bo.chg}%`,C.green],
+                        ['PP 5d',`${bo.recentPPCount}×`,C.orange],
+                        ['Trend',trendIcon(s.rsTrend?.trend||'flat'),trendColor(s.rsTrend?.trend||'flat')],
+                      ].map(([k,v,c])=>(
+                        <div key={k} style={{background:C.bg,borderRadius:7,padding:'8px',textAlign:'center'}}>
+                          <div style={{fontSize:9,color:C.muted,marginBottom:2}}>{k}</div>
+                          <div style={{fontWeight:800,fontSize:13,color:c}}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{marginTop:8,display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{fontSize:10,color:C.muted}}>PP 10d:</span>
+                      <PPDots ppHistory={s.pp?.ppHistory||[]}/>
+                    </div>
+                  </div>
+                )
+              })
+            }
           </div>
         )}
 
@@ -3251,295 +3322,15 @@ export default function App(){
 
         {/* ══ SECTORS ══ */}
         {mainTab==='sector'&&(
-          <div style={{padding:isMobile?'10px':'12px 16px'}}>
+          <div>
+            <LastUpdatedBar
+              scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
+              autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
+              refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
+              onRefresh={runDBScan}
+            />
 
-            <div style={{marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <div>
-                <div style={{fontWeight:700,fontSize:16}}>Sector Rotation</div>
-                <div style={{fontSize:11,color:C.muted}}>Tap any sector to see stocks</div>
-              </div>
-            </div>
-
-            {(()=>{
-              const [selSector, setSelSector] = useState(null)
-
-              // Build sector data from stocks
-              const sectorMap = {}
-              stocks.forEach(s=>{
-                if(!s.sector||s.sector==='Other') return
-                if(!sectorMap[s.sector]) sectorMap[s.sector]={
-                  name:s.sector, rsArr:[], chgArr:[], chgWArr:[], chgMArr:[], ppCount:0, count:0, stocks:[]
-                }
-                const sec = sectorMap[s.sector]
-                const rs = s.rsTv||0
-                if(rs>0) sec.rsArr.push(rs)
-                if(s.chg!=null)  sec.chgArr.push(s.chg)
-                if(s.chgW!=null) sec.chgWArr.push(s.chgW)
-                if(s.chgM!=null) sec.chgMArr.push(s.chgM)
-                if(s.pp?.isPP)   sec.ppCount++
-                sec.count++
-                sec.stocks.push(s)
-              })
-
-              const avg = arr => arr.length ? +(arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : 0
-
-              const sectors = Object.values(sectorMap).map(s=>({
-                name:    s.name,
-                avgRS:   Math.round(avg(s.rsArr)),
-                chgD:    avg(s.chgArr),
-                chgW:    avg(s.chgWArr),
-                chgM:    avg(s.chgMArr),
-                ppCount: s.ppCount,
-                count:   s.count,
-                stocks:  s.stocks.sort((a,b)=>(b.rsTv||0)-(a.rsTv||0)),
-              })).filter(s=>s.count>=2)
-
-              if(sectors.length===0) return(
-                <div style={{textAlign:'center',padding:'40px',color:C.muted}}>
-                  <div style={{fontSize:13}}>Tap 🚀 Scan to load sector data</div>
-                </div>
-              )
-
-              // If a sector is selected, show its stocks
-              if(selSector){
-                const sec = sectors.find(s=>s.name===selSector)
-                if(!sec) return null
-                return(
-                  <div>
-                    {/* Back button */}
-                    <button onClick={()=>setSelSector(null)}
-                      style={{display:'flex',alignItems:'center',gap:6,padding:'8px 0',
-                        background:'transparent',border:'none',
-                        color:C.accent,fontSize:13,cursor:'pointer',marginBottom:12,fontWeight:600}}>
-                      ← Back to Sectors
-                    </button>
-
-                    {/* Sector header */}
-                    <div style={{background:C.card,border:`1px solid ${C.divider}`,
-                      borderRadius:12,padding:'14px',marginBottom:14}}>
-                      <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>{sec.name}</div>
-                      <div style={{display:'flex',gap:12,fontSize:11,flexWrap:'wrap'}}>
-                        <span>Avg RS: <span style={{fontWeight:700,
-                          color:sec.avgRS>=80?C.green:sec.avgRS>=60?C.accent:sec.avgRS>=40?C.yellow:C.red}}>
-                          {sec.avgRS}
-                        </span></span>
-                        <span style={{color:sec.chgD>=0?C.green:C.red}}>
-                          Day: {sec.chgD>=0?'+':''}{sec.chgD}%
-                        </span>
-                        <span style={{color:sec.chgW>=0?C.green:C.red}}>
-                          Week: {sec.chgW>=0?'+':''}{sec.chgW}%
-                        </span>
-                        <span style={{color:sec.chgM>=0?C.green:C.red}}>
-                          Month: {sec.chgM>=0?'+':''}{sec.chgM}%
-                        </span>
-                        {sec.ppCount>0&&<span style={{color:C.orange}}>🔥 {sec.ppCount} PP</span>}
-                      </div>
-                    </div>
-
-                    {/* Stock list */}
-                    <div style={{display:'grid',
-                      gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:8}}>
-                      {sec.stocks.map(s=>(
-                        <div key={s.sym} style={{background:C.card,
-                          border:`1px solid ${C.divider}`,borderRadius:10,padding:'12px',
-                          cursor:'pointer'}}
-                          onClick={()=>setChartSym(s.sym===chartSym?null:s.sym)}>
-                          <div style={{display:'flex',justifyContent:'space-between',
-                            alignItems:'flex-start'}}>
-                            <div>
-                              <div style={{fontWeight:700,fontSize:13,color:C.accent}}>
-                                {s.sym}
-                              </div>
-                              <div style={{fontSize:10,color:C.muted,marginTop:1}}>
-                                ₹{s.last?.toLocaleString('en-IN')||'—'}
-                              </div>
-                              <div style={{display:'flex',gap:4,marginTop:4}}>
-                                {s.pp?.isPP&&<span style={{fontSize:9,fontWeight:700,
-                                  padding:'1px 5px',borderRadius:3,
-                                  background:C.orange+'18',color:C.orange}}>PP</span>}
-                                {s.inSqueeze&&<span style={{fontSize:9,fontWeight:700,
-                                  padding:'1px 5px',borderRadius:3,
-                                  background:C.red+'18',color:C.red}}>SQ</span>}
-                              </div>
-                            </div>
-                            <div style={{textAlign:'right'}}>
-                              <div style={{fontWeight:700,fontSize:18,
-                                color:(s.rsTv||0)>=80?C.green:(s.rsTv||0)>=60?C.accent:
-                                      (s.rsTv||0)>=40?C.yellow:C.red}}>
-                                {s.rsTv||'—'}
-                              </div>
-                              <div style={{fontSize:9,color:C.teal}}>RS-TV</div>
-                              <div style={{fontSize:11,fontWeight:600,marginTop:2,
-                                color:(s.chg||0)>=0?C.green:C.red}}>
-                                {(s.chg||0)>=0?'+':''}{(s.chg||0).toFixed(1)}%
-                              </div>
-                            </div>
-                          </div>
-                          {/* Mini RS sparkline */}
-                          {s.hist&&s.hist.length>0&&(
-                            <div style={{display:'flex',gap:2,marginTop:8}}>
-                              {s.hist.slice(-10).map((v,i)=>(
-                                <div key={i} style={{flex:1,height:4,borderRadius:2,
-                                  background:(v||0)>=70?C.green:(v||0)>=50?C.accent:
-                                             (v||0)>=30?C.yellow:C.red,opacity:0.7}}/>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )
-              }
-
-              // Main sector view
-              const BarChart = ({data, valueKey, title, subtitle, color}) => {
-                const sorted = [...data].sort((a,b)=>(b[valueKey]||0)-(a[valueKey]||0))
-                const maxAbs = Math.max(...sorted.map(s=>Math.abs(s[valueKey]||0)), 0.01)
-                return(
-                  <div style={{background:C.card,border:`1px solid ${C.divider}`,
-                    borderRadius:12,padding:'14px',marginBottom:12}}>
-                    <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>{title}</div>
-                    <div style={{fontSize:10,color:C.muted,marginBottom:10}}>{subtitle}</div>
-                    {sorted.map((s,i)=>{
-                      const val = s[valueKey]||0
-                      const pct = Math.abs(val)/maxAbs*100
-                      const c   = val>=0?C.green:C.red
-                      const rsC = s.avgRS>=80?C.green:s.avgRS>=60?C.accent:s.avgRS>=40?C.yellow:C.red
-                      return(
-                        <div key={s.name} onClick={()=>setSelSector(s.name)}
-                          style={{display:'flex',alignItems:'center',gap:8,
-                            marginBottom:5,cursor:'pointer'}}
-                          onMouseEnter={e=>e.currentTarget.style.opacity='0.8'}
-                          onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
-                          {/* Value */}
-                          <div style={{width:44,textAlign:'right',fontSize:10,
-                            fontWeight:700,color:c,flexShrink:0}}>
-                            {val>=0?'+':''}{val}%
-                          </div>
-                          {/* Bar with label inside */}
-                          <div style={{flex:1,background:C.bg,borderRadius:4,
-                            height:24,overflow:'hidden',position:'relative'}}>
-                            <div style={{width:`${Math.max(pct,3)}%`,height:'100%',
-                              background:c+'99',borderRadius:4,
-                              display:'flex',alignItems:'center',
-                              paddingLeft:8,minWidth:60,
-                              transition:'width 0.3s'}}>
-                              <span style={{fontSize:10,fontWeight:700,
-                                color:'#fff',whiteSpace:'nowrap',
-                                overflow:'hidden',textOverflow:'ellipsis'}}>
-                                {s.name}
-                              </span>
-                            </div>
-                            {/* Show name outside bar if bar too small */}
-                            {pct<20&&(
-                              <span style={{position:'absolute',left:`${Math.max(pct,3)}%+4px`,
-                                top:'50%',transform:'translateY(-50%)',
-                                fontSize:10,fontWeight:600,color:C.text,
-                                marginLeft:4,whiteSpace:'nowrap'}}>
-                                {s.name}
-                              </span>
-                            )}
-                          </div>
-                          {/* RS */}
-                          <div style={{width:28,textAlign:'right',flexShrink:0}}>
-                            <span style={{fontSize:10,fontWeight:700,color:rsC}}>
-                              {s.avgRS}
-                            </span>
-                          </div>
-                          {/* PP dot */}
-                          {s.ppCount>0&&(
-                            <div style={{width:8,height:8,borderRadius:'50%',
-                              background:C.orange,flexShrink:0}}/>
-                          )}
-                        </div>
-                      )
-                    })}
-                    <div style={{display:'flex',gap:12,marginTop:8,fontSize:9,color:C.muted}}>
-                      <span>RS = avg RS-TV</span>
-                      <span>🟠 = PP signals</span>
-                      <span>Tap bar to see stocks</span>
-                    </div>
-                  </div>
-                )
-              }
-
-              // RS Rankings with 15-day trend
-              const RSRankings = () => {
-                const sorted = [...sectors].sort((a,b)=>b.avgRS-a.avgRS)
-                return(
-                  <div style={{background:C.card,border:`1px solid ${C.divider}`,
-                    borderRadius:12,padding:'14px'}}>
-                    <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
-                      ⭐ RS Strength Rankings
-                    </div>
-                    <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
-                      Tap any sector to see stocks inside
-                    </div>
-                    {sorted.map((s,i)=>{
-                      const c = s.avgRS>=80?C.green:s.avgRS>=60?C.accent:s.avgRS>=40?C.yellow:C.red
-                      // 15-day RS trend: use avgChgW as proxy (positive = improving)
-                      const trend = s.chgW>0.5?'↑':s.chgW<-0.5?'↓':'→'
-                      const trendColor = s.chgW>0.5?C.green:s.chgW<-0.5?C.red:C.muted
-                      return(
-                        <div key={s.name} onClick={()=>setSelSector(s.name)}
-                          style={{display:'flex',alignItems:'center',gap:10,
-                            marginBottom:8,cursor:'pointer',padding:'4px 0',
-                            borderBottom:`1px solid ${C.divider}`}}
-                          onMouseEnter={e=>e.currentTarget.style.background=C.bg}
-                          onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                          <span style={{color:C.muted,fontSize:10,width:20,
-                            textAlign:'right',flexShrink:0}}>{i+1}</span>
-                          {/* Bar */}
-                          <div style={{flex:1,background:C.bg,borderRadius:4,
-                            height:22,overflow:'hidden'}}>
-                            <div style={{width:`${s.avgRS}%`,height:'100%',
-                              background:c+'88',borderRadius:4,
-                              display:'flex',alignItems:'center',paddingLeft:8,
-                              transition:'width 0.3s',minWidth:40}}>
-                              <span style={{fontSize:10,fontWeight:700,
-                                color:'#fff',whiteSpace:'nowrap'}}>
-                                {s.name}
-                              </span>
-                            </div>
-                          </div>
-                          {/* RS value */}
-                          <span style={{fontWeight:700,fontSize:14,color:c,
-                            width:28,textAlign:'right',flexShrink:0}}>{s.avgRS}</span>
-                          {/* 15d trend */}
-                          <span style={{fontSize:12,color:trendColor,
-                            width:16,textAlign:'center',flexShrink:0}}
-                            title={`Weekly: ${s.chgW>=0?'+':''}${s.chgW}%`}>
-                            {trend}
-                          </span>
-                          {/* Count */}
-                          <span style={{fontSize:9,color:C.muted,
-                            width:30,flexShrink:0}}>{s.count}s</span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )
-              }
-
-              return(
-                <div>
-                  <BarChart data={sectors} valueKey="chgD"
-                    title="📅 Sector Advances — Daily %"
-                    subtitle="Today's performance · tap bar to see stocks"
-                    color={C.accent}/>
-                  <BarChart data={sectors} valueKey="chgW"
-                    title="📈 Sector Advances — Weekly %"
-                    subtitle="Last 5 trading days · tap bar to see stocks"
-                    color={C.teal}/>
-                  <BarChart data={sectors} valueKey="chgM"
-                    title="🗓 Sector Advances — Monthly %"
-                    subtitle="Last 21 trading days · tap bar to see stocks"
-                    color={C.purple}/>
-                  <RSRankings/>
-                </div>
-              )
-            })()}
+            <SectorPanel sectorData={sectorData} isMobile={isMobile}/>
           </div>
         )}
 
@@ -3554,31 +3345,17 @@ export default function App(){
       {isMobile&&(
         <div style={{position:'fixed',bottom:0,left:0,right:0,background:C.card,
           borderTop:`1px solid ${C.border}`,display:'flex',zIndex:40,
-          overflowX:'auto',paddingBottom:'env(safe-area-inset-bottom)',
-          WebkitOverflowScrolling:'touch'}}>
+          paddingBottom:'env(safe-area-inset-bottom)'}}>
           {[
-            ['rs','📊','RS'],
-            ['indices','🗂','IX'],
-            ['breadth','📈','Breadth'],
-            ['squeeze','🌀','Squeeze'],
-            ['breakout','💥','Break'],
-            ['52wl','🎯','52WL'],
-            ['weak','🚨','Weak'],
-            ['sector','🏭','Sectors'],
-            ['portfolio','💼','Portfolio'],
-            ['compare','⚖','Compare'],
-            ['watchlist','📋','Watch'],
-            ['settings','⚙','Account'],
+            ['rs','📊','RS'],['indices','🗂','Indices'],['52wl','🎯','52WL'],
+            ['sector','🏭','Sectors'],['settings','⚙','Account']
           ].map(([t,icon,label])=>(
             <button key={t} onClick={()=>setMainTab(t)}
-              style={{flex:'0 0 auto',minWidth:56,padding:'6px 4px 5px',
-                background:'transparent',border:'none',
-                cursor:'pointer',display:'flex',flexDirection:'column',
-                alignItems:'center',gap:1}}>
-              <span style={{fontSize:14}}>{icon}</span>
-              <span style={{fontSize:8,fontWeight:600,color:mainTab===t?C.accent:C.muted,
-                whiteSpace:'nowrap'}}>{label}</span>
-              {mainTab===t&&<div style={{width:16,height:2,background:C.accent,borderRadius:99,marginTop:1}}/>}
+              style={{flex:1,padding:'8px 2px 6px',background:'transparent',border:'none',
+                cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+              <span style={{fontSize:16}}>{icon}</span>
+              <span style={{fontSize:9,fontWeight:600,color:mainTab===t?C.accent:C.muted}}>{label}</span>
+              {mainTab===t&&<div style={{width:16,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           ))}
         </div>
