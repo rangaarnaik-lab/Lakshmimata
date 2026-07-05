@@ -3635,210 +3635,204 @@ export default function App(){
         {/* ══ SECTORS ══ */}
         {mainTab==='sector'&&(
           <div style={{padding:isMobile?'10px':'12px 16px'}}>
+
+            {/* Header */}
             <div style={{marginBottom:12}}>
-              <div style={{fontWeight:700,fontSize:16}}>Sector Analysis</div>
-              <div style={{fontSize:11,color:C.muted}}>RS rankings · Rotation heatmap · Money flow</div>
+              <div style={{fontWeight:700,fontSize:16}}>Sector Rotation</div>
+              <div style={{fontSize:11,color:C.muted}}>
+                Where is smart money flowing? Green = buying, Red = selling
+              </div>
             </div>
 
-            {/* ── Rotation Heatmap ── */}
+            {/* Timeframe tabs */}
+            <div style={{display:'flex',gap:6,marginBottom:14,overflowX:'auto',
+              WebkitOverflowScrolling:'touch',paddingBottom:2}}>
+              {[
+                {id:'daily',  label:'📅 Daily'},
+                {id:'weekly', label:'📈 Weekly'},
+                {id:'monthly',label:'🗓 Monthly'},
+                {id:'hourly', label:'⏱ Hourly'},
+              ].map(({id,label})=>(
+                <button key={id} onClick={()=>setSectorTf(id)}
+                  style={{padding:'6px 14px',borderRadius:7,cursor:'pointer',
+                    whiteSpace:'nowrap',border:`1px solid ${sectorTf===id?C.accent:C.border}`,
+                    background:sectorTf===id?C.accent+'22':'transparent',
+                    color:sectorTf===id?C.accent:C.muted,
+                    fontSize:12,fontWeight:sectorTf===id?700:400,flexShrink:0}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
             {(()=>{
-              // Build sector data from current stocks
+              // Build sector aggregates from stocks
+              // chgKey maps timeframe to the stock field
+              const chgKey = {
+                daily:  s => s.chg||0,
+                weekly: s => s.chgW||s.chg||0,
+                monthly:s => s.chgM||s.chg||0,
+                hourly: s => s.chgH||s.chg||0,
+              }[sectorTf]
+
               const sectorMap = {}
               stocks.forEach(s=>{
                 if(!s.sector||s.sector==='Other') return
-                if(!sectorMap[s.sector]) sectorMap[s.sector] = {
-                  sym: s.sector, stocks:[], rsArr:[], chgArr:[], ppCount:0, improving:0
+                if(!sectorMap[s.sector]) sectorMap[s.sector]={
+                  name:s.sector, rsArr:[], chgArr:[], ppCount:0, improving:0, count:0
                 }
-                const rs = s.rsTv||s.rs||0
-                sectorMap[s.sector].stocks.push(s)
-                sectorMap[s.sector].rsArr.push(rs)
-                if(s.chg) sectorMap[s.sector].chgArr.push(s.chg)
-                if(s.pp?.isPP) sectorMap[s.sector].ppCount++
-                if(s.rsTrend?.trend==='improving') sectorMap[s.sector].improving++
+                const sec = sectorMap[s.sector]
+                sec.rsArr.push(s.rsTv||s.rs||0)
+                sec.chgArr.push(chgKey(s))
+                sec.count++
+                if(s.pp?.isPP) sec.ppCount++
+                if((s.rsTv||s.rs||0) > 60) sec.improving++
               })
 
               const sectors = Object.values(sectorMap).map(s=>({
-                ...s,
-                avgRS:  s.rsArr.length  ? Math.round(s.rsArr.reduce((a,b)=>a+b,0)/s.rsArr.length)   : 0,
-                avgChg: s.chgArr.length ? +(s.chgArr.reduce((a,b)=>a+b,0)/s.chgArr.length).toFixed(2) : 0,
-                count:  s.stocks.length,
-              })).sort((a,b)=>b.avgRS-a.avgRS)
+                name:    s.name,
+                avgRS:   s.rsArr.length  ? Math.round(s.rsArr.reduce((a,b)=>a+b)/s.rsArr.length) : 0,
+                avgChg:  s.chgArr.length ? +(s.chgArr.reduce((a,b)=>a+b)/s.chgArr.length).toFixed(2) : 0,
+                ppCount: s.ppCount,
+                improving: s.improving,
+                count:   s.count,
+              })).sort((a,b)=>b.avgChg-a.avgChg)  // sort by performance for rotation view
+
+              const maxChg = Math.max(...sectors.map(s=>Math.abs(s.avgChg)), 0.1)
+
+              const heatColor = rs => {
+                if(rs>=80) return {bg:C.green+'22',border:C.green+'55',text:C.green}
+                if(rs>=60) return {bg:C.accent+'22',border:C.accent+'55',text:C.accent}
+                if(rs>=40) return {bg:C.yellow+'22',border:C.yellow+'55',text:C.yellow}
+                if(rs>=20) return {bg:C.orange+'22',border:C.orange+'55',text:C.orange}
+                return {bg:C.red+'22',border:C.red+'55',text:C.red}
+              }
+
+              const chgColor = v => v>=0?C.green:C.red
 
               if(sectors.length===0) return(
-                <div style={{textAlign:'center',padding:'40px',color:C.muted}}>
-                  <div style={{fontSize:13}}>Click 🚀 Scan to load sector data</div>
+                <div style={{textAlign:'center',padding:'60px 20px',color:C.muted}}>
+                  <div style={{fontSize:36,marginBottom:10}}>🏭</div>
+                  <div style={{fontSize:13,fontWeight:700,color:C.text}}>No sector data yet</div>
+                  <div style={{fontSize:11,marginTop:6}}>Tap 🚀 Scan to load</div>
                 </div>
               )
 
-              const maxRS  = Math.max(...sectors.map(s=>s.avgRS))
-              const minRS  = Math.min(...sectors.map(s=>s.avgRS))
-
-              // Color based on RS strength
-              const heatColor = (rs) => {
-                const pct = maxRS===minRS ? 0.5 : (rs-minRS)/(maxRS-minRS)
-                if(pct >= 0.8) return {bg:'#22c55e22',border:'#22c55e55',text:'#22c55e'}
-                if(pct >= 0.6) return {bg:'#4f8ef722',border:'#4f8ef755',text:'#4f8ef7'}
-                if(pct >= 0.4) return {bg:'#eab30822',border:'#eab30855',text:'#eab308'}
-                if(pct >= 0.2) return {bg:'#f9731622',border:'#f9731655',text:'#f97316'}
-                return {bg:'#ef444422',border:'#ef444455',text:'#ef4444'}
-              }
-
               return(
                 <div>
-                  {/* Heatmap grid */}
+                  {/* ── Heatmap tiles ── */}
                   <div style={{marginBottom:16}}>
-                    <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:8}}>
-                      🌡️ Sector Rotation Heatmap
+                    <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:4}}>
+                      🌡️ Rotation Heatmap — {sectorTf.charAt(0).toUpperCase()+sectorTf.slice(1)} Performance
                     </div>
                     <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
-                      Color = RS strength. Green = strong momentum, Red = weak/rotating out
+                      Sorted by {sectorTf} % change · Tile color = RS strength
                     </div>
-
-                    {/* Legend */}
-                    <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
-                      {[
-                        {label:'Strong (RS 80+)', c:'#22c55e'},
-                        {label:'Good (RS 60+)',   c:'#4f8ef7'},
-                        {label:'Avg (RS 40+)',    c:'#eab308'},
-                        {label:'Weak (RS 20+)',   c:'#f97316'},
-                        {label:'Poor (RS <20)',   c:'#ef4444'},
-                      ].map(({label,c})=>(
-                        <div key={label} style={{display:'flex',alignItems:'center',gap:4,fontSize:9}}>
-                          <div style={{width:10,height:10,borderRadius:2,background:c+'44',
-                            border:`1px solid ${c}66`}}/>
-                          <span style={{color:C.muted}}>{label}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Heatmap tiles */}
                     <div style={{display:'grid',
-                      gridTemplateColumns:isMobile?'repeat(2,1fr)':'repeat(4,1fr)',
-                      gap:8}}>
+                      gridTemplateColumns:isMobile?'repeat(2,1fr)':'repeat(5,1fr)',
+                      gap:8,marginBottom:16}}>
                       {sectors.map(s=>{
-                        const {bg,border,text} = heatColor(s.avgRS)
+                        const {bg,border,text}=heatColor(s.avgRS)
+                        const isPositive = s.avgChg >= 0
                         return(
-                          <div key={s.sym} style={{background:bg,border:`1px solid ${border}`,
-                            borderRadius:10,padding:'12px',cursor:'pointer',
-                            transition:'transform 0.1s'}}
-                            onMouseEnter={e=>e.currentTarget.style.transform='scale(1.02)'}
-                            onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
-                            <div style={{fontWeight:700,fontSize:12,color:text,marginBottom:4,
-                              whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-                              {s.sym}
+                          <div key={s.name} style={{background:bg,border:`1px solid ${border}`,
+                            borderRadius:10,padding:'10px',
+                            borderLeft:`3px solid ${isPositive?C.green:C.red}`}}>
+                            <div style={{fontWeight:700,fontSize:10,color:text,marginBottom:2,
+                              overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                              {s.name}
                             </div>
-                            <div style={{fontWeight:900,fontSize:22,color:text,lineHeight:1}}>
-                              {s.avgRS}
+                            <div style={{fontWeight:900,fontSize:20,
+                              color:isPositive?C.green:C.red,lineHeight:1.1}}>
+                              {isPositive?'+':''}{s.avgChg}%
                             </div>
-                            <div style={{fontSize:9,color:C.muted,marginTop:4}}>avg RS</div>
                             <div style={{display:'flex',justifyContent:'space-between',
-                              marginTop:6,fontSize:9}}>
-                              <span style={{color:s.avgChg>=0?C.green:C.red,fontWeight:600}}>
-                                {s.avgChg>=0?'+':''}{s.avgChg}%
-                              </span>
-                              <span style={{color:C.muted}}>{s.count} stocks</span>
+                              marginTop:4,fontSize:9}}>
+                              <span style={{color:text,fontWeight:600}}>RS {s.avgRS}</span>
+                              <span style={{color:C.muted}}>{s.count}s</span>
                             </div>
                             {s.ppCount>0&&(
-                              <div style={{marginTop:4,fontSize:9,color:C.orange,fontWeight:600}}>
-                                🔥 {s.ppCount} PP
+                              <div style={{fontSize:9,color:C.orange,marginTop:2,fontWeight:600}}>
+                                🔥{s.ppCount} PP
                               </div>
                             )}
                           </div>
                         )
                       })}
                     </div>
-                  </div>
 
-                  {/* Top/Bottom movers */}
-                  <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',
-                    gap:10,marginBottom:14}}>
-
-                    <div style={{background:C.card,border:`1px solid ${C.green}33`,
-                      borderRadius:10,padding:'14px'}}>
-                      <div style={{fontWeight:700,fontSize:12,color:C.green,marginBottom:10}}>
-                        🚀 Strongest Sectors
-                      </div>
-                      {sectors.slice(0,5).map((s,i)=>(
-                        <div key={s.sym} style={{display:'flex',justifyContent:'space-between',
-                          alignItems:'center',padding:'6px 0',
-                          borderBottom:i<4?`1px solid ${C.divider}`:'none'}}>
-                          <div style={{display:'flex',alignItems:'center',gap:8}}>
-                            <span style={{color:C.muted,fontSize:10,width:14}}>{i+1}</span>
-                            <span style={{fontSize:11,fontWeight:600}}>{s.sym}</span>
-                          </div>
-                          <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                            <span style={{fontWeight:700,fontSize:13,
-                              color:s.avgRS>=70?C.green:s.avgRS>=50?C.accent:C.yellow}}>
-                              {s.avgRS}
-                            </span>
-                            <span style={{fontSize:10,
-                              color:s.avgChg>=0?C.green:C.red}}>
-                              {s.avgChg>=0?'+':''}{s.avgChg}%
-                            </span>
-                          </div>
-                        </div>
-                      ))}
+                    {/* ── Horizontal bar chart ── */}
+                    <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:8}}>
+                      📊 Sector Performance Bar Chart
                     </div>
-
-                    <div style={{background:C.card,border:`1px solid ${C.red}33`,
-                      borderRadius:10,padding:'14px'}}>
-                      <div style={{fontWeight:700,fontSize:12,color:C.red,marginBottom:10}}>
-                        📉 Weakest Sectors
-                      </div>
-                      {[...sectors].reverse().slice(0,5).map((s,i)=>(
-                        <div key={s.sym} style={{display:'flex',justifyContent:'space-between',
-                          alignItems:'center',padding:'6px 0',
-                          borderBottom:i<4?`1px solid ${C.divider}`:'none'}}>
-                          <div style={{display:'flex',alignItems:'center',gap:8}}>
-                            <span style={{color:C.muted,fontSize:10,width:14}}>{sectors.length-i}</span>
-                            <span style={{fontSize:11,fontWeight:600}}>{s.sym}</span>
-                          </div>
-                          <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                            <span style={{fontWeight:700,fontSize:13,color:C.red}}>{s.avgRS}</span>
-                            <span style={{fontSize:10,color:s.avgChg>=0?C.green:C.red}}>
-                              {s.avgChg>=0?'+':''}{s.avgChg}%
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Detailed ranking bars */}
-                  <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:8}}>
-                    📊 Full Sector Rankings
-                  </div>
-                  {sectors.map((s,i)=>{
-                    const {text} = heatColor(s.avgRS)
-                    return(
-                      <div key={s.sym} style={{background:C.card,
-                        border:`1px solid ${C.divider}`,borderRadius:10,
-                        padding:'10px 14px',marginBottom:6}}>
-                        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4}}>
-                          <span style={{color:C.muted,fontSize:11,width:20}}>{i+1}</span>
-                          <div style={{flex:1}}>
-                            <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-                              <span style={{fontWeight:600,fontSize:12}}>{s.sym}</span>
-                              <div style={{display:'flex',gap:10,fontSize:11}}>
-                                <span style={{color:C.muted}}>{s.count} stocks</span>
-                                {s.ppCount>0&&<span style={{color:C.orange}}>🔥{s.ppCount} PP</span>}
-                                {s.improving>0&&<span style={{color:C.green}}>↑{s.improving}</span>}
-                                <span style={{color:s.avgChg>=0?C.green:C.red,fontWeight:600}}>
+                    {sectors.map((s,i)=>{
+                      const pct = maxChg>0?Math.abs(s.avgChg)/maxChg*100:0
+                      const c = s.avgChg>=0?C.green:C.red
+                      const {text} = heatColor(s.avgRS)
+                      return(
+                        <div key={s.name} style={{marginBottom:6}}>
+                          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:2}}>
+                            <span style={{fontSize:9,color:C.muted,width:16,
+                              textAlign:'right',flexShrink:0}}>{i+1}</span>
+                            <span style={{fontSize:11,fontWeight:600,width:isMobile?90:120,
+                              flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',
+                              whiteSpace:'nowrap'}}>{s.name}</span>
+                            <div style={{flex:1,background:C.bg,borderRadius:99,height:20,
+                              overflow:'hidden',position:'relative'}}>
+                              <div style={{width:`${pct}%`,height:'100%',background:c,
+                                borderRadius:99,display:'flex',alignItems:'center',
+                                paddingLeft:6,minWidth:30,transition:'width 0.4s'}}>
+                                <span style={{fontSize:9,fontWeight:700,color:'#fff',
+                                  whiteSpace:'nowrap'}}>
                                   {s.avgChg>=0?'+':''}{s.avgChg}%
                                 </span>
                               </div>
                             </div>
-                            <div style={{width:'100%',background:C.bg,borderRadius:99,height:6}}>
-                              <div style={{width:`${s.avgRS}%`,height:'100%',
-                                background:text,borderRadius:99,transition:'width 0.3s'}}/>
+                            <div style={{display:'flex',gap:6,flexShrink:0,fontSize:9}}>
+                              <span style={{fontWeight:700,color:text}}>RS {s.avgRS}</span>
+                              {s.ppCount>0&&<span style={{color:C.orange}}>🔥{s.ppCount}</span>}
                             </div>
                           </div>
-                          <span style={{fontWeight:700,fontSize:16,color:text,
-                            width:36,textAlign:'right'}}>{s.avgRS}</span>
                         </div>
+                      )
+                    })}
+
+                    {/* ── Top/Bottom 3 ── */}
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',
+                      gap:10,marginTop:16}}>
+                      <div style={{background:C.card,border:`1px solid ${C.green}33`,
+                        borderRadius:10,padding:'12px'}}>
+                        <div style={{fontWeight:700,fontSize:11,color:C.green,marginBottom:8}}>
+                          🚀 Top 3 — Buy Here
+                        </div>
+                        {sectors.slice(0,3).map((s,i)=>(
+                          <div key={s.name} style={{display:'flex',
+                            justifyContent:'space-between',padding:'4px 0',
+                            borderBottom:i<2?`1px solid ${C.divider}`:'none',fontSize:11}}>
+                            <span>{s.name}</span>
+                            <span style={{fontWeight:700,color:C.green}}>
+                              +{s.avgChg}%
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                    )
-                  })}
+                      <div style={{background:C.card,border:`1px solid ${C.red}33`,
+                        borderRadius:10,padding:'12px'}}>
+                        <div style={{fontWeight:700,fontSize:11,color:C.red,marginBottom:8}}>
+                          📉 Bottom 3 — Avoid
+                        </div>
+                        {[...sectors].reverse().slice(0,3).map((s,i)=>(
+                          <div key={s.name} style={{display:'flex',
+                            justifyContent:'space-between',padding:'4px 0',
+                            borderBottom:i<2?`1px solid ${C.divider}`:'none',fontSize:11}}>
+                            <span>{s.name}</span>
+                            <span style={{fontWeight:700,color:C.red}}>
+                              {s.avgChg}%
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )
             })()}
