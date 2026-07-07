@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory } from './lib/db'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
   detectPP, calcHY, calcHT, calcNearEMA9,
@@ -777,6 +778,74 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
 }
 
 // ── Stock detail expand ───────────────────────────────────────────────
+// ── 2Y Price History Chart (from Supabase stock_full_history) ────────
+const HISTORY_RANGES = { '3M': 63, '6M': 126, '1Y': 252, '2Y': 100000 }
+
+function PriceHistoryChart({ sym }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [range, setRange] = useState('1Y')
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setData(null)
+    fetchStockFullHistory(sym)
+      .then(res => { if (!cancelled) setData(res) })
+      .catch(() => { if (!cancelled) setData(null) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [sym])
+
+  if (loading) {
+    return <div style={{fontSize:11,color:C.muted,padding:'10px 0'}}>Loading 2Y price history…</div>
+  }
+  if (!data || !data.prices || data.prices.length === 0) {
+    return null // no history fetched yet for this symbol — fail quietly
+  }
+
+  const days = HISTORY_RANGES[range]
+  const start = Math.max(0, data.prices.length - days)
+  const chartData = data.dates.slice(start).map((d, i) => ({
+    date:  d,
+    price: data.prices[start + i],
+  }))
+
+  return (
+    <div style={{marginBottom:14}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+        <div style={{fontSize:11,fontWeight:800,color:C.blue,textTransform:'uppercase'}}>📉 Price History</div>
+        <div style={{display:'flex',gap:4}}>
+          {Object.keys(HISTORY_RANGES).map(r => (
+            <button key={r} onClick={() => setRange(r)}
+              style={{padding:'3px 8px',borderRadius:6,border:`1px solid ${range===r?C.blue:C.border}`,
+                background:range===r?C.blue+'22':'transparent',color:range===r?C.blue:C.muted,
+                fontSize:10,fontWeight:700,cursor:'pointer'}}>{r}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{background:C.bg,borderRadius:8,padding:'8px',height:160}}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={chartData} margin={{top:4,right:8,bottom:0,left:0}}>
+            <XAxis dataKey="date" hide/>
+            <YAxis domain={['auto','auto']} hide/>
+            <Tooltip
+              contentStyle={{background:C.card,border:`1px solid ${C.border}`,fontSize:11,borderRadius:6}}
+              labelStyle={{color:C.muted}}
+              formatter={(v) => [fmtP(v), 'Close']}
+            />
+            <Line type="monotone" dataKey="price" stroke={C.blue} strokeWidth={1.5} dot={false}/>
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div style={{fontSize:9,color:C.muted,marginTop:4}}>
+        {data.daysCount} days total
+        {data.updatedAt ? ` · updated ${new Date(data.updatedAt).toLocaleDateString('en-IN')}` : ''}
+      </div>
+    </div>
+  )
+}
+
 function StockDetail({s}){
   const {copy,copied}=useCopy()
   return(
@@ -805,6 +874,9 @@ function StockDetail({s}){
           <Sparkline data={s.hist} width={320} height={44} color={rsColor(s.rs)}/>
         </div>
       </div>
+
+      {/* 2Y Price History (from Supabase stock_full_history) */}
+      <PriceHistoryChart sym={s.sym}/>
 
       {/* PP 10-day */}
       <div style={{marginBottom:14}}>
