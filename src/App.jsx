@@ -984,40 +984,73 @@ function StockCard({s,i}){
   )
 }
 
-// ── TradingView Chart Modal ──────────────────────────────────────────
-function TVChartModal({sym, onClose}){
+// ── Chart Panel — right-docked on desktop, full-screen on mobile ─────
+// Works globally regardless of which tab is active, since it's rendered
+// once at the top level and overlays via position:fixed. Swaps symbol in
+// place (same panel instance) when a different stock is clicked.
+function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
+  const [loaded, setLoaded] = useState(false)
+  useEffect(() => { setLoaded(false) }, [sym])
+
   if(!sym) return null
-  const tvSym = `NSE:${sym}`
+  const src = `https://s.tradingview.com/widgetembed/?symbol=NSE%3A${encodeURIComponent(sym)}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=0e1117&studies=RSI%40tv-basicstudies%1FVolume%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata&withdateranges=1&locale=en`
+
+  const panelStyle = isMobile
+    ? {position:'fixed',inset:0,zIndex:1000,display:'flex',flexDirection:'column',background:C.sidebar}
+    : {position:'fixed',top:0,right:0,bottom:0,zIndex:1000,
+        width:wide?'65%':'50%',minWidth:460,
+        display:'flex',flexDirection:'column',background:C.sidebar,
+        borderLeft:`1px solid ${C.divider}`,boxShadow:'-8px 0 24px rgba(0,0,0,0.35)',
+        transition:'width 0.2s ease'}
+
   return(
-    <div onClick={onClose}
-      style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',
-        zIndex:1000,display:'flex',flexDirection:'column'}}>
-      <div onClick={e=>e.stopPropagation()}
-        style={{flex:1,display:'flex',flexDirection:'column',margin:'20px',
-          background:'#0e1117',borderRadius:12,border:'1px solid #1c2333',
-          overflow:'hidden'}}>
-        {/* Header */}
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
-          padding:'10px 16px',borderBottom:'1px solid #1c2333',flexShrink:0}}>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <span style={{fontWeight:700,fontSize:16,color:'#e2e8f0'}}>{sym}</span>
-            <a href={`https://www.tradingview.com/chart/?symbol=${tvSym}`}
-              target="_blank" rel="noopener noreferrer"
-              style={{fontSize:11,color:'#4f8ef7',textDecoration:'none'}}>
-              Open in TradingView ↗
-            </a>
-          </div>
+    <div style={panelStyle}>
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+        padding:'8px 14px',borderBottom:`1px solid ${C.divider}`,flexShrink:0,height:42}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <span style={{fontWeight:700,fontSize:14,color:C.text,letterSpacing:'0.01em'}}>{sym}</span>
+          <span style={{fontSize:10,color:C.muted,background:C.card,padding:'1px 5px',borderRadius:3}}>NSE</span>
+          <a href={`https://www.tradingview.com/chart/?symbol=NSE:${sym}`}
+            target="_blank" rel="noopener noreferrer"
+            style={{fontSize:10,color:C.accent,textDecoration:'none',
+              padding:'2px 7px',borderRadius:4,border:`1px solid ${C.accent}33`,
+              display:'flex',alignItems:'center',gap:3}}>
+            TV ↗
+          </a>
+        </div>
+        <div style={{display:'flex',gap:4,alignItems:'center'}}>
+          {!isMobile&&(
+            <button onClick={onToggleWide}
+              style={{background:'transparent',border:`1px solid ${C.border}`,
+                color:C.muted,fontSize:10,padding:'3px 8px',borderRadius:4,
+                cursor:'pointer',whiteSpace:'nowrap'}}>
+              {wide?'◀':'▶'}
+            </button>
+          )}
           <button onClick={onClose}
-            style={{background:'transparent',border:'1px solid #1c2333',
-              color:'#4a5568',fontSize:18,width:32,height:32,borderRadius:6,
-              cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
-            ×
+            style={{background:'transparent',border:`1px solid ${C.border}`,
+              color:C.muted,fontSize:16,width:26,height:26,borderRadius:4,
+              cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',
+              lineHeight:1}}>×
           </button>
         </div>
-        {/* TradingView Widget iframe */}
+      </div>
+
+      {/* Body — iframe + lightweight loading overlay so the panel feels
+          instant even while TradingView's own widget is still loading */}
+      <div style={{flex:1,position:'relative'}}>
+        {!loaded&&(
+          <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',
+            justifyContent:'center',flexDirection:'column',gap:8,background:C.sidebar}}>
+            <div style={{fontSize:12,color:C.muted}}>Loading {sym} chart…</div>
+          </div>
+        )}
         <iframe
-          src={`https://s.tradingview.com/widgetembed/?frameElementId=tv_chart&symbol=${tvSym}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=0e1117&studies=RSI%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata&withdateranges=1&showpopupbutton=0&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=%5B%5D&disabled_features=%5B%5D&locale=en&utm_source=lakshmimata`}
-          style={{flex:1,width:'100%',border:'none'}}
+          key={sym}
+          src={src}
+          onLoad={()=>setLoaded(true)}
+          style={{width:'100%',height:'100%',border:'none'}}
           allowFullScreen
         />
       </div>
@@ -2458,57 +2491,9 @@ export default function App(){
               )
             )}
           </div>
-
-          {/* Right pane — inline TradingView chart */}
-          {chartSym&&(
-            <div style={{width:chartWide?'65%':'50%',minWidth:460,flexShrink:0,
-              display:'flex',flexDirection:'column',background:C.sidebar,
-              transition:'width 0.2s ease'}}>
-
-              {/* Chart header bar */}
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
-                padding:'8px 14px',borderBottom:`1px solid ${C.divider}`,flexShrink:0,height:42}}>
-                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  <span style={{fontWeight:700,fontSize:14,color:C.text,letterSpacing:'0.01em'}}>
-                    {chartSym}
-                  </span>
-                  <span style={{fontSize:10,color:C.muted,background:C.card,
-                    padding:'1px 5px',borderRadius:3}}>NSE</span>
-                  <a href={`https://www.tradingview.com/chart/?symbol=NSE:${chartSym}`}
-                    target="_blank" rel="noopener noreferrer"
-                    style={{fontSize:10,color:C.accent,textDecoration:'none',
-                      padding:'2px 7px',borderRadius:4,border:`1px solid ${C.accent}33`,
-                      display:'flex',alignItems:'center',gap:3}}>
-                    TV ↗
-                  </a>
-                </div>
-                <div style={{display:'flex',gap:4,alignItems:'center'}}>
-                  <button onClick={()=>setChartWide(v=>!v)}
-                    style={{background:'transparent',border:`1px solid ${C.border}`,
-                      color:C.muted,fontSize:10,padding:'3px 8px',borderRadius:4,
-                      cursor:'pointer',whiteSpace:'nowrap'}}>
-                    {chartWide?'◀':'▶'}
-                  </button>
-                  <button onClick={()=>setChartSym(null)}
-                    style={{background:'transparent',border:`1px solid ${C.border}`,
-                      color:C.muted,fontSize:16,width:26,height:26,borderRadius:4,
-                      cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',
-                      lineHeight:1}}>×
-                  </button>
-                </div>
-              </div>
-
-              {/* TradingView iframe */}
-              <iframe
-                key={chartSym}
-                src={`https://s.tradingview.com/widgetembed/?symbol=NSE%3A${encodeURIComponent(chartSym)}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=0e1117&studies=RSI%40tv-basicstudies%1FVolume%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata&withdateranges=1&locale=en`}
-                style={{flex:1,width:'100%',border:'none'}}
-                allowFullScreen
-              />
-            </div>
-          )}
         </div>
         )}
+
 
         {/* ══ INDICES DASHBOARD ══ */}
         {mainTab==='indices'&&(
@@ -3413,6 +3398,18 @@ export default function App(){
 
       </div>
       </div>
+
+      {/* Global chart panel — works from any tab, right-docked on desktop,
+          full-screen on mobile. Rendered once so swapping symbols updates
+          the same panel instance in place. */}
+      <ChartPanel
+        sym={chartSym}
+        wide={chartWide}
+        onToggleWide={()=>setChartWide(v=>!v)}
+        onClose={()=>setChartSym(null)}
+        isMobile={isMobile}
+      />
+
       {/* Mobile bottom nav */}
       {isMobile&&(
         <div style={{position:'fixed',bottom:0,left:0,right:0,background:C.card,
