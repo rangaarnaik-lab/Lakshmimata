@@ -12,30 +12,37 @@ import { supabase } from './supabase'
  */
 export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = null, historyDate = null } = {}) {
   const table = historyDate ? 'stock_history' : 'stocks'
-  let query = supabase
-    .from(table)
-    .select('*')
-    .order('rs', { ascending: false })
 
-  if (historyDate) {
-    query = query.eq('snapshot_date', historyDate)
+  const buildQuery = () => {
+    let q = supabase.from(table).select('*').order('rs', { ascending: false })
+    if (historyDate) q = q.eq('snapshot_date', historyDate)
+    if (watchlistSyms && watchlistSyms.length > 0) {
+      q = q.in('sym', watchlistSyms)
+    } else if (indexFilter === 'nifty50') {
+      q = q.eq('in_nifty50', true)
+    } else if (indexFilter === 'midcap') {
+      q = q.eq('in_midcap', true)
+    } else if (indexFilter === 'smallcap') {
+      q = q.eq('in_smallcap', true)
+    } else if (indexFilter === 'microcap') {
+      q = q.eq('in_microcap', true)
+    }
+    return q
   }
 
-  // Filter by index
-  if (watchlistSyms && watchlistSyms.length > 0) {
-    query = query.in('sym', watchlistSyms)
-  } else if (indexFilter === 'nifty50') {
-    query = query.eq('in_nifty50', true)
-  } else if (indexFilter === 'midcap') {
-    query = query.eq('in_midcap', true)
-  } else if (indexFilter === 'smallcap') {
-    query = query.eq('in_smallcap', true)
-  } else if (indexFilter === 'microcap') {
-    query = query.eq('in_microcap', true)
+  // Supabase/PostgREST caps each request at 1000 rows by default — page
+  // through with .range() until a page comes back short, so all ~2300+
+  // stocks load instead of only the first 1000.
+  const PAGE_SIZE = 1000
+  let data = []
+  let from = 0
+  while (true) {
+    const { data: page, error } = await buildQuery().range(from, from + PAGE_SIZE - 1)
+    if (error) throw error
+    data = data.concat(page || [])
+    if (!page || page.length < PAGE_SIZE) break
+    from += PAGE_SIZE
   }
-
-  const { data, error } = await query
-  if (error) throw error
 
   // Transform DB rows to app format
   return (data || []).map(row => ({
@@ -166,6 +173,39 @@ export async function fetchAvailableHistoryDates() {
     return []
   }
   return (data || []).map(r => r.snapshot_date)
+}
+
+/**
+ * Fetch full 2-year daily OHLCV history for one stock from Supabase.
+ * Populated by the backend's startup Yahoo Finance fetch into the
+ * `stock_full_history` table (dates, prices, volumes, highs, lows).
+ * Returns null if the symbol hasn't been fetched yet.
+ */
+export async function fetchStockFullHistory(sym) {
+  const { data, error } = await supabase
+    .from('stock_full_history')
+    .select('*')
+    .eq('sym', sym)
+    .single()
+  if (error || !data) return null
+
+  // jsonb columns come back already parsed via supabase-js, but handle
+  // the string case too in case they were ever stored as text.
+  const parseArr = v => {
+    if (v == null) return []
+    return typeof v === 'string' ? JSON.parse(v) : v
+  }
+
+  return {
+    sym:       data.sym,
+    dates:     parseArr(data.dates),
+    prices:    parseArr(data.prices),
+    volumes:   parseArr(data.volumes),
+    highs:     parseArr(data.highs),
+    lows:      parseArr(data.lows),
+    daysCount: data.days_count,
+    updatedAt: data.updated_at,
+  }
 }
 
 /**
