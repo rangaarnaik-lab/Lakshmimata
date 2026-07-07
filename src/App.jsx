@@ -918,6 +918,39 @@ function StockDetail({s}){
           </div>
         ))}
       </div>
+
+      {/* Fundamentals — snapshot + growth/trend (from Screener.in) */}
+      <div style={{marginTop:14}}>
+        <div style={{fontSize:11,fontWeight:800,color:C.teal,marginBottom:8,textTransform:'uppercase'}}>💰 Fundamentals</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+          {[
+            ['Market Cap', s.marketCap!=null?(s.marketCap>=100000?`₹${(s.marketCap/100000).toFixed(1)}L Cr`:`₹${s.marketCap.toFixed(0)} Cr`):'—', C.text],
+            ['P/E', s.pe!=null?s.pe.toFixed(1):'—', s.pe!=null?(s.pe<20?C.green:s.pe<40?C.yellow:C.red):C.muted],
+            ['PEG Ratio', s.pegRatio!=null?s.pegRatio.toFixed(2):'—', s.pegRatio!=null?(s.pegRatio<1?C.green:s.pegRatio<2?C.yellow:C.red):C.muted],
+            ['ROE', s.roe!=null?`${s.roe.toFixed(1)}%`:'—', s.roe!=null?(s.roe>20?C.green:s.roe>10?C.yellow:C.red):C.muted],
+            ['Debt/Equity', s.debtEq!=null?s.debtEq.toFixed(2):'—', s.debtEq!=null?(s.debtEq<0.5?C.green:s.debtEq<1.5?C.yellow:C.red):C.muted],
+            ['EPS', s.eps!=null?`₹${s.eps.toFixed(1)}`:'—', C.text],
+            ['EPS QoQ', s.epsQoq!=null?`${s.epsQoq>0?'+':''}${s.epsQoq.toFixed(1)}%`:'—', s.epsQoq!=null?(s.epsQoq>0?C.green:C.red):C.muted],
+            ['EPS YoY', s.epsYoy!=null?`${s.epsYoy>0?'+':''}${s.epsYoy.toFixed(1)}%`:'—', s.epsYoy!=null?(s.epsYoy>0?C.green:C.red):C.muted],
+            ['EPS Growth Streak', s.epsGrowthStreak!=null?`${s.epsGrowthStreak}Q`:'—', s.epsGrowthStreak>=3?C.green:C.muted],
+            ['Sales QoQ', s.salesQoq!=null?`${s.salesQoq>0?'+':''}${s.salesQoq.toFixed(1)}%`:'—', s.salesQoq!=null?(s.salesQoq>0?C.green:C.red):C.muted],
+            ['Sales YoY', s.salesYoy!=null?`${s.salesYoy>0?'+':''}${s.salesYoy.toFixed(1)}%`:'—', s.salesYoy!=null?(s.salesYoy>0?C.green:C.red):C.muted],
+            ['OPM %', s.opmPct!=null?`${s.opmPct.toFixed(1)}%`:'—', C.text],
+            ['OPM Trend', s.opmTrend!=null?`${s.opmTrend>0?'+':''}${s.opmTrend.toFixed(1)}pp`:'—', s.opmTrend!=null?(s.opmTrend>0?C.green:s.opmTrend<0?C.red:C.muted):C.muted],
+            ['Promoter', s.promoter!=null?`${s.promoter.toFixed(1)}%`:'—', s.promoter!=null?(s.promoter>55?C.green:s.promoter>35?C.yellow:C.red):C.muted],
+            ['Promoter Trend', s.promoterTrend!=null?`${s.promoterTrend>0?'+':''}${s.promoterTrend.toFixed(2)}pp`:'—', s.promoterTrend!=null?(s.promoterTrend>0?C.green:s.promoterTrend<0?C.red:C.muted):C.muted],
+            ['FII %', s.fiiPct!=null?`${s.fiiPct.toFixed(1)}%`:'—', C.text],
+            ['FII Trend', s.fiiTrend!=null?`${s.fiiTrend>0?'+':''}${s.fiiTrend.toFixed(2)}pp`:'—', s.fiiTrend!=null?(s.fiiTrend>0?C.green:s.fiiTrend<0?C.red:C.muted):C.muted],
+            ['DII %', s.diiPct!=null?`${s.diiPct.toFixed(1)}%`:'—', C.text],
+            ['DII Trend', s.diiTrend!=null?`${s.diiTrend>0?'+':''}${s.diiTrend.toFixed(2)}pp`:'—', s.diiTrend!=null?(s.diiTrend>0?C.green:s.diiTrend<0?C.red:C.muted):C.muted],
+          ].map(([k,v,c])=>(
+            <div key={k} style={{background:C.bg,borderRadius:8,padding:'9px 11px'}}>
+              <div style={{fontSize:9,color:C.muted,marginBottom:2,textTransform:'uppercase',letterSpacing:'0.06em'}}>{k}</div>
+              <div style={{fontWeight:800,fontSize:14,color:c}}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
