@@ -70,6 +70,20 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
     eps:        row.eps,          // ₹
     debtEq:     row.debt_eq,
     promoter:   row.promoter,     // %
+    // Growth/trend fundamentals — earnings acceleration + smart-money holding trends
+    epsQoq:         row.eps_qoq,           // %
+    epsYoy:         row.eps_yoy,           // %
+    salesQoq:       row.sales_qoq,         // %
+    salesYoy:       row.sales_yoy,         // %
+    opmPct:         row.opm_pct,           // %
+    opmTrend:       row.opm_trend,         // percentage points vs prior quarter
+    epsGrowthStreak:row.eps_growth_streak, // consecutive quarters
+    fiiPct:         row.fii_pct,           // %
+    fiiTrend:       row.fii_trend,         // percentage points vs prior period
+    diiPct:         row.dii_pct,           // %
+    diiTrend:       row.dii_trend,         // percentage points vs prior period
+    promoterTrend:  row.promoter_trend,    // percentage points vs prior period
+    pegRatio:       row.peg_ratio,
     hist:       row.rs_hist || [],
     rsTrend: {
       trend: row.rs_trend || 'flat',
