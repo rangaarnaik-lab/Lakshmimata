@@ -1074,7 +1074,7 @@ function SortableHeader({label,sortKey,sortBy,sortDir,onSort,align='left'}){
 function DesktopRow({s,i,onChart}){
   const [open,setOpen]=useState(false)
   // Grid: # | Symbol+Sector+Badges | RS | Trend | Price | Chg% | PP 10d | RS 7d | expand
-  const COLS='32px 130px 52px 48px 48px 52px 52px 60px 70px 58px 110px 140px 55px 55px 48px 48px 48px 55px 24px'
+  const COLS='32px 130px 52px 48px 48px 52px 52px 64px 96px 58px 110px 140px 55px 55px 48px 48px 48px 55px 24px'
   return(
     <div style={{borderBottom:`1px solid ${C.border}22`}}>
       <div onClick={()=>setOpen(o=>!o)}
@@ -2454,7 +2454,7 @@ export default function App(){
             {displayedRS.length>0&&(
               isMobile?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i}/>):(
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
-                  <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 60px 70px 58px 110px 140px 55px 55px 48px 48px 48px 55px 24px',
+                  <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 96px 58px 110px 140px 55px 55px 48px 48px 48px 55px 24px',
                     padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
                     fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
                     <span style={{textAlign:'center',color:C.muted}}>#</span>
