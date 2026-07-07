@@ -353,11 +353,11 @@ function RSCells({history,compact}){
 }
 function PPDots({ppHistory}){
   return(
-    <div style={{display:'flex',gap:3,alignItems:'center'}}>
+    <div style={{display:'flex',gap:2,alignItems:'center'}}>
       {(ppHistory||[]).map((isPP,i)=>{
         const d=(ppHistory.length-1-i)
         return<div key={i} title={`${d===0?'Today':`${d}d ago`}: ${isPP?'PP ✅':'No PP'}`}
-          style={{width:10,height:10,borderRadius:'50%',
+          style={{width:8,height:8,flexShrink:0,borderRadius:'50%',
             background:isPP?C.orange:C.border,
             boxShadow:isPP?`0 0 4px ${C.orange}`:'none'}}/>
       })}
@@ -1107,7 +1107,7 @@ function SortableHeader({label,sortKey,sortBy,sortDir,onSort,align='left'}){
 function DesktopRow({s,i,onChart}){
   const [open,setOpen]=useState(false)
   // Grid: # | Symbol+Sector+Badges | RS | Trend | Price | Chg% | PP 10d | RS 7d | expand
-  const COLS='32px 130px 52px 48px 48px 52px 52px 64px 90px 72px 182px 140px 55px 55px 48px 48px 48px 55px 24px'
+  const COLS='32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px'
   return(
     <div style={{borderBottom:`1px solid ${C.border}22`}}>
       <div onClick={()=>setOpen(o=>!o)}
@@ -1203,7 +1203,7 @@ function DesktopRow({s,i,onChart}){
         </div>
 
         {/* PP 10 days */}
-        <div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'center'}}>
+        <div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'center',minWidth:0,overflow:'hidden'}}>
           <PPDots ppHistory={s.pp.ppHistory||[]}/>
           <span style={{fontSize:9,color:s.pp.ppCount10d>0?C.orange:C.muted,fontWeight:700,whiteSpace:'nowrap'}}>
             {s.pp.ppCount10d}× PP
@@ -2487,7 +2487,7 @@ export default function App(){
             {displayedRS.length>0&&(
               isMobile?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i}/>):(
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
-                  <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 90px 72px 182px 140px 55px 55px 48px 48px 48px 55px 24px',
+                  <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px',
                     padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
                     fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
                     <span style={{textAlign:'center',color:C.muted}}>#</span>
