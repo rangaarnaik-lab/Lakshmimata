@@ -2652,135 +2652,76 @@ export default function App(){
                   ))}
                 </div>
 
-                {/* Index cards grid */}
-                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:10}}>
-                  {indexData.map(idx=>{
-                    const stageColor={1:C.yellow,2:C.green,3:C.orange,4:C.red}[idx.stage]||C.muted
-                    const rsc = idx.rsTv!=null?rsColor(idx.rsTv):C.muted
-                    return(
-                      <div key={idx.name} style={{background:C.card,
-                        border:`1px solid ${stageColor}44`,borderRadius:12,padding:'14px'}}>
-
-                        {/* Header row */}
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
-                          <div>
-                            <div style={{fontWeight:800,fontSize:15}}>{idx.name}</div>
-                            <div style={{fontSize:11,color:C.muted,marginTop:2}}>
-                              ₹{idx.lastPrice?.toLocaleString('en-IN')}
-                            </div>
-                            <div style={{display:'flex',gap:6,marginTop:6,flexWrap:'wrap'}}>
-                              <div style={{padding:'2px 8px',borderRadius:5,fontSize:10,fontWeight:700,
-                                background:stageColor+'22',color:stageColor}}>
-                                {idx.stageLabel}
-                              </div>
-                              {idx.aboveMa10!=null&&(
-                                <div style={{padding:'2px 8px',borderRadius:5,fontSize:10,fontWeight:600,
-                                  background:(idx.aboveMa10?C.green:C.red)+'18',
-                                  color:idx.aboveMa10?C.green:C.red}}>
-                                  {idx.aboveMa10?'↑ MA10':'↓ MA10'}
-                                </div>
-                              )}
-                              {idx.aboveMa30!=null&&(
-                                <div style={{padding:'2px 8px',borderRadius:5,fontSize:10,fontWeight:600,
-                                  background:(idx.aboveMa30?C.green:C.red)+'18',
-                                  color:idx.aboveMa30?C.green:C.red}}>
-                                  {idx.aboveMa30?'↑ MA30':'↓ MA30'}
-                                </div>
-                              )}
+                {/* Single table — easier to compare all indices at once
+                    than scrolling through separate cards */}
+                <div style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12}}>
+                  <div style={{minWidth:820}}>
+                    {/* Header row */}
+                    <div style={{display:'grid',
+                      gridTemplateColumns:'150px 90px 60px 90px 70px 70px 70px 60px 60px',
+                      gap:4,padding:'10px 12px',background:C.bg,
+                      borderBottom:`1px solid ${C.border}`,position:'sticky',top:0}}>
+                      {['Index','Price','RS-TV','Stage','1D','1W','1M','3M','1Y'].map(h=>(
+                        <div key={h} style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase'}}>{h}</div>
+                      ))}
+                    </div>
+                    {/* Rows — sorted by RS-TV, strongest first */}
+                    {[...indexData].sort((a,b)=>(b.rsTv??-1)-(a.rsTv??-1)).map((idx,i)=>{
+                      const stageColor={1:C.yellow,2:C.green,3:C.orange,4:C.red}[idx.stage]||C.muted
+                      const rsc = idx.rsTv!=null?rsColor(idx.rsTv):C.muted
+                      const cellStyle = {display:'flex',flexDirection:'column',justifyContent:'center'}
+                      return (
+                        <div key={idx.name} style={{display:'grid',
+                          gridTemplateColumns:'150px 90px 60px 90px 70px 70px 70px 60px 60px',
+                          gap:4,padding:'10px 12px',alignItems:'center',
+                          background:i%2===0?'transparent':C.bg+'55',
+                          borderBottom:`1px solid ${C.border}33`}}>
+                          <div style={cellStyle}>
+                            <div style={{fontWeight:700,fontSize:12,color:C.text}}>{idx.name}</div>
+                          </div>
+                          <div style={cellStyle}>
+                            <div style={{fontSize:11,color:C.muted}}>₹{idx.lastPrice?.toLocaleString('en-IN')}</div>
+                          </div>
+                          <div style={cellStyle}>
+                            <div style={{fontWeight:800,fontSize:13,color:rsc}}>{idx.rsTv??'—'}</div>
+                          </div>
+                          <div style={cellStyle}>
+                            <div style={{display:'inline-block',padding:'2px 6px',borderRadius:5,fontSize:9,fontWeight:700,
+                              background:stageColor+'22',color:stageColor,width:'fit-content'}}>
+                              {idx.stageLabel}
                             </div>
                           </div>
-                          <div style={{textAlign:'center'}}>
-                            <div style={{fontWeight:900,fontSize:28,color:rsc,lineHeight:1}}>
-                              {idx.rsTv??'—'}
-                            </div>
-                            <div style={{fontSize:9,color:C.teal,fontWeight:700}}>RS-TV</div>
-                          </div>
-                        </div>
-
-                        {/* Performance grid: Daily / Weekly / Monthly / Quarterly / Yearly */}
-                        <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:4,marginBottom:10}}>
                           {[
-                            ['1D', idx.chgD, idx.rankD],
-                            ['1W', idx.chgW, idx.rankW],
-                            ['1M', idx.chgM, idx.rankM],
-                            ['3M', idx.chgQ, null],
-                            ['1Y', idx.chgY, null],
-                          ].map(([label,val,rank])=>(
-                            <div key={label} style={{background:C.bg,borderRadius:6,padding:'6px 4px',textAlign:'center'}}>
-                              <div style={{fontSize:8,color:C.muted,marginBottom:2}}>{label}</div>
-                              <div style={{fontWeight:700,fontSize:12,color:val!=null?chgColor(val):C.muted}}>
+                            [idx.chgD, idx.rankD],
+                            [idx.chgW, idx.rankW],
+                            [idx.chgM, idx.rankM],
+                          ].map(([val,rank],j)=>(
+                            <div key={j} style={cellStyle}>
+                              <div style={{fontWeight:700,fontSize:11,color:val!=null?chgColor(val):C.muted}}>
                                 {fmtChg(val)}
                               </div>
                               {rank!=null&&idx.totalIndices&&(
-                                <div style={{fontSize:8,fontWeight:700,marginTop:2,
+                                <div style={{fontSize:8,fontWeight:700,
                                   color:rank<=3?C.green:rank>=idx.totalIndices-2?C.red:C.muted}}>
                                   #{rank}/{idx.totalIndices}
                                 </div>
                               )}
                             </div>
                           ))}
-                        </div>
-
-                        {/* 52W range bar */}
-                        <div style={{marginBottom:8}}>
-                          <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:C.muted,marginBottom:3}}>
-                            <span>52W Low: ₹{idx.low52w?.toLocaleString('en-IN')}</span>
-                            <span style={{color:idx.pctFromHigh>=-5?C.green:C.yellow}}>
-                              {idx.pctFromHigh?.toFixed(1)}% from high
-                            </span>
-                            <span>52W High: ₹{idx.high52w?.toLocaleString('en-IN')}</span>
+                          <div style={cellStyle}>
+                            <div style={{fontWeight:700,fontSize:11,color:idx.chgQ!=null?chgColor(idx.chgQ):C.muted}}>
+                              {fmtChg(idx.chgQ)}
+                            </div>
                           </div>
-                          <div style={{width:'100%',background:C.border,borderRadius:99,height:4,overflow:'hidden'}}>
-                            <div style={{
-                              width:`${Math.max(2,Math.min(100,100+(idx.pctFromHigh||0)))}%`,
-                              height:'100%',background:rsColor(idx.rsTv||50),borderRadius:99
-                            }}/>
+                          <div style={cellStyle}>
+                            <div style={{fontWeight:700,fontSize:11,color:idx.chgY!=null?chgColor(idx.chgY):C.muted}}>
+                              {fmtChg(idx.chgY)}
+                            </div>
                           </div>
                         </div>
-
-                        {/* Top/Bottom constituent stocks (where available) */}
-                        {(idx.topStocks?.length>0||idx.botStocks?.length>0)&&(
-                          <div style={{display:'flex',gap:8}}>
-                            {idx.topStocks?.length>0&&(
-                              <div style={{flex:1}}>
-                                <div style={{fontSize:9,color:C.green,fontWeight:700,marginBottom:4}}>
-                                  TOP RS
-                                </div>
-                                {idx.topStocks.map(s=>(
-                                  <div key={s.sym} style={{display:'flex',justifyContent:'space-between',
-                                    fontSize:10,marginBottom:2}}>
-                                    <span style={{color:C.text,fontWeight:600}}>{s.sym}</span>
-                                    <span style={{color:rsColor(s.rs),fontWeight:700}}>{s.rs}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {idx.botStocks?.length>0&&(
-                              <div style={{flex:1}}>
-                                <div style={{fontSize:9,color:C.red,fontWeight:700,marginBottom:4}}>
-                                  BOTTOM RS
-                                </div>
-                                {idx.botStocks.map(s=>(
-                                  <div key={s.sym} style={{display:'flex',justifyContent:'space-between',
-                                    fontSize:10,marginBottom:2}}>
-                                    <span style={{color:C.text,fontWeight:600}}>{s.sym}</span>
-                                    <span style={{color:rsColor(s.rs),fontWeight:700}}>{s.rs}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Last updated */}
-                        <div style={{fontSize:9,color:C.muted,marginTop:8,textAlign:'right'}}>
-                          Updated: {idx.lastUpdated?new Date(idx.lastUpdated).toLocaleString('en-IN',{
-                            day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'
-                          }):'—'}
-                        </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
+                  </div>
                 </div>
               </>
             )}
