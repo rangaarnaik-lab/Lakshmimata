@@ -353,6 +353,8 @@ function RSCells({history,compact}){
 }
 // ── Ranked Bar Chart (Chartink-style Index Strength / Segment Advances) ──
 const BAR_PALETTE = ['#4f8ef7','#e0575b','#4caf50','#d4a72c','#8b7fd6','#2ba7a0','#e0825b','#5b9bd5','#c85a9e']
+const chgColor = v => v>=0?C.green:C.red
+const fmtChg = v => v!=null?`${v>=0?'+':''}${v.toFixed(2)}%`:'—'
 
 function RankedBarChart({title, subtitle, items, formatVal, positiveOnly}){
   if(!items||items.length===0) return null
@@ -2656,8 +2658,6 @@ export default function App(){
                   {indexData.map(idx=>{
                     const stageColor={1:C.yellow,2:C.green,3:C.orange,4:C.red}[idx.stage]||C.muted
                     const rsc = idx.rsTv!=null?rsColor(idx.rsTv):C.muted
-                    const chgColor = v => v>=0?C.green:C.red
-                    const fmtChg = v => v!=null?`${v>=0?'+':''}${v.toFixed(2)}%`:'—'
                     return(
                       <div key={idx.name} style={{background:C.card,
                         border:`1px solid ${stageColor}44`,borderRadius:12,padding:'14px'}}>
