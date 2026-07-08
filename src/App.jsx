@@ -1855,6 +1855,7 @@ export default function App(){
   const [rsMin,setRsMin]=useState(0),[rsMax,setRsMax]=useState(99)
   const [rsImprFilter,setRsImprFilter]=useState('all')
   const [sigFilter,setSigFilter]=useState('all')
+  const [stageFilter,setStageFilter]=useState('all')
   const [search,setSearch]=useState(''),[sortBy,setSortBy]=useState('rs')
   const [sortDir,setSortDir]=useState('desc')
   const handleSort = useCallback(key=>{
@@ -2016,6 +2017,7 @@ export default function App(){
     if(sigFilter==='ht'&&!s.ht?.isHT)return false
     if(sigFilter==='ema9'&&!s.nearEMA9?.isNearEMA9)return false
     if(sigFilter==='power'&&!(s.pp?.isPP&&s.rs>=80))return false
+    if(stageFilter!=='all'&&calcWeinsteinStage(s).stage!==+stageFilter)return false
     // Preset filter
     if(presetFilter==='pp'&&!s.pp?.isPP)return false
     if(presetFilter==='ema9'&&!s.nearEMA9?.isNearEMA9)return false
@@ -2469,6 +2471,17 @@ export default function App(){
                             style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilter===v?color:C.border}`,
                               cursor:'pointer',fontSize:12,fontWeight:600,
                               background:sigFilter===v?color+'22':'transparent',color:sigFilter===v?color:C.muted}}>{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{marginTop:10}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>Stage</div>
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                        {[['all','All',C.muted],['1','S1 Base',C.yellow],['2','S2 Up',C.green],['3','S3 Top',C.orange],['4','S4 Down',C.red]].map(([v,label,color])=>(
+                          <button key={v} onClick={()=>setStageFilter(v)}
+                            style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${stageFilter===v?color:C.border}`,
+                              cursor:'pointer',fontSize:12,fontWeight:600,
+                              background:stageFilter===v?color+'22':'transparent',color:stageFilter===v?color:C.muted}}>{label}</button>
                         ))}
                       </div>
                     </div>
