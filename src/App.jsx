@@ -356,28 +356,29 @@ const BAR_PALETTE = ['#4f8ef7','#e0575b','#4caf50','#d4a72c','#8b7fd6','#2ba7a0'
 const chgColor = v => v>=0?C.green:C.red
 const fmtChg = v => v!=null?`${v>=0?'+':''}${v.toFixed(2)}%`:'—'
 
-function RankedBarChart({title, subtitle, items, formatVal, positiveOnly}){
+function RankedBarChart({title, subtitle, items, formatVal, positiveOnly, compact}){
   if(!items||items.length===0) return null
   const maxAbs = Math.max(...items.map(i=>Math.abs(i.value??0)), positiveOnly?100:1)
   return (
-    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:14,marginBottom:14}}>
-      <div style={{fontWeight:800,fontSize:14,marginBottom:2}}>{title}</div>
-      {subtitle&&<div style={{fontSize:11,color:C.muted,marginBottom:10}}>{subtitle}</div>}
-      <div style={{display:'flex',flexDirection:'column',gap:5,marginTop:8}}>
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,
+      padding:compact?10:14,marginBottom:compact?0:14}}>
+      <div style={{fontWeight:800,fontSize:compact?12:14,marginBottom:2}}>{title}</div>
+      {subtitle&&<div style={{fontSize:10,color:C.muted,marginBottom:8}}>{subtitle}</div>}
+      <div style={{display:'flex',flexDirection:'column',gap:4,marginTop:6}}>
         {items.map((item,i)=>{
           const val = item.value ?? 0
           const widthPct = Math.max(6, Math.min(100, (Math.abs(val)/maxAbs)*100))
           const barColor = BAR_PALETTE[i % BAR_PALETTE.length]
           return (
-            <div key={item.name} style={{display:'flex',alignItems:'center',gap:8}}>
-              <div style={{width:54,textAlign:'right',fontSize:11,fontWeight:700,color:C.muted,flexShrink:0}}>
+            <div key={item.name} style={{display:'flex',alignItems:'center',gap:compact?4:8}}>
+              <div style={{width:compact?36:54,textAlign:'right',fontSize:compact?9:11,fontWeight:700,color:C.muted,flexShrink:0}}>
                 {formatVal ? formatVal(val) : val}
               </div>
-              <div style={{flex:1,position:'relative',height:26}}>
+              <div style={{flex:1,position:'relative',height:compact?20:26}}>
                 <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${widthPct}%`,
-                  background:barColor,borderRadius:6,display:'flex',alignItems:'center',paddingLeft:10,
-                  minWidth:36,overflow:'hidden',transition:'width 0.25s ease'}}>
-                  <span style={{fontSize:11,fontWeight:700,color:'#0a0a0f',whiteSpace:'nowrap',
+                  background:barColor,borderRadius:5,display:'flex',alignItems:'center',paddingLeft:compact?5:10,
+                  minWidth:compact?22:36,overflow:'hidden',transition:'width 0.25s ease'}}>
+                  <span style={{fontSize:compact?9:11,fontWeight:700,color:'#0a0a0f',whiteSpace:'nowrap',
                     overflow:'hidden',textOverflow:'ellipsis'}}>
                     {item.name}
                   </span>
@@ -1911,7 +1912,6 @@ export default function App(){
 
   // ── DB-powered scan (reads from Supabase, pre-computed by live server) ──
   const [indexData,setIndexData]=useState([])
-  const [rankTimeframe,setRankTimeframe]=useState('d') // 'd' | 'w' | 'm'
   const [breadthData,setBreadthData]=useState(null)
   const [portfolioHoldings,setPortfolioHoldings]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('lm_portfolio')||'[]')}catch{return []}
@@ -2592,40 +2592,39 @@ export default function App(){
               </div>
             </div>
 
-            {/* Timeframe toggle for the ranked bar charts below */}
-            <div style={{display:'flex',gap:6,marginBottom:14}}>
-              {[['d','Daily'],['w','Weekly'],['m','Monthly']].map(([v,label])=>(
-                <button key={v} onClick={()=>setRankTimeframe(v)}
-                  style={{padding:'6px 16px',borderRadius:20,border:`1px solid ${rankTimeframe===v?C.accent:C.border}`,
-                    cursor:'pointer',fontSize:12,fontWeight:700,
-                    background:rankTimeframe===v?C.accent+'22':'transparent',
-                    color:rankTimeframe===v?C.accent:C.muted}}>{label}</button>
+            {/* Index Strength — Daily/Weekly/Monthly side by side, no clicking */}
+            <div style={{fontWeight:800,fontSize:14,marginBottom:8}}>📊 Index Strength</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:14}}>
+              {[['d','Daily'],['w','Weekly'],['m','Monthly']].map(([tf,label])=>(
+                <RankedBarChart key={tf}
+                  compact
+                  title={label}
+                  formatVal={v=>fmtChg(v)}
+                  items={[...indexData]
+                    .map(idx=>({name:idx.name, value:{d:idx.chgD,w:idx.chgW,m:idx.chgM}[tf]}))
+                    .filter(x=>x.value!=null)
+                    .sort((a,b)=>b.value-a.value)}
+                />
               ))}
             </div>
 
-            {/* Index Strength — ranked bar chart, Chartink-style */}
-            <RankedBarChart
-              title={`📊 Index Strength — ${{d:'Daily',w:'Weekly',m:'Monthly'}[rankTimeframe]}`}
-              subtitle="All tracked indices ranked by % change, highest first"
-              formatVal={v=>fmtChg(v)}
-              items={[...indexData]
-                .map(idx=>({name:idx.name, value:{d:idx.chgD,w:idx.chgW,m:idx.chgM}[rankTimeframe]}))
-                .filter(x=>x.value!=null)
-                .sort((a,b)=>b.value-a.value)}
-            />
-
             {/* Segment Advances % — breadth: what fraction of each sector's
                 stocks are actually up, not just "is the index green" */}
-            <RankedBarChart
-              title={`📈 Segment Advances — ${{d:'Daily',w:'Weekly',m:'Monthly'}[rankTimeframe]} %`}
-              subtitle="% of stocks advancing within each sector, highest first"
-              formatVal={v=>`${v.toFixed(1)}%`}
-              positiveOnly
-              items={[...sectorData]
-                .map(s=>({name:s.sector, value:{d:s.advancesD,w:s.advancesW,m:s.advancesM}[rankTimeframe]}))
-                .filter(x=>x.value!=null)
-                .sort((a,b)=>b.value-a.value)}
-            />
+            <div style={{fontWeight:800,fontSize:14,marginBottom:8}}>📈 Segment Advances %</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:14}}>
+              {[['d','Daily'],['w','Weekly'],['m','Monthly']].map(([tf,label])=>(
+                <RankedBarChart key={tf}
+                  compact
+                  title={label}
+                  formatVal={v=>`${v.toFixed(1)}%`}
+                  positiveOnly
+                  items={[...sectorData]
+                    .map(s=>({name:s.sector, value:{d:s.advancesD,w:s.advancesW,m:s.advancesM}[tf]}))
+                    .filter(x=>x.value!=null)
+                    .sort((a,b)=>b.value-a.value)}
+                />
+              ))}
+            </div>
 
             {indexData.length===0?(
               <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
