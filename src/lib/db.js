@@ -164,6 +164,9 @@ export async function fetchSectorsFromDB(historyDate = null) {
     count:     row.count,
     ppCount:   row.pp_count,
     improving: row.improving,
+    advancesD: row.advances_d,
+    advancesW: row.advances_w,
+    advancesM: row.advances_m,
     topStocks: typeof row.top_stocks === 'string'
       ? JSON.parse(row.top_stocks)
       : (row.top_stocks || []),
