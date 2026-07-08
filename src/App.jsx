@@ -2614,17 +2614,23 @@ export default function App(){
                         {/* Performance grid: Daily / Weekly / Monthly / Quarterly / Yearly */}
                         <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:4,marginBottom:10}}>
                           {[
-                            ['1D', idx.chgD],
-                            ['1W', idx.chgW],
-                            ['1M', idx.chgM],
-                            ['3M', idx.chgQ],
-                            ['1Y', idx.chgY],
-                          ].map(([label,val])=>(
+                            ['1D', idx.chgD, idx.rankD],
+                            ['1W', idx.chgW, idx.rankW],
+                            ['1M', idx.chgM, idx.rankM],
+                            ['3M', idx.chgQ, null],
+                            ['1Y', idx.chgY, null],
+                          ].map(([label,val,rank])=>(
                             <div key={label} style={{background:C.bg,borderRadius:6,padding:'6px 4px',textAlign:'center'}}>
                               <div style={{fontSize:8,color:C.muted,marginBottom:2}}>{label}</div>
                               <div style={{fontWeight:700,fontSize:12,color:val!=null?chgColor(val):C.muted}}>
                                 {fmtChg(val)}
                               </div>
+                              {rank!=null&&idx.totalIndices&&(
+                                <div style={{fontSize:8,fontWeight:700,marginTop:2,
+                                  color:rank<=3?C.green:rank>=idx.totalIndices-2?C.red:C.muted}}>
+                                  #{rank}/{idx.totalIndices}
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
