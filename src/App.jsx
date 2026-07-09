@@ -1655,7 +1655,16 @@ function SectorPanel({sectorData,isMobile}){
               style={{padding:'13px 14px',cursor:'pointer'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
                 <div>
-                  <div style={{fontWeight:800,fontSize:14}}>#{sec.rank} {sec.sector}</div>
+                  <div style={{fontWeight:800,fontSize:14,display:'flex',alignItems:'center',gap:6}}>
+                    <span>#{sec.rank} {sec.sector}</span>
+                    {sec.rankChange!=null&&sec.rankChange!==0&&(
+                      <span style={{fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:10,
+                        background:(sec.rankChange>0?C.green:C.red)+'22',
+                        color:sec.rankChange>0?C.green:C.red}}>
+                        {sec.rankChange>0?'▲':'▼'}{Math.abs(sec.rankChange)} wk
+                      </span>
+                    )}
+                  </div>
                   <div style={{fontSize:11,color:C.muted,marginTop:2}}>
                     {sec.count} stocks · {sec.ppCount} PP today · {sec.improving} improving
                   </div>
