@@ -1186,10 +1186,18 @@ function CandlestickChart({sym, isMobile}){
   if(loading){
     return <div style={{padding:20,fontSize:12,color:C.muted,textAlign:'center'}}>Loading {sym} chart…</div>
   }
+  if(data && data.error){
+    return (
+      <div style={{padding:20,fontSize:12,color:C.red,textAlign:'center'}}>
+        Couldn't load chart data for {sym}: {data.error}
+      </div>
+    )
+  }
   if(!data || !data.prices || data.prices.length < 30){
     return (
       <div style={{padding:20,fontSize:12,color:C.muted,textAlign:'center'}}>
-        Not enough price history yet for {sym} to draw a chart.
+        Not enough price history yet for {sym} to draw a chart
+        {data && data.prices ? ` (only ${data.prices.length} days available, need 30+).` : '.'}
       </div>
     )
   }

@@ -204,7 +204,11 @@ export async function fetchStockFullHistory(sym) {
     .select('*')
     .eq('sym', sym)
     .single()
-  if (error || !data) return null
+  if (error) {
+    console.error(`fetchStockFullHistory(${sym}) error:`, error.message || error)
+    return { error: error.message || String(error) }
+  }
+  if (!data) return { error: `No stock_full_history row found for ${sym}` }
 
   // jsonb columns come back already parsed via supabase-js, but handle
   // the string case too in case they were ever stored as text.
