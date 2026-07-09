@@ -8,6 +8,10 @@ import {
   detect52WLCrossover, detectWeakRSBigMove, buildSectorRS
 } from './scanners/math'
 import { SECTOR_MAP, NIFTY50, MIDCAP, SMALLCAP, getSector } from './data/sectors'
+import {
+  calcSMASeries, findSwingPoints, computeSupportResistance,
+  detectInsideBars, detectAccDistDays, detectVCPContractions, detectCupAndHandle
+} from './scanners/chartAnalysis'
 
 // ─────────────────────────────────────────────────────────────────────
 // 🔑 YOUR UPSTOX TOKEN — set this so users don't need to enter anything
@@ -1064,6 +1068,7 @@ function StockCard({s,i}){
 // place (same panel instance) when a different stock is clicked.
 function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
   const [loaded, setLoaded] = useState(false)
+  const [chartTab, setChartTab] = useState('tv') // 'tv' | 'own'
   useEffect(() => { setLoaded(false) }, [sym])
 
   if(!sym) return null
@@ -1111,22 +1116,308 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
         </div>
       </div>
 
-      {/* Body — iframe + lightweight loading overlay so the panel feels
-          instant even while TradingView's own widget is still loading */}
-      <div style={{flex:1,position:'relative'}}>
-        {!loaded&&(
-          <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',
-            justifyContent:'center',flexDirection:'column',gap:8,background:C.sidebar}}>
-            <div style={{fontSize:12,color:C.muted}}>Loading {sym} chart…</div>
-          </div>
+      {/* Chart source tabs */}
+      <div style={{display:'flex',gap:0,borderBottom:`1px solid ${C.divider}`,flexShrink:0}}>
+        {[['tv','TradingView'],['own','Our Chart']].map(([v,label])=>(
+          <button key={v} onClick={()=>setChartTab(v)}
+            style={{flex:1,padding:'8px 0',fontSize:11,fontWeight:700,cursor:'pointer',
+              background:chartTab===v?C.card:'transparent',
+              color:chartTab===v?C.accent:C.muted,
+              border:'none',borderBottom:chartTab===v?`2px solid ${C.accent}`:'2px solid transparent'}}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Body */}
+      <div style={{flex:1,position:'relative',overflow:chartTab==='own'?'auto':'hidden'}}>
+        {chartTab==='tv'?(
+          <>
+            {!loaded&&(
+              <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',
+                justifyContent:'center',flexDirection:'column',gap:8,background:C.sidebar}}>
+                <div style={{fontSize:12,color:C.muted}}>Loading {sym} chart…</div>
+              </div>
+            )}
+            <iframe
+              key={sym}
+              src={src}
+              onLoad={()=>setLoaded(true)}
+              style={{width:'100%',height:'100%',border:'none'}}
+              allowFullScreen
+            />
+          </>
+        ):(
+          <CandlestickChart sym={sym} isMobile={isMobile}/>
         )}
-        <iframe
-          key={sym}
-          src={src}
-          onLoad={()=>setLoaded(true)}
-          style={{width:'100%',height:'100%',border:'none'}}
-          allowFullScreen
-        />
+      </div>
+    </div>
+  )
+}
+
+// ── Native Candlestick Chart — candlesticks, MA20/50/200, Support/
+// Resistance, Inside Bar, Accumulation/Distribution, VCP contractions,
+// and a Cup & Handle heuristic, all computed client-side from the same
+// OHLCV data already fetched for the simple price history chart. Sits
+// alongside the TradingView embed as a second tab, not a replacement —
+// useful for stocks TradingView's free embed can't resolve, and for
+// seeing our own scanner's signals drawn directly on the chart.
+const RANGE_BARS = {'1M':21,'3M':63,'6M':126,'1Y':252,'All':100000}
+
+function CandlestickChart({sym, isMobile}){
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [range, setRange] = useState('6M')
+  const [showMA, setShowMA] = useState(true)
+  const [showSR, setShowSR] = useState(true)
+  const [showPatterns, setShowPatterns] = useState(true)
+  const [hoverIdx, setHoverIdx] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true); setData(null)
+    fetchStockFullHistory(sym)
+      .then(res => { if(!cancelled) setData(res) })
+      .catch(() => { if(!cancelled) setData(null) })
+      .finally(() => { if(!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [sym])
+
+  if(loading){
+    return <div style={{padding:20,fontSize:12,color:C.muted,textAlign:'center'}}>Loading {sym} chart…</div>
+  }
+  if(!data || !data.prices || data.prices.length < 30){
+    return (
+      <div style={{padding:20,fontSize:12,color:C.muted,textAlign:'center'}}>
+        Not enough price history yet for {sym} to draw a chart.
+      </div>
+    )
+  }
+
+  const { dates, prices: closes, opens, highs, lows, volumes } = data
+  const n = closes.length
+  // Fall back to close price if opens weren't backfilled yet for this
+  // symbol (older stock_full_history rows fetched before Open tracking
+  // was added) — draws a thin/neutral candle instead of breaking.
+  const o = (opens && opens.length === n) ? opens : closes.map((c,i)=> i>0 ? closes[i-1] : c)
+
+  // Analysis runs on the FULL series (so early visible bars still have
+  // correct MA/pattern context from data before the visible window),
+  // then only the slice gets rendered.
+  const ma20  = calcSMASeries(closes, 20)
+  const ma50  = calcSMASeries(closes, 50)
+  const ma200 = calcSMASeries(closes, 200)
+  const swings = findSwingPoints(highs, lows, 5)
+  const sr = computeSupportResistance(swings, closes[n-1])
+  const insideBars = detectInsideBars(highs, lows)
+  const accDist = detectAccDistDays(highs, lows, closes, volumes)
+  const vcp = detectVCPContractions(swings)
+  const cup = detectCupAndHandle(closes, highs, lows)
+
+  const barsToShow = Math.min(RANGE_BARS[range], n)
+  const start = n - barsToShow
+
+  const vDates  = dates.slice(start)
+  const vOpens  = o.slice(start)
+  const vHighs  = highs.slice(start)
+  const vLows   = lows.slice(start)
+  const vCloses = closes.slice(start)
+  const vVol    = volumes.slice(start)
+  const vMA20   = ma20.slice(start)
+  const vMA50   = ma50.slice(start)
+  const vMA200  = ma200.slice(start)
+  const vInsideBars = insideBars.slice(start)
+  const vAccDist = accDist.slice(start)
+
+  // ── Layout ──
+  const W = 900, H = 420
+  const padL = 8, padR = 54, padT = 10, priceH = 300, volH = 60, gapH = 8
+  const chartW = W - padL - padR
+  const volTop = padT + priceH + gapH
+  const axisY  = volTop + volH + 18
+
+  const visibleHighs = vHighs.filter(v=>v!=null)
+  const visibleLows  = vLows.filter(v=>v!=null)
+  const maVals = [...vMA20, ...vMA50, ...vMA200].filter(v=>v!=null)
+  let maxP = Math.max(...visibleHighs, ...maVals, sr.r1||0, sr.r2||0)
+  let minP = Math.min(...visibleLows, ...(maVals.length?maVals:[Infinity]), sr.s1||Infinity, sr.s2||Infinity)
+  if(!isFinite(minP)) minP = Math.min(...visibleLows)
+  const pad = (maxP - minP) * 0.06 || 1
+  maxP += pad; minP -= pad
+
+  const priceToY = p => padT + (maxP - p) / (maxP - minP) * priceH
+  const idxToX   = i => padL + (i + 0.5) / barsToShow * chartW
+  const candleW  = Math.max(1.5, (chartW / barsToShow) * 0.62)
+
+  const maxVol = Math.max(...vVol.filter(v=>v!=null), 1)
+  const volToY = v => volTop + volH - (v / maxVol) * volH
+
+  // Date labels — show ~6 evenly spaced
+  const labelStep = Math.max(1, Math.floor(barsToShow / 6))
+  const fmtDate = d => d ? d.slice(5).replace('-', '/') : ''
+
+  const hover = hoverIdx!=null ? {
+    date: vDates[hoverIdx], open: vOpens[hoverIdx], high: vHighs[hoverIdx],
+    low: vLows[hoverIdx], close: vCloses[hoverIdx], vol: vVol[hoverIdx],
+  } : null
+
+  return (
+    <div style={{padding:'10px 12px'}}>
+      {/* Controls */}
+      <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8,alignItems:'center'}}>
+        <div style={{display:'flex',gap:3}}>
+          {Object.keys(RANGE_BARS).map(r=>(
+            <button key={r} onClick={()=>setRange(r)}
+              style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${range===r?C.accent:C.border}`,
+                background:range===r?C.accent+'22':'transparent',color:range===r?C.accent:C.muted,
+                fontSize:10,fontWeight:700,cursor:'pointer'}}>{r}</button>
+          ))}
+        </div>
+        <div style={{width:1,height:16,background:C.border,margin:'0 2px'}}/>
+        {[['MA','showMA',showMA,setShowMA,C.blue],
+          ['S/R','showSR',showSR,setShowSR,C.yellow],
+          ['Patterns','showPatterns',showPatterns,setShowPatterns,C.accent]].map(([label,key,val,setter,color])=>(
+          <button key={key} onClick={()=>setter(v=>!v)}
+            style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${val?color:C.border}`,
+              background:val?color+'1c':'transparent',color:val?color:C.muted,
+              fontSize:10,fontWeight:700,cursor:'pointer'}}>{label}</button>
+        ))}
+      </div>
+
+      {/* Hover readout */}
+      <div style={{fontSize:10,color:C.muted,marginBottom:4,minHeight:14}}>
+        {hover ? (
+          <span>
+            <b style={{color:C.text}}>{hover.date}</b>{'  '}
+            O <span style={{color:C.text}}>{hover.open?.toFixed(2)}</span>{'  '}
+            H <span style={{color:C.green}}>{hover.high?.toFixed(2)}</span>{'  '}
+            L <span style={{color:C.red}}>{hover.low?.toFixed(2)}</span>{'  '}
+            C <span style={{color:C.text,fontWeight:700}}>{hover.close?.toFixed(2)}</span>{'  '}
+            Vol <span style={{color:C.text}}>{hover.vol?.toLocaleString('en-IN')}</span>
+          </span>
+        ) : `${sym} · ${barsToShow} days`}
+      </div>
+
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:isMobile?280:380,display:'block'}}
+        onMouseLeave={()=>setHoverIdx(null)}>
+        {/* Grid lines + price labels */}
+        {[0,0.25,0.5,0.75,1].map(f=>{
+          const p = maxP - f*(maxP-minP)
+          const y = padT + f*priceH
+          return (
+            <g key={f}>
+              <line x1={padL} y1={y} x2={padL+chartW} y2={y} stroke={C.border} strokeWidth={0.5} opacity={0.5}/>
+              <text x={padL+chartW+4} y={y+3} fontSize={9} fill={C.muted}>{p.toFixed(1)}</text>
+            </g>
+          )
+        })}
+
+        {/* Support/Resistance lines */}
+        {showSR && [['r1',sr.r1,C.red],['r2',sr.r2,C.red],['s1',sr.s1,C.green],['s2',sr.s2,C.green]].map(([k,val,color])=>
+          val!=null && val<=maxP && val>=minP ? (
+            <g key={k}>
+              <line x1={padL} y1={priceToY(val)} x2={padL+chartW} y2={priceToY(val)}
+                stroke={color} strokeWidth={1} strokeDasharray="4,3" opacity={0.6}/>
+              <text x={padL+2} y={priceToY(val)-3} fontSize={8} fontWeight={700} fill={color}>
+                {k.toUpperCase()} {val.toFixed(1)}
+              </text>
+            </g>
+          ) : null
+        )}
+
+        {/* Cup & Handle outline */}
+        {showPatterns && cup && cup.leftLipIdx >= start && (
+          <g>
+            {[cup.leftLipIdx, cup.bottomIdx, cup.rightLipIdx].map((idx,k)=>
+              idx>=start && idx<n ? (
+                <line key={k} x1={idxToX(idx-start)} y1={padT} x2={idxToX(idx-start)} y2={padT+priceH}
+                  stroke={C.purple} strokeWidth={1} strokeDasharray="2,3" opacity={0.5}/>
+              ) : null
+            )}
+            {cup.rightLipIdx>=start && (
+              <text x={idxToX(cup.leftLipIdx-start)} y={padT-2} fontSize={8} fontWeight={700} fill={C.purple}>
+                Cup {cup.depthPct}%{cup.hasHandle?' + Handle':''}
+              </text>
+            )}
+          </g>
+        )}
+
+        {/* VCP contraction connectors */}
+        {showPatterns && vcp.isContracting && vcp.contractions.map((c,i)=>
+          c.high.idx>=start && c.low.idx>=start ? (
+            <line key={i} x1={idxToX(c.high.idx-start)} y1={priceToY(c.high.price)}
+              x2={idxToX(c.low.idx-start)} y2={priceToY(c.low.price)}
+              stroke={C.orange} strokeWidth={1.5} strokeDasharray="3,2" opacity={0.7}/>
+          ) : null
+        )}
+
+        {/* MA lines */}
+        {showMA && [[vMA20,C.blue],[vMA50,C.yellow],[vMA200,C.purple]].map(([series,color],k)=>{
+          const pts = series.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
+          return pts.length>1 ? <polyline key={k} points={pts.join(' ')} fill="none" stroke={color} strokeWidth={1.3} opacity={0.9}/> : null
+        })}
+
+        {/* Candlesticks */}
+        {vCloses.map((c,i)=>{
+          const op = vOpens[i], hi = vHighs[i], lo = vLows[i]
+          if(c==null||op==null||hi==null||lo==null) return null
+          const up = c >= op
+          const color = up ? C.green : C.red
+          const x = idxToX(i)
+          const yOpen = priceToY(op), yClose = priceToY(c)
+          const bodyTop = Math.min(yOpen,yClose), bodyH = Math.max(1, Math.abs(yClose-yOpen))
+          return (
+            <g key={i}
+              onMouseEnter={()=>setHoverIdx(i)}
+              style={{cursor:'crosshair'}}>
+              <rect x={x-candleW/2-1} y={padT} width={candleW+2} height={priceH} fill="transparent"/>
+              <line x1={x} y1={priceToY(hi)} x2={x} y2={priceToY(lo)} stroke={color} strokeWidth={1}/>
+              <rect x={x-candleW/2} y={bodyTop} width={candleW} height={bodyH} fill={color}/>
+              {/* Volume bar */}
+              {vVol[i]!=null && <rect x={x-candleW/2} y={volToY(vVol[i])} width={candleW}
+                height={volTop+volH-volToY(vVol[i])} fill={color} opacity={0.5}/>}
+              {/* Pattern markers */}
+              {showPatterns && vInsideBars[i] && (
+                <circle cx={x} cy={priceToY(hi)-6} r={2} fill={C.teal}/>
+              )}
+              {showPatterns && vAccDist[i]==='acc' && (
+                <text x={x} y={volTop+volH+10} fontSize={7} fill={C.green} textAnchor="middle">▲</text>
+              )}
+              {showPatterns && vAccDist[i]==='dist' && (
+                <text x={x} y={volTop+volH+10} fontSize={7} fill={C.red} textAnchor="middle">▼</text>
+              )}
+              {hoverIdx===i && (
+                <line x1={x} y1={padT} x2={x} y2={volTop+volH} stroke={C.muted} strokeWidth={0.5} strokeDasharray="2,2"/>
+              )}
+            </g>
+          )
+        })}
+
+        {/* X-axis date labels */}
+        {vDates.map((d,i)=> i%labelStep===0 ? (
+          <text key={i} x={idxToX(i)} y={axisY} fontSize={8} fill={C.muted} textAnchor="middle">
+            {fmtDate(d)}
+          </text>
+        ) : null)}
+      </svg>
+
+      {/* Legend */}
+      <div style={{display:'flex',flexWrap:'wrap',gap:10,marginTop:6,fontSize:9,color:C.muted}}>
+        {showMA && <>
+          <span><span style={{color:C.blue}}>■</span> MA20</span>
+          <span><span style={{color:C.yellow}}>■</span> MA50</span>
+          <span><span style={{color:C.purple}}>■</span> MA200</span>
+        </>}
+        {showPatterns && <>
+          <span><span style={{color:C.teal}}>●</span> Inside Bar</span>
+          <span><span style={{color:C.green}}>▲</span> Accumulation</span>
+          <span><span style={{color:C.red}}>▼</span> Distribution</span>
+          {vcp.isContracting && <span><span style={{color:C.orange}}>—</span> VCP contraction</span>}
+          {cup && <span><span style={{color:C.purple}}>┊</span> Cup{cup.hasHandle?' & Handle':''}</span>}
+        </>}
+      </div>
+      <div style={{fontSize:8,color:C.muted,marginTop:4}}>
+        Patterns are algorithmic approximations (esp. Cup & Handle) — use as a visual aid, not a precise signal.
       </div>
     </div>
   )
