@@ -3206,6 +3206,99 @@ export default function App(){
                     </div>
                   </>
                 )}
+
+                {/* Industries table — finer-grained than sectors (like
+                    Chartink's segment breakdown). Aggregated client-side
+                    from each stock's industry field (populated gradually
+                    via Upstox company-profile). */}
+                {(()=>{
+                  const groups = {}
+                  for(const s of stocks){
+                    if(!s.industry) continue
+                    ;(groups[s.industry] = groups[s.industry] || []).push(s)
+                  }
+                  const rows = Object.entries(groups).map(([name,members])=>{
+                    const advPct = f => {
+                      const vals = members.map(m=>m[f]).filter(v=>v!=null)
+                      return vals.length ? vals.filter(v=>v>0).length/vals.length*100 : null
+                    }
+                    return {
+                      name, count: members.length,
+                      avgRS: Math.round(members.reduce((a,m)=>a+(m.rs||0),0)/members.length),
+                      ppCount: members.filter(m=>m.pp?.isPP).length,
+                      advD: advPct('chg'), advW: advPct('chgW'), advM: advPct('chgM'),
+                      members,
+                    }
+                  }).sort((a,b)=>b.avgRS-a.avgRS)
+                  if(rows.length===0) return null
+                  return (
+                    <>
+                      <div style={{fontWeight:800,fontSize:14,margin:'18px 0 8px'}}>🏗 Industries ({rows.length})</div>
+                      <div style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12,maxHeight:520,overflowY:'auto'}}>
+                        <div style={{minWidth:760}}>
+                          <div style={{display:'grid',
+                            gridTemplateColumns:'220px 60px 60px 60px 70px 90px 90px 90px',
+                            gap:4,padding:'10px 12px',background:C.bg,
+                            borderBottom:`1px solid ${C.border}`,position:'sticky',top:0,zIndex:1}}>
+                            {['Industry','Rank','Avg RS','Stocks','PP Today','Adv 1D','Adv 1W','Adv 1M'].map(h=>(
+                              <div key={h} style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase'}}>{h}</div>
+                            ))}
+                          </div>
+                          {rows.map((ind,i)=>{
+                            const isExp = expandedIndex==='industry:'+ind.name
+                            const cellStyle = {display:'flex',flexDirection:'column',justifyContent:'center'}
+                            const advCell = (val)=>(
+                              <div style={cellStyle}>
+                                <div style={{fontWeight:700,fontSize:11,color:val!=null?(val>=50?C.green:C.red):C.muted}}>
+                                  {val!=null?`${val.toFixed(0)}%`:'—'}
+                                </div>
+                                {val!=null&&(
+                                  <div style={{width:'100%',height:3,background:C.border+'55',borderRadius:2,marginTop:2,overflow:'hidden'}}>
+                                    <div style={{width:`${Math.min(100,val)}%`,height:'100%',
+                                      background:val>=50?C.green:C.red,borderRadius:2}}/>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                            return (
+                              <div key={ind.name}>
+                                <div onClick={()=>setExpandedIndex(isExp?null:'industry:'+ind.name)}
+                                  style={{display:'grid',
+                                  gridTemplateColumns:'220px 60px 60px 60px 70px 90px 90px 90px',
+                                  gap:4,padding:'9px 12px',alignItems:'center',cursor:'pointer',
+                                  background:isExp?C.active:(i%2===0?'transparent':C.bg+'55'),
+                                  borderBottom:`1px solid ${C.border}33`}}>
+                                  <div style={cellStyle}>
+                                    <div style={{fontWeight:700,fontSize:11,color:C.text}}>{ind.name} {isExp?'▲':''}</div>
+                                  </div>
+                                  <div style={cellStyle}><div style={{fontWeight:700,fontSize:11,color:C.muted}}>#{i+1}</div></div>
+                                  <div style={cellStyle}><div style={{fontWeight:800,fontSize:12,color:rsColor(ind.avgRS)}}>{ind.avgRS}</div></div>
+                                  <div style={cellStyle}><div style={{fontSize:11,color:C.muted}}>{ind.count}</div></div>
+                                  <div style={cellStyle}>
+                                    <div style={{fontSize:11,color:ind.ppCount>0?C.orange:C.muted,fontWeight:700}}>
+                                      {ind.ppCount>0?`🔥${ind.ppCount}`:'—'}
+                                    </div>
+                                  </div>
+                                  {advCell(ind.advD)}
+                                  {advCell(ind.advW)}
+                                  {advCell(ind.advM)}
+                                </div>
+                                {isExp&&(
+                                  <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`}}>
+                                    <SimpleStockTable stocks={[...ind.members].sort((a,b)=>b.rs-a.rs)} isMobile={isMobile} onChart={setChartSym}/>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                      <div style={{fontSize:9,color:C.muted,marginTop:4}}>
+                        Industry data comes from Upstox company profiles and fills in gradually — stocks without it yet aren't shown here.
+                      </div>
+                    </>
+                  )
+                })()}
               </>
             )}
           </div>
