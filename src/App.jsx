@@ -3116,6 +3116,96 @@ export default function App(){
                     })()}
                   </div>
                 </div>
+
+                {/* Sectors table — same compact style as the indices table
+                    above: rank + wk movement, avg RS, breadth (advances %)
+                    with inline mini bars, click to expand constituents. */}
+                {sectorData.length>0&&(
+                  <>
+                    <div style={{fontWeight:800,fontSize:14,margin:'18px 0 8px'}}>🏭 Sectors</div>
+                    <div style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12}}>
+                      <div style={{minWidth:760}}>
+                        <div style={{display:'grid',
+                          gridTemplateColumns:'170px 70px 60px 60px 70px 70px 90px 90px 90px',
+                          gap:4,padding:'10px 12px',background:C.bg,
+                          borderBottom:`1px solid ${C.border}`}}>
+                          {['Sector','Rank','Avg RS','Stocks','PP Today','Improving','Adv 1D','Adv 1W','Adv 1M'].map(h=>(
+                            <div key={h} style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase'}}>{h}</div>
+                          ))}
+                        </div>
+                        {[...sectorData].sort((a,b)=>(a.rank??999)-(b.rank??999)).map((sec,i)=>{
+                          const isExp = expandedIndex==='sector:'+sec.sector
+                          const cellStyle = {display:'flex',flexDirection:'column',justifyContent:'center'}
+                          const advCell = (val)=>(
+                            <div style={cellStyle}>
+                              <div style={{fontWeight:700,fontSize:11,color:val!=null?(val>=50?C.green:C.red):C.muted}}>
+                                {val!=null?`${val.toFixed(0)}%`:'—'}
+                              </div>
+                              {val!=null&&(
+                                <div style={{width:'100%',height:3,background:C.border+'55',borderRadius:2,marginTop:2,overflow:'hidden'}}>
+                                  <div style={{width:`${Math.min(100,val)}%`,height:'100%',
+                                    background:val>=50?C.green:C.red,borderRadius:2}}/>
+                                </div>
+                              )}
+                            </div>
+                          )
+                          return (
+                            <div key={sec.sector}>
+                              <div onClick={()=>setExpandedIndex(isExp?null:'sector:'+sec.sector)}
+                                style={{display:'grid',
+                                gridTemplateColumns:'170px 70px 60px 60px 70px 70px 90px 90px 90px',
+                                gap:4,padding:'10px 12px',alignItems:'center',cursor:'pointer',
+                                background:isExp?C.active:(i%2===0?'transparent':C.bg+'55'),
+                                borderBottom:`1px solid ${C.border}33`}}>
+                                <div style={cellStyle}>
+                                  <div style={{fontWeight:700,fontSize:12,color:C.text}}>{sec.sector} {isExp?'▲':''}</div>
+                                </div>
+                                <div style={cellStyle}>
+                                  <div style={{fontWeight:700,fontSize:12,color:C.text}}>#{sec.rank}</div>
+                                  {sec.rankChange!=null&&sec.rankChange!==0&&(
+                                    <div style={{fontSize:8,fontWeight:700,color:sec.rankChange>0?C.green:C.red}}>
+                                      {sec.rankChange>0?'▲':'▼'}{Math.abs(sec.rankChange)} wk
+                                    </div>
+                                  )}
+                                </div>
+                                <div style={cellStyle}>
+                                  <div style={{fontWeight:800,fontSize:13,color:rsColor(sec.avgRS)}}>{sec.avgRS}</div>
+                                </div>
+                                <div style={cellStyle}>
+                                  <div style={{fontSize:11,color:C.muted}}>{sec.count}</div>
+                                </div>
+                                <div style={cellStyle}>
+                                  <div style={{fontSize:11,color:sec.ppCount>0?C.orange:C.muted,fontWeight:700}}>
+                                    {sec.ppCount>0?`🔥${sec.ppCount}`:'—'}
+                                  </div>
+                                </div>
+                                <div style={cellStyle}>
+                                  <div style={{fontSize:11,color:sec.improving>0?C.green:C.muted,fontWeight:700}}>
+                                    {sec.improving}
+                                  </div>
+                                </div>
+                                {advCell(sec.advancesD)}
+                                {advCell(sec.advancesW)}
+                                {advCell(sec.advancesM)}
+                              </div>
+                              {isExp&&(()=>{
+                                const secStocks = (stocks||[]).filter(s=>s.sector===sec.sector).sort((a,b)=>b.rs-a.rs)
+                                return (
+                                  <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`}}>
+                                    <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
+                                      {sec.sector} stocks ({secStocks.length})
+                                    </div>
+                                    <SimpleStockTable stocks={secStocks} isMobile={isMobile} onChart={setChartSym}/>
+                                  </div>
+                                )
+                              })()}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
               </>
             )}
           </div>
