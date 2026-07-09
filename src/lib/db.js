@@ -161,6 +161,7 @@ export async function fetchSectorsFromDB(historyDate = null) {
     sector:    row.sector,
     avgRS:     row.avg_rs,
     rank:      row.rank,
+    rankChange: row.rank_change,
     count:     row.count,
     ppCount:   row.pp_count,
     improving: row.improving,
