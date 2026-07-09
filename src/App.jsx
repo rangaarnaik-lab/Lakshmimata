@@ -357,6 +357,28 @@ function RSCells({history,compact}){
 }
 // ── Ranked Bar Chart (Chartink-style Index Strength / Segment Advances) ──
 const BAR_PALETTE = ['#4f8ef7','#e0575b','#4caf50','#d4a72c','#8b7fd6','#2ba7a0','#e0825b','#5b9bd5','#c85a9e']
+// Maps an Index Dashboard name to the closest matching SECTOR_MAP key, for
+// showing "constituent stocks" when an index row is expanded. Only the
+// indices with a genuine matching sector are listed — the rest (Nifty 500/
+// Next 50, Defence, Financial Services, PSU/Private Bank, PSE, Consumer
+// Durables, Oil & Gas, Chemicals, Commodities, MNC, Consumption) don't have
+// a corresponding sector bucket in our data, so their constituent list
+// isn't available rather than silently showing an incomplete/wrong one.
+const INDEX_TO_SECTOR = {
+  'IT': 'IT', 'Pharma': 'Pharma', 'Auto': 'Auto', 'FMCG': 'FMCG',
+  'Metal': 'Metals', 'Realty': 'Realty', 'Energy': 'Energy',
+  'Healthcare': 'Healthcare', 'Bank Nifty': 'Banking', 'Infrastructure': 'Infra/Capital',
+  'Media': 'Telecom', // closest available bucket — not a precise match
+}
+function getIndexConstituents(idxName, allStocks){
+  if(idxName==='Nifty 50')     return allStocks.filter(s=>s.inNifty50)
+  if(idxName==='Midcap 150')   return allStocks.filter(s=>s.inMidcap)
+  if(idxName==='Smallcap 250') return allStocks.filter(s=>s.inSmallcap)
+  if(idxName==='Microcap 250') return allStocks.filter(s=>s.inMicrocap)
+  const sectorKey = INDEX_TO_SECTOR[idxName]
+  if(sectorKey) return allStocks.filter(s=>s.sector===sectorKey)
+  return null // no reliable constituent mapping for this index yet
+}
 const chgColor = v => v>=0?C.green:C.red
 const fmtChg = v => v!=null?`${v>=0?'+':''}${v.toFixed(2)}%`:'—'
 
@@ -1062,8 +1084,45 @@ function StockCard({s,i}){
   )
 }
 
-// ── Chart Panel — right-docked on desktop, full-screen on mobile ─────
-// Works globally regardless of which tab is active, since it's rendered
+// ── Simple Stock Table — reused wherever a subset of stocks (a sector's
+// members, an index's constituents) needs to show the same rich table
+// used in the main RS tab, without duplicating that markup everywhere.
+function SimpleStockTable({stocks, isMobile, onChart}){
+  if(!stocks || stocks.length===0){
+    return <div style={{padding:20,textAlign:'center',color:C.muted,fontSize:12}}>No stocks found.</div>
+  }
+  if(isMobile){
+    return <div>{stocks.map((s,i)=><StockCard key={s.sym} s={s} i={i}/>)}</div>
+  }
+  return (
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
+      <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px',
+        padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
+        fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
+        <span style={{textAlign:'center',color:C.muted}}>#</span>
+        <span style={{color:C.muted}}>Symbol</span>
+        <span style={{textAlign:'center',color:C.muted}}>RS-TV</span>
+        <span style={{textAlign:'center',color:C.muted,fontSize:9}}>MID</span>
+        <span style={{textAlign:'center',color:C.muted,fontSize:9}}>SML</span>
+        <span style={{textAlign:'center',color:C.muted,fontSize:9}}>SEC</span>
+        <span style={{textAlign:'center',color:C.muted}}>Trend</span>
+        <span style={{textAlign:'right',color:C.muted}}>Price</span>
+        <span style={{textAlign:'center',color:C.muted}}>Chg%</span>
+        <span style={{textAlign:'center',color:C.muted}}>PP 10d</span>
+        <span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>
+        <span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>
+        <span style={{textAlign:'right',color:C.muted,fontSize:9}}>MCap</span>
+        <span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>
+        <span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>
+        <span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>
+        <span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>
+        <span/>
+      </div>
+      {stocks.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>onChart&&onChart(s.sym)}/>)}
+    </div>
+  )
+}
+
 // once at the top level and overlays via position:fixed. Swaps symbol in
 // place (same panel instance) when a different stock is clicked.
 function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
@@ -1633,7 +1692,7 @@ function DesktopRow({s,i,onChart}){
 }
 
 // ── Sector Panel ──────────────────────────────────────────────────────
-function SectorPanel({sectorData,isMobile}){
+function SectorPanel({sectorData,allStocks,isMobile,onChart}){
   const [expanded,setExpanded]=useState(null)
   const {copy,copied}=useCopy()
   if(!sectorData||sectorData.length===0)return(
@@ -1690,26 +1749,18 @@ function SectorPanel({sectorData,isMobile}){
             </div>
             {expanded===sec.sector&&(
               <div style={{borderTop:`1px solid ${C.border}`,padding:'12px 14px'}}>
-                {/* TV copy for sector */}
-                <TVCopyPanel stocks={sec.members} label={sec.sector}/>
-                <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
-                  All {sec.sector} stocks
-                </div>
-                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:6}}>
-                  {sec.members.sort((a,b)=>b.rs-a.rs).map(m=>(
-                    <div key={m.sym} style={{background:C.bg,borderRadius:8,padding:'8px 10px'}}>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                        <span style={{fontWeight:700,fontSize:12}}>{m.sym}</span>
-                        <span style={{fontWeight:800,fontSize:14,color:rsColor(m.rs)}}>{m.rs}</span>
+                {(() => {
+                  const sectorStocks = (allStocks||[]).filter(s=>s.sector===sec.sector).sort((a,b)=>b.rs-a.rs)
+                  return (
+                    <>
+                      <TVCopyPanel stocks={sectorStocks} label={sec.sector}/>
+                      <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
+                        All {sec.sector} stocks ({sectorStocks.length})
                       </div>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:3}}>
-                        <span style={{fontSize:10,color:m.chg>=0?C.green:C.red}}>
-                          {m.chg>=0?'+':''}{m.chg.toFixed(1)}%</span>
-                        {m.pp.isPP&&<Badge color={C.orange}>🔥</Badge>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                      <SimpleStockTable stocks={sectorStocks} isMobile={isMobile} onChart={onChart}/>
+                    </>
+                  )
+                })()}
               </div>
             )}
           </div>
@@ -2220,6 +2271,7 @@ export default function App(){
 
   // ── DB-powered scan (reads from Supabase, pre-computed by live server) ──
   const [indexData,setIndexData]=useState([])
+  const [expandedIndex,setExpandedIndex]=useState(null)
   const [breadthData,setBreadthData]=useState(null)
   const [portfolioHoldings,setPortfolioHoldings]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('lm_portfolio')||'[]')}catch{return []}
@@ -2978,14 +3030,17 @@ export default function App(){
                       const stageColor={1:C.yellow,2:C.green,3:C.orange,4:C.red}[idx.stage]||C.muted
                       const rsc = idx.rsTv!=null?rsColor(idx.rsTv):C.muted
                       const cellStyle = {display:'flex',flexDirection:'column',justifyContent:'center'}
+                      const isExpanded = expandedIndex===idx.name
                       return (
-                        <div key={idx.name} style={{display:'grid',
+                      <div key={idx.name}>
+                        <div onClick={()=>setExpandedIndex(isExpanded?null:idx.name)}
+                          style={{display:'grid',
                           gridTemplateColumns:'150px 90px 60px 90px 70px 70px 70px 60px 60px',
-                          gap:4,padding:'10px 12px',alignItems:'center',
-                          background:i%2===0?'transparent':C.bg+'55',
+                          gap:4,padding:'10px 12px',alignItems:'center',cursor:'pointer',
+                          background:isExpanded?C.active:(i%2===0?'transparent':C.bg+'55'),
                           borderBottom:`1px solid ${C.border}33`}}>
                           <div style={cellStyle}>
-                            <div style={{fontWeight:700,fontSize:12,color:C.text}}>{idx.name}</div>
+                            <div style={{fontWeight:700,fontSize:12,color:C.text}}>{idx.name} {isExpanded?'▲':''}</div>
                           </div>
                           <div style={cellStyle}>
                             <div style={{fontSize:11,color:C.muted}}>₹{idx.lastPrice?.toLocaleString('en-IN')}</div>
@@ -3033,6 +3088,27 @@ export default function App(){
                             </div>
                           </div>
                         </div>
+                        {isExpanded && (() => {
+                          const constituents = getIndexConstituents(idx.name, stocks)
+                          return (
+                            <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`}}>
+                              {constituents===null ? (
+                                <div style={{fontSize:11,color:C.muted,textAlign:'center',padding:10}}>
+                                  Constituent list not available for {idx.name} yet — this index doesn't
+                                  have a matching sector bucket in our data.
+                                </div>
+                              ) : (
+                                <>
+                                  <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
+                                    {idx.name} constituents ({constituents.length})
+                                  </div>
+                                  <SimpleStockTable stocks={constituents.sort((a,b)=>b.rs-a.rs)} isMobile={isMobile} onChart={setChartSym}/>
+                                </>
+                              )}
+                            </div>
+                          )
+                        })()}
+                      </div>
                       )
                     })}
                   </div>
@@ -3767,7 +3843,7 @@ export default function App(){
               onRefresh={runDBScan}
             />
 
-            <SectorPanel sectorData={sectorData} isMobile={isMobile}/>
+            <SectorPanel sectorData={sectorData} allStocks={stocks} isMobile={isMobile} onChart={setChartSym}/>
           </div>
         )}
 
