@@ -2692,10 +2692,10 @@ export default function App(){
                             </div>
                           </div>
                           {[
-                            [idx.chgD, idx.rankD],
-                            [idx.chgW, idx.rankW],
-                            [idx.chgM, idx.rankM],
-                          ].map(([val,rank],j)=>(
+                            [idx.chgD, idx.rankD, null],
+                            [idx.chgW, idx.rankW, idx.rankWChange],
+                            [idx.chgM, idx.rankM, null],
+                          ].map(([val,rank,rankChange],j)=>(
                             <div key={j} style={cellStyle}>
                               <div style={{fontWeight:700,fontSize:11,color:val!=null?chgColor(val):C.muted}}>
                                 {fmtChg(val)}
@@ -2704,6 +2704,12 @@ export default function App(){
                                 <div style={{fontSize:8,fontWeight:700,
                                   color:rank<=3?C.green:rank>=idx.totalIndices-2?C.red:C.muted}}>
                                   #{rank}/{idx.totalIndices}
+                                </div>
+                              )}
+                              {rankChange!=null&&rankChange!==0&&(
+                                <div style={{fontSize:8,fontWeight:700,whiteSpace:'nowrap',
+                                  color:rankChange>0?C.green:C.red}}>
+                                  {rankChange>0?'▲':'▼'}{Math.abs(rankChange)} wk
                                 </div>
                               )}
                             </div>
