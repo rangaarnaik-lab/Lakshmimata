@@ -279,6 +279,7 @@ export async function fetchIndexDashboard() {
     rankD:         row.rank_d,
     rankW:         row.rank_w,
     rankM:         row.rank_m,
+    rankWChange:   row.rank_w_change,
     totalIndices:  row.total_indices,
     rsTv:          row.rs_tv,
     stage:         row.stage,
