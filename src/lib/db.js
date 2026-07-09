@@ -220,6 +220,7 @@ export async function fetchStockFullHistory(sym) {
     volumes:   parseArr(data.volumes),
     highs:     parseArr(data.highs),
     lows:      parseArr(data.lows),
+    opens:     parseArr(data.opens),
     daysCount: data.days_count,
     updatedAt: data.updated_at,
   }
