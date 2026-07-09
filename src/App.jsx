@@ -1692,7 +1692,7 @@ function DesktopRow({s,i,onChart}){
 }
 
 // ── Sector Panel ──────────────────────────────────────────────────────
-function SectorPanel({sectorData,allStocks,isMobile,onChart}){
+function SectorPanel({sectorData,allStocks,isMobile,onChart,onViewInRS}){
   const [expanded,setExpanded]=useState(null)
   const {copy,copied}=useCopy()
   if(!sectorData||sectorData.length===0)return(
@@ -1754,8 +1754,17 @@ function SectorPanel({sectorData,allStocks,isMobile,onChart}){
                   return (
                     <>
                       <TVCopyPanel stocks={sectorStocks} label={sec.sector}/>
-                      <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
-                        All {sec.sector} stocks ({sectorStocks.length})
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                        <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase'}}>
+                          All {sec.sector} stocks ({sectorStocks.length})
+                        </div>
+                        {onViewInRS&&(
+                          <button onClick={e=>{e.stopPropagation();onViewInRS(sec.sector)}}
+                            style={{padding:'5px 12px',borderRadius:8,border:`1px solid ${C.accent}`,
+                              background:C.accent+'22',color:C.accent,fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                            View in RS Scanner →
+                          </button>
+                        )}
                       </div>
                       <SimpleStockTable stocks={sectorStocks} isMobile={isMobile} onChart={onChart}/>
                     </>
@@ -2256,6 +2265,7 @@ export default function App(){
   const [rsImprFilter,setRsImprFilter]=useState('all')
   const [sigFilter,setSigFilter]=useState('all')
   const [stageFilter,setStageFilter]=useState('all')
+  const [sectorFilter,setSectorFilter]=useState('all')
   const [search,setSearch]=useState(''),[sortBy,setSortBy]=useState('rs')
   const [sortDir,setSortDir]=useState('desc')
   const handleSort = useCallback(key=>{
@@ -2419,6 +2429,7 @@ export default function App(){
     if(sigFilter==='ema9'&&!s.nearEMA9?.isNearEMA9)return false
     if(sigFilter==='power'&&!(s.pp?.isPP&&s.rs>=80))return false
     if(stageFilter!=='all'&&calcWeinsteinStage(s).stage!==+stageFilter)return false
+    if(sectorFilter!=='all'&&s.sector!==sectorFilter)return false
     // Preset filter
     if(presetFilter==='pp'&&!s.pp?.isPP)return false
     if(presetFilter==='ema9'&&!s.nearEMA9?.isNearEMA9)return false
@@ -2828,6 +2839,16 @@ export default function App(){
                       cursor:'pointer',fontSize:12,fontWeight:600,background:showFilters?C.accent+'22':'transparent',
                       color:showFilters?C.accent:C.muted,whiteSpace:'nowrap'}}>⚙ Filters</button>
                 </div>
+                {sectorFilter!=='all'&&(
+                  <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
+                    <span style={{fontSize:11,color:C.muted}}>Filtering by sector:</span>
+                    <span style={{display:'flex',alignItems:'center',gap:6,padding:'3px 10px',borderRadius:20,
+                      background:C.accent+'22',border:`1px solid ${C.accent}`,color:C.accent,fontSize:11,fontWeight:700}}>
+                      {sectorFilter}
+                      <span onClick={()=>setSectorFilter('all')} style={{cursor:'pointer',fontSize:13,lineHeight:1}}>×</span>
+                    </span>
+                  </div>
+                )}
                 {showFilters&&(
                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px'}}>
                     <div style={{marginBottom:14}}>
@@ -3843,7 +3864,8 @@ export default function App(){
               onRefresh={runDBScan}
             />
 
-            <SectorPanel sectorData={sectorData} allStocks={stocks} isMobile={isMobile} onChart={setChartSym}/>
+            <SectorPanel sectorData={sectorData} allStocks={stocks} isMobile={isMobile} onChart={setChartSym}
+              onViewInRS={sec=>{setSectorFilter(sec);setMainTab('rs')}}/>
           </div>
         )}
 

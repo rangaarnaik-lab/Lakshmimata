@@ -208,12 +208,12 @@ export async function fetchStockFullHistory(sym) {
     .from('stock_full_history')
     .select('*')
     .eq('sym', sym)
-    .single()
+    .maybeSingle()
   if (error) {
     console.error(`fetchStockFullHistory(${sym}) error:`, error.message || error)
     return { error: error.message || String(error) }
   }
-  if (!data) return { error: `No stock_full_history row found for ${sym}` }
+  if (!data) return { error: `No price history stored yet for ${sym} — it may not have completed its initial fetch.` }
 
   // jsonb columns come back already parsed via supabase-js, but handle
   // the string case too in case they were ever stored as text.
