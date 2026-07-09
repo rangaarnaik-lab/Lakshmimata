@@ -2973,40 +2973,6 @@ export default function App(){
               </div>
             </div>
 
-            {/* Index Strength — Daily/Weekly/Monthly side by side, no clicking */}
-            <div style={{fontWeight:800,fontSize:14,marginBottom:8}}>📊 Index Strength</div>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:14}}>
-              {[['d','Daily'],['w','Weekly'],['m','Monthly']].map(([tf,label])=>(
-                <RankedBarChart key={tf}
-                  compact
-                  title={label}
-                  formatVal={v=>fmtChg(v)}
-                  items={[...indexData]
-                    .map(idx=>({name:idx.name, value:{d:idx.chgD,w:idx.chgW,m:idx.chgM}[tf]}))
-                    .filter(x=>x.value!=null)
-                    .sort((a,b)=>b.value-a.value)}
-                />
-              ))}
-            </div>
-
-            {/* Segment Advances % — breadth: what fraction of each sector's
-                stocks are actually up, not just "is the index green" */}
-            <div style={{fontWeight:800,fontSize:14,marginBottom:8}}>📈 Segment Advances %</div>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:14}}>
-              {[['d','Daily'],['w','Weekly'],['m','Monthly']].map(([tf,label])=>(
-                <RankedBarChart key={tf}
-                  compact
-                  title={label}
-                  formatVal={v=>`${v.toFixed(1)}%`}
-                  positiveOnly
-                  items={[...sectorData]
-                    .map(s=>({name:s.sector, value:{d:s.advancesD,w:s.advancesW,m:s.advancesM}[tf]}))
-                    .filter(x=>x.value!=null)
-                    .sort((a,b)=>b.value-a.value)}
-                />
-              ))}
-            </div>
-
             {indexData.length===0?(
               <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
                 <div style={{fontSize:36,marginBottom:10}}>🗂</div>
@@ -3046,8 +3012,14 @@ export default function App(){
                         <div key={h} style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase'}}>{h}</div>
                       ))}
                     </div>
-                    {/* Rows — sorted by RS-TV, strongest first */}
-                    {[...indexData].sort((a,b)=>(b.rsTv??-1)-(a.rsTv??-1)).map((idx,i)=>{
+                    {/* Rows — sorted by RS-TV, strongest first. Inline mini
+                        bars in each % cell replace the removed top ranked-
+                        bar-chart sections — same visual comparison, no
+                        extra vertical space. */}
+                    {(()=>{
+                      const maxAbs = f => Math.max(...indexData.map(x=>Math.abs(x[f]??0)), 0.01)
+                      const colMax = {d:maxAbs('chgD'), w:maxAbs('chgW'), m:maxAbs('chgM'), q:maxAbs('chgQ'), y:maxAbs('chgY')}
+                      return [...indexData].sort((a,b)=>(b.rsTv??-1)-(a.rsTv??-1)).map((idx,i)=>{
                       const stageColor={1:C.yellow,2:C.green,3:C.orange,4:C.red}[idx.stage]||C.muted
                       const rsc = idx.rsTv!=null?rsColor(idx.rsTv):C.muted
                       const cellStyle = {display:'flex',flexDirection:'column',justifyContent:'center'}
@@ -3076,14 +3048,20 @@ export default function App(){
                             </div>
                           </div>
                           {[
-                            [idx.chgD, idx.rankD, null],
-                            [idx.chgW, idx.rankW, idx.rankWChange],
-                            [idx.chgM, idx.rankM, null],
-                          ].map(([val,rank,rankChange],j)=>(
+                            [idx.chgD, idx.rankD, null, colMax.d],
+                            [idx.chgW, idx.rankW, idx.rankWChange, colMax.w],
+                            [idx.chgM, idx.rankM, null, colMax.m],
+                          ].map(([val,rank,rankChange,cmax],j)=>(
                             <div key={j} style={cellStyle}>
                               <div style={{fontWeight:700,fontSize:11,color:val!=null?chgColor(val):C.muted}}>
                                 {fmtChg(val)}
                               </div>
+                              {val!=null&&(
+                                <div style={{width:'100%',height:3,background:C.border+'55',borderRadius:2,marginTop:2,overflow:'hidden'}}>
+                                  <div style={{width:`${Math.min(100,Math.abs(val)/cmax*100)}%`,height:'100%',
+                                    background:val>=0?C.green:C.red,borderRadius:2}}/>
+                                </div>
+                              )}
                               {rank!=null&&idx.totalIndices&&(
                                 <div style={{fontSize:8,fontWeight:700,
                                   color:rank<=3?C.green:rank>=idx.totalIndices-2?C.red:C.muted}}>
@@ -3098,16 +3076,19 @@ export default function App(){
                               )}
                             </div>
                           ))}
-                          <div style={cellStyle}>
-                            <div style={{fontWeight:700,fontSize:11,color:idx.chgQ!=null?chgColor(idx.chgQ):C.muted}}>
-                              {fmtChg(idx.chgQ)}
+                          {[[idx.chgQ,colMax.q],[idx.chgY,colMax.y]].map(([val,cmax],j)=>(
+                            <div key={j} style={cellStyle}>
+                              <div style={{fontWeight:700,fontSize:11,color:val!=null?chgColor(val):C.muted}}>
+                                {fmtChg(val)}
+                              </div>
+                              {val!=null&&(
+                                <div style={{width:'100%',height:3,background:C.border+'55',borderRadius:2,marginTop:2,overflow:'hidden'}}>
+                                  <div style={{width:`${Math.min(100,Math.abs(val)/cmax*100)}%`,height:'100%',
+                                    background:val>=0?C.green:C.red,borderRadius:2}}/>
+                                </div>
+                              )}
                             </div>
-                          </div>
-                          <div style={cellStyle}>
-                            <div style={{fontWeight:700,fontSize:11,color:idx.chgY!=null?chgColor(idx.chgY):C.muted}}>
-                              {fmtChg(idx.chgY)}
-                            </div>
-                          </div>
+                          ))}
                         </div>
                         {isExpanded && (() => {
                           const constituents = getIndexConstituents(idx.name, stocks)
@@ -3131,7 +3112,8 @@ export default function App(){
                         })()}
                       </div>
                       )
-                    })}
+                    })
+                    })()}
                   </div>
                 </div>
               </>
