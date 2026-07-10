@@ -2282,6 +2282,8 @@ export default function App(){
   // ── DB-powered scan (reads from Supabase, pre-computed by live server) ──
   const [indexData,setIndexData]=useState([])
   const [expandedIndex,setExpandedIndex]=useState(null)
+  const [idxSort,setIdxSort]=useState({key:'rsTv',dir:-1})
+  const [secSort,setSecSort]=useState({key:'avgRS',dir:-1})
   const [breadthData,setBreadthData]=useState(null)
   const [portfolioHoldings,setPortfolioHoldings]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('lm_portfolio')||'[]')}catch{return []}
@@ -3006,27 +3008,38 @@ export default function App(){
                   ))}
                 </div>
 
-                {/* Single table — easier to compare all indices at once
-                    than scrolling through separate cards */}
+                {/* Indices + Sectors side by side on desktop, stacked on
+                    mobile. Each table scrolls horizontally independently.
+                    All column headers are click-to-sort (click again to
+                    flip direction). */}
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:12,alignItems:'start'}}>
+                <div>
+                <div style={{fontWeight:800,fontSize:14,margin:'0 0 8px'}}>📊 Indices</div>
                 <div style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12}}>
                   <div style={{minWidth:820}}>
-                    {/* Header row */}
+                    {/* Header row — click to sort */}
                     <div style={{display:'grid',
                       gridTemplateColumns:'150px 90px 60px 90px 70px 70px 70px 60px 60px',
                       gap:4,padding:'10px 12px',background:C.bg,
                       borderBottom:`1px solid ${C.border}`,position:'sticky',top:0}}>
-                      {['Index','Price','RS-TV','Stage','1D','1W','1M','3M','1Y'].map(h=>(
-                        <div key={h} style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase'}}>{h}</div>
+                      {[['Index','name'],['Price','lastPrice'],['RS-TV','rsTv'],['Stage','stage'],
+                        ['1D','chgD'],['1W','chgW'],['1M','chgM'],['3M','chgQ'],['1Y','chgY']].map(([h,key])=>(
+                        <div key={h} onClick={()=>setIdxSort(s=>({key,dir:s.key===key?-s.dir:-1}))}
+                          style={{fontSize:10,fontWeight:700,cursor:'pointer',userSelect:'none',
+                            color:idxSort.key===key?C.accent:C.muted,textTransform:'uppercase'}}>
+                          {h}{idxSort.key===key?(idxSort.dir===-1?' ↓':' ↑'):''}
+                        </div>
                       ))}
                     </div>
-                    {/* Rows — sorted by RS-TV, strongest first. Inline mini
-                        bars in each % cell replace the removed top ranked-
-                        bar-chart sections — same visual comparison, no
-                        extra vertical space. */}
                     {(()=>{
                       const maxAbs = f => Math.max(...indexData.map(x=>Math.abs(x[f]??0)), 0.01)
                       const colMax = {d:maxAbs('chgD'), w:maxAbs('chgW'), m:maxAbs('chgM'), q:maxAbs('chgQ'), y:maxAbs('chgY')}
-                      return [...indexData].sort((a,b)=>(b.rsTv??-1)-(a.rsTv??-1)).map((idx,i)=>{
+                      const sortVal = x => idxSort.key==='name'?(x.name||''):(x[idxSort.key]??-Infinity)
+                      const sorted = [...indexData].sort((a,b)=>{
+                        const av=sortVal(a), bv=sortVal(b)
+                        return (typeof av==='string' ? av.localeCompare(bv) : av-bv) * -idxSort.dir * -1
+                      })
+                      return sorted.map((idx,i)=>{
                       const stageColor={1:C.yellow,2:C.green,3:C.orange,4:C.red}[idx.stage]||C.muted
                       const rsc = idx.rsTv!=null?rsColor(idx.rsTv):C.muted
                       const cellStyle = {display:'flex',flexDirection:'column',justifyContent:'center'}
@@ -3123,24 +3136,37 @@ export default function App(){
                     })()}
                   </div>
                 </div>
+                </div>
 
-                {/* Sectors table — same compact style as the indices table
-                    above: rank + wk movement, avg RS, breadth (advances %)
-                    with inline mini bars, click to expand constituents. */}
+                {/* Sectors table — second column of the grid, sortable */}
+                <div>
                 {sectorData.length>0&&(
                   <>
-                    <div style={{fontWeight:800,fontSize:14,margin:'18px 0 8px'}}>🏭 Sectors</div>
+                    <div style={{fontWeight:800,fontSize:14,margin:'0 0 8px'}}>🏭 Sectors</div>
                     <div style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12}}>
                       <div style={{minWidth:760}}>
                         <div style={{display:'grid',
                           gridTemplateColumns:'170px 70px 60px 60px 70px 70px 90px 90px 90px',
                           gap:4,padding:'10px 12px',background:C.bg,
                           borderBottom:`1px solid ${C.border}`}}>
-                          {['Sector','Rank','Avg RS','Stocks','PP Today','Improving','Adv 1D','Adv 1W','Adv 1M'].map(h=>(
-                            <div key={h} style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase'}}>{h}</div>
+                          {[['Sector','sector'],['Rank','rank'],['Avg RS','avgRS'],['Stocks','count'],
+                            ['PP Today','ppCount'],['Improving','improving'],
+                            ['Adv 1D','advancesD'],['Adv 1W','advancesW'],['Adv 1M','advancesM']].map(([h,key])=>(
+                            <div key={h} onClick={()=>setSecSort(s=>({key,dir:s.key===key?-s.dir:-1}))}
+                              style={{fontSize:10,fontWeight:700,cursor:'pointer',userSelect:'none',
+                                color:secSort.key===key?C.accent:C.muted,textTransform:'uppercase'}}>
+                              {h}{secSort.key===key?(secSort.dir===-1?' ↓':' ↑'):''}
+                            </div>
                           ))}
                         </div>
-                        {[...sectorData].sort((a,b)=>(a.rank??999)-(b.rank??999)).map((sec,i)=>{
+                        {(()=>{
+                          const sortVal = x => secSort.key==='sector'?(x.sector||''):(x[secSort.key]??-Infinity)
+                          const dir = secSort.key==='rank' ? -secSort.dir : secSort.dir
+                          return [...sectorData].sort((a,b)=>{
+                            const av=sortVal(a), bv=sortVal(b)
+                            return (typeof av==='string' ? av.localeCompare(bv) : av-bv) * dir
+                          })
+                        })().map((sec,i)=>{
                           const isExp = expandedIndex==='sector:'+sec.sector
                           const cellStyle = {display:'flex',flexDirection:'column',justifyContent:'center'}
                           const advCell = (val)=>(
@@ -3213,6 +3239,8 @@ export default function App(){
                     </div>
                   </>
                 )}
+                </div>
+                </div>
 
                 {/* Industries table — finer-grained than sectors (like
                     Chartink's segment breakdown). Aggregated client-side
