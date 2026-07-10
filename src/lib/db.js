@@ -109,10 +109,12 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
       isHY:      row.is_hy || false,
       pctOfMax:  row.hy_pct || 0,
       todayVol:  row.volume || 0,
+      history:   row.hy_hist || [],
     },
     ht: {
       isHT:      row.is_ht || false,
       pctOfATH:  row.ht_pct || 0,
+      history:   row.ht_hist || [],
     },
     nearEMA9: {
       isNearEMA9:  row.near_ema9 || false,
