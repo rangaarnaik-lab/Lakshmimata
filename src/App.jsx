@@ -4152,6 +4152,7 @@ export default function App(){
                   {l:'🏛️ IBV Signals',v:stocks.filter(s=>calcIBV(s).isIBV).length,c:C.purple},
                   {l:'🔥 PP + Break',v:stocks.filter(s=>s.pp?.isPP&&calcHYHTBreakout(s).isBreakout).length,c:C.orange},
                   {l:'👑 RS 90+ Break',v:stocks.filter(s=>s.rs>=90&&calcHYHTBreakout(s).isBreakout).length,c:C.yellow},
+                  {l:'🎯 R1 Breakout',v:stocks.filter(s=>s.isResistanceBreakout).length,c:C.red},
                 ].map(({l,v,c})=>(
                   <div key={l} style={{background:C.bg,borderRadius:8,padding:'10px',textAlign:'center'}}>
                     <div style={{fontSize:22,fontWeight:900,color:c}}>{v}</div>
@@ -4185,6 +4186,34 @@ export default function App(){
                     </div>
                   )
                 })}
+              </div>
+            </div>
+
+            {/* Resistance Breakout (R1) Section */}
+            <div style={{background:C.card,border:`1px solid ${C.red}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:14,color:C.red,marginBottom:4}}>🎯 Resistance Breakout (R1)</div>
+              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+                Stocks whose price just crossed above a significant recent resistance level
+              </div>
+              <TVCopyPanel stocks={stocks.filter(s=>s.isResistanceBreakout)} label="R1 Breakouts"/>
+              <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
+                {stocks.filter(s=>s.isResistanceBreakout).length===0?(
+                  <div style={{textAlign:'center',padding:'20px 0',color:C.muted,fontSize:12}}>
+                    No resistance breakouts right now.
+                  </div>
+                ):stocks.filter(s=>s.isResistanceBreakout).sort((a,b)=>b.rs-a.rs).slice(0,20).map(s=>(
+                  <div key={s.sym} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
+                    display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <div>
+                      <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
+                      <div style={{fontSize:10,color:C.muted}}>{s.sector} · R1 @ {s.resistanceR1?fmtP(s.resistanceR1):'—'}</div>
+                    </div>
+                    <div style={{textAlign:'right'}}>
+                      <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
+                      <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
