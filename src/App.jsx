@@ -4521,15 +4521,15 @@ export default function App(){
           borderTop:`1px solid ${C.border}`,display:'flex',zIndex:40,
           paddingBottom:'env(safe-area-inset-bottom)'}}>
           {[
-            ['rs','📊','RS'],['indices','🗂','Indices'],['52wl','🎯','52WL'],
+            ['rs','📊','RS'],['indices','🗂','Indices'],['breakout','💥','Break'],['52wl','🎯','52WL'],
             ['sector','🏭','Sectors'],['settings','⚙','Account']
           ].map(([t,icon,label])=>(
             <button key={t} onClick={()=>setMainTab(t)}
-              style={{flex:1,padding:'8px 2px 6px',background:'transparent',border:'none',
+              style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-              <span style={{fontSize:16}}>{icon}</span>
-              <span style={{fontSize:9,fontWeight:600,color:mainTab===t?C.accent:C.muted}}>{label}</span>
-              {mainTab===t&&<div style={{width:16,height:2,background:C.accent,borderRadius:99}}/>}
+              <span style={{fontSize:15}}>{icon}</span>
+              <span style={{fontSize:8,fontWeight:600,color:mainTab===t?C.accent:C.muted}}>{label}</span>
+              {mainTab===t&&<div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           ))}
         </div>
