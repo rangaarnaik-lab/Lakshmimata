@@ -1313,20 +1313,31 @@ function CandlestickChart({sym, isMobile}){
 
   // Analysis runs on the FULL series (so early visible bars still have
   // correct MA/pattern context from data before the visible window),
-  // then only the slice gets rendered.
-  const ma20  = calcSMASeries(closes, 20)
-  const ma50  = calcSMASeries(closes, 50)
-  const ma200 = calcSMASeries(closes, 200)
-  const swings = findSwingPoints(highs, lows, 5)
-  const sr = computeSupportResistance(swings, closes[n-1])
-  const insideBars = detectInsideBars(highs, lows)
-  const accDist = detectAccDistDays(highs, lows, closes, volumes)
-  const ppDays = detectPPDays(closes, volumes)
-  const hyDays = detectHYDays(volumes)
-  const htDays = detectHTDays(volumes)
-  const ibvDays = detectIBVDays(highs, lows, closes, volumes)
-  const vcp = detectVCPContractions(swings)
-  const cup = detectCupAndHandle(closes, highs, lows)
+  // then only the slice gets rendered. Memoized on `data` specifically
+  // because these are genuinely expensive over up to 730 days of
+  // history — without this, every single wheel-zoom tick and every
+  // pixel of drag-pan was re-running all of them on every render,
+  // which is what was actually causing the browser to hang/freeze
+  // during zoom or pan gestures, not a browser problem.
+  const { ma20, ma50, ma200, swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, vcp, cup } =
+    useMemo(() => {
+      const _ma20  = calcSMASeries(closes, 20)
+      const _ma50  = calcSMASeries(closes, 50)
+      const _ma200 = calcSMASeries(closes, 200)
+      const _swings = findSwingPoints(highs, lows, 5)
+      const _sr = computeSupportResistance(_swings, closes[closes.length-1])
+      return {
+        ma20: _ma20, ma50: _ma50, ma200: _ma200, swings: _swings, sr: _sr,
+        insideBars: detectInsideBars(highs, lows),
+        accDist: detectAccDistDays(highs, lows, closes, volumes),
+        ppDays: detectPPDays(closes, volumes),
+        hyDays: detectHYDays(volumes),
+        htDays: detectHTDays(volumes),
+        ibvDays: detectIBVDays(highs, lows, closes, volumes),
+        vcp: detectVCPContractions(_swings),
+        cup: detectCupAndHandle(closes, highs, lows),
+      }
+    }, [data])
 
   // ── Layout constants needed by both the zoom/pan handlers below and
   // the SVG render further down ──
@@ -1343,10 +1354,20 @@ function CandlestickChart({sym, isMobile}){
   const start = Math.max(0, n - barsToShow - clampedPanOffset)
 
   // ── Zoom (wheel / pinch) and pan (drag) handlers ──
+  // RAF-throttled: wheel/mousemove/touchmove can fire dozens of times
+  // per second, but only one state update (and therefore one render) is
+  // needed per animation frame — this alone cuts most of the redundant
+  // work even beyond the useMemo above.
+  const rafRef = useRef(null)
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
+  const throttle = (fn) => {
+    if (rafRef.current) return
+    rafRef.current = requestAnimationFrame(() => { rafRef.current = null; fn() })
+  }
   const handleWheel = (e) => {
     e.preventDefault()
     const factor = e.deltaY > 0 ? 1.15 : 0.87
-    setZoomBars(z => Math.max(10, Math.min(n, Math.round(z * factor))))
+    throttle(() => setZoomBars(z => Math.max(10, Math.min(n, Math.round(z * factor)))))
   }
   const pxToBars = (pxDelta) => {
     const rect = svgRef.current?.getBoundingClientRect()
@@ -1361,7 +1382,7 @@ function CandlestickChart({sym, isMobile}){
     if (!dragRef.current) return
     const deltaBars = pxToBars(e.clientX - dragRef.current.startX)
     // Dragging right reveals older data -> increase panOffset
-    setPanOffset(Math.max(0, Math.min(maxPanOffset, dragRef.current.startPanOffset - deltaBars)))
+    throttle(() => setPanOffset(Math.max(0, Math.min(maxPanOffset, dragRef.current.startPanOffset - deltaBars))))
   }
   const handleMouseUp = () => { dragRef.current = null }
   const touchDist = (touches) => {
@@ -1381,10 +1402,10 @@ function CandlestickChart({sym, isMobile}){
       e.preventDefault()
       const newDist = touchDist(e.touches)
       const ratio = dragRef.current.pinchDist / Math.max(1, newDist) // fingers apart = zoom in
-      setZoomBars(Math.max(10, Math.min(n, Math.round(dragRef.current.pinchZoomBars * ratio))))
+      throttle(() => setZoomBars(Math.max(10, Math.min(n, Math.round(dragRef.current.pinchZoomBars * ratio)))))
     } else if (e.touches.length === 1 && dragRef.current.startX != null) {
       const deltaBars = pxToBars(e.touches[0].clientX - dragRef.current.startX)
-      setPanOffset(Math.max(0, Math.min(maxPanOffset, dragRef.current.startPanOffset - deltaBars)))
+      throttle(() => setPanOffset(Math.max(0, Math.min(maxPanOffset, dragRef.current.startPanOffset - deltaBars))))
     }
   }
   const handleTouchEnd = () => { dragRef.current = null }
