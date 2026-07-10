@@ -390,15 +390,19 @@ function RSCells({history,compact}){
 const BAR_PALETTE = ['#4f8ef7','#e0575b','#4caf50','#d4a72c','#8b7fd6','#2ba7a0','#e0825b','#5b9bd5','#c85a9e']
 // Maps an Index Dashboard name to the closest matching SECTOR_MAP key, for
 // showing "constituent stocks" when an index row is expanded. Only the
-// indices with a genuine matching sector are listed — the rest (Nifty 500/
-// Next 50, Defence, Financial Services, PSU/Private Bank, PSE, Consumer
-// Durables, Oil & Gas, Chemicals, Commodities, MNC, Consumption) don't have
-// a corresponding sector bucket in our data, so their constituent list
-// isn't available rather than silently showing an incomplete/wrong one.
+// indices with a genuine matching sector are listed. Nifty 500/Next 50/
+// Bank Nifty are deliberately excluded — they span every sector (or, for
+// Bank Nifty, both Private+PSU banks at once) by design, so there's no
+// single matching bucket, not a gap to fill. MNC/Housing/Financial
+// Services/Consumption/PSE/Commodities/Chemicals/Oil & Gas/Consumer
+// Durables also excluded — no verified official constituent data exists
+// for these without risking an inaccurate list, which would be worse
+// than the honest "not available" message for a financial tool.
 const INDEX_TO_SECTOR = {
   'IT': 'IT', 'Pharma': 'Pharma', 'Auto': 'Auto', 'FMCG': 'FMCG',
   'Metal': 'Metals', 'Realty': 'Realty', 'Energy': 'Energy',
-  'Healthcare': 'Healthcare', 'Bank Nifty': 'Banking', 'Infrastructure': 'Infra/Capital',
+  'Healthcare': 'Healthcare', 'Infrastructure': 'Infra/Capital',
+  'Private Bank': 'Private Bank', 'PSU Bank': 'PSU Bank', 'Defence': 'Defence',
   'Media': 'Telecom', // closest available bucket — not a precise match
 }
 function getIndexConstituents(idxName, allStocks){
