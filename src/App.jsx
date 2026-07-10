@@ -1053,7 +1053,17 @@ function StockCard({s,i}){
             <span style={{marginLeft:8,fontWeight:700,fontSize:13,color:s.chg>=0?C.green:C.red}}>
               {s.chg>=0?'+':''}{s.chg.toFixed(2)}%</span>
           </div>
-          <div style={{display:'flex',gap:6,alignItems:'center'}}>
+          <div style={{display:'flex',gap:10,alignItems:'center'}}>
+            <a href={`https://www.tradingview.com/chart/?symbol=NSE:${s.sym}`}
+              target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
+              title="Open in TradingView" style={{fontSize:16,textDecoration:'none'}}>
+              📈
+            </a>
+            <a href={`https://www.screener.in/company/${s.sym}/consolidated/`}
+              target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
+              title="Open in Screener.in" style={{fontSize:16,textDecoration:'none'}}>
+              📊
+            </a>
             <Sparkline data={s.hist} width={60} height={22} color={rsColor(s.rs)}/>
             <span style={{fontSize:14,color:C.muted}}>{open?'▲':'▼'}</span>
           </div>
