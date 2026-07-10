@@ -1190,7 +1190,7 @@ function SimpleStockTable({stocks, isMobile, onChart}){
 
 // once at the top level and overlays via position:fixed. Swaps symbol in
 // place (same panel instance) when a different stock is clicked.
-function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
+function ChartPanel({sym, wide, onToggleWide, onClose, isMobile, symList, onNavigate}){
   const [loaded, setLoaded] = useState(false)
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
   // is the default: NSE restricted its symbols in TradingView's embeddable
@@ -1202,6 +1202,14 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
 
   if(!sym) return null
   const src = `https://s.tradingview.com/widgetembed/?symbol=${tvExchange}%3A${encodeURIComponent(sym)}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=0e1117&studies=RSI%40tv-basicstudies%1FVolume%40tv-basicstudies%1FMACD%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata&withdateranges=1&locale=en`
+
+  // Prev/Next within whatever list was showing when the chart was
+  // opened — so you can flip through stocks one by one without closing
+  // the panel and re-picking from the (often full-screen-hidden, on
+  // mobile) list each time.
+  const idx = symList ? symList.indexOf(sym) : -1
+  const prevSym = idx > 0 ? symList[idx-1] : null
+  const nextSym = idx >= 0 && idx < (symList?.length||0)-1 ? symList[idx+1] : null
 
   const panelStyle = isMobile
     ? {position:'fixed',inset:0,zIndex:1000,display:'flex',flexDirection:'column',background:C.sidebar}
@@ -1216,8 +1224,22 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
       {/* Header */}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
         padding:'8px 14px',borderBottom:`1px solid ${C.divider}`,flexShrink:0,height:42}}>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          <button onClick={()=>prevSym&&onNavigate(prevSym)} disabled={!prevSym}
+            title="Previous stock"
+            style={{background:'transparent',border:`1px solid ${C.border}`,
+              color:prevSym?C.text:C.border,fontSize:13,width:26,height:26,borderRadius:4,
+              cursor:prevSym?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            ◀
+          </button>
           <span style={{fontWeight:700,fontSize:14,color:C.text,letterSpacing:'0.01em'}}>{sym}</span>
+          <button onClick={()=>nextSym&&onNavigate(nextSym)} disabled={!nextSym}
+            title="Next stock"
+            style={{background:'transparent',border:`1px solid ${C.border}`,
+              color:nextSym?C.text:C.border,fontSize:13,width:26,height:26,borderRadius:4,
+              cursor:nextSym?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            ▶
+          </button>
           <span style={{fontSize:10,color:C.muted,background:C.card,padding:'1px 5px',borderRadius:3}}>NSE</span>
           <a href={`https://www.tradingview.com/chart/?symbol=${tvExchange}:${sym}`}
             target="_blank" rel="noopener noreferrer"
@@ -1225,7 +1247,7 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
             style={{fontSize:10,color:C.accent,textDecoration:'none',
               padding:'2px 7px',borderRadius:4,border:`1px solid ${C.accent}33`,
               display:'flex',alignItems:'center',gap:3}}>
-            Open in TradingView ↗
+            {isMobile?'TV ↗':'Open in TradingView ↗'}
           </a>
         </div>
         <div style={{display:'flex',gap:4,alignItems:'center'}}>
@@ -4544,6 +4566,8 @@ export default function App(){
         onToggleWide={()=>setChartWide(v=>(v+1)%3)}
         onClose={()=>setChartSym(null)}
         isMobile={isMobile}
+        symList={displayedRS.map(s=>s.sym)}
+        onNavigate={setChartSym}
       />
 
       {/* Mobile bottom nav */}
