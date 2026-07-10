@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase, fetchOwnerToken } from './lib/supabase'
 import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
@@ -2767,7 +2767,7 @@ export default function App(){
   // Filter helpers
   const applyPP=(list,f)=>f==='yes'?list.filter(s=>s.pp?.isPP):f==='no'?list.filter(s=>!s.pp?.isPP):list
 
-  const rsBase=stocks.filter(s=>{
+  const rsBase=useMemo(()=>stocks.filter(s=>{
     if(!s.sym.toLowerCase().includes(search.toLowerCase()))return false
     if(s.rs<rsMin||s.rs>rsMax)return false
     if(rsImprFilter!=='all'&&s.rsTrend?.trend!==rsImprFilter)return false
@@ -2818,8 +2818,8 @@ export default function App(){
     if(av===-1&&bv!==-1) return 1
     if(bv===-1&&av!==-1) return -1
     return dir===1?(av-bv):(bv-av)
-  })
-  const displayedRS=applyPP(rsBase,ppFilterRS)
+  }),[stocks,search,rsMin,rsMax,rsImprFilter,sigFilter,stageFilter,sectorFilter,presetFilter,sortBy,sortDir])
+  const displayedRS=useMemo(()=>applyPP(rsBase,ppFilterRS),[rsBase,ppFilterRS])
 
   const wlBase=stocks.filter(s=>s.scanner52wl.near52wLow&&s.sym.toLowerCase().includes(wlSearch.toLowerCase())&&(!wlSigOnly||s.scanner52wl.isSignal)).sort((a,b)=>a.scanner52wl.pctFrom52wLow-b.scanner52wl.pctFrom52wLow)
   const displayed52WL=applyPP(wlBase,ppFilter52WL)
