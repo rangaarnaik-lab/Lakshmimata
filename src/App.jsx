@@ -1481,32 +1481,27 @@ function CandlestickChart({sym, isMobile}){
               <rect x={x-candleW/2-1} y={padT} width={candleW+2} height={priceH} fill="transparent"/>
               <line x1={x} y1={priceToY(hi)} x2={x} y2={priceToY(lo)} stroke={color} strokeWidth={1}/>
               <rect x={x-candleW/2} y={bodyTop} width={candleW} height={bodyH} fill={color}/>
-              {/* Volume bar — colored blue for IBV, green for PP (matching
-                  the reference indicator), otherwise the normal up/down
-                  candle color. IBV takes priority if both fire same day. */}
+              {/* Volume bar — colored per signal, priority order
+                  HT > HY > IBV > PP (highest wins if several fire the
+                  same day). Each gets a distinct color + label, matching
+                  the reference indicator's colored-bar style. */}
               {vVol[i]!=null && (() => {
-                const volColor = vIBV[i] ? C.blue : vPP[i] ? C.green : color
+                const signal = vHT[i] ? 'HT' : vHY[i] ? 'HY' : vIBV[i] ? 'IBV' : vPP[i] ? 'PP' : null
+                const signalColor = {HT:C.purple, HY:C.blue, IBV:C.teal, PP:C.orange}[signal]
+                const volColor = signalColor || color
                 const barTopY = volToY(vVol[i])
                 return (
                   <>
                     <rect x={x-candleW/2} y={barTopY} width={candleW}
-                      height={volTop+volH-barTopY} fill={volColor} opacity={vIBV[i]||vPP[i]?0.85:0.5}/>
-                    {showPatterns && vPP[i] && !vIBV[i] && (
-                      <text x={x} y={barTopY-8} fontSize={9} fill={C.green} textAnchor="middle">★</text>
+                      height={volTop+volH-barTopY} fill={volColor} opacity={signal?0.85:0.5}/>
+                    {showPatterns && signal==='PP' && (
+                      <text x={x} y={barTopY-8} fontSize={9} fill={signalColor} textAnchor="middle">★</text>
                     )}
-                    {showPatterns && vIBV[i] && (
-                      <text x={x} y={barTopY-8} fontSize={7} fontWeight={700} fill={C.blue} textAnchor="middle">IBV</text>
+                    {showPatterns && signal && signal!=='PP' && (
+                      <text x={x} y={barTopY-8} fontSize={7} fontWeight={700} fill={signalColor} textAnchor="middle">{signal}</text>
                     )}
                   </>
                 )
-              })()}
-              {/* HY/HT — small dots, less visually dominant than PP/IBV */}
-              {showPatterns && vVol[i]!=null && !vPP[i] && !vIBV[i] && (() => {
-                const marks = [vHY[i] && C.blue, vHT[i] && C.purple].filter(Boolean)
-                const barTopY = volToY(vVol[i])
-                return marks.map((c,k)=>(
-                  <circle key={k} cx={x} cy={barTopY-5-k*6} r={2} fill={c}/>
-                ))
               })()}
               {/* Pattern markers */}
               {showPatterns && vInsideBars[i] && (
@@ -1544,10 +1539,10 @@ function CandlestickChart({sym, isMobile}){
           <span><span style={{color:C.teal}}>●</span> Inside Bar</span>
           <span><span style={{color:C.green}}>▲</span> Accumulation</span>
           <span><span style={{color:C.red}}>▼</span> Distribution</span>
-          <span><span style={{color:C.green}}>★</span> PP (volume bar)</span>
-          <span><span style={{color:C.blue}}>IBV</span> (volume bar)</span>
-          <span><span style={{color:C.blue}}>●</span> HY</span>
-          <span><span style={{color:C.purple}}>●</span> HT</span>
+          <span><span style={{color:C.purple}}>■</span> HT</span>
+          <span><span style={{color:C.blue}}>■</span> HY</span>
+          <span><span style={{color:C.teal}}>■</span> IBV</span>
+          <span><span style={{color:C.orange}}>★</span> PP</span>
           {vcp.isContracting && <span><span style={{color:C.orange}}>—</span> VCP contraction</span>}
           {cup && <span><span style={{color:C.purple}}>┊</span> Cup{cup.hasHandle?' & Handle':''}</span>}
         </>}
