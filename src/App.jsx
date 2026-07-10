@@ -1096,7 +1096,7 @@ function SimpleStockTable({stocks, isMobile, onChart}){
   }
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
-      <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px',
+      <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px 32px 32px',
         padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
         fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
         <span style={{textAlign:'center',color:C.muted}}>#</span>
@@ -1117,6 +1117,8 @@ function SimpleStockTable({stocks, isMobile, onChart}){
         <span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>
         <span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>
         <span/>
+        <span style={{textAlign:'center',color:C.muted,fontSize:9}}>TV</span>
+        <span style={{textAlign:'center',color:C.muted,fontSize:9}}>Scr</span>
       </div>
       {stocks.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>onChart&&onChart(s.sym)}/>)}
     </div>
@@ -1136,7 +1138,7 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
   useEffect(() => { setLoaded(false) }, [sym])
 
   if(!sym) return null
-  const src = `https://s.tradingview.com/widgetembed/?symbol=${tvExchange}%3A${encodeURIComponent(sym)}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=0e1117&studies=RSI%40tv-basicstudies%1FVolume%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata&withdateranges=1&locale=en`
+  const src = `https://s.tradingview.com/widgetembed/?symbol=${tvExchange}%3A${encodeURIComponent(sym)}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=0e1117&studies=RSI%40tv-basicstudies%1FVolume%40tv-basicstudies%1FMACD%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata&withdateranges=1&locale=en`
 
   const panelStyle = isMobile
     ? {position:'fixed',inset:0,zIndex:1000,display:'flex',flexDirection:'column',background:C.sidebar}
@@ -1533,7 +1535,7 @@ function SortableHeader({label,sortKey,sortBy,sortDir,onSort,align='left'}){
 function DesktopRow({s,i,onChart}){
   const [open,setOpen]=useState(false)
   // Grid: # | Symbol+Sector+Badges | RS | Trend | Price | Chg% | PP 10d | RS 7d | expand
-  const COLS='32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px'
+  const COLS='32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px 32px 32px'
   return(
     <div style={{borderBottom:`1px solid ${C.border}22`}}>
       <div onClick={()=>setOpen(o=>!o)}
@@ -1712,6 +1714,19 @@ function DesktopRow({s,i,onChart}){
 
         {/* Expand */}
         <span style={{textAlign:'center',fontSize:10,color:C.muted}}>{open?'▲':'▼'}</span>
+
+        {/* Direct-open links — icons only, stop propagation so clicking
+            doesn't also toggle the row's expand/collapse */}
+        <a href={`https://www.tradingview.com/chart/?symbol=NSE:${s.sym}`}
+          target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
+          title="Open in TradingView" style={{textAlign:'center',fontSize:14,textDecoration:'none'}}>
+          📈
+        </a>
+        <a href={`https://www.screener.in/company/${s.sym}/consolidated/`}
+          target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
+          title="Open in Screener.in" style={{textAlign:'center',fontSize:14,textDecoration:'none'}}>
+          📊
+        </a>
       </div>
       {open&&<StockDetail s={s}/>}
     </div>
@@ -2964,7 +2979,7 @@ export default function App(){
             {displayedRS.length>0&&(
               isMobile?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i}/>):(
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
-                  <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px',
+                  <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px 32px 32px',
                     padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
                     fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
                     <span style={{textAlign:'center',color:C.muted}}>#</span>
@@ -2995,6 +3010,8 @@ export default function App(){
                     <span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>
                     <span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>
                     <span/>
+                    <span style={{textAlign:'center',color:C.muted,fontSize:9}}>TV</span>
+                    <span style={{textAlign:'center',color:C.muted,fontSize:9}}>Scr</span>
                   </div>
                   {displayedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>setChartSym(s.sym)}/>)}
                 </div>
