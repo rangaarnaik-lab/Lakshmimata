@@ -208,10 +208,16 @@ export async function fetchAvailableHistoryDates() {
  * Returns null if the symbol hasn't been fetched yet.
  */
 export async function fetchStockFullHistory(sym) {
-  const { data, error } = await supabase
+  const cleanSym = (sym || '').trim()
+  // Confirmed via direct Supabase inspection: rows exist with real data
+  // for symbols that .eq('sym', sym) was reporting as "not found" (e.g.
+  // GRSE) — a case-sensitivity or stray-whitespace mismatch between how
+  // the symbol is stored vs queried. .ilike() (case-insensitive, and we
+  // trim first) is robust to both without needing to know which it was.
+  let { data, error } = await supabase
     .from('stock_full_history')
     .select('*')
-    .eq('sym', sym)
+    .ilike('sym', cleanSym)
     .maybeSingle()
   if (error) {
     console.error(`fetchStockFullHistory(${sym}) error:`, error.message || error)
