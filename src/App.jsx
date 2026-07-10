@@ -1154,12 +1154,13 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <span style={{fontWeight:700,fontSize:14,color:C.text,letterSpacing:'0.01em'}}>{sym}</span>
           <span style={{fontSize:10,color:C.muted,background:C.card,padding:'1px 5px',borderRadius:3}}>NSE</span>
-          <a href={`https://www.tradingview.com/chart/?symbol=NSE:${sym}`}
+          <a href={`https://www.tradingview.com/chart/?symbol=${tvExchange}:${sym}`}
             target="_blank" rel="noopener noreferrer"
+            title="Opens your own TradingView account (not the restricted embed) — apply your custom Pine Script here once and it'll persist as you switch symbols"
             style={{fontSize:10,color:C.accent,textDecoration:'none',
               padding:'2px 7px',borderRadius:4,border:`1px solid ${C.accent}33`,
               display:'flex',alignItems:'center',gap:3}}>
-            TV ↗
+            Open in TradingView ↗
           </a>
         </div>
         <div style={{display:'flex',gap:4,alignItems:'center'}}>
