@@ -1267,7 +1267,9 @@ function CandlestickChart({sym, isMobile}){
   const [showMA, setShowMA] = useState(true)
   const [showSR, setShowSR] = useState(true)
   const [showPatterns, setShowPatterns] = useState(true)
+  const [showForecast, setShowForecast] = useState(false)
   const [hoverIdx, setHoverIdx] = useState(null)
+  const [pinnedIdx, setPinnedIdx] = useState(null)
   const dragRef = useRef(null) // {startX, startPanOffset} | {pinchDist, pinchZoomBars} | null
   const svgRef = useRef(null)
 
@@ -1275,6 +1277,7 @@ function CandlestickChart({sym, isMobile}){
     let cancelled = false
     setLoading(true); setData(null)
     setZoomBars(RANGE_BARS['6M']); setPanOffset(0) // reset zoom/pan for the new symbol
+    setPinnedIdx(null)
     fetchStockFullHistory(sym)
       .then(res => { if(!cancelled) setData(res) })
       .catch(() => { if(!cancelled) setData(null) })
@@ -1416,19 +1419,62 @@ function CandlestickChart({sym, isMobile}){
   maxP += pad; minP -= pad
 
   const priceToY = p => padT + (maxP - p) / (maxP - minP) * priceH
-  const idxToX   = i => padL + (i + 0.5) / barsToShow * chartW
-  const candleW  = Math.max(1.5, (chartW / barsToShow) * 0.62)
+  // Forecast (simple linear regression trend projection, NOT a real
+  // prediction model) reserves some room on the right by treating the
+  // effective bar count as larger than what's actually plotted.
+  const forecastDays = showForecast ? Math.max(5, Math.round(barsToShow * 0.15)) : 0
+  const totalCols = barsToShow + forecastDays
+  const idxToX   = i => padL + (i + 0.5) / totalCols * chartW
+  const candleW  = Math.max(1.5, (chartW / totalCols) * 0.62)
+
+  // Least-squares linear regression over the last ~30 visible closes,
+  // projected forward forecastDays bars. Deliberately simple/transparent
+  // — a straight-line trend continuation, not a real forecasting model.
+  let forecastPoints = null
+  if (showForecast && forecastDays > 0) {
+    const sampleN = Math.min(30, vCloses.length)
+    const sample = vCloses.slice(-sampleN).map((v,idx)=>({x:idx, y:v})).filter(p=>p.y!=null)
+    if (sample.length >= 5) {
+      const meanX = sample.reduce((a,p)=>a+p.x,0)/sample.length
+      const meanY = sample.reduce((a,p)=>a+p.y,0)/sample.length
+      const num = sample.reduce((a,p)=>a+(p.x-meanX)*(p.y-meanY),0)
+      const den = sample.reduce((a,p)=>a+(p.x-meanX)**2,0)
+      const slope = den ? num/den : 0
+      const intercept = meanY - slope*meanX
+      const lastRealIdx = barsToShow - 1
+      const lastSampleX = sampleN - 1
+      forecastPoints = Array.from({length: forecastDays+1}, (_,k)=>{
+        const sampleX = lastSampleX + k
+        return { idx: lastRealIdx + k, price: intercept + slope*sampleX }
+      })
+      const fPrices = forecastPoints.map(p=>p.price)
+      maxP = Math.max(maxP, ...fPrices)
+      minP = Math.min(minP, ...fPrices)
+    }
+  }
 
   const maxVol = Math.max(...vVol.filter(v=>v!=null), 1)
   const volToY = v => volTop + volH - (v / maxVol) * volH
 
-  // Date labels — show ~6 evenly spaced
+  // X-axis labels, TradingView style: show the month abbreviation at
+  // month boundaries, just the day number otherwise.
+  const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
   const labelStep = Math.max(1, Math.floor(barsToShow / 6))
-  const fmtDate = d => d ? d.slice(5).replace('-', '/') : ''
+  const xLabels = []
+  let lastMonthShown = null
+  for (let i = 0; i < barsToShow; i += labelStep) {
+    const d = vDates[i]
+    if (!d) continue
+    const m = parseInt(d.slice(5,7), 10)
+    const day = parseInt(d.slice(8,10), 10)
+    const isNewMonth = lastMonthShown !== m
+    lastMonthShown = m
+    xLabels.push({ i, text: isNewMonth ? MONTH_ABBR[m-1] : String(day) })
+  }
 
-  const hover = hoverIdx!=null ? {
-    date: vDates[hoverIdx], open: vOpens[hoverIdx], high: vHighs[hoverIdx],
-    low: vLows[hoverIdx], close: vCloses[hoverIdx], vol: vVol[hoverIdx],
+  const hover = (pinnedIdx ?? hoverIdx) != null ? {
+    date: vDates[pinnedIdx ?? hoverIdx], open: vOpens[pinnedIdx ?? hoverIdx], high: vHighs[pinnedIdx ?? hoverIdx],
+    low: vLows[pinnedIdx ?? hoverIdx], close: vCloses[pinnedIdx ?? hoverIdx], vol: vVol[pinnedIdx ?? hoverIdx],
   } : null
 
   return (
@@ -1446,7 +1492,8 @@ function CandlestickChart({sym, isMobile}){
         <div style={{width:1,height:16,background:C.border,margin:'0 2px'}}/>
         {[['MA','showMA',showMA,setShowMA,C.blue],
           ['S/R','showSR',showSR,setShowSR,C.yellow],
-          ['Patterns','showPatterns',showPatterns,setShowPatterns,C.accent]].map(([label,key,val,setter,color])=>(
+          ['Patterns','showPatterns',showPatterns,setShowPatterns,C.accent],
+          ['Forecast','showForecast',showForecast,setShowForecast,C.accent]].map(([label,key,val,setter,color])=>(
           <button key={key} onClick={()=>setter(v=>!v)}
             style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${val?color:C.border}`,
               background:val?color+'1c':'transparent',color:val?color:C.muted,
@@ -1468,6 +1515,10 @@ function CandlestickChart({sym, isMobile}){
       <div style={{fontSize:10,color:C.muted,marginBottom:4,minHeight:14}}>
         {hover ? (
           <span>
+            {pinnedIdx!=null && (
+              <span onClick={()=>setPinnedIdx(null)}
+                style={{color:C.accent,fontWeight:700,cursor:'pointer',marginRight:6}}>📌 (tap to unpin)</span>
+            )}
             <b style={{color:C.text}}>{hover.date}</b>{'  '}
             O <span style={{color:C.text}}>{hover.open?.toFixed(2)}</span>{'  '}
             H <span style={{color:C.green}}>{hover.high?.toFixed(2)}</span>{'  '}
@@ -1475,7 +1526,7 @@ function CandlestickChart({sym, isMobile}){
             C <span style={{color:C.text,fontWeight:700}}>{hover.close?.toFixed(2)}</span>{'  '}
             Vol <span style={{color:C.text}}>{hover.vol?.toLocaleString('en-IN')}</span>
           </span>
-        ) : `${sym} · ${barsToShow} days`}
+        ) : `${sym} · ${barsToShow} days · tap a candle to pin its data`}
       </div>
 
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`}
@@ -1557,6 +1608,7 @@ function CandlestickChart({sym, isMobile}){
           return (
             <g key={i}
               onMouseEnter={()=>setHoverIdx(i)}
+              onClick={(e)=>{e.stopPropagation();setPinnedIdx(p=>p===i?null:i)}}
               style={{cursor:'crosshair'}}>
               <rect x={x-candleW/2-1} y={padT} width={candleW+2} height={priceH} fill="transparent"/>
               <line x1={x} y1={priceToY(hi)} x2={x} y2={priceToY(lo)} stroke={color} strokeWidth={1}/>
@@ -1600,12 +1652,26 @@ function CandlestickChart({sym, isMobile}){
           )
         })}
 
-        {/* X-axis date labels */}
-        {vDates.map((d,i)=> i%labelStep===0 ? (
+        {/* Forecast — dashed trend projection, clearly separated from
+            real data with its own label and disclaimer below the chart */}
+        {showForecast && forecastPoints && (
+          <>
+            <polyline
+              points={forecastPoints.map(p=>`${idxToX(p.idx)},${priceToY(p.price)}`).join(' ')}
+              fill="none" stroke={C.accent} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.8}/>
+            <text x={idxToX(forecastPoints[forecastPoints.length-1].idx)}
+              y={priceToY(forecastPoints[forecastPoints.length-1].price)-6}
+              fontSize={8} fontWeight={700} fill={C.accent} textAnchor="end">Forecast</text>
+          </>
+        )}
+
+        {/* X-axis date labels — TradingView style: month name at month
+            boundaries, day number otherwise */}
+        {xLabels.map(({i,text})=>(
           <text key={i} x={idxToX(i)} y={axisY} fontSize={8} fill={C.muted} textAnchor="middle">
-            {fmtDate(d)}
+            {text}
           </text>
-        ) : null)}
+        ))}
       </svg>
 
       {/* Legend */}
@@ -1629,6 +1695,7 @@ function CandlestickChart({sym, isMobile}){
       </div>
       <div style={{fontSize:8,color:C.muted,marginTop:4}}>
         Patterns are algorithmic approximations (esp. Cup & Handle) — use as a visual aid, not a precise signal.
+        {showForecast && ' Forecast is a simple straight-line trend projection from recent closes — not a real prediction.'}
       </div>
     </div>
   )
