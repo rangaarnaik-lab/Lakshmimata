@@ -10,7 +10,8 @@ import {
 import { SECTOR_MAP, NIFTY50, MIDCAP, SMALLCAP, getSector } from './data/sectors'
 import {
   calcSMASeries, findSwingPoints, computeSupportResistance,
-  detectInsideBars, detectAccDistDays, detectVCPContractions, detectCupAndHandle
+  detectInsideBars, detectAccDistDays, detectVCPContractions, detectCupAndHandle,
+  detectPPDays, detectHYDays, detectHTDays, detectIBVDays
 } from './scanners/chartAnalysis'
 
 // ─────────────────────────────────────────────────────────────────────
@@ -1310,6 +1311,10 @@ function CandlestickChart({sym, isMobile}){
   const sr = computeSupportResistance(swings, closes[n-1])
   const insideBars = detectInsideBars(highs, lows)
   const accDist = detectAccDistDays(highs, lows, closes, volumes)
+  const ppDays = detectPPDays(closes, volumes)
+  const hyDays = detectHYDays(volumes)
+  const htDays = detectHTDays(volumes)
+  const ibvDays = detectIBVDays(highs, lows, closes, volumes)
   const vcp = detectVCPContractions(swings)
   const cup = detectCupAndHandle(closes, highs, lows)
 
@@ -1327,6 +1332,10 @@ function CandlestickChart({sym, isMobile}){
   const vMA200  = ma200.slice(start)
   const vInsideBars = insideBars.slice(start)
   const vAccDist = accDist.slice(start)
+  const vPP  = ppDays.slice(start)
+  const vHY  = hyDays.slice(start)
+  const vHT  = htDays.slice(start)
+  const vIBV = ibvDays.slice(start)
 
   // ── Layout ──
   const W = 900, H = 420
@@ -1475,6 +1484,21 @@ function CandlestickChart({sym, isMobile}){
               {/* Volume bar */}
               {vVol[i]!=null && <rect x={x-candleW/2} y={volToY(vVol[i])} width={candleW}
                 height={volTop+volH-volToY(vVol[i])} fill={color} opacity={0.5}/>}
+              {/* Volume signal markers — small dots stacked above the bar,
+                  same colors used everywhere else in the app for these
+                  signals (orange PP, blue HY, purple HT, teal IBV) */}
+              {showPatterns && vVol[i]!=null && (() => {
+                const marks = [
+                  vPP[i]  && C.orange,
+                  vHY[i]  && C.blue,
+                  vHT[i]  && C.purple,
+                  vIBV[i] && C.teal,
+                ].filter(Boolean)
+                const barTopY = volToY(vVol[i])
+                return marks.map((c,k)=>(
+                  <circle key={k} cx={x} cy={barTopY-5-k*6} r={2} fill={c}/>
+                ))
+              })()}
               {/* Pattern markers */}
               {showPatterns && vInsideBars[i] && (
                 <circle cx={x} cy={priceToY(hi)-6} r={2} fill={C.teal}/>
@@ -1511,6 +1535,10 @@ function CandlestickChart({sym, isMobile}){
           <span><span style={{color:C.teal}}>●</span> Inside Bar</span>
           <span><span style={{color:C.green}}>▲</span> Accumulation</span>
           <span><span style={{color:C.red}}>▼</span> Distribution</span>
+          <span><span style={{color:C.orange}}>●</span> PP</span>
+          <span><span style={{color:C.blue}}>●</span> HY</span>
+          <span><span style={{color:C.purple}}>●</span> HT</span>
+          <span><span style={{color:C.teal}}>●</span> IBV</span>
           {vcp.isContracting && <span><span style={{color:C.orange}}>—</span> VCP contraction</span>}
           {cup && <span><span style={{color:C.purple}}>┊</span> Cup{cup.hasHandle?' & Handle':''}</span>}
         </>}

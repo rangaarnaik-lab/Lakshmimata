@@ -4,6 +4,77 @@
 // Mirrors the swing-pivot approach the backend's detect_vcp already uses
 // for the scanner's VCP signal, extended here for full chart annotation.
 
+/**
+ * Pocket Pivot — per-day flags across the full series (the scanner's own
+ * detectPP only returns the last 10 days; this covers any chart range).
+ * Same rule: up day, above/near MA10, above MA50, volume beats the
+ * worst down-day volume of the prior 10 days.
+ */
+export function detectPPDays(prices, volumes) {
+  const n = prices.length
+  const flags = new Array(n).fill(false)
+  const ma10Series = calcSMASeries(prices, 10)
+  const ma50Series = calcSMASeries(prices, 50)
+  for (let idx = 11; idx < n; idx++) {
+    const today = prices[idx], yesterday = prices[idx - 1]
+    if (today <= yesterday) continue
+    const ma10 = ma10Series[idx], ma50 = ma50Series[idx]
+    if (ma10 == null || ma50 == null) continue
+    if (!(today > ma10 && today < ma10 * 1.08 && today > ma50)) continue
+    const priorP = prices.slice(idx - 10, idx)
+    const priorV = volumes.slice(idx - 10, idx)
+    let maxDownVol = 0
+    for (let i = 1; i < priorP.length; i++) {
+      if (priorP[i] < priorP[i - 1]) maxDownVol = Math.max(maxDownVol, priorV[i])
+    }
+    if (maxDownVol === 0) maxDownVol = priorV.reduce((a, b) => a + b, 0) / priorV.length
+    flags[idx] = volumes[idx] > maxDownVol
+  }
+  return flags
+}
+
+/** HY — volume at/near the trailing-252-day (52-week) max, per day. */
+export function detectHYDays(volumes) {
+  const n = volumes.length
+  const flags = new Array(n).fill(false)
+  for (let idx = 0; idx < n; idx++) {
+    const window = volumes.slice(Math.max(0, idx - 251), idx + 1)
+    const maxVol = Math.max(...window)
+    flags[idx] = maxVol > 0 && volumes[idx] >= maxVol * 0.95
+  }
+  return flags
+}
+
+/** HT — volume at/near the all-time max seen up to that day. */
+export function detectHTDays(volumes) {
+  const n = volumes.length
+  const flags = new Array(n).fill(false)
+  let runningMax = 0
+  for (let idx = 0; idx < n; idx++) {
+    runningMax = Math.max(runningMax, volumes[idx])
+    flags[idx] = runningMax > 0 && volumes[idx] >= runningMax * 0.95
+  }
+  return flags
+}
+
+/**
+ * IBV — same rule as the backend's live signal, applied per historical
+ * day: that day's volume vs the prior 10 days' max, and where that day's
+ * own close fell within its own high/low range.
+ */
+export function detectIBVDays(highs, lows, closes, volumes) {
+  const n = closes.length
+  const flags = new Array(n).fill(false)
+  for (let idx = 10; idx < n; idx++) {
+    const maxRecent = Math.max(...volumes.slice(idx - 10, idx))
+    if (maxRecent <= 0 || volumes[idx] < 2 * maxRecent) continue
+    const range = highs[idx] - lows[idx]
+    if (range <= 0) continue
+    flags[idx] = (closes[idx] - lows[idx]) / range * 100 > 50
+  }
+  return flags
+}
+
 /** Simple moving average series — null until enough data points exist. */
 export function calcSMASeries(values, period) {
   const out = new Array(values.length).fill(null)
