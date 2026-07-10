@@ -1093,6 +1093,7 @@ function StockCard({s,i,onChart}){
                     <StageBadge stage={calcWeinsteinStage(s)}/>
                     {calcIBV(s).isIBV&&<Badge color={C.purple}>🏛️IBV</Badge>}
                     {s.isResistanceBreakout&&<Badge color={C.red}>🎯R1</Badge>}
+                    {s.isCupHandleBreakout&&<Badge color={C.yellow}>☕Cup</Badge>}
                     {calcHYHTBreakout(s).isBreakout&&<Badge color={C.accent} glow>💥Break</Badge>}
               </div>
             </div>
@@ -2830,6 +2831,7 @@ export default function App(){
     if(sigFilter==='power'&&!(s.pp?.isPP&&s.rs>=80))return false
     if(sigFilter==='ibv'&&!calcIBV(s).isIBV)return false
     if(sigFilter==='r1breakout'&&!s.isResistanceBreakout)return false
+    if(sigFilter==='cupbreakout'&&!s.isCupHandleBreakout)return false
     if(stageFilter!=='all'&&calcWeinsteinStage(s).stage!==+stageFilter)return false
     if(sectorFilter!=='all'&&s.sector!==sectorFilter)return false
     // Preset filter
@@ -3292,7 +3294,7 @@ export default function App(){
                     <div>
                       <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>Signal</div>
                       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                        {[['all','All',C.muted],['pp','🔥PP',C.orange],['hy','📊HY',C.blue],['ht','🚀HT',C.purple],['ema9','⚡EMA9',C.green],['power','⭐Power',C.accent],['ibv','🏛️IBV',C.teal],['r1breakout','🎯R1 Breakout',C.red]].map(([v,label,color])=>(
+                        {[['all','All',C.muted],['pp','🔥PP',C.orange],['hy','📊HY',C.blue],['ht','🚀HT',C.purple],['ema9','⚡EMA9',C.green],['power','⭐Power',C.accent],['ibv','🏛️IBV',C.teal],['r1breakout','🎯R1 Breakout',C.red],['cupbreakout','☕Cup Breakout',C.yellow]].map(([v,label,color])=>(
                           <button key={v} onClick={()=>setSigFilter(v)}
                             style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilter===v?color:C.border}`,
                               cursor:'pointer',fontSize:12,fontWeight:600,
@@ -4187,6 +4189,7 @@ export default function App(){
                   {l:'🔥 PP + Break',v:stocks.filter(s=>s.pp?.isPP&&calcHYHTBreakout(s).isBreakout).length,c:C.orange},
                   {l:'👑 RS 90+ Break',v:stocks.filter(s=>s.rs>=90&&calcHYHTBreakout(s).isBreakout).length,c:C.yellow},
                   {l:'🎯 R1 Breakout',v:stocks.filter(s=>s.isResistanceBreakout).length,c:C.red},
+                  {l:'☕ Cup Breakout',v:stocks.filter(s=>s.isCupHandleBreakout).length,c:C.yellow},
                 ].map(({l,v,c})=>(
                   <div key={l} style={{background:C.bg,borderRadius:8,padding:'10px',textAlign:'center'}}>
                     <div style={{fontSize:22,fontWeight:900,color:c}}>{v}</div>
@@ -4241,6 +4244,34 @@ export default function App(){
                     <div>
                       <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
                       <div style={{fontSize:10,color:C.muted}}>{s.sector} · R1 @ {s.resistanceR1?fmtP(s.resistanceR1):'—'}</div>
+                    </div>
+                    <div style={{textAlign:'right'}}>
+                      <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
+                      <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Cup & Handle Breakout Section */}
+            <div style={{background:C.card,border:`1px solid ${C.yellow}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:14,color:C.yellow,marginBottom:4}}>☕ Cup & Handle Breakout</div>
+              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+                Stocks breaking out above a cup-and-handle formation today — algorithmic approximation, use as a visual aid
+              </div>
+              <TVCopyPanel stocks={stocks.filter(s=>s.isCupHandleBreakout)} label="Cup Breakouts"/>
+              <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
+                {stocks.filter(s=>s.isCupHandleBreakout).length===0?(
+                  <div style={{textAlign:'center',padding:'20px 0',color:C.muted,fontSize:12}}>
+                    No cup & handle breakouts right now.
+                  </div>
+                ):stocks.filter(s=>s.isCupHandleBreakout).sort((a,b)=>b.rs-a.rs).slice(0,20).map(s=>(
+                  <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
+                    display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}>
+                    <div>
+                      <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
+                      <div style={{fontSize:10,color:C.muted}}>{s.sector} · Cup depth {s.cupDepthPct??'—'}%</div>
                     </div>
                     <div style={{textAlign:'right'}}>
                       <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
