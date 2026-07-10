@@ -2406,7 +2406,13 @@ export default function App(){
         sector:getSector(s.sym),
       }
     }).sort((a,b)=>b.rs-a.rs)
-    setSectorData(buildSectorRS(processed,SECTOR_MAP))
+    // Note: sectorData is intentionally NOT set here. This client-side
+    // recomputation doesn't have rank_change/advances_d/w/m (those are
+    // backend-persisted history, not derivable from a one-off live scan),
+    // so setting it here would overwrite the richer data runDBScan loads
+    // from Supabase — which is exactly why the Sectors table's rank and
+    // week-over-week movement badges looked frozen/wrong after a manual
+    // Scan. sectorData stays sourced solely from fetchSectorsFromDB.
     setProgress(100);setProgressMsg('Done!')
     setStocks(processed);setLastRefresh(Date.now());setLoading(false)
   },[session,indexFilter,weakThreshold,activeWl,watchlists])
