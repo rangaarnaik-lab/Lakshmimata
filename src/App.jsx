@@ -90,31 +90,24 @@ function calcVolAnalysis(s){
 // ── IBV Detection (Institutional Buying Volume) ──────────────────────
 // 3+ big up days with volume > down days volume in last 10 days
 function calcIBV(s){
-  const hist = s.hist || []
-  // We need price + volume history — use rs_hist as proxy
-  // IBV score = count of big up days with high volume vs down days
   const rs = s.rs || 0
   const trend = s.rsTrend?.trend || 'flat'
   const ppCount = s.pp?.ppCount10d || 0
   const chg = s.chg || 0
 
-  // IBV signals:
-  // 1. Multiple PP days in last 10 (institutional buying)
-  // 2. RS improving
-  // 3. Price up today
   const ibvScore = (ppCount >= 3 ? 3 : ppCount) +
                    (trend === 'improving' ? 2 : 0) +
                    (chg > 0 ? 1 : 0) +
                    (rs >= 70 ? 1 : 0)
 
-  const isIBV = ppCount >= 2 && trend !== 'declining' && rs >= 50
+  const isIBV = s.ibvSignal === true
   return {
     isIBV,
     ibvScore,
     ppCount,
-    label: ibvScore >= 5 ? '🏛️ Strong IBV' : ibvScore >= 3 ? '🏛️ IBV' : 'No IBV',
-    color: ibvScore >= 5 ? C.purple : ibvScore >= 3 ? C.blue : C.muted,
-    desc: `${ppCount} PP days, score ${ibvScore}/7`
+    label: isIBV ? '🏛️ IBV' : 'No IBV',
+    color: isIBV ? C.purple : C.muted,
+    desc: 'Institutional-style volume activity detected'
   }
 }
 
@@ -171,7 +164,7 @@ const PRESETS = [
   {id:'all',       label:'All',          icon:'🌐', desc:'Show all stocks'},
   {id:'s2',        label:'Stage 2',      icon:'🚀', desc:'Weinstein Stage 2 uptrend — best buys'},
   {id:'breakout',  label:'HY/HT Break',  icon:'💥', desc:'Had HY/HT in last 5 days + breaking out today'},
-  {id:'ibv',       label:'IBV',          icon:'🏛️', desc:'Institutional Buying Volume — 2+ PP days'},
+  {id:'ibv',       label:'IBV',          icon:'🏛️', desc:'Institutional-style buying activity detected'},
   {id:'pp',        label:'PP Today',     icon:'🔥', desc:'Pocket Pivot today'},
   {id:'ema9',      label:'EMA9',         icon:'⚡', desc:'RS 90+ near 9-day EMA'},
   {id:'hy',        label:'HY Vol',       icon:'📊', desc:'Today volume > 52W max volume'},
