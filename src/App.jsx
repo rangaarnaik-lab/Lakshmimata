@@ -1311,6 +1311,41 @@ function CandlestickChart({sym, isMobile}){
   const [pinnedIdx, setPinnedIdx] = useState(null)
   const dragRef = useRef(null) // {startX, startPanOffset} | {pinchDist, pinchZoomBars} | null
   const svgRef = useRef(null)
+  const rafRef = useRef(null)
+  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
+
+  // Analysis runs on the FULL series (so early visible bars still have
+  // correct MA/pattern context from data before the visible window),
+  // then only the slice gets rendered. Memoized on `data` specifically
+  // because these are genuinely expensive over up to 730 days of
+  // history — without this, every single wheel-zoom tick and every
+  // pixel of drag-pan was re-running all of them on every render,
+  // which is what was actually causing the browser to hang/freeze
+  // during zoom or pan gestures, not a browser problem.
+  // IMPORTANT: this must run before the loading/error early-returns
+  // below (React requires hooks to run unconditionally, in the same
+  // order, every render) — so it checks data validity internally
+  // instead of relying on the component having already bailed out.
+  const analysis = useMemo(() => {
+    if (!data || data.error || !data.prices || data.prices.length < 30) return null
+    const closes = data.prices, highs = data.highs, lows = data.lows, volumes = data.volumes
+    const _swings = findSwingPoints(highs, lows, 5)
+    return {
+      ma20: calcSMASeries(closes, 20),
+      ma50: calcSMASeries(closes, 50),
+      ma200: calcSMASeries(closes, 200),
+      swings: _swings,
+      sr: computeSupportResistance(_swings, closes[closes.length-1]),
+      insideBars: detectInsideBars(highs, lows),
+      accDist: detectAccDistDays(highs, lows, closes, volumes),
+      ppDays: detectPPDays(closes, volumes),
+      hyDays: detectHYDays(volumes),
+      htDays: detectHTDays(volumes),
+      ibvDays: detectIBVDays(highs, lows, closes, volumes),
+      vcp: detectVCPContractions(_swings),
+      cup: detectCupAndHandle(closes, highs, lows),
+    }
+  }, [data])
 
   useEffect(() => {
     let cancelled = false
@@ -1349,34 +1384,7 @@ function CandlestickChart({sym, isMobile}){
   // symbol (older stock_full_history rows fetched before Open tracking
   // was added) — draws a thin/neutral candle instead of breaking.
   const o = (opens && opens.length === n) ? opens : closes.map((c,i)=> i>0 ? closes[i-1] : c)
-
-  // Analysis runs on the FULL series (so early visible bars still have
-  // correct MA/pattern context from data before the visible window),
-  // then only the slice gets rendered. Memoized on `data` specifically
-  // because these are genuinely expensive over up to 730 days of
-  // history — without this, every single wheel-zoom tick and every
-  // pixel of drag-pan was re-running all of them on every render,
-  // which is what was actually causing the browser to hang/freeze
-  // during zoom or pan gestures, not a browser problem.
-  const { ma20, ma50, ma200, swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, vcp, cup } =
-    useMemo(() => {
-      const _ma20  = calcSMASeries(closes, 20)
-      const _ma50  = calcSMASeries(closes, 50)
-      const _ma200 = calcSMASeries(closes, 200)
-      const _swings = findSwingPoints(highs, lows, 5)
-      const _sr = computeSupportResistance(_swings, closes[closes.length-1])
-      return {
-        ma20: _ma20, ma50: _ma50, ma200: _ma200, swings: _swings, sr: _sr,
-        insideBars: detectInsideBars(highs, lows),
-        accDist: detectAccDistDays(highs, lows, closes, volumes),
-        ppDays: detectPPDays(closes, volumes),
-        hyDays: detectHYDays(volumes),
-        htDays: detectHTDays(volumes),
-        ibvDays: detectIBVDays(highs, lows, closes, volumes),
-        vcp: detectVCPContractions(_swings),
-        cup: detectCupAndHandle(closes, highs, lows),
-      }
-    }, [data])
+  const { ma20, ma50, ma200, swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, vcp, cup } = analysis
 
   // ── Layout constants needed by both the zoom/pan handlers below and
   // the SVG render further down ──
@@ -1397,8 +1405,6 @@ function CandlestickChart({sym, isMobile}){
   // per second, but only one state update (and therefore one render) is
   // needed per animation frame — this alone cuts most of the redundant
   // work even beyond the useMemo above.
-  const rafRef = useRef(null)
-  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
   const throttle = (fn) => {
     if (rafRef.current) return
     rafRef.current = requestAnimationFrame(() => { rafRef.current = null; fn() })
