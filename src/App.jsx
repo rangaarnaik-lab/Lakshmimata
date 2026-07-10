@@ -1016,12 +1016,12 @@ function StockDetail({s}){
   )
 }
 
-function StockCard({s,i}){
+function StockCard({s,i,onChart}){
   const [open,setOpen]=useState(false)
   return(
     <div style={{background:C.card,border:`1px solid ${open?C.accent+'55':C.border}`,
       borderRadius:12,marginBottom:10,overflow:'hidden'}}>
-      <div onClick={()=>setOpen(o=>!o)} style={{padding:'14px 14px 12px',cursor:'pointer'}}>
+      <div onClick={()=>onChart&&onChart(s.sym)} style={{padding:'14px 14px 12px',cursor:'pointer'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
           <div style={{display:'flex',alignItems:'center',gap:10}}>
             <div style={{width:28,height:28,borderRadius:7,background:rsColor(s.rs)+'22',
@@ -1066,7 +1066,8 @@ function StockCard({s,i}){
               📊
             </a>
             <Sparkline data={s.hist} width={60} height={22} color={rsColor(s.rs)}/>
-            <span style={{fontSize:14,color:C.muted}}>{open?'▲':'▼'}</span>
+            <span onClick={e=>{e.stopPropagation();setOpen(o=>!o)}}
+              style={{fontSize:14,color:C.muted,cursor:'pointer',padding:'4px'}}>{open?'▲':'▼'}</span>
           </div>
         </div>
         <div style={{display:'flex',gap:2,marginBottom:6}}>
@@ -1096,7 +1097,7 @@ function SimpleStockTable({stocks, isMobile, onChart}){
     return <div style={{padding:20,textAlign:'center',color:C.muted,fontSize:12}}>No stocks found.</div>
   }
   if(isMobile){
-    return <div>{stocks.map((s,i)=><StockCard key={s.sym} s={s} i={i}/>)}</div>
+    return <div>{stocks.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={onChart}/>)}</div>
   }
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
@@ -1147,7 +1148,7 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
   const panelStyle = isMobile
     ? {position:'fixed',inset:0,zIndex:1000,display:'flex',flexDirection:'column',background:C.sidebar}
     : {position:'fixed',top:0,right:0,bottom:0,zIndex:1000,
-        width:wide?'65%':'50%',minWidth:460,
+        width:['50%','70%','92%'][wide]||'50%',minWidth:460,
         display:'flex',flexDirection:'column',background:C.sidebar,
         borderLeft:`1px solid ${C.divider}`,boxShadow:'-8px 0 24px rgba(0,0,0,0.35)',
         transition:'width 0.2s ease'}
@@ -1172,10 +1173,11 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
         <div style={{display:'flex',gap:4,alignItems:'center'}}>
           {!isMobile&&(
             <button onClick={onToggleWide}
+              title={['Expand chart','Expand further','Back to normal'][wide]}
               style={{background:'transparent',border:`1px solid ${C.border}`,
                 color:C.muted,fontSize:10,padding:'3px 8px',borderRadius:4,
                 cursor:'pointer',whiteSpace:'nowrap'}}>
-              {wide?'◀':'▶'}
+              {['◀◀','◀◀◀','▶▶▶'][wide]}
             </button>
           )}
           <button onClick={onClose}
@@ -1651,7 +1653,7 @@ function DesktopRow({s,i,onChart}){
   const COLS='32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px 32px 32px'
   return(
     <div style={{borderBottom:`1px solid ${C.border}22`}}>
-      <div onClick={()=>setOpen(o=>!o)}
+      <div onClick={()=>onChart&&onChart(s.sym)}
         style={{display:'grid',gridTemplateColumns:COLS,
           padding:'5px 12px',alignItems:'center',cursor:'pointer',gap:4,
           borderBottom:`1px solid ${C.divider}`,
@@ -1825,8 +1827,12 @@ function DesktopRow({s,i,onChart}){
           <div style={{fontSize:8,color:C.muted}}>Prom</div>
         </div>
 
-        {/* Expand */}
-        <span style={{textAlign:'center',fontSize:10,color:C.muted}}>{open?'▲':'▼'}</span>
+        {/* Expand — separate click target from the row (which now opens
+            the chart), so both actions stay reachable */}
+        <span onClick={e=>{e.stopPropagation();setOpen(o=>!o)}}
+          style={{textAlign:'center',fontSize:10,color:C.muted,cursor:'pointer',padding:'4px 0'}}>
+          {open?'▲':'▼'}
+        </span>
 
         {/* Direct-open links — icons only, stop propagation so clicking
             doesn't also toggle the row's expand/collapse */}
@@ -2411,7 +2417,7 @@ export default function App(){
     const timer = setInterval(checkSqueezeAlerts, 60000)
     return ()=>clearInterval(timer)
   },[session])
-  const [chartWide,setChartWide]=useState(false)
+  const [chartWide,setChartWide]=useState(0) // 0=normal 1=wide 2=extra-wide
   const [ppFilterRS,setPpFilterRS]=useState('all')
   const [ppFilter52WL,setPpFilter52WL]=useState('all')
   const [ppFilterWeak,setPpFilterWeak]=useState('all')
@@ -3105,7 +3111,7 @@ export default function App(){
               </div>
             )}
             {displayedRS.length>0&&(
-              isMobile?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i}/>):(
+              isMobile?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={setChartSym}/>):(
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
                   <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px 32px 32px',
                     padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
@@ -4261,7 +4267,7 @@ export default function App(){
       <ChartPanel
         sym={chartSym}
         wide={chartWide}
-        onToggleWide={()=>setChartWide(v=>!v)}
+        onToggleWide={()=>setChartWide(v=>(v+1)%3)}
         onClose={()=>setChartSym(null)}
         isMobile={isMobile}
       />
