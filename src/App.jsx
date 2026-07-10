@@ -3163,7 +3163,7 @@ export default function App(){
                         {isExpanded && (() => {
                           const constituents = getIndexConstituents(idx.name, stocks)
                           return (
-                            <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`}}>
+                            <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,position:'sticky',left:0,width:'calc(100vw - 60px)',maxWidth:900}}>
                               {constituents===null ? (
                                 <div style={{fontSize:11,color:C.muted,textAlign:'center',padding:10}}>
                                   Constituent list not available for {idx.name} yet — this index doesn't
@@ -3274,7 +3274,7 @@ export default function App(){
                               {isExp&&(()=>{
                                 const secStocks = (stocks||[]).filter(s=>s.sector===sec.sector).sort((a,b)=>b.rs-a.rs)
                                 return (
-                                  <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`}}>
+                                  <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,position:'sticky',left:0,width:'calc(100vw - 60px)',maxWidth:900}}>
                                     <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
                                       {sec.sector} stocks ({secStocks.length})
                                     </div>
@@ -3369,7 +3369,7 @@ export default function App(){
                                   {advCell(ind.advM)}
                                 </div>
                                 {isExp&&(
-                                  <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`}}>
+                                  <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,position:'sticky',left:0,width:'calc(100vw - 60px)',maxWidth:900}}>
                                     <SimpleStockTable stocks={[...ind.members].sort((a,b)=>b.rs-a.rs)} isMobile={isMobile} onChart={setChartSym}/>
                                   </div>
                                 )}
