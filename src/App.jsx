@@ -3085,7 +3085,7 @@ export default function App(){
                           background:isExpanded?C.active:(i%2===0?'transparent':C.bg+'55'),
                           borderBottom:`1px solid ${C.border}33`}}>
                           <div style={cellStyle}>
-                            <div style={{fontWeight:700,fontSize:12,color:C.text}}>{idx.name} {isExpanded?'▲':''}</div>
+                            <div style={{fontWeight:700,fontSize:12,color:C.text,display:'flex',alignItems:'center',gap:4}}>{idx.name} <span style={{fontSize:9,color:C.muted}}>{isExpanded?'▲':'▼'}</span></div>
                           </div>
                           <div style={cellStyle}>
                             <div style={{fontSize:11,color:C.muted}}>₹{idx.lastPrice?.toLocaleString('en-IN')}</div>
@@ -3223,7 +3223,7 @@ export default function App(){
                                 background:isExp?C.active:(i%2===0?'transparent':C.bg+'55'),
                                 borderBottom:`1px solid ${C.border}33`}}>
                                 <div style={cellStyle}>
-                                  <div style={{fontWeight:700,fontSize:12,color:C.text}}>{sec.sector} {isExp?'▲':''}</div>
+                                  <div style={{fontWeight:700,fontSize:12,color:C.text,display:'flex',alignItems:'center',gap:4}}>{sec.sector} <span style={{fontSize:9,color:C.muted}}>{isExp?'▲':'▼'}</span></div>
                                 </div>
                                 <div style={cellStyle}>
                                   <div style={{fontWeight:700,fontSize:12,color:C.text}}>#{sec.rank}</div>
@@ -3336,7 +3336,7 @@ export default function App(){
                                   background:isExp?C.active:(i%2===0?'transparent':C.bg+'55'),
                                   borderBottom:`1px solid ${C.border}33`}}>
                                   <div style={cellStyle}>
-                                    <div style={{fontWeight:700,fontSize:11,color:C.text}}>{ind.name} {isExp?'▲':''}</div>
+                                    <div style={{fontWeight:700,fontSize:11,color:C.text,display:'flex',alignItems:'center',gap:4}}>{ind.name} <span style={{fontSize:9,color:C.muted}}>{isExp?'▲':'▼'}</span></div>
                                   </div>
                                   <div style={cellStyle}><div style={{fontWeight:700,fontSize:11,color:C.muted}}>#{i+1}</div></div>
                                   <div style={cellStyle}><div style={{fontWeight:800,fontSize:12,color:rsColor(ind.avgRS)}}>{ind.avgRS}</div></div>
