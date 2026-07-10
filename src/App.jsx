@@ -1127,11 +1127,16 @@ function SimpleStockTable({stocks, isMobile, onChart}){
 // place (same panel instance) when a different stock is clicked.
 function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
   const [loaded, setLoaded] = useState(false)
-  const [chartTab, setChartTab] = useState('tv') // 'tv' | 'own'
+  const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
+  // is the default: NSE restricted its symbols in TradingView's embeddable
+  // widget ("This symbol is only available on TradingView" even for major
+  // stocks), so the embed frequently fails. BSE listings still work in
+  // embeds — the TV tab defaults to BSE with an exchange toggle.
+  const [tvExchange, setTvExchange] = useState('BSE')
   useEffect(() => { setLoaded(false) }, [sym])
 
   if(!sym) return null
-  const src = `https://s.tradingview.com/widgetembed/?symbol=NSE%3A${encodeURIComponent(sym)}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=0e1117&studies=RSI%40tv-basicstudies%1FVolume%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata&withdateranges=1&locale=en`
+  const src = `https://s.tradingview.com/widgetembed/?symbol=${tvExchange}%3A${encodeURIComponent(sym)}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=0e1117&studies=RSI%40tv-basicstudies%1FVolume%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata&withdateranges=1&locale=en`
 
   const panelStyle = isMobile
     ? {position:'fixed',inset:0,zIndex:1000,display:'flex',flexDirection:'column',background:C.sidebar}
@@ -1177,7 +1182,7 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
 
       {/* Chart source tabs */}
       <div style={{display:'flex',gap:0,borderBottom:`1px solid ${C.divider}`,flexShrink:0}}>
-        {[['tv','TradingView'],['own','Our Chart']].map(([v,label])=>(
+        {[['own','Our Chart'],['tv','TradingView']].map(([v,label])=>(
           <button key={v} onClick={()=>setChartTab(v)}
             style={{flex:1,padding:'8px 0',fontSize:11,fontWeight:700,cursor:'pointer',
               background:chartTab===v?C.card:'transparent',
@@ -1187,6 +1192,27 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
           </button>
         ))}
       </div>
+
+      {/* NSE/BSE toggle — NSE restricted many symbols in TradingView's
+          embeddable widget ("only available on TradingView" even for
+          major stocks like LODHA); BSE listings still work in embeds. */}
+      {chartTab==='tv'&&(
+        <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 14px',
+          borderBottom:`1px solid ${C.divider}`,flexShrink:0}}>
+          <span style={{fontSize:10,color:C.muted}}>Exchange:</span>
+          {['NSE','BSE'].map(ex=>(
+            <button key={ex} onClick={()=>{setTvExchange(ex);setLoaded(false)}}
+              style={{padding:'2px 10px',borderRadius:6,border:`1px solid ${tvExchange===ex?C.accent:C.border}`,
+                background:tvExchange===ex?C.accent+'22':'transparent',
+                color:tvExchange===ex?C.accent:C.muted,fontSize:10,fontWeight:700,cursor:'pointer'}}>
+              {ex}
+            </button>
+          ))}
+          {tvExchange==='NSE'&&(
+            <span style={{fontSize:9,color:C.yellow}}>NSE often blocked in embeds — try BSE if this fails</span>
+          )}
+        </div>
+      )}
 
       {/* Body */}
       <div style={{flex:1,position:'relative',overflow:chartTab==='own'?'auto':'hidden'}}>
@@ -1199,7 +1225,7 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
               </div>
             )}
             <iframe
-              key={sym}
+              key={sym+tvExchange}
               src={src}
               onLoad={()=>setLoaded(true)}
               style={{width:'100%',height:'100%',border:'none'}}
