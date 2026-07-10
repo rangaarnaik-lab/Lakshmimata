@@ -2397,11 +2397,17 @@ export default function App(){
     if(session)runDBScan()
   },[session,historyDate])
 
-  // Load index dashboard and breadth data on tab switch
+  // Load index dashboard and breadth data on tab switch. The Indices tab
+  // also auto-refreshes every 60s while active — the backend writes live
+  // index prices every scan, but without polling here the UI showed one
+  // stale snapshot from whenever the tab was opened.
   useEffect(()=>{
     if(!session) return
+    let timer = null
     if(mainTab==='indices'){
-      fetchIndexDashboard().then(setIndexData).catch(e=>console.error('Index fetch:',e))
+      const load = () => fetchIndexDashboard().then(setIndexData).catch(e=>console.error('Index fetch:',e))
+      load()
+      timer = setInterval(load, 60000)
     }
     if(mainTab==='breadth'){
       // Fetch market breadth from Supabase
@@ -2409,6 +2415,7 @@ export default function App(){
         .then(({data})=>setBreadthData(data||[]))
         .catch(e=>console.error('Breadth fetch:',e))
     }
+    return ()=>{ if(timer) clearInterval(timer) }
   },[session,mainTab])
 
   // Save portfolio to localStorage whenever it changes
