@@ -181,6 +181,43 @@ const PRESETS = [
 ]
 
 // ── Hooks ─────────────────────────────────────────────────────────────
+// Click-and-drag horizontal scroll for wide tables — desktop mouse users
+// don't have a trackpad/touch swipe gesture available, so without this
+// the only way to see columns past the viewport edge is the (often tiny
+// or hidden) native scrollbar. Returns props to spread onto the
+// scrollable container; native touch scrolling still works as-is.
+function useDragScroll(){
+  const ref = useRef(null)
+  const stateRef = useRef(null)
+  const lastMovedRef = useRef(false)
+  const onMouseDown = (e) => {
+    if (!ref.current) return
+    stateRef.current = { startX: e.clientX, startScroll: ref.current.scrollLeft, moved: false }
+  }
+  const onMouseMove = (e) => {
+    const st = stateRef.current
+    if (!st || !ref.current) return
+    const delta = e.clientX - st.startX
+    if (Math.abs(delta) > 3) st.moved = true
+    ref.current.scrollLeft = st.startScroll - delta
+  }
+  const endDrag = () => {
+    lastMovedRef.current = stateRef.current?.moved || false
+    stateRef.current = null
+  }
+  // The click event fires AFTER mouseup, so the moved flag has to survive
+  // past endDrag — otherwise dragging across a row to scroll the table
+  // also "clicks" it and opens its chart right after you let go.
+  const onClickCapture = (e) => {
+    if (lastMovedRef.current) { e.stopPropagation(); e.preventDefault(); lastMovedRef.current = false }
+  }
+  return {
+    ref,
+    style: { cursor: 'grab' },
+    handlers: { onMouseDown, onMouseMove, onMouseUp: endDrag, onMouseLeave: endDrag, onClickCapture },
+  }
+}
+
 function useIsMobile(){
   const [v,setV]=useState(window.innerWidth<768)
   useEffect(()=>{const f=()=>setV(window.innerWidth<768);window.addEventListener('resize',f);return()=>window.removeEventListener('resize',f)},[])
@@ -1093,6 +1130,7 @@ function StockCard({s,i,onChart}){
 // members, an index's constituents) needs to show the same rich table
 // used in the main RS tab, without duplicating that markup everywhere.
 function SimpleStockTable({stocks, isMobile, onChart}){
+  const dragProps = useDragScroll()
   if(!stocks || stocks.length===0){
     return <div style={{padding:20,textAlign:'center',color:C.muted,fontSize:12}}>No stocks found.</div>
   }
@@ -1100,7 +1138,8 @@ function SimpleStockTable({stocks, isMobile, onChart}){
     return <div>{stocks.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={onChart}/>)}</div>
   }
   return (
-    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
+    <div ref={dragProps.ref} {...dragProps.handlers}
+      style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflowX:'auto',...dragProps.style}}>
       <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px 32px 32px',
         padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
         fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
@@ -2467,6 +2506,10 @@ export default function App(){
   const [presetFilter,setPresetFilter]=useState('all')
   const [chartSym,setChartSym]=useState(null)
   const autoOpenedRef=useRef(false)
+  const rsTableDrag=useDragScroll()
+  const idxTableDrag=useDragScroll()
+  const secTableDrag=useDragScroll()
+  const indTableDrag=useDragScroll()
   const [notifPermission,setNotifPermission]=useState(
     typeof Notification!=='undefined'?Notification.permission:'denied'
   )
@@ -3222,7 +3265,8 @@ export default function App(){
             )}
             {displayedRS.length>0&&(
               isMobile?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={setChartSym}/>):(
-                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
+                <div ref={rsTableDrag.ref} {...rsTableDrag.handlers}
+                  style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflowX:'auto',...rsTableDrag.style}}>
                   <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px 32px 32px',
                     padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
                     fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
@@ -3309,7 +3353,7 @@ export default function App(){
                 <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:12,alignItems:'start'}}>
                 <div>
                 <div style={{fontWeight:800,fontSize:14,margin:'0 0 8px'}}>📊 Indices</div>
-                <div style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12}}>
+                <div ref={idxTableDrag.ref} {...idxTableDrag.handlers} style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12,...idxTableDrag.style}}>
                   <div style={{minWidth:820}}>
                     {/* Header row — click to sort */}
                     <div style={{display:'grid',
@@ -3437,7 +3481,7 @@ export default function App(){
                 {sectorData.length>0&&(
                   <>
                     <div style={{fontWeight:800,fontSize:14,margin:'0 0 8px'}}>🏭 Sectors</div>
-                    <div style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12}}>
+                    <div ref={secTableDrag.ref} {...secTableDrag.handlers} style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12,...secTableDrag.style}}>
                       <div style={{minWidth:760}}>
                         <div style={{display:'grid',
                           gridTemplateColumns:'170px 70px 60px 60px 70px 70px 90px 90px 90px',
@@ -3563,7 +3607,7 @@ export default function App(){
                   return (
                     <>
                       <div style={{fontWeight:800,fontSize:14,margin:'18px 0 8px'}}>🏗 Industries ({rows.length})</div>
-                      <div style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12,maxHeight:520,overflowY:'auto'}}>
+                      <div ref={indTableDrag.ref} {...indTableDrag.handlers} style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12,maxHeight:520,overflowY:'auto',...indTableDrag.style}}>
                         <div style={{minWidth:760}}>
                           <div style={{display:'grid',
                             gridTemplateColumns:'220px 60px 60px 60px 70px 90px 90px 90px',
