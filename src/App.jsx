@@ -1256,7 +1256,7 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile}){
 // alongside the TradingView embed as a second tab, not a replacement —
 // useful for stocks TradingView's free embed can't resolve, and for
 // seeing our own scanner's signals drawn directly on the chart.
-const RANGE_BARS = {'1M':21,'3M':63,'6M':126,'1Y':252,'All':100000}
+const RANGE_BARS = {'5D':5,'1M':21,'3M':63,'6M':126,'YTD':null,'1Y':252,'5Y':1260,'All':100000}
 
 function CandlestickChart({sym, isMobile}){
   const [data, setData] = useState(null)
@@ -1498,13 +1498,25 @@ function CandlestickChart({sym, isMobile}){
     low: vLows[pinnedIdx ?? hoverIdx], close: vCloses[pinnedIdx ?? hoverIdx], vol: vVol[pinnedIdx ?? hoverIdx],
   } : null
 
+  // YTD's bar count is dynamic (depends on today's date vs the data),
+  // unlike the other presets which are fixed trading-day counts.
+  const zoomBarsForRange = (r) => {
+    if (r === 'YTD') {
+      const jan1 = `${new Date().getFullYear()}-01-01`
+      const idx = dates.findIndex(d=>d>=jan1)
+      return idx>=0 ? n-idx : n
+    }
+    return RANGE_BARS[r]
+  }
+  const applyRangePreset = (r) => { setZoomBars(zoomBarsForRange(r)); setPanOffset(0) }
+
   return (
     <div style={{padding:'10px 12px'}}>
       {/* Controls */}
       <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8,alignItems:'center'}}>
         <div style={{display:'flex',gap:3}}>
           {Object.keys(RANGE_BARS).map(r=>(
-            <button key={r} onClick={()=>{setRange(r);setZoomBars(RANGE_BARS[r]);setPanOffset(0)}}
+            <button key={r} onClick={()=>{setRange(r);applyRangePreset(r)}}
               style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${range===r?C.accent:C.border}`,
                 background:range===r?C.accent+'22':'transparent',color:range===r?C.accent:C.muted,
                 fontSize:10,fontWeight:700,cursor:'pointer'}}>{r}</button>
@@ -1520,8 +1532,8 @@ function CandlestickChart({sym, isMobile}){
               background:val?color+'1c':'transparent',color:val?color:C.muted,
               fontSize:10,fontWeight:700,cursor:'pointer'}}>{label}</button>
         ))}
-        {(zoomBars!==RANGE_BARS[range]||panOffset!==0)&&(
-          <button onClick={()=>{setZoomBars(RANGE_BARS[range]);setPanOffset(0)}}
+        {(zoomBars!==zoomBarsForRange(range)||panOffset!==0)&&(
+          <button onClick={()=>applyRangePreset(range)}
             style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${C.border}`,
               background:'transparent',color:C.muted,fontSize:10,fontWeight:700,cursor:'pointer'}}>
             ↺ Reset zoom
@@ -1666,8 +1678,18 @@ function CandlestickChart({sym, isMobile}){
               {showPatterns && vAccDist[i]==='dist' && (
                 <text x={x} y={volTop+volH+10} fontSize={7} fill={C.red} textAnchor="middle">▼</text>
               )}
-              {hoverIdx===i && (
-                <line x1={x} y1={padT} x2={x} y2={volTop+volH} stroke={C.muted} strokeWidth={0.5} strokeDasharray="2,2"/>
+              {(hoverIdx===i || pinnedIdx===i) && (
+                <>
+                  <line x1={x} y1={padT} x2={x} y2={volTop+volH} stroke={pinnedIdx===i?C.accent:C.muted}
+                    strokeWidth={pinnedIdx===i?1:0.5} strokeDasharray={pinnedIdx===i?'none':'2,2'}/>
+                  {/* Floating date label under the crosshair, TradingView style */}
+                  <rect x={x-24} y={axisY-9} width={48} height={13} rx={2}
+                    fill={pinnedIdx===i?C.accent:C.card} stroke={C.border}/>
+                  <text x={x} y={axisY} fontSize={8} fontWeight={700}
+                    fill={pinnedIdx===i?'#0a0a0f':C.text} textAnchor="middle">
+                    {vDates[i]?.slice(5).replace('-','/')}
+                  </text>
+                </>
               )}
             </g>
           )
