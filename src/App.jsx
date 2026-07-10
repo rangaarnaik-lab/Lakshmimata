@@ -449,15 +449,15 @@ function RankedBarChart({title, subtitle, items, formatVal, positiveOnly, compac
   )
 }
 
-function PPDots({ppHistory}){
+function PPDots({ppHistory, color=C.orange}){
   return(
     <div style={{display:'flex',gap:2,alignItems:'center'}}>
-      {(ppHistory||[]).map((isPP,i)=>{
+      {(ppHistory||[]).map((isOn,i)=>{
         const d=(ppHistory.length-1-i)
-        return<div key={i} title={`${d===0?'Today':`${d}d ago`}: ${isPP?'PP ✅':'No PP'}`}
+        return<div key={i} title={`${d===0?'Today':`${d}d ago`}: ${isOn?'✅':'No'}`}
           style={{width:8,height:8,flexShrink:0,borderRadius:'50%',
-            background:isPP?C.orange:C.border,
-            boxShadow:isPP?`0 0 4px ${C.orange}`:'none'}}/>
+            background:isOn?color:C.border,
+            boxShadow:isOn?`0 0 4px ${color}`:'none'}}/>
       })}
     </div>
   )
@@ -987,6 +987,22 @@ function StockDetail({s}){
           10-MA: <strong style={{color:C.text}}>{s.pp.ma10?fmtP(s.pp.ma10):'—'}</strong>&nbsp;·&nbsp;
           50-MA: <strong style={{color:C.text}}>{s.pp.ma50?fmtP(s.pp.ma50):'—'}</strong>&nbsp;·&nbsp;
           Vol: <strong style={{color:s.pp.isPP?C.orange:C.muted}}>{s.pp.volRatio}x</strong>
+        </div>
+      </div>
+
+      {/* HY / HT 10-day */}
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:11,fontWeight:800,color:C.blue,marginBottom:8,textTransform:'uppercase'}}>📊 HY — Last 10 Days</div>
+        <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+          <PPDots ppHistory={s.hy.history} color={C.blue}/>
+          <span style={{fontSize:12,color:C.blue,fontWeight:700}}>{s.hy.history.filter(Boolean).length} HY in 10 days</span>
+        </div>
+      </div>
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:11,fontWeight:800,color:C.purple,marginBottom:8,textTransform:'uppercase'}}>🚀 HT — Last 10 Days</div>
+        <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+          <PPDots ppHistory={s.ht.history} color={C.purple}/>
+          <span style={{fontSize:12,color:C.purple,fontWeight:700}}>{s.ht.history.filter(Boolean).length} HT in 10 days</span>
         </div>
       </div>
 
