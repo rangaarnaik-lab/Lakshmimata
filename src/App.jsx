@@ -4207,8 +4207,8 @@ export default function App(){
                 {stocks.filter(s=>calcIBV(s).isIBV).slice(0,20).map(s=>{
                   const ibv=calcIBV(s)
                   return(
-                    <div key={s.sym} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
-                      display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
+                      display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}>
                       <div>
                         <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
                         <div style={{fontSize:10,color:C.muted}}>{s.sector} · {ibv.ppCount} PP days · score {ibv.ibvScore}/7</div>
@@ -4236,8 +4236,8 @@ export default function App(){
                     No resistance breakouts right now.
                   </div>
                 ):stocks.filter(s=>s.isResistanceBreakout).sort((a,b)=>b.rs-a.rs).slice(0,20).map(s=>(
-                  <div key={s.sym} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
-                    display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
+                    display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}>
                     <div>
                       <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
                       <div style={{fontSize:10,color:C.muted}}>{s.sector} · R1 @ {s.resistanceR1?fmtP(s.resistanceR1):'—'}</div>
@@ -4268,8 +4268,8 @@ export default function App(){
                 const ibv=calcIBV(s)
                 const stage=calcWeinsteinStage(s)
                 return(
-                  <div key={s.sym} style={{background:C.card,
-                    border:`2px solid ${bo.color}55`,
+                  <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.card,
+                    border:`2px solid ${bo.color}55`,cursor:'pointer',
                     borderRadius:12,marginBottom:10,padding:'14px'}}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                       <div>
