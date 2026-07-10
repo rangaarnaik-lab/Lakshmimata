@@ -1260,14 +1260,19 @@ function CandlestickChart({sym, isMobile}){
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [range, setRange] = useState('6M')
+  const [zoomBars, setZoomBars] = useState(RANGE_BARS['6M'])
+  const [panOffset, setPanOffset] = useState(0) // bars back from the most recent
   const [showMA, setShowMA] = useState(true)
   const [showSR, setShowSR] = useState(true)
   const [showPatterns, setShowPatterns] = useState(true)
   const [hoverIdx, setHoverIdx] = useState(null)
+  const dragRef = useRef(null) // {startX, startPanOffset} | {pinchDist, pinchZoomBars} | null
+  const svgRef = useRef(null)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true); setData(null)
+    setZoomBars(RANGE_BARS['6M']); setPanOffset(0) // reset zoom/pan for the new symbol
     fetchStockFullHistory(sym)
       .then(res => { if(!cancelled) setData(res) })
       .catch(() => { if(!cancelled) setData(null) })
@@ -1318,8 +1323,66 @@ function CandlestickChart({sym, isMobile}){
   const vcp = detectVCPContractions(swings)
   const cup = detectCupAndHandle(closes, highs, lows)
 
-  const barsToShow = Math.min(RANGE_BARS[range], n)
-  const start = n - barsToShow
+  // ── Layout constants needed by both the zoom/pan handlers below and
+  // the SVG render further down ──
+  const W = 900, H = 420
+  const padL = 8, padR = 54, padT = 10, priceH = 300, volH = 60, gapH = 8
+  const chartW = W - padL - padR
+
+  // barsToShow/start now driven by zoomBars/panOffset (mouse wheel /
+  // pinch to zoom, drag to pan) rather than only the fixed range preset
+  // buttons — those buttons just set zoomBars to a starting point.
+  const barsToShow = Math.max(10, Math.min(zoomBars, n))
+  const maxPanOffset = Math.max(0, n - barsToShow)
+  const clampedPanOffset = Math.min(panOffset, maxPanOffset)
+  const start = Math.max(0, n - barsToShow - clampedPanOffset)
+
+  // ── Zoom (wheel / pinch) and pan (drag) handlers ──
+  const handleWheel = (e) => {
+    e.preventDefault()
+    const factor = e.deltaY > 0 ? 1.15 : 0.87
+    setZoomBars(z => Math.max(10, Math.min(n, Math.round(z * factor))))
+  }
+  const pxToBars = (pxDelta) => {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect) return 0
+    const svgDelta = pxDelta * (W / rect.width)
+    return Math.round(svgDelta * (barsToShow / chartW))
+  }
+  const handleMouseDown = (e) => {
+    dragRef.current = { startX: e.clientX, startPanOffset: clampedPanOffset }
+  }
+  const handleMouseMove = (e) => {
+    if (!dragRef.current) return
+    const deltaBars = pxToBars(e.clientX - dragRef.current.startX)
+    // Dragging right reveals older data -> increase panOffset
+    setPanOffset(Math.max(0, Math.min(maxPanOffset, dragRef.current.startPanOffset - deltaBars)))
+  }
+  const handleMouseUp = () => { dragRef.current = null }
+  const touchDist = (touches) => {
+    const [a, b] = touches
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+  }
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      dragRef.current = { pinchDist: touchDist(e.touches), pinchZoomBars: zoomBars }
+    } else if (e.touches.length === 1) {
+      dragRef.current = { startX: e.touches[0].clientX, startPanOffset: clampedPanOffset }
+    }
+  }
+  const handleTouchMove = (e) => {
+    if (!dragRef.current) return
+    if (e.touches.length === 2 && dragRef.current.pinchDist != null) {
+      e.preventDefault()
+      const newDist = touchDist(e.touches)
+      const ratio = dragRef.current.pinchDist / Math.max(1, newDist) // fingers apart = zoom in
+      setZoomBars(Math.max(10, Math.min(n, Math.round(dragRef.current.pinchZoomBars * ratio))))
+    } else if (e.touches.length === 1 && dragRef.current.startX != null) {
+      const deltaBars = pxToBars(e.touches[0].clientX - dragRef.current.startX)
+      setPanOffset(Math.max(0, Math.min(maxPanOffset, dragRef.current.startPanOffset - deltaBars)))
+    }
+  }
+  const handleTouchEnd = () => { dragRef.current = null }
 
   const vDates  = dates.slice(start)
   const vOpens  = o.slice(start)
@@ -1338,9 +1401,6 @@ function CandlestickChart({sym, isMobile}){
   const vIBV = ibvDays.slice(start)
 
   // ── Layout ──
-  const W = 900, H = 420
-  const padL = 8, padR = 54, padT = 10, priceH = 300, volH = 60, gapH = 8
-  const chartW = W - padL - padR
   const volTop = padT + priceH + gapH
   const axisY  = volTop + volH + 18
 
@@ -1375,7 +1435,7 @@ function CandlestickChart({sym, isMobile}){
       <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8,alignItems:'center'}}>
         <div style={{display:'flex',gap:3}}>
           {Object.keys(RANGE_BARS).map(r=>(
-            <button key={r} onClick={()=>setRange(r)}
+            <button key={r} onClick={()=>{setRange(r);setZoomBars(RANGE_BARS[r]);setPanOffset(0)}}
               style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${range===r?C.accent:C.border}`,
                 background:range===r?C.accent+'22':'transparent',color:range===r?C.accent:C.muted,
                 fontSize:10,fontWeight:700,cursor:'pointer'}}>{r}</button>
@@ -1390,6 +1450,16 @@ function CandlestickChart({sym, isMobile}){
               background:val?color+'1c':'transparent',color:val?color:C.muted,
               fontSize:10,fontWeight:700,cursor:'pointer'}}>{label}</button>
         ))}
+        {(zoomBars!==RANGE_BARS[range]||panOffset!==0)&&(
+          <button onClick={()=>{setZoomBars(RANGE_BARS[range]);setPanOffset(0)}}
+            style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${C.border}`,
+              background:'transparent',color:C.muted,fontSize:10,fontWeight:700,cursor:'pointer'}}>
+            ↺ Reset zoom
+          </button>
+        )}
+        <span style={{fontSize:9,color:C.muted,marginLeft:'auto'}}>
+          {isMobile?'Pinch to zoom · drag to pan':'Scroll to zoom · drag to pan'}
+        </span>
       </div>
 
       {/* Hover readout */}
@@ -1406,8 +1476,16 @@ function CandlestickChart({sym, isMobile}){
         ) : `${sym} · ${barsToShow} days`}
       </div>
 
-      <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:isMobile?280:380,display:'block'}}
-        onMouseLeave={()=>setHoverIdx(null)}>
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`}
+        style={{width:'100%',height:isMobile?280:380,display:'block',touchAction:'none',cursor:dragRef.current?'grabbing':'grab'}}
+        onMouseLeave={()=>{setHoverIdx(null);dragRef.current=null}}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}>
         {/* Grid lines + price labels */}
         {[0,0.25,0.5,0.75,1].map(f=>{
           const p = maxP - f*(maxP-minP)
