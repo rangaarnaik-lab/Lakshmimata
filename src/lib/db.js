@@ -213,12 +213,32 @@ export async function fetchStockFullHistory(sym) {
   // for symbols that .eq('sym', sym) was reporting as "not found" (e.g.
   // GRSE) — a case-sensitivity or stray-whitespace mismatch between how
   // the symbol is stored vs queried. .ilike() (case-insensitive, and we
-  // trim first) is robust to both without needing to know which it was.
+  // trim first) is robust to case but NOT to extra whitespace/hidden
+  // characters inside the stored value itself, which a wildcard search
+  // below can still catch.
   let { data, error } = await supabase
     .from('stock_full_history')
     .select('*')
     .ilike('sym', cleanSym)
     .maybeSingle()
+
+  if (!error && !data) {
+    // Fallback: wildcard search, then pick the candidate whose trimmed
+    // value matches case-insensitively — catches stray leading/trailing
+    // whitespace or non-breaking spaces in the stored sym column.
+    const wc = await supabase
+      .from('stock_full_history')
+      .select('*')
+      .ilike('sym', `%${cleanSym}%`)
+      .limit(5)
+    if (!wc.error && wc.data && wc.data.length) {
+      const match = wc.data.find(r => (r.sym || '').trim().toUpperCase() === cleanSym.toUpperCase())
+      if (match) { data = match; error = null }
+      else console.warn(`fetchStockFullHistory(${sym}): wildcard search found candidates but none matched exactly:`,
+        wc.data.map(r => JSON.stringify(r.sym)))
+    }
+  }
+
   if (error) {
     console.error(`fetchStockFullHistory(${sym}) error:`, error.message || error)
     return { error: error.message || String(error) }
