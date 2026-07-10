@@ -2485,6 +2485,7 @@ export default function App(){
     if(sigFilter==='ht'&&!s.ht?.isHT)return false
     if(sigFilter==='ema9'&&!s.nearEMA9?.isNearEMA9)return false
     if(sigFilter==='power'&&!(s.pp?.isPP&&s.rs>=80))return false
+    if(sigFilter==='ibv'&&!calcIBV(s).isIBV)return false
     if(stageFilter!=='all'&&calcWeinsteinStage(s).stage!==+stageFilter)return false
     if(sectorFilter!=='all'&&s.sector!==sectorFilter)return false
     // Preset filter
@@ -2945,7 +2946,7 @@ export default function App(){
                     <div>
                       <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>Signal</div>
                       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                        {[['all','All',C.muted],['pp','🔥PP',C.orange],['hy','📊HY',C.blue],['ht','🚀HT',C.purple],['ema9','⚡EMA9',C.green],['power','⭐Power',C.accent]].map(([v,label,color])=>(
+                        {[['all','All',C.muted],['pp','🔥PP',C.orange],['hy','📊HY',C.blue],['ht','🚀HT',C.purple],['ema9','⚡EMA9',C.green],['power','⭐Power',C.accent],['ibv','🏛️IBV',C.teal]].map(([v,label,color])=>(
                           <button key={v} onClick={()=>setSigFilter(v)}
                             style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilter===v?color:C.border}`,
                               cursor:'pointer',fontSize:12,fontWeight:600,
