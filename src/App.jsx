@@ -2875,6 +2875,7 @@ export default function App(){
                   {label:'⚡EMA9',val:stocks.filter(s=>s.nearEMA9.isNearEMA9).length,color:C.green,f:'ema9'},
                   {label:'📊HY',val:stocks.filter(s=>s.hy.isHY).length,color:C.blue,f:'hy'},
                   {label:'🚀HT',val:stocks.filter(s=>s.ht.isHT).length,color:C.purple,f:'ht'},
+                  {label:'🏛️IBV',val:stocks.filter(s=>calcIBV(s).isIBV).length,color:C.teal,f:'ibv'},
                   {label:'↑↑Impr',val:stocks.filter(s=>s.rsTrend.trend==='improving').length,color:C.green,f:'__impr'},
                 ].map(({label,val,color,f})=>(
                   <div key={label} onClick={()=>{
