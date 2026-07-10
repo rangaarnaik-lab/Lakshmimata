@@ -1022,6 +1022,7 @@ function StockDetail({s}){
           ['EMA9 Dist',s.nearEMA9.pctFromEMA9!=null?`${s.nearEMA9.pctFromEMA9>0?'+':''}${s.nearEMA9.pctFromEMA9}%`:'—',s.nearEMA9.isNearEMA9?C.green:C.yellow],
           ['HY%',`${s.hy.pctOfMax}%`,s.hy.isHY?C.blue:C.muted],
           ['HT%',`${s.ht.pctOfATH}%`,s.ht.isHT?C.purple:C.muted],
+          ['R1 Resistance',s.resistanceR1?fmtP(s.resistanceR1):'—',s.isResistanceBreakout?C.red:C.muted],
           ['52W High',`${s.pctFromHigh.toFixed(1)}%`,s.pctFromHigh>=-5?C.green:C.yellow],
           ['Sector',s.sector,C.muted],
           ['Day Chg',`${s.chg>=0?'+':''}${s.chg.toFixed(2)}%`,s.chg>=0?C.green:C.red],
@@ -1091,6 +1092,7 @@ function StockCard({s,i,onChart}){
                 {s.pp.isPP&&s.rs>=80&&<Badge color={C.accent} glow>⭐Power</Badge>}
                     <StageBadge stage={calcWeinsteinStage(s)}/>
                     {calcIBV(s).isIBV&&<Badge color={C.purple}>🏛️IBV</Badge>}
+                    {s.isResistanceBreakout&&<Badge color={C.red}>🎯R1</Badge>}
                     {calcHYHTBreakout(s).isBreakout&&<Badge color={C.accent} glow>💥Break</Badge>}
               </div>
             </div>
@@ -2793,6 +2795,7 @@ export default function App(){
     if(sigFilter==='ema9'&&!s.nearEMA9?.isNearEMA9)return false
     if(sigFilter==='power'&&!(s.pp?.isPP&&s.rs>=80))return false
     if(sigFilter==='ibv'&&!calcIBV(s).isIBV)return false
+    if(sigFilter==='r1breakout'&&!s.isResistanceBreakout)return false
     if(stageFilter!=='all'&&calcWeinsteinStage(s).stage!==+stageFilter)return false
     if(sectorFilter!=='all'&&s.sector!==sectorFilter)return false
     // Preset filter
@@ -3180,6 +3183,7 @@ export default function App(){
                   {label:'📊HY',val:stocks.filter(s=>s.hy.isHY).length,color:C.blue,f:'hy'},
                   {label:'🚀HT',val:stocks.filter(s=>s.ht.isHT).length,color:C.purple,f:'ht'},
                   {label:'🏛️IBV',val:stocks.filter(s=>calcIBV(s).isIBV).length,color:C.teal,f:'ibv'},
+                  {label:'🎯R1',val:stocks.filter(s=>s.isResistanceBreakout).length,color:C.red,f:'r1breakout'},
                   {label:'↑↑Impr',val:stocks.filter(s=>s.rsTrend.trend==='improving').length,color:C.green,f:'__impr'},
                 ].map(({label,val,color,f})=>(
                   <div key={label} onClick={()=>{
@@ -3254,7 +3258,7 @@ export default function App(){
                     <div>
                       <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>Signal</div>
                       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                        {[['all','All',C.muted],['pp','🔥PP',C.orange],['hy','📊HY',C.blue],['ht','🚀HT',C.purple],['ema9','⚡EMA9',C.green],['power','⭐Power',C.accent],['ibv','🏛️IBV',C.teal]].map(([v,label,color])=>(
+                        {[['all','All',C.muted],['pp','🔥PP',C.orange],['hy','📊HY',C.blue],['ht','🚀HT',C.purple],['ema9','⚡EMA9',C.green],['power','⭐Power',C.accent],['ibv','🏛️IBV',C.teal],['r1breakout','🎯R1 Breakout',C.red]].map(([v,label,color])=>(
                           <button key={v} onClick={()=>setSigFilter(v)}
                             style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilter===v?color:C.border}`,
                               cursor:'pointer',fontSize:12,fontWeight:600,
