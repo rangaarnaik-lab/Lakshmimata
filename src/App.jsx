@@ -1660,22 +1660,56 @@ function CandlestickChart({sym, isMobile}){
           ) : null
         )}
 
-        {/* Cup & Handle outline */}
-        {showPatterns && cup && cup.leftLipIdx >= start && (
-          <g>
-            {[cup.leftLipIdx, cup.bottomIdx, cup.rightLipIdx].map((idx,k)=>
-              idx>=start && idx<n ? (
-                <line key={k} x1={idxToX(idx-start)} y1={padT} x2={idxToX(idx-start)} y2={padT+priceH}
-                  stroke={C.purple} strokeWidth={1} strokeDasharray="2,3" opacity={0.5}/>
-              ) : null
-            )}
-            {cup.rightLipIdx>=start && (
-              <text x={idxToX(cup.leftLipIdx-start)} y={padT-2} fontSize={8} fontWeight={700} fill={C.purple}>
+        {/* Cup & Handle outline — smooth curved overlay (not the actual
+            noisy price action) tracing the cup shape, like a hand-drawn
+            annotation: left lip -> bottom -> right lip, plus a small
+            handle dip after the right lip if one was detected. */}
+        {showPatterns && cup && cup.leftLipIdx >= start && cup.leftLipIdx < n && cup.rightLipIdx < n && (() => {
+          const li = Math.max(0, cup.leftLipIdx - start)
+          const bi = Math.max(0, Math.min(barsToShow-1, cup.bottomIdx - start))
+          const ri = Math.min(barsToShow-1, cup.rightLipIdx - start)
+          const ly = priceToY(highs[cup.leftLipIdx] ?? closes[cup.leftLipIdx])
+          const by = priceToY(lows[cup.bottomIdx] ?? closes[cup.bottomIdx])
+          const ry = priceToY(highs[cup.rightLipIdx] ?? closes[cup.rightLipIdx])
+          // Smooth half-cosine interpolation between 3 key points — looks
+          // like a natural curve rather than a mathematically exact bezier.
+          const ease = (a,b,t) => a + (b-a) * (1-Math.cos(t*Math.PI))/2
+          const pts = []
+          const steps = 24
+          for (let s=0; s<=steps; s++){
+            const t = s/steps
+            const idx = li + t*(ri-li)
+            const halfway = t<0.5
+            const localT = halfway ? t/0.5 : (t-0.5)/0.5
+            const y = halfway ? ease(ly, by, localT) : ease(by, ry, localT)
+            pts.push(`${idxToX(idx)},${y}`)
+          }
+          // Handle: a small shallow dip drawn just after the right lip,
+          // roughly spanning the handle zone the detector identified.
+          let handlePts = []
+          if (cup.hasHandle){
+            const handleLen = Math.max(3, Math.round((ri-bi)*0.15))
+            const hEnd = Math.min(barsToShow-1, ri+handleLen)
+            const dipY = ry + 14 // shallow dip below the right lip level
+            for (let s=0; s<=12; s++){
+              const t = s/12
+              const idx = ri + t*(hEnd-ri)
+              const y = t<0.5 ? ease(ry, dipY, t/0.5) : ease(dipY, ry-2, (t-0.5)/0.5)
+              handlePts.push(`${idxToX(idx)},${y}`)
+            }
+          }
+          return (
+            <g>
+              <path d={`M ${pts.join(' L ')}`} fill="none" stroke={C.purple} strokeWidth={2} opacity={0.75} strokeLinecap="round"/>
+              {handlePts.length>0 && (
+                <path d={`M ${handlePts.join(' L ')}`} fill="none" stroke={C.purple} strokeWidth={2} opacity={0.6} strokeDasharray="4,2" strokeLinecap="round"/>
+              )}
+              <text x={idxToX((li+ri)/2)} y={Math.min(ly,ry)-8} fontSize={9} fontWeight={700} fill={C.purple} textAnchor="middle">
                 Cup {cup.depthPct}%{cup.hasHandle?' + Handle':''}
               </text>
-            )}
-          </g>
-        )}
+            </g>
+          )
+        })()}
 
         {/* VCP contraction connectors */}
         {showPatterns && vcp.isContracting && vcp.contractions.map((c,i)=>
