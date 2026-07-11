@@ -68,6 +68,7 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
     rvol:        row.rvol,
     ibvSignal:   row.ibv_signal || false,
     isResistanceBreakout: row.is_resistance_breakout || false,
+    is52whBreakout: row.is_52wh_breakout || false,
     resistanceR1:         row.resistance_r1,
     isCupHandleBreakout:  row.is_cup_handle_breakout || false,
     hasCupPattern:        row.has_cup_pattern || false,

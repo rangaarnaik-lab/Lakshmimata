@@ -2015,7 +2015,7 @@ function CandlestickChart({sym, isMobile}){
       </div>
 
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`}
-        style={{width:'100%',height:isMobile?280:380,display:'block',touchAction:'none',cursor:dragRef.current?'grabbing':'grab'}}
+        style={{width:'100%',height:isMobile?400:380,display:'block',touchAction:'none',cursor:dragRef.current?'grabbing':'grab'}}
         onMouseLeave={()=>{setHoverIdx(null);dragRef.current=null}}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
@@ -5286,6 +5286,64 @@ export default function App(){
                     <div style={{textAlign:'right'}}>
                       <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
                       <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 52-Week High Breakout Section */}
+            <div style={{background:C.card,border:`1px solid ${C.yellow}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:14,color:C.yellow,marginBottom:4}}>🏆 52-Week High Breakout</div>
+              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+                Stocks that just crossed above their prior 52-week high — a fresh new high today, not one from days ago
+              </div>
+              <TVCopyPanel stocks={stocks.filter(s=>s.is52whBreakout&&passesMcap(s))} label="52W High Breakouts"/>
+              <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
+                {stocks.filter(s=>s.is52whBreakout&&passesMcap(s)).length===0?(
+                  <div style={{textAlign:'center',padding:'20px 0',color:C.muted,fontSize:12}}>
+                    No 52-week high breakouts right now.
+                  </div>
+                ):stocks.filter(s=>s.is52whBreakout&&passesMcap(s)).sort((a,b)=>b.rs-a.rs).slice(0,20).map(s=>(
+                  <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
+                    display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}>
+                    <div>
+                      <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
+                      <div style={{fontSize:10,color:C.muted}}>{s.sector} · ₹{s.lastPrice?.toLocaleString('en-IN')}</div>
+                    </div>
+                    <div style={{textAlign:'right'}}>
+                      <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
+                      <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Weekly Breakout Stocks Section — top gainers by 1-week %
+                change, doesn't need a dedicated backend field since chgW
+                is already computed per stock. */}
+            <div style={{background:C.card,border:`1px solid ${C.green}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:14,color:C.green,marginBottom:4}}>📅 Weekly Breakout Stocks</div>
+              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+                Biggest gainers over the last week
+              </div>
+              <TVCopyPanel stocks={[...stocks].filter(s=>s.chgW>0&&passesMcap(s)).sort((a,b)=>b.chgW-a.chgW).slice(0,20)} label="Weekly Gainers"/>
+              <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
+                {[...stocks].filter(s=>s.chgW>0&&passesMcap(s)).length===0?(
+                  <div style={{textAlign:'center',padding:'20px 0',color:C.muted,fontSize:12}}>
+                    No weekly gainers right now.
+                  </div>
+                ):[...stocks].filter(s=>s.chgW>0&&passesMcap(s)).sort((a,b)=>b.chgW-a.chgW).slice(0,20).map(s=>(
+                  <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
+                    display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}>
+                    <div>
+                      <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
+                      <div style={{fontSize:10,color:C.muted}}>{s.sector} · ₹{s.lastPrice?.toLocaleString('en-IN')}</div>
+                    </div>
+                    <div style={{textAlign:'right'}}>
+                      <div style={{fontWeight:800,fontSize:16,color:C.green}}>+{s.chgW?.toFixed(2)}%</div>
+                      <div style={{fontSize:10,color:C.muted}}>RS {s.rs}</div>
                     </div>
                   </div>
                 ))}
