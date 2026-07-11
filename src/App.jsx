@@ -744,6 +744,27 @@ function PPDots({ppHistory, color=C.orange}){
     </div>
   )
 }
+// Shows the 10-day dot history for whichever volume signal is actually
+// this stock's top priority (HT > HY > IBV > PP) — instead of always
+// hardcoding "PP 10d" even for a stock whose real signal is HT, which
+// was inconsistent with the badge shown above it.
+function TopSignalDots({s,withCount=true}){
+  const top = topVolumeSignal(s)
+  const config = {
+    ht:  {label:'HT 10d',  history:s.ht.history,       color:C.orange, count:s.ht.history?.filter(Boolean).length||0},
+    hy:  {label:'HY 10d',  history:s.hy.history,        color:C.pink,   count:s.hy.history?.filter(Boolean).length||0},
+    ibv: {label:'IBV 10d', history:s.ibvHistory||[],    color:C.blue,   count:(s.ibvHistory||[]).filter(Boolean).length},
+    pp:  {label:'PP 10d',  history:s.pp?.ppHistory||[], color:C.green,  count:s.pp?.ppCount10d||0},
+  }
+  const c = config[top] || config.pp
+  return(
+    <div style={{display:'flex',alignItems:'center',gap:8}}>
+      <span style={{fontSize:10,color:C.muted}}>{c.label}:</span>
+      <PPDots ppHistory={c.history} color={c.color}/>
+      {withCount&&<span style={{fontSize:10,color:c.count>0?c.color:C.muted,fontWeight:700}}>{c.count}×</span>}
+    </div>
+  )
+}
 function PPFilterBar({ppFilter,setPpFilter,ppCount,total}){
   return(
     <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',
@@ -1424,18 +1445,16 @@ function StockCard({s,i,onChart}){
           </div>
         </div>
         <div style={{display:'flex',gap:2,marginBottom:6}}>
-          {s.hist.slice(-7).map((v,idx)=>{
+          {s.hist.slice(-7).map((v,idx,arr)=>{
             const color=v===null?C.border:v>=90?C.green:v>=70?C.accent:v>=50?C.yellow:C.red
-            return<div key={idx} style={{flex:1,height:26,borderRadius:4,background:color+'28',
-              border:`1px solid ${color}55`,display:'flex',alignItems:'center',justifyContent:'center',
-              fontSize:9,fontWeight:800,color}}>{v??'—'}</div>
+            const isToday = idx===arr.length-1
+            return<div key={idx} title={isToday?"Today's RS rating":undefined} style={{flex:1,height:isToday?30:26,
+              borderRadius:4,background:color+'28',
+              border:isToday?`2px solid ${C.text}`:`1px solid ${color}55`,display:'flex',alignItems:'center',justifyContent:'center',
+              fontSize:isToday?10:9,fontWeight:800,color,alignSelf:'center'}}>{v??'—'}</div>
           })}
         </div>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <span style={{fontSize:10,color:C.muted}}>PP 10d:</span>
-          <PPDots ppHistory={s.pp.ppHistory||[]} color={C.green}/>
-          <span style={{fontSize:10,color:s.pp.ppCount10d>0?C.orange:C.muted,fontWeight:700}}>{s.pp.ppCount10d}×</span>
-        </div>
+        <TopSignalDots s={s}/>
       </div>
       {open&&<StockDetail s={s}/>}
     </div>
@@ -5487,9 +5506,8 @@ export default function App(){
                         </div>
                       ))}
                     </div>
-                    <div style={{marginTop:8,display:'flex',alignItems:'center',gap:8}}>
-                      <span style={{fontSize:10,color:C.muted}}>PP 10d:</span>
-                      <PPDots ppHistory={s.pp?.ppHistory||[]} color={C.green}/>
+                    <div style={{marginTop:8}}>
+                      <TopSignalDots s={s} withCount={false}/>
                     </div>
                   </div>
                 )
@@ -5565,11 +5583,7 @@ export default function App(){
                       background:ok?color+'22':C.border,color:ok?color:C.muted}}>{ok?'✅':'❌'} {label}</div>
                   ))}
                 </div>
-                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  <span style={{fontSize:10,color:C.muted}}>PP 10d:</span>
-                  <PPDots ppHistory={s.pp.ppHistory||[]} color={C.green}/>
-                  <span style={{fontSize:10,color:s.pp.ppCount10d>0?C.orange:C.muted,fontWeight:700}}>{s.pp.ppCount10d}×</span>
-                </div>
+                <TopSignalDots s={s}/>
               </div>
             )):(
               <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
@@ -5647,11 +5661,7 @@ export default function App(){
                     </div>
                   ))}
                 </div>
-                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  <span style={{fontSize:10,color:C.muted}}>PP 10d:</span>
-                  <PPDots ppHistory={s.pp.ppHistory||[]} color={C.green}/>
-                  <span style={{fontSize:10,color:s.pp.ppCount10d>0?C.orange:C.muted,fontWeight:700}}>{s.pp.ppCount10d}×</span>
-                </div>
+                <TopSignalDots s={s}/>
               </div>
             )):(
               <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
