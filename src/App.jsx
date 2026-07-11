@@ -1098,6 +1098,7 @@ function StockCard({s,i,onChart}){
                     {calcIBV(s).isIBV&&<Badge color={C.purple}>🏛️IBV</Badge>}
                     {s.isResistanceBreakout&&<Badge color={C.red}>🎯R1</Badge>}
                     {s.isCupHandleBreakout&&<Badge color={C.yellow}>☕Cup</Badge>}
+                    {s.isGuppyBullishCrossover&&<Badge color={C.green}>🐠Guppy</Badge>}
                     {calcHYHTBreakout(s).isBreakout&&<Badge color={C.accent} glow>💥Break</Badge>}
               </div>
             </div>
@@ -2727,6 +2728,7 @@ export default function App(){
     if(sig==='ibv') return calcIBV(s).isIBV
     if(sig==='r1breakout') return !!s.isResistanceBreakout
     if(sig==='cupbreakout') return !!s.isCupHandleBreakout
+    if(sig==='guppy') return !!s.isGuppyBullishCrossover
     return false
   }
   const [search,setSearch]=useState(''),[sortBy,setSortBy]=useState('rs')
@@ -3472,7 +3474,7 @@ export default function App(){
                           style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilters.length===0?C.muted:C.border}`,
                             cursor:'pointer',fontSize:12,fontWeight:600,
                             background:sigFilters.length===0?C.muted+'22':'transparent',color:sigFilters.length===0?C.text:C.muted}}>All</button>
-                        {[['pp','🔥PP',C.orange],['hy','📊HY',C.blue],['ht','🚀HT',C.purple],['ema9','⚡EMA9',C.green],['power','⭐Power',C.accent],['ibv','🏛️IBV',C.teal],['r1breakout','🎯R1 Breakout',C.red],['cupbreakout','☕Cup Breakout',C.yellow]].map(([v,label,color])=>{
+                        {[['pp','🔥PP',C.orange],['hy','📊HY',C.blue],['ht','🚀HT',C.purple],['ema9','⚡EMA9',C.green],['power','⭐Power',C.accent],['ibv','🏛️IBV',C.teal],['r1breakout','🎯R1 Breakout',C.red],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.green]].map(([v,label,color])=>{
                           const active = sigFilters.includes(v)
                           return (
                             <button key={v} onClick={()=>setSigFilters(prev=>active?prev.filter(x=>x!==v):[...prev,v])}
@@ -4371,6 +4373,7 @@ export default function App(){
                   {l:'👑 RS 90+ Break',v:stocks.filter(s=>s.rs>=90&&calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length,c:C.yellow},
                   {l:'🎯 R1 Breakout',v:stocks.filter(s=>s.isResistanceBreakout&&passesMcap(s)).length,c:C.red},
                   {l:'☕ Cup Breakout',v:stocks.filter(s=>s.isCupHandleBreakout&&passesMcap(s)).length,c:C.yellow},
+                  {l:'🐠 Guppy Crossover',v:stocks.filter(s=>s.isGuppyBullishCrossover&&passesMcap(s)).length,c:C.green},
                 ].map(({l,v,c})=>(
                   <div key={l} style={{background:C.bg,borderRadius:8,padding:'10px',textAlign:'center'}}>
                     <div style={{fontSize:22,fontWeight:900,color:c}}>{v}</div>
@@ -4453,6 +4456,34 @@ export default function App(){
                     <div>
                       <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
                       <div style={{fontSize:10,color:C.muted}}>{s.sector} · Cup depth {s.cupDepthPct??'—'}%</div>
+                    </div>
+                    <div style={{textAlign:'right'}}>
+                      <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
+                      <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Guppy (GMMA) Crossover Section */}
+            <div style={{background:C.card,border:`1px solid ${C.green}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:14,color:C.green,marginBottom:4}}>🐠 Guppy (GMMA) Crossover</div>
+              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+                Short-term EMA group just crossed above the long-term EMA group — short-term momentum picking up ahead of the longer trend
+              </div>
+              <TVCopyPanel stocks={stocks.filter(s=>s.isGuppyBullishCrossover&&passesMcap(s))} label="Guppy Crossovers"/>
+              <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
+                {stocks.filter(s=>s.isGuppyBullishCrossover&&passesMcap(s)).length===0?(
+                  <div style={{textAlign:'center',padding:'20px 0',color:C.muted,fontSize:12}}>
+                    No Guppy crossovers right now.
+                  </div>
+                ):stocks.filter(s=>s.isGuppyBullishCrossover&&passesMcap(s)).sort((a,b)=>b.rs-a.rs).slice(0,20).map(s=>(
+                  <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
+                    display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}>
+                    <div>
+                      <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
+                      <div style={{fontSize:10,color:C.muted}}>{s.sector}</div>
                     </div>
                     <div style={{textAlign:'right'}}>
                       <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
