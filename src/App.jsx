@@ -3293,6 +3293,20 @@ export default function App(){
   const [showSignalGlossary,setShowSignalGlossary]=useState(false)
   const [breadthHistory,setBreadthHistory]=useState([])
   const [emaBreadthHistory,setEmaBreadthHistory]=useState([])
+  const [mainTab,setMainTab]=useState('rs')
+  const [presetFilter,setPresetFilter]=useState('all')
+  const [rsMin,setRsMin]=useState(0),[rsMax,setRsMax]=useState(99)
+  const [rsImprFilter,setRsImprFilter]=useState('all')
+  const [sigFilters,setSigFilters]=useState([]) // multi-select, [] = no filter (all)
+  const [stageFilter,setStageFilter]=useState('all')
+  const [sectorFilter,setSectorFilter]=useState('all')
+  const [mcapMin,setMcapMin]=useState('')
+  const [mcapMax,setMcapMax]=useState('')
+  const [savedScanners,setSavedScanners]=useState([])
+  const [selectedScannerId,setSelectedScannerId]=useState('')
+  const [showSaveScannerInput,setShowSaveScannerInput]=useState(false)
+  const [scannerNameInput,setScannerNameInput]=useState('')
+  const [search,setSearch]=useState('')
   useEffect(()=>{
     if(mainTab==='indices' && breadthHistory.length===0){
       fetchMarketBreadthHistory(180).then(setBreadthHistory)
@@ -3400,7 +3414,6 @@ export default function App(){
   const [weakThreshold,setWeakThreshold]=useState(8)
   const [indexFilter,setIndexFilter]=useState('all')
   const refreshTimer=useRef(null)
-  const [mainTab,setMainTab]=useState('rs')
 
   // Watchlist state
   const [watchlists,setWatchlists]=useState(()=>loadWatchlists())
@@ -3419,7 +3432,6 @@ export default function App(){
   }
 
   // PP filters per tab
-  const [presetFilter,setPresetFilter]=useState('all')
   const [chartSym,setChartSym]=useState(null)
   const autoOpenedRef=useRef(false)
   const rsTableDrag=useDragScroll()
@@ -3492,18 +3504,6 @@ export default function App(){
   const [ppFilter52WL,setPpFilter52WL]=useState('all')
   const [ppFilterWeak,setPpFilterWeak]=useState('all')
 
-  // RS tab filters
-  const [rsMin,setRsMin]=useState(0),[rsMax,setRsMax]=useState(99)
-  const [rsImprFilter,setRsImprFilter]=useState('all')
-  const [sigFilters,setSigFilters]=useState([]) // multi-select, [] = no filter (all)
-  const [stageFilter,setStageFilter]=useState('all')
-  const [sectorFilter,setSectorFilter]=useState('all')
-  const [mcapMin,setMcapMin]=useState('')
-  const [mcapMax,setMcapMax]=useState('')
-  const [savedScanners,setSavedScanners]=useState([])
-  const [selectedScannerId,setSelectedScannerId]=useState('')
-  const [showSaveScannerInput,setShowSaveScannerInput]=useState(false)
-  const [scannerNameInput,setScannerNameInput]=useState('')
   // Shared market cap check, used everywhere a stock list gets filtered
   // (RS Scanner's rsBase above, and the Breakout tab's sections below) so
   // the filter is consistent across tabs, not just the main scanner.
@@ -3527,7 +3527,7 @@ export default function App(){
     if(sig==='vcp4t') return !!s.isVCP && s.vcpStage===4
     return false
   }
-  const [search,setSearch]=useState(''),[sortBy,setSortBy]=useState('rs')
+  const [sortBy,setSortBy]=useState('rs')
   const [sortDir,setSortDir]=useState('desc')
   const handleSort = useCallback(key=>{
     setSortBy(prev=>{
