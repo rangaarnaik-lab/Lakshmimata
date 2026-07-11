@@ -827,6 +827,99 @@ function RefreshBar({lastRefresh,interval,loading,onRefresh}){
 }
 
 // ── Last Updated Bar — shows on every page ───────────────────────────
+// ── History Calendar Picker ─────────────────────────────────────────
+// Replaces a plain <select> of dates with a visual month calendar —
+// available snapshot dates are clickable, everything else is greyed
+// out. availableDates comes from fetchAvailableHistoryDates(), sorted
+// newest-first.
+function HistoryCalendarPicker({historyDate, setHistoryDate, availableDates, isMobile}){
+  const [open, setOpen] = useState(false)
+  const availSet = useMemo(() => new Set(availableDates), [availableDates])
+  const initialMonth = useMemo(() => {
+    const base = historyDate || availableDates[0] || new Date().toISOString().slice(0,10)
+    return base.slice(0,7) // 'YYYY-MM'
+  }, [historyDate, availableDates])
+  const [viewMonth, setViewMonth] = useState(initialMonth)
+  useEffect(() => { if(open) setViewMonth(initialMonth) }, [open, initialMonth])
+
+  const [y, m] = viewMonth.split('-').map(Number)
+  const firstOfMonth = new Date(y, m-1, 1)
+  const startWeekday = firstOfMonth.getDay() // 0=Sun
+  const daysInMonth = new Date(y, m, 0).getDate()
+  const monthLabel = firstOfMonth.toLocaleDateString('en-IN',{month:'long',year:'numeric'})
+  const pad = n => String(n).padStart(2,'0')
+  const dateStr = d => `${y}-${pad(m)}-${pad(d)}`
+
+  const changeMonth = delta => {
+    const d = new Date(y, m-1+delta, 1)
+    setViewMonth(`${d.getFullYear()}-${pad(d.getMonth()+1)}`)
+  }
+
+  const label = historyDate
+    ? new Date(historyDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})
+    : (isMobile ? '📅 Live' : '📅 Today')
+
+  return (
+    <div style={{position:'relative'}}>
+      <button onClick={()=>setOpen(v=>!v)}
+        style={{padding:isMobile?'8px':'5px 8px',background:historyDate?C.purple+'22':C.card,
+          border:`1px solid ${historyDate?C.purple+'66':C.border}`,
+          borderRadius:isMobile?8:6,color:historyDate?C.purple:C.text,fontSize:isMobile?11:11,
+          outline:'none',cursor:'pointer',fontWeight:historyDate?700:400,whiteSpace:'nowrap'}}>
+        {label}
+      </button>
+      {open && (
+        <>
+          <div onClick={()=>setOpen(false)} style={{position:'fixed',inset:0,zIndex:59}}/>
+          <div style={{position:'absolute',top:'110%',left:0,zIndex:60,width:260,
+            background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:12,
+            boxShadow:'0 12px 32px rgba(0,0,0,0.4)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+              <button onClick={()=>changeMonth(-1)} style={{background:'transparent',border:'none',
+                color:C.muted,cursor:'pointer',fontSize:14,padding:4}}>◀</button>
+              <span style={{fontSize:12,fontWeight:700,color:C.text}}>{monthLabel}</span>
+              <button onClick={()=>changeMonth(1)} style={{background:'transparent',border:'none',
+                color:C.muted,cursor:'pointer',fontSize:14,padding:4}}>▶</button>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2,marginBottom:4}}>
+              {['S','M','T','W','T','F','S'].map((d,i)=>(
+                <div key={i} style={{textAlign:'center',fontSize:9,color:C.muted,fontWeight:700}}>{d}</div>
+              ))}
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:2}}>
+              {Array.from({length:startWeekday}).map((_,i)=><div key={'blank'+i}/>)}
+              {Array.from({length:daysInMonth}).map((_,i)=>{
+                const d = i+1
+                const ds = dateStr(d)
+                const available = availSet.has(ds)
+                const isSelected = historyDate===ds
+                return (
+                  <button key={d} disabled={!available}
+                    onClick={()=>{setHistoryDate(ds);setOpen(false)}}
+                    style={{aspectRatio:'1',borderRadius:6,fontSize:11,fontWeight:isSelected?800:500,
+                      border:isSelected?`1.5px solid ${C.purple}`:'1px solid transparent',
+                      background:isSelected?C.purple+'33':available?C.bg:'transparent',
+                      color:available?(isSelected?C.purple:C.text):C.border,
+                      cursor:available?'pointer':'default'}}>
+                    {d}
+                  </button>
+                )
+              })}
+            </div>
+            <button onClick={()=>{setHistoryDate(null);setOpen(false)}}
+              style={{width:'100%',marginTop:10,padding:'7px',borderRadius:7,
+                border:`1px solid ${!historyDate?C.accent:C.border}`,
+                background:!historyDate?C.accent+'22':'transparent',
+                color:!historyDate?C.accent:C.muted,fontSize:11,fontWeight:700,cursor:'pointer'}}>
+              📅 Back to Live
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function LastUpdatedBar({scanMeta,lastRefresh,loading,autoRefresh,setAutoRefresh,refreshInterval,setRefreshInterval,onRefresh}){
   const [now,setNow]=useState(Date.now())
   useEffect(()=>{const t=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(t)},[])
@@ -3958,16 +4051,8 @@ export default function App(){
 
               {/* History date picker */}
               {!isMobile&&(
-                <select value={historyDate||''} onChange={e=>setHistoryDate(e.target.value||null)}
-                  style={{padding:'5px 8px',background:historyDate?C.purple+'22':C.card,
-                    border:`1px solid ${historyDate?C.purple+'66':C.border}`,
-                    borderRadius:6,color:historyDate?C.purple:C.text,fontSize:11,outline:'none',cursor:'pointer',
-                    fontWeight:historyDate?700:400}}>
-                  <option value="">📅 Today</option>
-                  {availableDates.map(d=>(
-                    <option key={d} value={d}>{new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</option>
-                  ))}
-                </select>
+                <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
+                  availableDates={availableDates} isMobile={false}/>
               )}
 
               {/* Auto refresh toggle */}
@@ -4093,15 +4178,8 @@ export default function App(){
                     <option value="microcap">🔬 Microcap</option>
                   </select>
                 )}
-                <select value={historyDate||''} onChange={e=>setHistoryDate(e.target.value||null)}
-                  style={{padding:'8px',background:historyDate?C.purple+'22':C.card,
-                    border:`1px solid ${historyDate?C.purple+'66':C.border}`,borderRadius:8,
-                    color:historyDate?C.purple:C.text,fontSize:11,outline:'none',fontWeight:historyDate?700:400}}>
-                  <option value="">📅 Live</option>
-                  {availableDates.map(d=>(
-                    <option key={d} value={d}>{new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</option>
-                  ))}
-                </select>
+                <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
+                  availableDates={availableDates} isMobile={true}/>
                 <button onClick={()=>runDBScan()} disabled={loading}
                   style={{flex:1,padding:'12px',borderRadius:8,border:'none',cursor:'pointer',
                     background:loading?C.border:C.accent,color:loading?C.muted:'#000',fontWeight:700,fontSize:13}}>
