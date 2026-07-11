@@ -3109,6 +3109,7 @@ export default function App(){
   const [themeKey,setThemeKey]=useState('dark')
   const ambient=useAmbientSound()
   const [showQuickSettings,setShowQuickSettings]=useState(false)
+  const [showMoreMenu,setShowMoreMenu]=useState(false)
 
   // Load saved theme preference once on mount, before first paint of
   // anything meaningful. themeVersion is a dummy counter — bumping it
@@ -5433,22 +5434,62 @@ export default function App(){
 
       {/* Mobile bottom nav */}
       {isMobile&&(
-        <div style={{position:'fixed',bottom:0,left:0,right:0,background:C.card,
-          borderTop:`1px solid ${C.border}`,display:'flex',zIndex:40,
-          paddingBottom:'env(safe-area-inset-bottom)'}}>
-          {[
-            ['rs','📊','RS'],['indices','🗂','Indices'],['breakout','💥','Break'],['52wl','🎯','52WL'],
-            ['sector','🏭','Sectors'],['settings','⚙','Account']
-          ].map(([t,icon,label])=>(
-            <button key={t} onClick={()=>setMainTab(t)}
+        <>
+          <div style={{position:'fixed',bottom:0,left:0,right:0,background:C.card,
+            borderTop:`1px solid ${C.border}`,display:'flex',zIndex:40,
+            paddingBottom:'env(safe-area-inset-bottom)'}}>
+            {[
+              ['rs','📊','RS'],['indices','🗂','Indices'],['breakout','💥','Break'],['52wl','🎯','52WL'],
+              ['sector','🏭','Sectors']
+            ].map(([t,icon,label])=>(
+              <button key={t} onClick={()=>setMainTab(t)}
+                style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
+                  cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+                <span style={{fontSize:15}}>{icon}</span>
+                <span style={{fontSize:8,fontWeight:600,color:mainTab===t?C.accent:C.muted}}>{label}</span>
+                {mainTab===t&&<div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
+              </button>
+            ))}
+            <button onClick={()=>setShowMoreMenu(true)}
               style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-              <span style={{fontSize:15}}>{icon}</span>
-              <span style={{fontSize:8,fontWeight:600,color:mainTab===t?C.accent:C.muted}}>{label}</span>
-              {mainTab===t&&<div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
+              <span style={{fontSize:15}}>⋯</span>
+              <span style={{fontSize:8,fontWeight:600,
+                color:['breadth','squeeze','weak','portfolio','compare','watchlist','settings'].includes(mainTab)?C.accent:C.muted}}>More</span>
+              {['breadth','squeeze','weak','portfolio','compare','watchlist','settings'].includes(mainTab)&&
+                <div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
-          ))}
-        </div>
+          </div>
+
+          {/* More menu — bottom sheet with the less-frequently-used tabs */}
+          {showMoreMenu&&(
+            <div onClick={()=>setShowMoreMenu(false)}
+              style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:50,
+                display:'flex',alignItems:'flex-end'}}>
+              <div onClick={e=>e.stopPropagation()}
+                style={{background:C.card,width:'100%',borderTopLeftRadius:16,borderTopRightRadius:16,
+                  padding:'8px 8px calc(20px + env(safe-area-inset-bottom))',
+                  borderTop:`1px solid ${C.border}`}}>
+                <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:'8px auto 16px'}}/>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:4}}>
+                  {[
+                    ['breadth','📈','Breadth'],['squeeze','🌀','Squeeze'],['weak','🚨','Weak'],
+                    ['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],
+                    ['settings','⚙','Account'],
+                  ].map(([t,icon,label])=>(
+                    <button key={t} onClick={()=>{setMainTab(t);setShowMoreMenu(false)}}
+                      style={{padding:'16px 8px',background:mainTab===t?C.accent+'18':'transparent',
+                        border:`1px solid ${mainTab===t?C.accent:C.border}`,borderRadius:10,cursor:'pointer',
+                        display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
+                      <span style={{fontSize:22}}>{icon}</span>
+                      <span style={{fontSize:11,fontWeight:600,color:mainTab===t?C.accent:C.text}}>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
