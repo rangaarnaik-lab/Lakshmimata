@@ -3356,20 +3356,35 @@ export default function App(){
                       )}
                       {savedScanners.length>0&&(
                         <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                          {savedScanners.map(sc=>(
-                            <div key={sc.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',
-                              background:C.bg,borderRadius:8,padding:'8px 10px'}}>
-                              <button onClick={()=>applyFilterState(sc.filters)}
-                                style={{flex:1,textAlign:'left',background:'transparent',border:'none',
-                                  color:C.text,fontSize:12,fontWeight:600,cursor:'pointer'}}>
-                                {sc.name}
-                              </button>
-                              <button onClick={()=>handleDeleteScanner(sc.id)}
-                                style={{background:'transparent',border:'none',color:C.muted,fontSize:12,cursor:'pointer',padding:'0 4px'}}>
-                                ✕
-                              </button>
-                            </div>
-                          ))}
+                          {savedScanners.map(sc=>{
+                            const f = sc.filters||{}
+                            const parts = []
+                            if(f.search) parts.push(`"${f.search}"`)
+                            if((f.rsMin??0)!==0||(f.rsMax??99)!==99) parts.push(`RS ${f.rsMin??0}-${f.rsMax??99}`)
+                            if(f.mcapMin!==''&&f.mcapMin!=null) parts.push(`Mcap ≥${f.mcapMin}Cr`)
+                            if(f.mcapMax!==''&&f.mcapMax!=null) parts.push(`Mcap ≤${f.mcapMax}Cr`)
+                            if(f.rsImprFilter&&f.rsImprFilter!=='all') parts.push(f.rsImprFilter)
+                            if(f.sigFilter&&f.sigFilter!=='all') parts.push(f.sigFilter.toUpperCase())
+                            if(f.stageFilter&&f.stageFilter!=='all') parts.push(`Stage ${f.stageFilter}`)
+                            if(f.sectorFilter&&f.sectorFilter!=='all') parts.push(f.sectorFilter)
+                            if(f.presetFilter&&f.presetFilter!=='all') parts.push(f.presetFilter)
+                            const summary = parts.length ? parts.join(' · ') : 'No filters (all stocks)'
+                            return (
+                              <div key={sc.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+                                background:C.bg,borderRadius:8,padding:'8px 10px'}}>
+                                <button onClick={()=>applyFilterState(sc.filters)}
+                                  style={{flex:1,textAlign:'left',background:'transparent',border:'none',
+                                    cursor:'pointer'}}>
+                                  <div style={{color:C.text,fontSize:12,fontWeight:700}}>{sc.name}</div>
+                                  <div style={{color:C.muted,fontSize:10,marginTop:2}}>{summary}</div>
+                                </button>
+                                <button onClick={()=>handleDeleteScanner(sc.id)}
+                                  style={{background:'transparent',border:'none',color:C.muted,fontSize:12,cursor:'pointer',padding:'0 4px'}}>
+                                  ✕
+                                </button>
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
                     </div>
