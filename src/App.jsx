@@ -11,7 +11,7 @@ import { SECTOR_MAP, NIFTY50, MIDCAP, SMALLCAP, getSector } from './data/sectors
 import {
   calcSMASeries, findSwingPoints, computeSupportResistance,
   detectInsideBars, detectAccDistDays, detectVCPContractions, detectCupAndHandle,
-  detectPPDays, detectHYDays, detectHTDays, detectIBVDays
+  detectPPDays, detectHYDays, detectHTDays, detectIBVDays, detectNearEMA9Days
 } from './scanners/chartAnalysis'
 
 // ─────────────────────────────────────────────────────────────────────
@@ -1388,6 +1388,7 @@ function CandlestickChart({sym, isMobile}){
       hyDays: detectHYDays(volumes),
       htDays: detectHTDays(volumes),
       ibvDays: detectIBVDays(highs, lows, closes, volumes),
+      nearEma9Days: detectNearEMA9Days(closes),
       vcp: detectVCPContractions(_swings),
       cup: detectCupAndHandle(closes, highs, lows),
     }
@@ -1430,7 +1431,7 @@ function CandlestickChart({sym, isMobile}){
   // symbol (older stock_full_history rows fetched before Open tracking
   // was added) — draws a thin/neutral candle instead of breaking.
   const o = (opens && opens.length === n) ? opens : closes.map((c,i)=> i>0 ? closes[i-1] : c)
-  const { ma20, ma50, ma200, swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, vcp, cup } = analysis
+  const { ma20, ma50, ma200, swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, nearEma9Days, vcp, cup } = analysis
 
   // ── Layout constants needed by both the zoom/pan handlers below and
   // the SVG render further down ──
@@ -1516,6 +1517,7 @@ function CandlestickChart({sym, isMobile}){
   const vHY  = hyDays.slice(start)
   const vHT  = htDays.slice(start)
   const vIBV = ibvDays.slice(start)
+  const vNearEma9 = nearEma9Days.slice(start)
 
   // ── Layout ──
   const volTop = padT + priceH + gapH
@@ -1776,8 +1778,8 @@ function CandlestickChart({sym, isMobile}){
                   same day). Each gets a distinct color + label, matching
                   the reference indicator's colored-bar style. */}
               {vVol[i]!=null && (() => {
-                const signal = vHT[i] ? 'HT' : vHY[i] ? 'HY' : vIBV[i] ? 'IBV' : vPP[i] ? 'PP' : null
-                const signalColor = {HT:C.purple, HY:C.blue, IBV:C.teal, PP:C.orange}[signal]
+                const signal = vHT[i] ? 'HT' : vHY[i] ? 'HY' : vIBV[i] ? 'IBV' : vPP[i] ? 'PP' : vNearEma9[i] ? 'EMA9' : null
+                const signalColor = {HT:C.purple, HY:C.blue, IBV:C.teal, PP:C.orange, EMA9:C.green}[signal]
                 const volColor = signalColor || color
                 const barTopY = volToY(vVol[i])
                 return (
@@ -1857,6 +1859,7 @@ function CandlestickChart({sym, isMobile}){
           <span><span style={{color:C.blue}}>■</span> HY</span>
           <span><span style={{color:C.teal}}>■</span> IBV</span>
           <span><span style={{color:C.orange}}>★</span> PP</span>
+          <span><span style={{color:C.green}}>■</span> EMA9</span>
           {vcp.isContracting && <span><span style={{color:C.orange}}>—</span> VCP contraction</span>}
           {cup && <span><span style={{color:C.purple}}>┊</span> Cup{cup.hasHandle?' & Handle':''}</span>}
         </>}
@@ -3300,11 +3303,11 @@ export default function App(){
             {stocks.length>0&&(
               <div style={{display:'flex',gap:8,marginBottom:12,overflowX:'auto',paddingBottom:4}}>
                 {[{label:'All',val:stocks.length,color:C.text,f:'all'},
+                  {label:'🚀HT',val:stocks.filter(s=>s.ht.isHT).length,color:C.purple,f:'ht'},
+                  {label:'📊HY',val:stocks.filter(s=>s.hy.isHY).length,color:C.blue,f:'hy'},
+                  {label:'🏛️IBV',val:stocks.filter(s=>calcIBV(s).isIBV).length,color:C.teal,f:'ibv'},
                   {label:'🔥PP',val:stocks.filter(s=>s.pp.isPP).length,color:C.orange,f:'pp'},
                   {label:'⚡EMA9',val:stocks.filter(s=>s.nearEMA9.isNearEMA9).length,color:C.green,f:'ema9'},
-                  {label:'📊HY',val:stocks.filter(s=>s.hy.isHY).length,color:C.blue,f:'hy'},
-                  {label:'🚀HT',val:stocks.filter(s=>s.ht.isHT).length,color:C.purple,f:'ht'},
-                  {label:'🏛️IBV',val:stocks.filter(s=>calcIBV(s).isIBV).length,color:C.teal,f:'ibv'},
                   {label:'🎯R1',val:stocks.filter(s=>s.isResistanceBreakout).length,color:C.red,f:'r1breakout'},
                   {label:'↑↑Impr',val:stocks.filter(s=>s.rsTrend.trend==='improving').length,color:C.green,f:'__impr'},
                 ].map(({label,val,color,f})=>(
@@ -3474,7 +3477,7 @@ export default function App(){
                           style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilters.length===0?C.muted:C.border}`,
                             cursor:'pointer',fontSize:12,fontWeight:600,
                             background:sigFilters.length===0?C.muted+'22':'transparent',color:sigFilters.length===0?C.text:C.muted}}>All</button>
-                        {[['pp','🔥PP',C.orange],['hy','📊HY',C.blue],['ht','🚀HT',C.purple],['ema9','⚡EMA9',C.green],['power','⭐Power',C.accent],['ibv','🏛️IBV',C.teal],['r1breakout','🎯R1 Breakout',C.red],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.green]].map(([v,label,color])=>{
+                        {[['ht','🚀HT',C.purple],['hy','📊HY',C.blue],['ibv','🏛️IBV',C.teal],['pp','🔥PP',C.orange],['ema9','⚡EMA9',C.green],['power','⭐Power',C.accent],['r1breakout','🎯R1 Breakout',C.red],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.green]].map(([v,label,color])=>{
                           const active = sigFilters.includes(v)
                           return (
                             <button key={v} onClick={()=>setSigFilters(prev=>active?prev.filter(x=>x!==v):[...prev,v])}

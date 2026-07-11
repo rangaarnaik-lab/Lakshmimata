@@ -75,6 +75,36 @@ export function detectIBVDays(highs, lows, closes, volumes) {
   return flags
 }
 
+/** EMA series (exponential moving average) — null until enough data. */
+function emaSeries(values, period) {
+  const out = new Array(values.length).fill(null)
+  if (values.length < period) return out
+  const k = 2 / (period + 1)
+  let e = values.slice(0, period).reduce((a, b) => a + b, 0) / period
+  out[period - 1] = e
+  for (let i = period; i < values.length; i++) {
+    e = values[i] * k + e * (1 - k)
+    out[i] = e
+  }
+  return out
+}
+
+/**
+ * Near-EMA9 — price within 3% of the 9-day EMA, same threshold the
+ * scanner uses (there it's also gated on RS>=90; the chart drops that
+ * gate since it's already showing one specific stock, not screening).
+ */
+export function detectNearEMA9Days(closes) {
+  const n = closes.length
+  const flags = new Array(n).fill(false)
+  const e9 = emaSeries(closes, 9)
+  for (let i = 0; i < n; i++) {
+    if (e9[i] == null) continue
+    flags[i] = Math.abs((closes[i] - e9[i]) / e9[i] * 100) <= 3
+  }
+  return flags
+}
+
 /** Simple moving average series — null until enough data points exist. */
 export function calcSMASeries(values, period) {
   const out = new Array(values.length).fill(null)
