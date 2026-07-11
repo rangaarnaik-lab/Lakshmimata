@@ -4410,10 +4410,6 @@ export default function App(){
                   ))}
                 </div>
 
-                <BreadthChart data={breadthHistory} isMobile={isMobile}/>
-
-                <EmaBreadthTable data={emaBreadthHistory} isMobile={isMobile} dragProps={emaBreadthTableDrag}/>
-
                 {/* Indices + Sectors side by side on desktop, stacked on
                     mobile. Each table scrolls horizontally independently.
                     All column headers are click-to-sort (click again to
@@ -4737,6 +4733,10 @@ export default function App(){
                       <div style={{fontSize:9,color:C.muted,marginTop:4}}>
                         Industry data comes from Upstox company profiles and fills in gradually — stocks without it yet aren't shown here.
                       </div>
+
+                      <BreadthChart data={breadthHistory} isMobile={isMobile}/>
+
+                      <EmaBreadthTable data={emaBreadthHistory} isMobile={isMobile} dragProps={emaBreadthTableDrag}/>
                     </>
                   )
                 })()}
