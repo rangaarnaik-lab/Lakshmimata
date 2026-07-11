@@ -21,15 +21,51 @@ import {
 let OWNER_TOKEN = import.meta.env.VITE_OWNER_UPSTOX_TOKEN || ''
 
 // ── Colors ────────────────────────────────────────────────────────────
-const C = {
-  bg:'#0a0d12',card:'#0e1117',border:'#1c2333',
-  accent:'#4f8ef7',text:'#e2e8f0',muted:'#4a5568',
-  green:'#22c55e',red:'#ef4444',yellow:'#eab308',
-  purple:'#a855f7',orange:'#f97316',blue:'#3b82f6',
-  pink:'#ec4899',lime:'#84cc16',teal:'#14b8a6',
-  sidebar:'#080b10',divider:'#161b27',
-  rowHover:'#121824',active:'#1a2035',
+// ── Theming ──────────────────────────────────────────────────────────
+// C stays the same shared object every component already reads
+// directly (rewriting every component to take a theme prop would touch
+// thousands of style references across the whole file) — but its VALUES
+// are now swappable. applyTheme() mutates C in place; components pick
+// up the new colors on their next render, triggered by bumping the
+// themeVersion state at the top of App (see below).
+const THEMES = {
+  dark: {
+    bg:'#0a0d12',card:'#0e1117',border:'#1c2333',
+    accent:'#4f8ef7',text:'#e2e8f0',muted:'#4a5568',
+    green:'#22c55e',red:'#ef4444',yellow:'#eab308',
+    purple:'#a855f7',orange:'#f97316',blue:'#3b82f6',
+    pink:'#ec4899',lime:'#84cc16',teal:'#14b8a6',
+    sidebar:'#080b10',divider:'#161b27',
+    rowHover:'#121824',active:'#1a2035',
+  },
+  light: {
+    bg:'#f8fafc',card:'#ffffff',border:'#e2e8f0',
+    accent:'#2563eb',text:'#0f172a',muted:'#64748b',
+    green:'#16a34a',red:'#dc2626',yellow:'#ca8a04',
+    purple:'#9333ea',orange:'#ea580c',blue:'#2563eb',
+    pink:'#db2777',lime:'#65a30d',teal:'#0d9488',
+    sidebar:'#f1f5f9',divider:'#e2e8f0',
+    rowHover:'#f1f5f9',active:'#dbeafe',
+  },
+  midnight: {
+    bg:'#0b1220',card:'#0f1830',border:'#1e2a4a',
+    accent:'#60a5fa',text:'#e8edf7',muted:'#5b6a8c',
+    green:'#34d399',red:'#f87171',yellow:'#fbbf24',
+    purple:'#c084fc',orange:'#fb923c',blue:'#60a5fa',
+    pink:'#f472b6',lime:'#a3e635',teal:'#2dd4bf',
+    sidebar:'#080e1c',divider:'#182544',
+    rowHover:'#141f3d',active:'#1c2b52',
+  },
 }
+const C = {...THEMES.dark}
+function applyTheme(key){
+  const t = THEMES[key] || THEMES.dark
+  Object.assign(C, t)
+  document.body.style.background = t.bg
+  document.body.style.color = t.text
+  try{ localStorage.setItem('lakshmimata-theme', key) }catch(e){}
+}
+
 const rsColor  = r => r>=90?C.green:r>=70?C.accent:r>=50?C.yellow:C.red
 const rsLabel  = r => r>=90?'Elite':r>=80?'Strong':r>=60?'Avg+':r>=40?'Avg':'Weak'
 const trendIcon  = t => t==='improving'?'↑↑':t==='declining'?'↓↓':'→'
@@ -2722,7 +2758,7 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
 }
 
 // ── Settings Panel ────────────────────────────────────────────────────
-function SettingsPanel({session,onUpdate,onLogout}){
+function SettingsPanel({session,onUpdate,onLogout,themeKey,switchTheme}){
   const [newToken,setNewToken]=useState('')
   const [msg,setMsg]=useState('')
   const [loading,setLoading]=useState(false)
@@ -2745,6 +2781,21 @@ function SettingsPanel({session,onUpdate,onLogout}){
         <div style={{fontWeight:800,fontSize:18,marginBottom:4}}>Account Settings</div>
         <div style={{color:C.muted,fontSize:12,marginBottom:16}}>
           Signed in as <strong style={{color:C.accent}}>{session.user.email}</strong>
+        </div>
+        <div style={{marginBottom:20}}>
+          <label style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:'uppercase',
+            letterSpacing:'0.08em',display:'block',marginBottom:8}}>Appearance</label>
+          <div style={{display:'flex',gap:8}}>
+            {[['dark','🌙 Dark'],['light','☀️ Light'],['midnight','🌌 Midnight']].map(([key,label])=>(
+              <button key={key} onClick={()=>switchTheme(key)}
+                style={{flex:1,padding:'10px 8px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
+                  border:`1px solid ${themeKey===key?C.accent:C.border}`,
+                  background:themeKey===key?C.accent+'18':C.bg,
+                  color:themeKey===key?C.accent:C.muted}}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         {ownerMode&&(
           <div style={{background:C.green+'18',border:`1px solid ${C.green}33`,borderRadius:8,
@@ -2843,6 +2894,26 @@ export default function App(){
   const [session,setSession]=useState(null)
   const [showAuth,setShowAuth]=useState(false)
   const [authMode,setAuthMode]=useState('login')
+  const [themeVersion,setThemeVersion]=useState(0)
+  const [themeKey,setThemeKey]=useState('dark')
+
+  // Load saved theme preference once on mount, before first paint of
+  // anything meaningful. themeVersion is a dummy counter — bumping it
+  // forces this component (and everything under it, since nothing here
+  // is memoized) to re-render and re-read C's current values, since
+  // React has no way to detect that C's properties were mutated.
+  useEffect(()=>{
+    let saved='dark'
+    try{ saved=localStorage.getItem('lakshmimata-theme')||'dark' }catch(e){}
+    applyTheme(saved)
+    setThemeKey(saved)
+    setThemeVersion(v=>v+1)
+  },[])
+  const switchTheme=(key)=>{
+    applyTheme(key)
+    setThemeKey(key)
+    setThemeVersion(v=>v+1)
+  }
 
   useEffect(()=>{
     if(session?.user?.id){
@@ -5065,7 +5136,8 @@ export default function App(){
 
         {/* ══ SETTINGS ══ */}
         {mainTab==='settings'&&(
-          <SettingsPanel session={session} onUpdate={s=>setSession(s)} onLogout={()=>{setSession(null);setShowAuth(false)}}/>
+          <SettingsPanel session={session} onUpdate={s=>setSession(s)} onLogout={()=>{setSession(null);setShowAuth(false)}}
+            themeKey={themeKey} switchTheme={switchTheme}/>
         )}
 
       </div>
