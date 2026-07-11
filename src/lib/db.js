@@ -214,6 +214,32 @@ export async function fetchAvailableHistoryDates() {
  * `stock_full_history` table (dates, prices, volumes, highs, lows).
  * Returns null if the symbol hasn't been fetched yet.
  */
+export async function fetchSavedScanners(userId) {
+  const { data, error } = await supabase
+    .from('saved_scanners')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+  if (error) { console.error('fetchSavedScanners error:', error.message); return [] }
+  return data || []
+}
+
+export async function saveScanner(userId, name, filters) {
+  const { data, error } = await supabase
+    .from('saved_scanners')
+    .insert({ user_id: userId, name, filters })
+    .select()
+    .single()
+  if (error) return { error: error.message }
+  return { data }
+}
+
+export async function deleteScanner(scannerId) {
+  const { error } = await supabase.from('saved_scanners').delete().eq('id', scannerId)
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
 export async function fetchStockFullHistory(sym) {
   const cleanSym = (sym || '').trim()
   // Confirmed via direct Supabase inspection: rows exist with real data
