@@ -260,6 +260,32 @@ function useDragScroll(){
 // legally embed or link to an actual music track). A few detuned sine
 // oscillators forming a simple open chord, each slowly breathing in
 // volume via its own LFO, run through a gently sweeping lowpass filter.
+// ── Signal glossary — plain-language descriptions for every filter/
+// badge, so people don't have to guess what PP/IBV/R1/etc mean. ──
+const SIGNAL_TOOLTIPS = {
+  pp: 'Pocket Pivot — up day where volume beats every down day in the past 10 days, price near its short-term average.',
+  hy: 'High Yield (volume) — today\'s volume is near the highest it\'s been in the last 52 weeks, on an up day.',
+  ht: 'High Turnover — today\'s volume is near the highest it\'s ever been for this stock, on an up day.',
+  ibv: 'Institutional-style Buying Volume — heavy volume + strong close within the day\'s range, suggesting large buying.',
+  ema9: 'Price has pulled back to within 3% of its 9-day average, on a top-10%-RS stock.',
+  r1: 'Price just crossed above a significant resistance level it had been held under for a while.',
+  cup: 'Price just broke out above a cup-and-handle pattern. Algorithmic — treat as a visual aid, not a precise signal.',
+  guppy: 'Short-term moving average group just crossed above the long-term group — momentum picking up.',
+}
+
+const SIGNAL_GLOSSARY = [
+  ['🚀 HT', 'High Turnover — today\'s volume is near the highest it\'s ever been for this stock, on an up day.'],
+  ['📊 HY', 'High Yield (volume) — today\'s volume is near the highest it\'s been in the last 52 weeks, on an up day.'],
+  ['🏛️ IBV', 'Institutional-style Buying Volume — unusually heavy volume combined with the price closing strong within the day\'s range, suggesting large/institutional buying rather than retail noise.'],
+  ['🔥 PP', 'Pocket Pivot — an up day where volume beats every down day in the past 10 days, while price stays near its short-term average. A classic early-accumulation signal.'],
+  ['⚡ EMA9 / EMA21 / EMA50', 'Price has pulled back to within 3% of its 9/21/50-day average — a common "buy the dip in an uptrend" zone, shown only for stocks already ranked in the top 10% by RS.'],
+  ['⭐ Power', 'A Pocket Pivot day combined with a Relative Strength rating of 80 or higher — strong momentum plus fresh buying pressure together.'],
+  ['🎯 R1 Breakout', 'Price just crossed above a significant resistance level it had been held under for a while — a fresh breakout, not one that happened days ago.'],
+  ['☕ Cup Breakout', 'Price just broke out above a cup-and-handle chart pattern. Algorithmic pattern-matching — treat as a visual aid, not a precise signal.'],
+  ['🐠 Guppy Crossover', 'The average of short-term moving averages just crossed above the average of long-term moving averages — short-term momentum picking up ahead of the broader trend.'],
+  ['🌀 VCP 2T / 3T / 4T', 'Volatility Contraction Pattern — a series of pullbacks, each shallower than the last, with volume drying up. The number is how many contractions the pattern currently shows.'],
+]
+
 const AMBIENT_SOUNDS = [
   ['pad','🎐 Ambient Pad'],
   ['bowl','🔔 Singing Bowl'],
@@ -606,9 +632,10 @@ function _TVCopyPanelOld({stocks,label}){
 }
 
 // ── Micro components ──────────────────────────────────────────────────
-function Badge({color,children,glow}){
-  return<span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:4,
-    background:color+'22',color,whiteSpace:'nowrap',boxShadow:glow?`0 0 6px ${color}66`:'none'}}>{children}</span>
+function Badge({color,children,glow,title}){
+  return<span title={title} style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:4,
+    background:color+'22',color,whiteSpace:'nowrap',boxShadow:glow?`0 0 6px ${color}66`:'none',
+    cursor:title?'help':'default'}}>{children}</span>
 }
 function Sparkline({data,width=70,height=26,color}){
   const valid=data.filter(v=>v!==null)
@@ -1347,19 +1374,19 @@ function StockCard({s,i,onChart}){
               <div style={{fontWeight:800,fontSize:16}}>{s.sym}</div>
               <div style={{fontSize:10,color:C.muted}}>{s.sector}</div>
               <div style={{display:'flex',gap:4,marginTop:3,flexWrap:'wrap'}}>
-                {s.pp.isPP&&<Badge color={C.orange}>🔥PP</Badge>}
-                {s.hy.isHY&&<Badge color={C.blue}>📊HY</Badge>}
-                {s.ht.isHT&&<Badge color={C.purple}>🚀HT</Badge>}
-                {s.nearEMA9.isNearEMA9&&<Badge color={C.green} glow>⚡EMA9</Badge>}
-                {s.nearEMA21?.isNearEMA21&&<Badge color={C.green}>⚡EMA21</Badge>}
-                {s.nearEMA50?.isNearEMA50&&<Badge color={C.green}>⚡EMA50</Badge>}
-                {s.pp.isPP&&s.rs>=80&&<Badge color={C.accent} glow>⭐Power</Badge>}
+                {s.pp.isPP&&<Badge color={C.orange} title={SIGNAL_TOOLTIPS.pp}>🔥PP</Badge>}
+                {s.hy.isHY&&<Badge color={C.blue} title={SIGNAL_TOOLTIPS.hy}>📊HY</Badge>}
+                {s.ht.isHT&&<Badge color={C.purple} title={SIGNAL_TOOLTIPS.ht}>🚀HT</Badge>}
+                {s.nearEMA9.isNearEMA9&&<Badge color={C.green} glow title={SIGNAL_TOOLTIPS.ema9}>⚡EMA9</Badge>}
+                {s.nearEMA21?.isNearEMA21&&<Badge color={C.green} title="Price near its 21-day average, top-10%-RS stock.">⚡EMA21</Badge>}
+                {s.nearEMA50?.isNearEMA50&&<Badge color={C.green} title="Price near its 50-day average, top-10%-RS stock.">⚡EMA50</Badge>}
+                {s.pp.isPP&&s.rs>=80&&<Badge color={C.accent} glow title="Pocket Pivot + RS 80 or higher.">⭐Power</Badge>}
                     <StageBadge stage={calcWeinsteinStage(s)}/>
-                    {calcIBV(s).isIBV&&<Badge color={C.purple}>🏛️IBV</Badge>}
-                    {s.isResistanceBreakout&&<Badge color={C.red}>🎯R1</Badge>}
-                    {s.isCupHandleBreakout&&<Badge color={C.yellow}>☕Cup</Badge>}
-                    {s.isGuppyBullishCrossover&&<Badge color={C.green}>🐠Guppy</Badge>}
-                    {calcHYHTBreakout(s).isBreakout&&<Badge color={C.accent} glow>💥Break</Badge>}
+                    {calcIBV(s).isIBV&&<Badge color={C.purple} title={SIGNAL_TOOLTIPS.ibv}>🏛️IBV</Badge>}
+                    {s.isResistanceBreakout&&<Badge color={C.red} title={SIGNAL_TOOLTIPS.r1}>🎯R1</Badge>}
+                    {s.isCupHandleBreakout&&<Badge color={C.yellow} title={SIGNAL_TOOLTIPS.cup}>☕Cup</Badge>}
+                    {s.isGuppyBullishCrossover&&<Badge color={C.green} title={SIGNAL_TOOLTIPS.guppy}>🐠Guppy</Badge>}
+                    {calcHYHTBreakout(s).isBreakout&&<Badge color={C.accent} glow title="High volume + strong RS + price up today, all together.">💥Break</Badge>}
               </div>
             </div>
           </div>
@@ -3151,6 +3178,7 @@ export default function App(){
   const ambient=useAmbientSound()
   const [showQuickSettings,setShowQuickSettings]=useState(false)
   const [showMoreMenu,setShowMoreMenu]=useState(false)
+  const [showSignalGlossary,setShowSignalGlossary]=useState(false)
   const [breadthHistory,setBreadthHistory]=useState([])
   useEffect(()=>{
     if(mainTab==='indices' && breadthHistory.length===0){
@@ -4125,9 +4153,26 @@ export default function App(){
                       </div>
                     </div>
                     <div>
-                      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
                         Signal <span style={{color:C.muted,fontWeight:400}}>(tap multiple — matches any selected)</span>
+                        <button onClick={()=>setShowSignalGlossary(v=>!v)}
+                          style={{background:'transparent',border:`1px solid ${C.border}`,color:C.muted,
+                            borderRadius:'50%',width:16,height:16,fontSize:10,cursor:'pointer',
+                            display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>
+                          ℹ
+                        </button>
                       </div>
+                      {showSignalGlossary&&(
+                        <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,
+                          padding:'10px 12px',marginBottom:10,display:'flex',flexDirection:'column',gap:8}}>
+                          {SIGNAL_GLOSSARY.map(([label,desc])=>(
+                            <div key={label}>
+                              <div style={{fontSize:11,fontWeight:700,color:C.text}}>{label}</div>
+                              <div style={{fontSize:10.5,color:C.muted,marginTop:2,lineHeight:1.5}}>{desc}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                         <button onClick={()=>setSigFilters([])}
                           style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilters.length===0?C.muted:C.border}`,
