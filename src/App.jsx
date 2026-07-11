@@ -1093,6 +1093,8 @@ function StockCard({s,i,onChart}){
                 {s.hy.isHY&&<Badge color={C.blue}>📊HY</Badge>}
                 {s.ht.isHT&&<Badge color={C.purple}>🚀HT</Badge>}
                 {s.nearEMA9.isNearEMA9&&<Badge color={C.green} glow>⚡EMA9</Badge>}
+                {s.nearEMA21?.isNearEMA21&&<Badge color={C.green}>⚡EMA21</Badge>}
+                {s.nearEMA50?.isNearEMA50&&<Badge color={C.green}>⚡EMA50</Badge>}
                 {s.pp.isPP&&s.rs>=80&&<Badge color={C.accent} glow>⭐Power</Badge>}
                     <StageBadge stage={calcWeinsteinStage(s)}/>
                     {calcIBV(s).isIBV&&<Badge color={C.purple}>🏛️IBV</Badge>}
@@ -2727,6 +2729,8 @@ export default function App(){
     if(sig==='hy') return !!s.hy?.isHY
     if(sig==='ht') return !!s.ht?.isHT
     if(sig==='ema9') return !!s.nearEMA9?.isNearEMA9
+    if(sig==='ema21') return !!s.nearEMA21?.isNearEMA21
+    if(sig==='ema50') return !!s.nearEMA50?.isNearEMA50
     if(sig==='power') return !!(s.pp?.isPP&&s.rs>=80)
     if(sig==='ibv') return calcIBV(s).isIBV
     if(sig==='r1breakout') return !!s.isResistanceBreakout
@@ -3477,7 +3481,7 @@ export default function App(){
                           style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilters.length===0?C.muted:C.border}`,
                             cursor:'pointer',fontSize:12,fontWeight:600,
                             background:sigFilters.length===0?C.muted+'22':'transparent',color:sigFilters.length===0?C.text:C.muted}}>All</button>
-                        {[['ht','🚀HT',C.purple],['hy','📊HY',C.blue],['ibv','🏛️IBV',C.teal],['pp','🔥PP',C.orange],['ema9','⚡EMA9',C.green],['power','⭐Power',C.accent],['r1breakout','🎯R1 Breakout',C.red],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.green]].map(([v,label,color])=>{
+                        {[['ht','🚀HT',C.purple],['hy','📊HY',C.blue],['ibv','🏛️IBV',C.teal],['pp','🔥PP',C.orange],['ema9','⚡EMA9',C.green],['ema21','⚡EMA21',C.green],['ema50','⚡EMA50',C.green],['power','⭐Power',C.accent],['r1breakout','🎯R1 Breakout',C.red],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.green]].map(([v,label,color])=>{
                           const active = sigFilters.includes(v)
                           return (
                             <button key={v} onClick={()=>setSigFilters(prev=>active?prev.filter(x=>x!==v):[...prev,v])}

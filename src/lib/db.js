@@ -129,6 +129,16 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
       ema9:        row.ema9,
       pctFromEMA9: row.pct_from_ema9,
     },
+    nearEMA21: {
+      isNearEMA21:  row.near_ema21 || false,
+      ema21:        row.ema21,
+      pctFromEMA21: row.pct_from_ema21,
+    },
+    nearEMA50: {
+      isNearEMA50:  row.near_ema50 || false,
+      ema50:        row.ema50,
+      pctFromEMA50: row.pct_from_ema50,
+    },
     scanner52wl: {
       near52wLow:       row.near_52wl || false,
       pctFrom52wLow:    row.pct_from_52wl || 999,
