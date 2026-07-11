@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -1455,6 +1455,47 @@ function SimpleStockTable({stocks, isMobile, onChart}){
 
 // once at the top level and overlays via position:fixed. Swaps symbol in
 // place (same panel instance) when a different stock is clicked.
+// ── Market Breadth Chart — advances vs declines over time ──────────────
+function BreadthChart({data,isMobile}){
+  if(!data||data.length<2) return null
+  const W=900,H=isMobile?200:240,padL=40,padR=12,padT=10,padB=28
+  const chartW=W-padL-padR,chartH=H-padT-padB
+  const maxVal=Math.max(...data.map(d=>Math.max(d.advances||0,d.declines||0)))||1
+  const xAt=i=>padL+(i/(data.length-1))*chartW
+  const yAt=v=>padT+chartH-(v/maxVal)*chartH
+  const advPath=data.map((d,i)=>`${i===0?'M':'L'} ${xAt(i)},${yAt(d.advances||0)}`).join(' ')
+  const decPath=data.map((d,i)=>`${i===0?'M':'L'} ${xAt(i)},${yAt(d.declines||0)}`).join(' ')
+  const labelStep=Math.max(1,Math.floor(data.length/6))
+  return(
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 14px 8px',marginBottom:14}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+        <div style={{fontWeight:800,fontSize:13}}>📈 Market Breadth — Advances vs Declines</div>
+        <div style={{display:'flex',gap:12,fontSize:10,color:C.muted}}>
+          <span><span style={{color:C.green}}>●</span> Advances</span>
+          <span><span style={{color:C.red}}>●</span> Declines</span>
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:isMobile?160:190,display:'block'}}>
+        {[0,0.5,1].map(f=>(
+          <g key={f}>
+            <line x1={padL} y1={padT+chartH*f} x2={W-padR} y2={padT+chartH*f} stroke={C.divider} strokeWidth={1}/>
+            <text x={padL-6} y={padT+chartH*f+3} fontSize={8} fill={C.muted} textAnchor="end">
+              {Math.round(maxVal*(1-f))}
+            </text>
+          </g>
+        ))}
+        <path d={advPath} fill="none" stroke={C.green} strokeWidth={1.5}/>
+        <path d={decPath} fill="none" stroke={C.red} strokeWidth={1.5}/>
+        {data.map((d,i)=> i%labelStep===0 ? (
+          <text key={i} x={xAt(i)} y={H-8} fontSize={8} fill={C.muted} textAnchor="middle">
+            {d.date?.slice(5)}
+          </text>
+        ) : null)}
+      </svg>
+    </div>
+  )
+}
+
 function ChartPanel({sym, wide, onToggleWide, onClose, isMobile, symList, onNavigate}){
   const [loaded, setLoaded] = useState(false)
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
@@ -3110,6 +3151,12 @@ export default function App(){
   const ambient=useAmbientSound()
   const [showQuickSettings,setShowQuickSettings]=useState(false)
   const [showMoreMenu,setShowMoreMenu]=useState(false)
+  const [breadthHistory,setBreadthHistory]=useState([])
+  useEffect(()=>{
+    if(mainTab==='indices' && breadthHistory.length===0){
+      fetchMarketBreadthHistory(180).then(setBreadthHistory)
+    }
+  },[mainTab])
 
   // Load saved theme preference once on mount, before first paint of
   // anything meaningful. themeVersion is a dummy counter — bumping it
@@ -4202,6 +4249,8 @@ export default function App(){
                     </div>
                   ))}
                 </div>
+
+                <BreadthChart data={breadthHistory} isMobile={isMobile}/>
 
                 {/* Indices + Sectors side by side on desktop, stacked on
                     mobile. Each table scrolls horizontally independently.
