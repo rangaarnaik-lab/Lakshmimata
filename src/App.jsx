@@ -2767,8 +2767,8 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
       } else if(mode==='login'){
         const{data,error:e}=await supabase.auth.signInWithPassword({email,password})
         if(e)throw e
-        const{data:td}=await supabase.from('user_tokens').select('upstox_token').eq('user_id',data.user.id).single()
-        onLogin({user:data.user,token:td?.upstox_token||OWNER_TOKEN})
+        const{data:decryptedToken}=await supabase.rpc('get_upstox_token')
+        onLogin({user:data.user,token:decryptedToken||OWNER_TOKEN})
       } else {
         // Register — password must be at least 10 characters and contain
         // both letters and numbers, checked client-side before hitting
@@ -2785,7 +2785,7 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
         })
         if(e)throw e
         if(data.user&&upstoxToken){
-          await supabase.from('user_tokens').upsert({user_id:data.user.id,upstox_token:upstoxToken})
+          await supabase.rpc('save_upstox_token',{token:upstoxToken})
         }
         setInfo('Account created! Check your email to confirm, then sign in.')
         setMode('login')
@@ -3331,6 +3331,9 @@ export default function App(){
     if(sig==='r1breakout') return !!s.isResistanceBreakout
     if(sig==='cupbreakout') return !!s.isCupHandleBreakout
     if(sig==='guppy') return !!s.isGuppyBullishCrossover
+    if(sig==='vcp2t') return !!s.isVCP && s.vcpStage===2
+    if(sig==='vcp3t') return !!s.isVCP && s.vcpStage===3
+    if(sig==='vcp4t') return !!s.isVCP && s.vcpStage===4
     return false
   }
   const [search,setSearch]=useState(''),[sortBy,setSortBy]=useState('rs')
@@ -4082,7 +4085,7 @@ export default function App(){
                           style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilters.length===0?C.muted:C.border}`,
                             cursor:'pointer',fontSize:12,fontWeight:600,
                             background:sigFilters.length===0?C.muted+'22':'transparent',color:sigFilters.length===0?C.text:C.muted}}>All</button>
-                        {[['ht','🚀HT',C.purple],['hy','📊HY',C.blue],['ibv','🏛️IBV',C.teal],['pp','🔥PP',C.orange],['ema9','⚡EMA9',C.green],['ema21','⚡EMA21',C.green],['ema50','⚡EMA50',C.green],['power','⭐Power',C.accent],['r1breakout','🎯R1 Breakout',C.red],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.green]].map(([v,label,color])=>{
+                        {[['ht','🚀HT',C.purple],['hy','📊HY',C.blue],['ibv','🏛️IBV',C.teal],['pp','🔥PP',C.orange],['ema9','⚡EMA9',C.green],['ema21','⚡EMA21',C.green],['ema50','⚡EMA50',C.green],['power','⭐Power',C.accent],['r1breakout','🎯R1 Breakout',C.red],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.green],['vcp2t','🌀VCP 2T',C.purple],['vcp3t','🌀VCP 3T',C.purple],['vcp4t','🌀VCP 4T',C.purple]].map(([v,label,color])=>{
                           const active = sigFilters.includes(v)
                           return (
                             <button key={v} onClick={()=>setSigFilters(prev=>active?prev.filter(x=>x!==v):[...prev,v])}
