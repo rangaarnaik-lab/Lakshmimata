@@ -148,6 +148,23 @@ function calcIBV(s){
   }
 }
 
+// A stock can technically have HT, HY, IBV, and PP all true at once
+// (they're independent volume checks) — but showing all four badges on
+// one card is redundant, and HT/HY/IBV are all stronger signals than
+// PP specifically, so only the single highest-priority one should
+// actually be surfaced anywhere (badges, filters, counts, Breakout tab
+// sections), matching the same HT > HY > IBV > PP priority already
+// used for the chart's volume bar coloring. Module-level (not inside
+// App) so every component that needs it — including ones outside
+// App's closure, like PresetFilterBar — can call it directly.
+function topVolumeSignal(s){
+  if(s.ht?.isHT) return 'ht'
+  if(s.hy?.isHY) return 'hy'
+  if(calcIBV(s).isIBV) return 'ibv'
+  if(s.pp?.isPP) return 'pp'
+  return null
+}
+
 // ── HY/HT Breakout Scanner ────────────────────────────────────────────
 // Had HY or HT in last 5 days + price breaking out today
 function calcHYHTBreakout(s){
@@ -893,20 +910,20 @@ function PresetFilterBar({active,setActive,stocks}){
   const counts = {}
   PRESETS.forEach(p => {
     if(p.id === 'all')       counts[p.id] = stocks.length
-    else if(p.id === 'pp')       counts[p.id] = stocks.filter(s=>s.pp?.isPP).length
+    else if(p.id === 'pp')       counts[p.id] = stocks.filter(s=>topVolumeSignal(s)==='pp').length
     else if(p.id === 'ema9')     counts[p.id] = stocks.filter(s=>s.nearEMA9?.isNearEMA9).length
-    else if(p.id === 'hy')       counts[p.id] = stocks.filter(s=>s.hy?.isHY).length
-    else if(p.id === 'ht')       counts[p.id] = stocks.filter(s=>s.ht?.isHT).length
+    else if(p.id === 'hy')       counts[p.id] = stocks.filter(s=>topVolumeSignal(s)==='hy').length
+    else if(p.id === 'ht')       counts[p.id] = stocks.filter(s=>topVolumeSignal(s)==='ht').length
     else if(p.id === 'rs90')     counts[p.id] = stocks.filter(s=>(s.rsTv??s.rs)>=90).length
     else if(p.id === 'rs80')     counts[p.id] = stocks.filter(s=>(s.rsTv??s.rs)>=80).length
     else if(p.id === 'impr')     counts[p.id] = stocks.filter(s=>s.rsTrend?.trend==='improving').length
-    else if(p.id === 'power')    counts[p.id] = stocks.filter(s=>s.pp?.isPP&&s.rs>=80).length
+    else if(p.id === 'power')    counts[p.id] = stocks.filter(s=>topVolumeSignal(s)==='pp'&&s.rs>=80).length
     else if(p.id === 's2')       counts[p.id] = stocks.filter(s=>calcWeinsteinStage(s).stage===2).length
     else if(p.id === 's1')       counts[p.id] = stocks.filter(s=>calcWeinsteinStage(s).stage===1).length
     else if(p.id === 's3')       counts[p.id] = stocks.filter(s=>calcWeinsteinStage(s).stage===3).length
     else if(p.id === 's4')       counts[p.id] = stocks.filter(s=>calcWeinsteinStage(s).stage===4).length
     else if(p.id === 'surge')    counts[p.id] = stocks.filter(s=>s.hy?.pctOfMax>=95).length
-    else if(p.id === 'ibv')      counts[p.id] = stocks.filter(s=>calcIBV(s).isIBV).length
+    else if(p.id === 'ibv')      counts[p.id] = stocks.filter(s=>topVolumeSignal(s)==='ibv').length
     else if(p.id === 'breakout') counts[p.id] = stocks.filter(s=>calcHYHTBreakout(s).isBreakout).length
   })
 
@@ -1357,15 +1374,20 @@ function StockCard({s,i,onChart}){
               <div style={{fontWeight:800,fontSize:16}}>{s.sym}</div>
               <div style={{fontSize:10,color:C.muted}}>{s.sector}</div>
               <div style={{display:'flex',gap:4,marginTop:3,flexWrap:'wrap'}}>
-                {s.pp.isPP&&<Badge color={C.green} title={SIGNAL_TOOLTIPS.pp}>🔥PP</Badge>}
-                {s.hy.isHY&&<Badge color={C.pink} title={SIGNAL_TOOLTIPS.hy}>📊HY</Badge>}
-                {s.ht.isHT&&<Badge color={C.orange} title={SIGNAL_TOOLTIPS.ht}>🚀HT</Badge>}
+                {(()=>{
+                  const top = topVolumeSignal(s)
+                  return <>
+                    {top==='ht'&&<Badge color={C.orange} title={SIGNAL_TOOLTIPS.ht}>🚀HT</Badge>}
+                    {top==='hy'&&<Badge color={C.pink} title={SIGNAL_TOOLTIPS.hy}>📊HY</Badge>}
+                    {top==='ibv'&&<Badge color={C.blue} title={SIGNAL_TOOLTIPS.ibv}>🏛️IBV</Badge>}
+                    {top==='pp'&&<Badge color={C.green} title={SIGNAL_TOOLTIPS.pp}>🔥PP</Badge>}
+                  </>
+                })()}
                 {s.nearEMA9.isNearEMA9&&<Badge color={C.green} glow title={SIGNAL_TOOLTIPS.ema9}>⚡EMA9</Badge>}
                 {s.nearEMA21?.isNearEMA21&&<Badge color={C.green} title="Price near its 21-day average, top-10%-RS stock.">⚡EMA21</Badge>}
                 {s.nearEMA50?.isNearEMA50&&<Badge color={C.green} title="Price near its 50-day average, top-10%-RS stock.">⚡EMA50</Badge>}
-                {s.pp.isPP&&s.rs>=80&&<Badge color={C.accent} glow title="Pocket Pivot + RS 80 or higher.">⭐Power</Badge>}
+                {topVolumeSignal(s)==='pp'&&s.rs>=80&&<Badge color={C.accent} glow title="Pocket Pivot + RS 80 or higher.">⭐Power</Badge>}
                     <StageBadge stage={calcWeinsteinStage(s)}/>
-                    {calcIBV(s).isIBV&&<Badge color={C.blue} title={SIGNAL_TOOLTIPS.ibv}>🏛️IBV</Badge>}
                     {s.isResistanceBreakout&&<Badge color={C.red} title={SIGNAL_TOOLTIPS.r1}>🎯R1</Badge>}
                     {s.isCupHandleBreakout&&<Badge color={C.yellow} title={SIGNAL_TOOLTIPS.cup}>☕Cup</Badge>}
                     {s.isGuppyBullishCrossover&&<Badge color={C.green} title={SIGNAL_TOOLTIPS.guppy}>🐠Guppy</Badge>}
@@ -3487,14 +3509,14 @@ export default function App(){
   // Used by the multi-select Signal filter (OR logic — a stock matches
   // if it satisfies ANY of the selected signals).
   const matchesSignal = (s,sig) => {
-    if(sig==='pp') return !!s.pp?.isPP
-    if(sig==='hy') return !!s.hy?.isHY
-    if(sig==='ht') return !!s.ht?.isHT
+    if(sig==='pp') return topVolumeSignal(s)==='pp'
+    if(sig==='hy') return topVolumeSignal(s)==='hy'
+    if(sig==='ht') return topVolumeSignal(s)==='ht'
     if(sig==='ema9') return !!s.nearEMA9?.isNearEMA9
     if(sig==='ema21') return !!s.nearEMA21?.isNearEMA21
     if(sig==='ema50') return !!s.nearEMA50?.isNearEMA50
-    if(sig==='power') return !!(s.pp?.isPP&&s.rs>=80)
-    if(sig==='ibv') return calcIBV(s).isIBV
+    if(sig==='power') return topVolumeSignal(s)==='pp' && s.rs>=80
+    if(sig==='ibv') return topVolumeSignal(s)==='ibv'
     if(sig==='r1breakout') return !!s.isResistanceBreakout
     if(sig==='cupbreakout') return !!s.isCupHandleBreakout
     if(sig==='guppy') return !!s.isGuppyBullishCrossover
@@ -4078,10 +4100,10 @@ export default function App(){
             {stocks.length>0&&(
               <div style={{display:'flex',gap:8,marginBottom:12,overflowX:'auto',paddingBottom:4}}>
                 {[{label:'All',val:stocks.length,color:C.text,f:'all'},
-                  {label:'🚀HT',val:stocks.filter(s=>s.ht.isHT).length,color:C.orange,f:'ht'},
-                  {label:'📊HY',val:stocks.filter(s=>s.hy.isHY).length,color:C.pink,f:'hy'},
-                  {label:'🏛️IBV',val:stocks.filter(s=>calcIBV(s).isIBV).length,color:C.blue,f:'ibv'},
-                  {label:'🔥PP',val:stocks.filter(s=>s.pp.isPP).length,color:C.green,f:'pp'},
+                  {label:'🚀HT',val:stocks.filter(s=>topVolumeSignal(s)==='ht').length,color:C.orange,f:'ht'},
+                  {label:'📊HY',val:stocks.filter(s=>topVolumeSignal(s)==='hy').length,color:C.pink,f:'hy'},
+                  {label:'🏛️IBV',val:stocks.filter(s=>topVolumeSignal(s)==='ibv').length,color:C.blue,f:'ibv'},
+                  {label:'🔥PP',val:stocks.filter(s=>topVolumeSignal(s)==='pp').length,color:C.green,f:'pp'},
                   {label:'⚡EMA9',val:stocks.filter(s=>s.nearEMA9.isNearEMA9).length,color:C.teal,f:'ema9'},
                   {label:'🎯R1',val:stocks.filter(s=>s.isResistanceBreakout).length,color:C.red,f:'r1breakout'},
                   {label:'↑↑Impr',val:stocks.filter(s=>s.rsTrend.trend==='improving').length,color:C.green,f:'__impr'},
@@ -4930,7 +4952,7 @@ export default function App(){
                               <div style={{fontSize:8,color:C.muted}}>RS-TV</div>
                             </div>
                             {stage&&<StageBadge stage={stage}/>}
-                            {s.pp?.isPP&&<Badge color={C.green}>PP</Badge>}
+                            {topVolumeSignal(s)==='pp'&&<Badge color={C.green}>PP</Badge>}
                             {dangerZone&&(
                               <div style={{padding:'3px 8px',borderRadius:5,fontSize:10,fontWeight:700,
                                 background:C.red+'22',color:C.red,border:`1px solid ${C.red}44`}}>
@@ -5178,7 +5200,7 @@ export default function App(){
                             <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
                               {s.squeeze?.squeezeFired&&<Badge color={C.green} glow>🟢 BB Fired</Badge>}
                               {s.vcp?.vcpFired&&<Badge color={C.accent} glow>🚀 VCP Fired</Badge>}
-                              {s.pp?.isPP&&<Badge color={C.green}>🔥PP</Badge>}
+                              {topVolumeSignal(s)==='pp'&&<Badge color={C.green}>🔥PP</Badge>}
                             </div>
                           </div>
                           <div style={{textAlign:'right'}}>
@@ -5434,11 +5456,16 @@ export default function App(){
                           <div style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:800,
                             background:bo.color+'22',color:bo.color}}>{bo.strength}</div>
                           <StageBadge stage={stage}/>
-                          {ibv.isIBV&&<div style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:700,
-                            background:C.purple+'22',color:C.purple}}>🏛️ IBV {ibv.ppCount}d</div>}
-                          {s.pp?.isPP&&<Badge color={C.green}>🔥PP</Badge>}
-                          {s.hy?.isHY&&<Badge color={C.pink}>📊HY</Badge>}
-                          {s.ht?.isHT&&<Badge color={C.orange}>🎯HT</Badge>}
+                          {(()=>{
+                            const top = topVolumeSignal(s)
+                            return <>
+                              {top==='ht'&&<Badge color={C.orange}>🎯HT</Badge>}
+                              {top==='hy'&&<Badge color={C.pink}>📊HY</Badge>}
+                              {top==='ibv'&&<div style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:700,
+                                background:C.blue+'22',color:C.blue}}>🏛️ IBV {ibv.ppCount}d</div>}
+                              {top==='pp'&&<Badge color={C.green}>🔥PP</Badge>}
+                            </>
+                          })()}
                         </div>
                       </div>
                       <div style={{textAlign:'right'}}>
@@ -5522,7 +5549,7 @@ export default function App(){
                     <div style={{fontSize:11,color:C.muted}}>{s.sector}</div>
                     <div style={{display:'flex',gap:4,marginTop:4}}>
                       {s.scanner52wl.isSignal&&<Badge color={C.pink} glow>🎯 Full Signal</Badge>}
-                      {s.pp.isPP&&<Badge color={C.green}>🔥PP</Badge>}
+                      {topVolumeSignal(s)==='pp'&&<Badge color={C.green}>🔥PP</Badge>}
                     </div>
                   </div>
                   <div style={{textAlign:'right'}}>
@@ -5601,7 +5628,7 @@ export default function App(){
                     <div style={{display:'flex',gap:4,marginTop:4}}>
                       <Badge color={C.lime} glow>🚨 RS{s.rs} +{s.weakRS.chg1d}%</Badge>
                       {s.weakRS.isVolSpike&&<Badge color={C.orange}>📊{s.weakRS.volSpike}x</Badge>}
-                      {s.pp.isPP&&<Badge color={C.green}>🔥PP</Badge>}
+                      {topVolumeSignal(s)==='pp'&&<Badge color={C.green}>🔥PP</Badge>}
                     </div>
                   </div>
                   <div style={{textAlign:'right'}}>
