@@ -3004,54 +3004,9 @@ function SettingsPanel({session,onUpdate,onLogout,themeKey,switchTheme,ambient})
         <div style={{color:C.muted,fontSize:12,marginBottom:16}}>
           Signed in as <strong style={{color:C.accent}}>{session.user.email}</strong>
         </div>
-        <div style={{marginBottom:20}}>
-          <label style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:'uppercase',
-            letterSpacing:'0.08em',display:'block',marginBottom:8}}>Appearance</label>
-          <div style={{display:'flex',gap:8}}>
-            {[['dark','🌙 Dark'],['light','☀️ Light'],['midnight','🌌 Midnight']].map(([key,label])=>(
-              <button key={key} onClick={()=>switchTheme(key)}
-                style={{flex:1,padding:'10px 8px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
-                  border:`1px solid ${themeKey===key?C.accent:C.border}`,
-                  background:themeKey===key?C.accent+'18':C.bg,
-                  color:themeKey===key?C.accent:C.muted}}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div style={{marginBottom:20}}>
-          <label style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:'uppercase',
-            letterSpacing:'0.08em',display:'block',marginBottom:8}}>
-            Ambient Sound <span style={{color:C.muted,fontWeight:400,textTransform:'none'}}>(optional, synthesized — not a music track)</span>
-          </label>
-          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-            <button onClick={ambient.toggle}
-              style={{padding:'10px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
-                border:`1px solid ${ambient.enabled?C.accent:C.border}`,
-                background:ambient.enabled?C.accent+'18':C.bg,
-                color:ambient.enabled?C.accent:C.muted,whiteSpace:'nowrap'}}>
-              {ambient.enabled?'🔔 Enabled':'🔕 Disabled'}
-            </button>
-            <input type="range" min={0} max={1} step={0.05} value={ambient.volume}
-              onChange={e=>ambient.setVolume(+e.target.value)}
-              style={{flex:1}}/>
-          </div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
-            {AMBIENT_SOUNDS.map(([key,label])=>(
-              <button key={key} onClick={()=>ambient.setSoundType(key)}
-                style={{padding:'8px 10px',borderRadius:8,cursor:'pointer',fontSize:11.5,fontWeight:600,
-                  border:`1px solid ${ambient.soundType===key?C.accent:C.border}`,
-                  background:ambient.soundType===key?C.accent+'18':C.bg,
-                  color:ambient.soundType===key?C.accent:C.muted}}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <div style={{fontSize:10,color:C.muted,marginTop:8}}>
-            {ambient.enabled && !ambient.playing
-              ? 'Enabled — will start on your next tap anywhere (browsers block silent autoplay).'
-              : 'Generated in your browser, not a recording. Your choices are remembered next time you visit.'}
-          </div>
+        <div style={{marginBottom:20,fontSize:12,color:C.muted,background:C.bg,
+          border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px'}}>
+          🎨 Theme and ambient sound moved — look for the palette icon in the top-right corner, on any tab.
         </div>
         {ownerMode&&(
           <div style={{background:C.green+'18',border:`1px solid ${C.green}33`,borderRadius:8,
@@ -3153,6 +3108,7 @@ export default function App(){
   const [themeVersion,setThemeVersion]=useState(0)
   const [themeKey,setThemeKey]=useState('dark')
   const ambient=useAmbientSound()
+  const [showQuickSettings,setShowQuickSettings]=useState(false)
 
   // Load saved theme preference once on mount, before first paint of
   // anything meaningful. themeVersion is a dummy counter — bumping it
@@ -5398,6 +5354,65 @@ export default function App(){
         )}
 
       </div>
+      </div>
+
+      {/* Quick settings — theme + ambient sound, always reachable from any
+          tab via a floating button, instead of needing to navigate into
+          Account Settings first. */}
+      <div style={{position:'fixed',top:isMobile?12:16,right:isMobile?12:16,zIndex:60}}>
+        <button onClick={()=>setShowQuickSettings(v=>!v)}
+          style={{width:38,height:38,borderRadius:'50%',border:`1px solid ${C.border}`,
+            background:C.card,color:C.text,fontSize:16,cursor:'pointer',
+            display:'flex',alignItems:'center',justifyContent:'center',
+            boxShadow:'0 4px 14px rgba(0,0,0,0.25)'}}>
+          🎨
+        </button>
+        {showQuickSettings&&(
+          <div style={{position:'absolute',top:46,right:0,width:260,background:C.card,
+            border:`1px solid ${C.border}`,borderRadius:12,padding:14,
+            boxShadow:'0 12px 32px rgba(0,0,0,0.35)'}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',
+              letterSpacing:'0.06em',marginBottom:8}}>Appearance</div>
+            <div style={{display:'flex',gap:6,marginBottom:16}}>
+              {[['dark','🌙'],['light','☀️'],['midnight','🌌']].map(([key,icon])=>(
+                <button key={key} onClick={()=>switchTheme(key)}
+                  style={{flex:1,padding:'8px 0',borderRadius:8,cursor:'pointer',fontSize:16,
+                    border:`1px solid ${themeKey===key?C.accent:C.border}`,
+                    background:themeKey===key?C.accent+'18':C.bg}}>
+                  {icon}
+                </button>
+              ))}
+            </div>
+            <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',
+              letterSpacing:'0.06em',marginBottom:8}}>Ambient Sound</div>
+            <button onClick={ambient.toggle}
+              style={{width:'100%',padding:'8px 0',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
+                border:`1px solid ${ambient.enabled?C.accent:C.border}`,
+                background:ambient.enabled?C.accent+'18':C.bg,
+                color:ambient.enabled?C.accent:C.muted,marginBottom:10}}>
+              {ambient.enabled?'🔔 Enabled':'🔕 Disabled'}
+            </button>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:10}}>
+              {AMBIENT_SOUNDS.map(([key,label])=>(
+                <button key={key} onClick={()=>ambient.setSoundType(key)}
+                  style={{padding:'6px 6px',borderRadius:6,cursor:'pointer',fontSize:10.5,fontWeight:600,
+                    border:`1px solid ${ambient.soundType===key?C.accent:C.border}`,
+                    background:ambient.soundType===key?C.accent+'18':C.bg,
+                    color:ambient.soundType===key?C.accent:C.muted}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <input type="range" min={0} max={1} step={0.05} value={ambient.volume}
+              onChange={e=>ambient.setVolume(+e.target.value)}
+              style={{width:'100%'}}/>
+            {ambient.enabled&&!ambient.playing&&(
+              <div style={{fontSize:9.5,color:C.muted,marginTop:6}}>
+                Will start on your next tap anywhere (browsers block silent autoplay).
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Global chart panel — works from any tab, right-docked on desktop,
