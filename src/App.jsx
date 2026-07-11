@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -1519,6 +1519,54 @@ function BreadthChart({data,isMobile}){
           </text>
         ) : null)}
       </svg>
+    </div>
+  )
+}
+
+// ── EMA Breadth Table — % of stocks above 9/21/50-day EMA per day,
+// plus daily Stage 2 count (going forward only, see backend notes). ──
+function EmaBreadthTable({data,isMobile,dragProps}){
+  if(!data||data.length===0) return null
+  const pct=(n,total)=>total?Math.round(n/total*100):0
+  return(
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 14px 4px',marginBottom:14}}>
+      <div style={{fontWeight:800,fontSize:13,marginBottom:2}}>📅 Stocks Above EMA — Last Month</div>
+      <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
+        % of tracked stocks trading above their 9/21/50-day average, plus daily Stage 2 count
+        {data.some(d=>d.stage2_count==null) && ' (Stage 2 only available from when this was added — no history before that)'}
+      </div>
+      <div ref={dragProps?.ref} {...(dragProps?.handlers||{})}
+        style={{overflowX:'auto',...(dragProps?.style||{})}}>
+        <table style={{width:'100%',borderCollapse:'collapse',minWidth:520}}>
+          <thead>
+            <tr style={{borderBottom:`1px solid ${C.border}`}}>
+              {['Date','Above EMA9','Above EMA21','Above EMA50','Stage 2'].map(h=>(
+                <th key={h} style={{textAlign:h==='Date'?'left':'right',padding:'6px 10px',
+                  fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.04em'}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {[...data].reverse().map(d=>(
+              <tr key={d.date} style={{borderBottom:`1px solid ${C.divider}`}}>
+                <td style={{padding:'7px 10px',fontSize:11.5,fontWeight:600}}>{d.date}</td>
+                <td style={{padding:'7px 10px',fontSize:11.5,textAlign:'right',color:pct(d.above_ema9,d.total)>=50?C.green:C.red}}>
+                  {pct(d.above_ema9,d.total)}% <span style={{color:C.muted,fontSize:9.5}}>({d.above_ema9})</span>
+                </td>
+                <td style={{padding:'7px 10px',fontSize:11.5,textAlign:'right',color:pct(d.above_ema21,d.total)>=50?C.green:C.red}}>
+                  {pct(d.above_ema21,d.total)}% <span style={{color:C.muted,fontSize:9.5}}>({d.above_ema21})</span>
+                </td>
+                <td style={{padding:'7px 10px',fontSize:11.5,textAlign:'right',color:pct(d.above_ema50,d.total)>=50?C.green:C.red}}>
+                  {pct(d.above_ema50,d.total)}% <span style={{color:C.muted,fontSize:9.5}}>({d.above_ema50})</span>
+                </td>
+                <td style={{padding:'7px 10px',fontSize:11.5,textAlign:'right',color:C.text}}>
+                  {d.stage2_count!=null ? <>{pct(d.stage2_count,d.total)}% <span style={{color:C.muted,fontSize:9.5}}>({d.stage2_count})</span></> : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -3180,9 +3228,11 @@ export default function App(){
   const [showMoreMenu,setShowMoreMenu]=useState(false)
   const [showSignalGlossary,setShowSignalGlossary]=useState(false)
   const [breadthHistory,setBreadthHistory]=useState([])
+  const [emaBreadthHistory,setEmaBreadthHistory]=useState([])
   useEffect(()=>{
     if(mainTab==='indices' && breadthHistory.length===0){
       fetchMarketBreadthHistory(180).then(setBreadthHistory)
+      fetchEmaBreadthHistory(35).then(setEmaBreadthHistory)
     }
   },[mainTab])
 
@@ -3312,6 +3362,7 @@ export default function App(){
   const idxTableDrag=useDragScroll()
   const secTableDrag=useDragScroll()
   const indTableDrag=useDragScroll()
+  const emaBreadthTableDrag=useDragScroll()
   const [notifPermission,setNotifPermission]=useState(
     typeof Notification!=='undefined'?Notification.permission:'denied'
   )
@@ -4296,6 +4347,8 @@ export default function App(){
                 </div>
 
                 <BreadthChart data={breadthHistory} isMobile={isMobile}/>
+
+                <EmaBreadthTable data={emaBreadthHistory} isMobile={isMobile} dragProps={emaBreadthTableDrag}/>
 
                 {/* Indices + Sectors side by side on desktop, stacked on
                     mobile. Each table scrolls horizontally independently.
