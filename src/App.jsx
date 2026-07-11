@@ -270,7 +270,7 @@ const SIGNAL_TOOLTIPS = {
   ema9: 'Price has pulled back to within 3% of its 9-day average, on a top-10%-RS stock.',
   r1: 'Price just crossed above a significant resistance level it had been held under for a while.',
   cup: 'Price just broke out above a cup-and-handle pattern. Algorithmic — treat as a visual aid, not a precise signal.',
-  guppy: 'Short-term moving average group just crossed above the long-term group — momentum picking up.',
+  guppy: 'EMA9 just crossed above EMA50 — a fresh golden-cross-style momentum shift.',
 }
 
 // Tooltips for the Index Performance Dashboard's column headers.
@@ -308,7 +308,7 @@ const SIGNAL_GLOSSARY = [
   ['⭐ Power', 'A Pocket Pivot day combined with a Relative Strength rating of 80 or higher — strong momentum plus fresh buying pressure together.'],
   ['🎯 R1 Breakout', 'Price just crossed above a significant resistance level it had been held under for a while — a fresh breakout, not one that happened days ago.'],
   ['☕ Cup Breakout', 'Price just broke out above a cup-and-handle chart pattern. Algorithmic pattern-matching — treat as a visual aid, not a precise signal.'],
-  ['🐠 Guppy Crossover', 'The average of short-term moving averages just crossed above the average of long-term moving averages — short-term momentum picking up ahead of the broader trend.'],
+  ['🐠 Guppy Crossover', 'The 9-day EMA just crossed above the 50-day EMA — a fresh golden-cross-style signal, short-term momentum shifting ahead of the broader trend.'],
   ['🌀 VCP 2T / 3T / 4T', 'Volatility Contraction Pattern — a series of pullbacks, each shallower than the last, with volume drying up. The number is how many contractions the pattern currently shows.'],
 ]
 
@@ -2655,7 +2655,7 @@ function LandingPage({onEnroll,onSignIn}){
                       {[
                         ['SCANSTL',badge(C.red+'26',C.red,'🎯R1 Break'),'R1 @ ₹47.10','99','+11.1%'],
                         ['THERMAX',badge(C.yellow+'26',C.yellow,'☕Cup'),'Depth 21%','84','+2.4%'],
-                        ['GRINDWELL',badge(C.green+'26',C.green,'🐠Guppy'),'Short EMA > Long EMA','86','+1.7%'],
+                        ['GRINDWELL',badge(C.green+'26',C.green,'🐠Guppy'),'EMA9 crossed above EMA50','86','+1.7%'],
                         ['DLF',badge(C.teal+'26',C.teal,'🏛️IBV'),'2× vol, DCR 81%','92','+2.9%'],
                       ].map(([sym,bdg,detail,rs,chg])=>(
                         <tr key={sym}>
