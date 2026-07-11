@@ -2181,8 +2181,298 @@ function SectorPanel({sectorData,allStocks,isMobile,onChart,onViewInRS}){
 }
 
 // ── Auth Screen ────────────────────────────────────────────────────────
-function AuthScreen({onLogin}){
-  const [mode,setMode]=useState('login') // login | register | forgot
+// ── Landing Page ─────────────────────────────────────────────────────
+function LandingPage({onEnroll,onSignIn}){
+  const [slide,setSlide]=useState(0)
+  const [paused,setPaused]=useState(false)
+  const slideCount=3
+  useEffect(()=>{
+    if(paused) return
+    const t=setInterval(()=>setSlide(s=>(s+1)%slideCount),4200)
+    return ()=>clearInterval(t)
+  },[paused])
+
+  const gold='#C9A227', goldSoft='#E8D28A'
+  const mono={fontFamily:"'IBM Plex Mono',monospace"}
+  const serif={fontFamily:"'Playfair Display',serif"}
+  const badge=(bg,fg,label)=>(
+    <span style={{fontSize:9.5,padding:'2px 7px',borderRadius:4,marginRight:4,fontWeight:600,
+      display:'inline-block',marginBottom:3,background:bg,color:fg}}>{label}</span>
+  )
+  const smallcaps=(text,center)=>(
+    <div style={{...mono,fontSize:11,letterSpacing:'0.16em',textTransform:'uppercase',color:gold,
+      display:'flex',alignItems:'center',gap:12,justifyContent:center?'center':'flex-start',marginBottom:16}}>
+      <span style={{width:24,height:1,background:gold,opacity:0.5,display:'inline-block'}}/>
+      {text}
+      <span style={{width:24,height:1,background:gold,opacity:0.5,display:'inline-block'}}/>
+    </div>
+  )
+  const rulesLine={borderBottom:`1px solid ${C.divider}`}
+
+  return(
+    <div style={{background:C.bg,color:C.text,fontFamily:"'Inter',sans-serif",lineHeight:1.55,minHeight:'100vh'}}>
+
+      <div style={{background:C.sidebar,borderBottom:`1px solid ${C.divider}`,textAlign:'center',
+        padding:'8px 0',...mono,fontSize:10.5,letterSpacing:'0.12em',color:C.muted}}>
+        FOR INFORMATIONAL AND EDUCATIONAL PURPOSES · NOT INVESTMENT ADVICE
+      </div>
+
+      <div style={{maxWidth:1080,margin:'0 auto',padding:'0 24px'}}>
+        {/* Nav */}
+        <nav style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'24px 0',
+          borderBottom:`1px solid ${C.divider}`}}>
+          <div style={{display:'flex',alignItems:'center',gap:11}}>
+            <div style={{width:36,height:36,border:`1px solid ${gold}`,borderRadius:'50%',display:'flex',
+              alignItems:'center',justifyContent:'center',...serif,color:gold,fontSize:16,fontStyle:'italic'}}>L</div>
+            <div style={{...serif,fontSize:20,color:'#fff'}}>Lakshmi<em style={{color:gold,fontStyle:'italic'}}>mata</em></div>
+          </div>
+          <button onClick={onSignIn} style={{border:`1px solid ${C.border}`,padding:'9px 20px',fontSize:12.5,
+            ...mono,background:'transparent',color:C.text,cursor:'pointer'}}>Sign In</button>
+        </nav>
+
+        {/* Hero */}
+        <section style={{padding:'76px 0 52px',textAlign:'center'}}>
+          {smallcaps('An NSE Relative-Strength Scanner',true)}
+          <h1 style={{...serif,fontWeight:600,fontSize:'clamp(34px,4.8vw,56px)',lineHeight:1.14,
+            maxWidth:800,margin:'0 auto',color:'#fff'}}>
+            See which stocks are<br/>
+            <em style={{color:goldSoft,fontStyle:'italic'}}>gathering strength</em><br/>
+            before the crowd does.
+          </h1>
+          <p style={{maxWidth:540,margin:'24px auto 0',fontSize:16,color:'#aab0c0',lineHeight:1.7}}>
+            A daily, systematic read on relative strength, volume conviction, and breakout structure
+            across the NSE universe — for traders who would rather scan the whole market than one chart at a time.
+          </p>
+          <div style={{marginTop:32}}>
+            <button onClick={onEnroll} style={{background:gold,color:'#0a0d12',padding:'14px 32px',
+              fontWeight:700,fontSize:14,letterSpacing:'0.02em',border:`1px solid ${gold}`,cursor:'pointer'}}>
+              Enroll — No Charge to Begin
+            </button>
+          </div>
+          <p style={{fontSize:11.5,color:C.muted,...mono,letterSpacing:'0.03em',marginTop:14}}>
+            2,380+ NSE STOCKS TRACKED · UPDATED THROUGH THE SESSION
+          </p>
+        </section>
+
+        {/* Slideshow */}
+        <div style={{maxWidth:900,margin:'56px auto 0'}}
+          onMouseEnter={()=>setPaused(true)} onMouseLeave={()=>setPaused(false)}>
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',
+            boxShadow:'0 30px 70px -30px rgba(0,0,0,0.6)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'13px 20px',
+              borderBottom:`1px solid ${C.divider}`,background:C.sidebar}}>
+              <span style={{...mono,fontSize:11.5,color:C.muted,letterSpacing:'0.04em'}}>● LIVE PREVIEW — SAMPLE DATA</span>
+              <div style={{display:'flex',gap:5}}>
+                {[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:'50%',background:C.border}}/>)}
+              </div>
+            </div>
+            <div style={{padding:'22px 24px 26px',minHeight:280}}>
+              {slide===0 && (
+                <div>
+                  <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:16}}>
+                    <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>RS Scanner</h4>
+                    <span style={{fontSize:11,color:C.muted,...mono}}>Relative strength, ranked 1–99</span>
+                  </div>
+                  <table style={{width:'100%',borderCollapse:'collapse'}}>
+                    <thead><tr>
+                      {['Symbol','Sector','RS','Signal','Chg'].map(h=>(
+                        <th key={h} style={{textAlign:'left',padding:'8px 10px',...mono,fontSize:9.5,
+                          letterSpacing:'0.06em',textTransform:'uppercase',color:C.muted,...rulesLine,fontWeight:400}}>{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody style={mono}>
+                      {[
+                        ['LODHA','Realty','99',C.green,badge(C.orange+'26',C.orange,'🔥PP'),'+3.4%'],
+                        ['KIRLOSENG','Engineering','98',C.green,badge(C.blue+'26',C.blue,'📊HY'),'+2.1%'],
+                        ['IPCALAB','Pharma','99',C.green,badge(C.green+'26',C.green,'⚡EMA9'),'+1.8%'],
+                        ['GODREJPROP','Realty','99',C.green,badge(C.yellow+'26',C.yellow,'☕Cup'),'+0.9%'],
+                        ['GREAVESCOT','Engineering','95',C.accent,badge(C.purple+'26',C.purple,'🚀HT'),'+1.2%'],
+                      ].map(([sym,sec,rs,rsColor2,bdg,chg])=>(
+                        <tr key={sym}>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{sym}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{sec}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>
+                            <span style={{padding:'2px 9px',borderRadius:20,fontWeight:600,fontSize:12,
+                              background:rsColor2+'26',color:rsColor2}}>{rs}</span>
+                          </td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{bdg}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine,color:C.green}}>{chg}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {slide===1 && (
+                <div>
+                  <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:16}}>
+                    <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>Breakout Scanner</h4>
+                    <span style={{fontSize:11,color:C.muted,...mono}}>Resistance breaks, cup &amp; handle, Guppy crossovers</span>
+                  </div>
+                  <table style={{width:'100%',borderCollapse:'collapse'}}>
+                    <thead><tr>
+                      {['Symbol','Signal','Level / Detail','RS','Chg'].map(h=>(
+                        <th key={h} style={{textAlign:'left',padding:'8px 10px',...mono,fontSize:9.5,
+                          letterSpacing:'0.06em',textTransform:'uppercase',color:C.muted,...rulesLine,fontWeight:400}}>{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody style={mono}>
+                      {[
+                        ['SCANSTL',badge(C.red+'26',C.red,'🎯R1 Break'),'R1 @ ₹47.10','99','+11.1%'],
+                        ['THERMAX',badge(C.yellow+'26',C.yellow,'☕Cup'),'Depth 21%','84','+2.4%'],
+                        ['GRINDWELL',badge(C.green+'26',C.green,'🐠Guppy'),'Short EMA > Long EMA','86','+1.7%'],
+                        ['DLF',badge(C.teal+'26',C.teal,'🏛️IBV'),'2× vol, DCR 81%','92','+2.9%'],
+                      ].map(([sym,bdg,detail,rs,chg])=>(
+                        <tr key={sym}>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{sym}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{bdg}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{detail}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{rs}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine,color:C.green}}>{chg}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {slide===2 && (
+                <div>
+                  <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:16}}>
+                    <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>Sector Rotation</h4>
+                    <span style={{fontSize:11,color:C.muted,...mono}}>Where money is actually moving this week</span>
+                  </div>
+                  <table style={{width:'100%',borderCollapse:'collapse'}}>
+                    <thead><tr>
+                      {['Sector','Rank','Avg RS','Strength','Stocks'].map(h=>(
+                        <th key={h} style={{textAlign:'left',padding:'8px 10px',...mono,fontSize:9.5,
+                          letterSpacing:'0.06em',textTransform:'uppercase',color:C.muted,...rulesLine,fontWeight:400}}>{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody style={mono}>
+                      {[
+                        ['Realty','#1 ▲',92,C.green,8],
+                        ['Consumption','#2',99,C.green,6],
+                        ['Pharma','#3',94,C.green,12],
+                        ['Private Bank','#4 ▼',78,C.accent,11],
+                      ].map(([sec,rank,rs,barColor,n])=>(
+                        <tr key={sec}>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{sec}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{rank}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine,color:barColor}}>{rs}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine,width:120}}>
+                            <div style={{background:C.divider,borderRadius:3,height:5,width:'100%',overflow:'hidden'}}>
+                              <div style={{height:'100%',borderRadius:3,width:`${rs}%`,background:barColor}}/>
+                            </div>
+                          </td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{n}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div style={{display:'flex',justifyContent:'center',gap:8,padding:'16px 0 6px'}}>
+              {[0,1,2].map(i=>(
+                <div key={i} onClick={()=>setSlide(i)} style={{width:7,height:7,borderRadius:'50%',
+                  cursor:'pointer',background:slide===i?gold:C.border,transition:'background .2s'}}/>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Lotus divider */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:16,padding:'64px 0 8px'}}>
+          <div style={{height:1,background:C.divider,flex:1,maxWidth:240}}/>
+          <svg width="30" height="30" viewBox="0 0 34 34" fill="none">
+            <g stroke={gold} strokeWidth="1">
+              <path d="M17 17 C17 9, 12 5, 17 2 C22 5, 17 9, 17 17Z"/>
+              <path d="M17 17 C25 17, 29 12, 32 17 C29 22, 25 17, 17 17Z"/>
+              <path d="M17 17 C17 25, 22 29, 17 32 C12 29, 17 25, 17 17Z"/>
+              <path d="M17 17 C9 17, 5 22, 2 17 C5 12, 9 17, 17 17Z"/>
+            </g>
+            <circle cx="17" cy="17" r="2" fill={gold}/>
+          </svg>
+          <div style={{height:1,background:C.divider,flex:1,maxWidth:240}}/>
+        </div>
+
+        {/* How it works */}
+        <section style={{padding:'88px 0'}}>
+          <div style={{maxWidth:600,margin:'0 auto 52px',textAlign:'center'}}>
+            {smallcaps('How It Works',true)}
+            <h2 style={{...serif,fontWeight:600,fontSize:'clamp(26px,3.2vw,36px)',color:'#fff'}}>
+              Four signals. One ranked list.
+            </h2>
+          </div>
+          <div style={{borderTop:`1px solid ${C.divider}`,maxWidth:820,margin:'0 auto'}}>
+            {[
+              ['I.','Relative Strength (RS-TV)','Every stock ranked 1–99 against the broader market and its own peer group, recalculated through the trading session — not a static end-of-day number.'],
+              ['II.','Volume conviction','Pocket Pivots, HY/HT volume surges, and institutional-style buying pressure — the difference between a move with real participation and a move without it.'],
+              ['III.','Structure & breakouts','Resistance breaks, cup-and-handle formations, and Guppy moving-average crossovers, flagged the day they happen — not three candles later.'],
+              ['IV.','Sector & index context','See which sectors are actually leading this week versus which stock is just borrowing strength from a hot theme.'],
+            ].map(([num,title,desc])=>(
+              <div key={num} style={{display:'grid',gridTemplateColumns:'64px 1fr',gap:24,padding:'26px 0',
+                borderBottom:`1px solid ${C.divider}`}}>
+                <div style={{...serif,fontStyle:'italic',color:gold,fontSize:20}}>{num}</div>
+                <div>
+                  <h3 style={{fontSize:18,marginBottom:7,fontWeight:600,color:'#fff'}}>{title}</h3>
+                  <p style={{color:'#9aa0b0',fontSize:14,maxWidth:480}}>{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Trust */}
+        <section style={{padding:'0 0 88px'}}>
+          <div style={{border:`1px solid ${C.border}`,padding:'36px 42px',maxWidth:820,margin:'0 auto',
+            background:C.card,borderRadius:6}}>
+            <h3 style={{fontSize:18,marginBottom:14,fontStyle:'italic',color:goldSoft,...serif,fontWeight:600}}>
+              Before you rely on this
+            </h3>
+            <p style={{color:'#9aa0b0',fontSize:13.5,lineHeight:1.8}}>
+              Lakshmimata is a data and screening tool. It surfaces relative-strength rankings and technical
+              signals computed from public market data — it does not constitute investment advice, a
+              recommendation to buy or sell any security, or a research report under SEBI (Research Analysts)
+              Regulations, 2014.
+            </p>
+            <p style={{color:'#9aa0b0',fontSize:13.5,lineHeight:1.8,marginTop:12}}>
+              Past performance and technical signals are not indicative of future results. Please consult a
+              SEBI-registered investment adviser or research analyst before making investment decisions, and
+              review NSE/BSE data independently before trading.
+            </p>
+          </div>
+        </section>
+
+        {/* Enroll */}
+        <section style={{textAlign:'center',padding:'96px 0 84px'}}>
+          {smallcaps('Get Started',true)}
+          <h2 style={{...serif,fontWeight:600,fontSize:'clamp(28px,3.6vw,40px)',maxWidth:600,margin:'0 auto 16px',color:'#fff'}}>
+            Your watchlist is already moving. Go see it.
+          </h2>
+          <p style={{color:'#9aa0b0',maxWidth:440,margin:'0 auto 30px',fontSize:15}}>
+            Create a free account and get today's ranked scan the moment you log in.
+          </p>
+          <button onClick={onEnroll} style={{background:gold,color:'#0a0d12',padding:'14px 32px',fontWeight:700,
+            fontSize:14,letterSpacing:'0.02em',border:`1px solid ${gold}`,cursor:'pointer'}}>
+            Enroll Free
+          </button>
+        </section>
+
+        <footer style={{borderTop:`1px solid ${C.divider}`,padding:'28px 0',display:'flex',
+          justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:14,fontSize:11,
+          color:C.muted,...mono}}>
+          <span>© 2026 LAKSHMIMATA · FOR INFORMATIONAL AND EDUCATIONAL PURPOSES ONLY</span>
+          <span>NOT A SEBI-REGISTERED RESEARCH ANALYST OR INVESTMENT ADVISER</span>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
+// ── Auth Screen ──────────────────────────────────────────────────────
+function AuthScreen({onLogin,initialMode='login',onBack}){
+  const [mode,setMode]=useState(initialMode) // login | register | forgot
   const [email,setEmail]=useState('')
   const [password,setPassword]=useState('')
   const [name,setName]=useState('')
@@ -2240,8 +2530,14 @@ function AuthScreen({onLogin}){
 
   return(
     <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',
-      justifyContent:'center',padding:20,
+      justifyContent:'center',padding:20,position:'relative',
       backgroundImage:`radial-gradient(ellipse at 20% 50%, ${C.accent}08 0%, transparent 50%),radial-gradient(ellipse at 80% 20%, ${C.purple}08 0%, transparent 50%)`}}>
+      {onBack&&(
+        <button onClick={onBack} style={{position:'absolute',top:20,left:20,background:'transparent',
+          border:'none',color:C.muted,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>
+          ← Back
+        </button>
+      )}
       <div style={{width:'100%',maxWidth:400}}>
 
         {/* Logo */}
@@ -2532,6 +2828,8 @@ function isMarketOpen(){
 export default function App(){
   const isMobile=useIsMobile()
   const [session,setSession]=useState(null)
+  const [showAuth,setShowAuth]=useState(false)
+  const [authMode,setAuthMode]=useState('login')
 
   useEffect(()=>{
     if(session?.user?.id){
@@ -2982,7 +3280,13 @@ export default function App(){
       <div style={{width:32,height:32,border:`3px solid ${C.accent}`,borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
     </div>
   )
-  if(!session)return <AuthScreen onLogin={s=>setSession(s)}/>
+  if(!session){
+    if(!showAuth) return <LandingPage
+      onEnroll={()=>{setAuthMode('register');setShowAuth(true)}}
+      onSignIn={()=>{setAuthMode('login');setShowAuth(true)}}
+    />
+    return <AuthScreen onLogin={s=>setSession(s)} initialMode={authMode} onBack={()=>setShowAuth(false)}/>
+  }
 
   // Active watchlist label
   const activeWlObj=watchlists.find(w=>w.id===activeWl)
@@ -4748,7 +5052,7 @@ export default function App(){
 
         {/* ══ SETTINGS ══ */}
         {mainTab==='settings'&&(
-          <SettingsPanel session={session} onUpdate={s=>setSession(s)} onLogout={()=>setSession(null)}/>
+          <SettingsPanel session={session} onUpdate={s=>setSession(s)} onLogout={()=>{setSession(null);setShowAuth(false)}}/>
         )}
 
       </div>
