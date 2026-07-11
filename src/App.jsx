@@ -254,6 +254,87 @@ function useDragScroll(){
   }
 }
 
+// ── Ambient sound ────────────────────────────────────────────────────
+// Generates a soft ambient pad entirely with the Web Audio API — no
+// external audio file, so no copyright/licensing concern (can't
+// legally embed or link to an actual music track). A few detuned sine
+// oscillators forming a simple open chord, each slowly breathing in
+// volume via its own LFO, run through a gently sweeping lowpass filter.
+function useAmbientSound(){
+  const [playing,setPlaying]=useState(false)
+  const [volume,setVolume]=useState(0.25)
+  const ctxRef=useRef(null)
+  const nodesRef=useRef([])
+  const masterRef=useRef(null)
+
+  const stop=()=>{
+    nodesRef.current.forEach(n=>{ try{n.osc.stop()}catch(e){} })
+    nodesRef.current=[]
+    if(ctxRef.current){ ctxRef.current.close().catch(()=>{}); ctxRef.current=null }
+    setPlaying(false)
+  }
+
+  const start=()=>{
+    if(playing) return
+    const ctx = new (window.AudioContext||window.webkitAudioContext)()
+    ctxRef.current = ctx
+    const master = ctx.createGain()
+    master.gain.value = volume
+    const filter = ctx.createBiquadFilter()
+    filter.type = 'lowpass'
+    filter.frequency.value = 900
+    filter.connect(master)
+    master.connect(ctx.destination)
+    masterRef.current = master
+
+    // Slowly sweep the filter for gentle movement
+    const filterLfo = ctx.createOscillator()
+    const filterLfoGain = ctx.createGain()
+    filterLfo.frequency.value = 0.03
+    filterLfoGain.gain.value = 350
+    filterLfo.connect(filterLfoGain)
+    filterLfoGain.connect(filter.frequency)
+    filterLfo.start()
+
+    // Simple open chord: root, fifth, octave, tenth — detuned slightly
+    // per voice so they beat gently against each other rather than
+    // sounding like a flat synth tone.
+    const freqs = [110, 164.8, 220, 277.2]
+    const nodes = freqs.map((f,i)=>{
+      const osc = ctx.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.value = f
+      osc.detune.value = (i%2===0?1:-1) * (3+i)
+      const voiceGain = ctx.createGain()
+      voiceGain.gain.value = 0
+      const breathLfo = ctx.createOscillator()
+      const breathLfoGain = ctx.createGain()
+      breathLfo.frequency.value = 0.05 + i*0.015
+      breathLfoGain.gain.value = 0.06
+      breathLfo.connect(breathLfoGain)
+      breathLfoGain.connect(voiceGain.gain)
+      osc.connect(voiceGain)
+      voiceGain.connect(filter)
+      osc.start(); breathLfo.start()
+      // Fade this voice in over a couple seconds instead of snapping on
+      voiceGain.gain.setValueAtTime(0, ctx.currentTime)
+      voiceGain.gain.linearRampToValueAtTime(0.09, ctx.currentTime + 2 + i*0.4)
+      return {osc, breathLfo}
+    })
+    nodesRef.current = [...nodes, {osc:filterLfo}]
+    setPlaying(true)
+  }
+
+  const setVol = (v) => {
+    setVolume(v)
+    if(masterRef.current) masterRef.current.gain.setTargetAtTime(v, ctxRef.current.currentTime, 0.1)
+  }
+
+  useEffect(()=>()=>stop(),[]) // cleanup on unmount
+
+  return { playing, volume, start, stop, setVolume: setVol }
+}
+
 function useIsMobile(){
   const [v,setV]=useState(window.innerWidth<768)
   useEffect(()=>{const f=()=>setV(window.innerWidth<768);window.addEventListener('resize',f);return()=>window.removeEventListener('resize',f)},[])
@@ -2758,7 +2839,7 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
 }
 
 // ── Settings Panel ────────────────────────────────────────────────────
-function SettingsPanel({session,onUpdate,onLogout,themeKey,switchTheme}){
+function SettingsPanel({session,onUpdate,onLogout,themeKey,switchTheme,ambient}){
   const [newToken,setNewToken]=useState('')
   const [msg,setMsg]=useState('')
   const [loading,setLoading]=useState(false)
@@ -2795,6 +2876,27 @@ function SettingsPanel({session,onUpdate,onLogout,themeKey,switchTheme}){
                 {label}
               </button>
             ))}
+          </div>
+        </div>
+        <div style={{marginBottom:20}}>
+          <label style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:'uppercase',
+            letterSpacing:'0.08em',display:'block',marginBottom:8}}>
+            Ambient Sound <span style={{color:C.muted,fontWeight:400,textTransform:'none'}}>(optional, synthesized — not a music track)</span>
+          </label>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <button onClick={()=>ambient.playing?ambient.stop():ambient.start()}
+              style={{padding:'10px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
+                border:`1px solid ${ambient.playing?C.accent:C.border}`,
+                background:ambient.playing?C.accent+'18':C.bg,
+                color:ambient.playing?C.accent:C.muted,whiteSpace:'nowrap'}}>
+              {ambient.playing?'⏸ Playing':'▶ Play'}
+            </button>
+            <input type="range" min={0} max={1} step={0.05} value={ambient.volume}
+              onChange={e=>ambient.setVolume(+e.target.value)}
+              style={{flex:1}}/>
+          </div>
+          <div style={{fontSize:10,color:C.muted,marginTop:6}}>
+            A soft ambient tone generated in your browser — turns off automatically if you close the tab.
           </div>
         </div>
         {ownerMode&&(
@@ -2896,6 +2998,7 @@ export default function App(){
   const [authMode,setAuthMode]=useState('login')
   const [themeVersion,setThemeVersion]=useState(0)
   const [themeKey,setThemeKey]=useState('dark')
+  const ambient=useAmbientSound()
 
   // Load saved theme preference once on mount, before first paint of
   // anything meaningful. themeVersion is a dummy counter — bumping it
@@ -5137,7 +5240,7 @@ export default function App(){
         {/* ══ SETTINGS ══ */}
         {mainTab==='settings'&&(
           <SettingsPanel session={session} onUpdate={s=>setSession(s)} onLogout={()=>{setSession(null);setShowAuth(false)}}
-            themeKey={themeKey} switchTheme={switchTheme}/>
+            themeKey={themeKey} switchTheme={switchTheme} ambient={ambient}/>
         )}
 
       </div>
