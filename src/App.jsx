@@ -544,22 +544,23 @@ function useCopy(){
 }
 
 // ── TV Copy Panel ─────────────────────────────────────────────────────
-// shows two copy buttons: Pine Script list + NSE:SYM format
+// shows two copy buttons: plain symbol list (for TradingView's
+// watchlist-import box) + NSE:SYM format (for its symbol search)
 function TVCopyPanel({stocks,label,compact}){
   // compact=true → single "Export to TradingView" button style (for top bar)
   const {copy,copied}=useCopy()
   if(!stocks||stocks.length===0)return null
   const syms=stocks.map(s=>s.sym)
-  const pineScript=syms.join(',')
+  const symbolList=syms.join(',')
   const tvFormat=syms.map(s=>`NSE:${s}`).join(',')
   const alertStr=syms.map(s=>`NSE:${s}`).join('\n')
   if(compact){
     return(
       <div style={{display:'flex',gap:4}}>
-        <button onClick={()=>copy(pineScript,'pine')} title="Copy Pine Script watchlist"
+        <button onClick={()=>copy(symbolList,'symlist')} title="Copy symbol list to paste into TradingView's watchlist import box"
           style={{padding:'5px 10px',borderRadius:6,border:'none',cursor:'pointer',
-            background:copied==='pine'?C.green:C.teal,color:'#000',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
-          {copied==='pine'?'✅ Copied':'📋 Pine'}
+            background:copied==='symlist'?C.green:C.teal,color:'#000',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
+          {copied==='symlist'?'✅ Copied':'📋 Copy List'}
         </button>
         <button onClick={()=>copy(tvFormat,'tv')} title="Copy NSE:SYM format"
           style={{padding:'5px 10px',borderRadius:6,border:'none',cursor:'pointer',
@@ -576,11 +577,11 @@ function TVCopyPanel({stocks,label,compact}){
       <span style={{color:C.teal,fontWeight:700,whiteSpace:'nowrap'}}>
         📊 TV ({syms.length})
       </span>
-      <button onClick={()=>copy(pineScript,'pine')} title="Paste in watchlist box"
+      <button onClick={()=>copy(symbolList,'symlist')} title="Copy list of symbols — paste into TradingView's watchlist import box"
         style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.teal}33`,cursor:'pointer',
-          background:copied==='pine'?C.teal+'22':'transparent',
-          color:copied==='pine'?C.teal:C.muted,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>
-        {copied==='pine'?'✅ Copied':'📋 Pine'}
+          background:copied==='symlist'?C.teal+'22':'transparent',
+          color:copied==='symlist'?C.teal:C.muted,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>
+        {copied==='symlist'?'✅ Copied':'📋 Copy List'}
       </button>
       <button onClick={()=>copy(tvFormat,'tv')} title="Paste in TV symbol search"
         style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.teal}33`,cursor:'pointer',
@@ -595,64 +596,6 @@ function TVCopyPanel({stocks,label,compact}){
         {copied==='alert'?'✅ Copied':'🔔 Alerts'}
       </button>
       {label&&<span style={{color:C.muted,fontSize:10,marginLeft:'auto',whiteSpace:'nowrap'}}>{label}</span>}
-    </div>
-  )
-}
-
-function _TVCopyPanelOld({stocks,label}){
-  const {copy,copied}=useCopy()
-  if(!stocks||stocks.length===0)return null
-  const syms=stocks.map(s=>s.sym)
-  const pineScript=syms.join(',')
-  const tvFormat=syms.map(s=>`NSE:${s}`).join(',')
-  const alertStr=syms.map(s=>`NSE:${s}`).join('\n')
-  if(compact){
-    return(
-      <div style={{display:'flex',gap:4}}>
-        <button onClick={()=>copy(pineScript,'pine')} title="Copy Pine Script watchlist"
-          style={{padding:'5px 10px',borderRadius:6,border:'none',cursor:'pointer',
-            background:copied==='pine'?C.green:C.teal,color:'#000',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
-          {copied==='pine'?'✅ Copied':'📋 Pine'}
-        </button>
-        <button onClick={()=>copy(tvFormat,'tv')} title="Copy NSE:SYM format"
-          style={{padding:'5px 10px',borderRadius:6,border:'none',cursor:'pointer',
-            background:copied==='tv'?C.green:C.teal,color:'#000',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
-          {copied==='tv'?'✅':'🔗 TV'} <span style={{background:'#00000033',borderRadius:4,padding:'0 4px',fontSize:10}}>{syms.length}</span>
-        </button>
-      </div>
-    )
-  }
-  return(
-    <div style={{background:C.card,border:`1px solid ${C.teal}44`,borderRadius:10,
-      padding:'10px 14px',marginBottom:12}}>
-      <div style={{fontSize:11,fontWeight:700,color:C.teal,marginBottom:8}}>
-        📊 Copy to TradingView — {syms.length} stocks {label&&`(${label})`}
-      </div>
-      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-        <button onClick={()=>copy(pineScript,'pine')}
-          style={{padding:'6px 14px',borderRadius:7,border:`1px solid ${C.teal}44`,cursor:'pointer',
-            background:copied==='pine'?C.teal+'22':'transparent',
-            color:copied==='pine'?C.teal:C.muted,fontSize:11,fontWeight:600}}>
-          {copied==='pine'?'✅ Copied!':'📋 Pine Script list'}
-        </button>
-        <button onClick={()=>copy(tvFormat,'tv')}
-          style={{padding:'6px 14px',borderRadius:7,border:`1px solid ${C.teal}44`,cursor:'pointer',
-            background:copied==='tv'?C.teal+'22':'transparent',
-            color:copied==='tv'?C.teal:C.muted,fontSize:11,fontWeight:600}}>
-          {copied==='tv'?'✅ Copied!':'🔗 NSE:SYM format'}
-        </button>
-        <button onClick={()=>copy(alertStr,'alert')}
-          style={{padding:'6px 14px',borderRadius:7,border:`1px solid ${C.teal}44`,cursor:'pointer',
-            background:copied==='alert'?C.teal+'22':'transparent',
-            color:copied==='alert'?C.teal:C.muted,fontSize:11,fontWeight:600}}>
-          {copied==='alert'?'✅ Copied!':'🔔 Alert list (one/line)'}
-        </button>
-      </div>
-      <div style={{marginTop:8,fontSize:10,color:C.muted,lineHeight:1.5}}>
-        <strong style={{color:C.teal}}>Pine Script:</strong> paste in watchlist box &nbsp;·&nbsp;
-        <strong style={{color:C.teal}}>NSE:SYM:</strong> paste in TV symbol search &nbsp;·&nbsp;
-        <strong style={{color:C.teal}}>Alert list:</strong> one symbol per line for alert wizard
-      </div>
     </div>
   )
 }
@@ -1271,11 +1214,11 @@ function StockDetail({s}){
             fontSize:11,fontWeight:600}}>
           {copied==='tv'?'✅ Copied!':'📊 Copy NSE:'+s.sym}
         </button>
-        <button onClick={()=>copy(s.sym,'pine')}
+        <button onClick={()=>copy(s.sym,'symlist')}
           style={{padding:'5px 12px',borderRadius:7,border:`1px solid ${C.teal}44`,cursor:'pointer',
-            background:copied==='pine'?C.teal+'22':'transparent',color:copied==='pine'?C.teal:C.muted,
+            background:copied==='symlist'?C.teal+'22':'transparent',color:copied==='symlist'?C.teal:C.muted,
             fontSize:11,fontWeight:600}}>
-          {copied==='pine'?'✅ Copied!':'📋 Pine: '+s.sym}
+          {copied==='symlist'?'✅ Copied!':'📋 Copy: '+s.sym}
         </button>
       </div>
 
