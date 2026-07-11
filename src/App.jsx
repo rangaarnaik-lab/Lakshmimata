@@ -165,6 +165,19 @@ function topVolumeSignal(s){
   return null
 }
 
+// True if the last-10-days boolean history has at least `n` Pocket
+// Pivots occurring on consecutive trading days anywhere in the window
+// — back-to-back accumulation days, not just scattered PP days.
+function hasConsecutivePP(ppHistory, n=2){
+  if(!ppHistory || ppHistory.length===0) return false
+  let streak = 0
+  for(const isOn of ppHistory){
+    streak = isOn ? streak+1 : 0
+    if(streak >= n) return true
+  }
+  return false
+}
+
 // ── HY/HT Breakout Scanner ────────────────────────────────────────────
 // Had HY or HT in last 5 days + price breaking out today
 function calcHYHTBreakout(s){
@@ -321,6 +334,8 @@ const SIGNAL_GLOSSARY = [
   ['📊 HY', 'High Yield (volume) — today\'s volume is near the highest it\'s been in the last 52 weeks, on an up day.'],
   ['🏛️ IBV', 'Institutional-style Buying Volume — unusually heavy volume combined with the price closing strong within the day\'s range, suggesting large/institutional buying rather than retail noise.'],
   ['🔥 PP', 'Pocket Pivot — an up day where volume beats every down day in the past 10 days, while price stays near its short-term average. A classic early-accumulation signal.'],
+  ['🔥 PP 2x Consecutive', 'At least two Pocket Pivot days back-to-back within the last 10 days — sustained accumulation, not a one-off.'],
+  ['🔥 PP >2 in 10d', 'More than two Pocket Pivot days total within the last 10 days (don\'t need to be consecutive) — repeated accumulation interest.'],
   ['⚡ EMA9 / EMA21 / EMA50', 'Price has pulled back to within 3% of its 9/21/50-day average — a common "buy the dip in an uptrend" zone, shown only for stocks already ranked in the top 10% by RS.'],
   ['⭐ Power', 'A Pocket Pivot day combined with a Relative Strength rating of 80 or higher — strong momentum plus fresh buying pressure together.'],
   ['🎯 R1 Breakout', 'Price just crossed above a significant resistance level it had been held under for a while — a fresh breakout, not one that happened days ago.'],
@@ -3542,6 +3557,8 @@ export default function App(){
     if(sig==='vcp2t') return !!s.isVCP && s.vcpStage===2
     if(sig==='vcp3t') return !!s.isVCP && s.vcpStage===3
     if(sig==='vcp4t') return !!s.isVCP && s.vcpStage===4
+    if(sig==='ppconsec2') return hasConsecutivePP(s.pp?.ppHistory, 2)
+    if(sig==='ppgt2') return (s.pp?.ppCount10d||0) > 2
     return false
   }
   const [sortBy,setSortBy]=useState('rs')
@@ -4310,7 +4327,7 @@ export default function App(){
                           style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilters.length===0?C.muted:C.border}`,
                             cursor:'pointer',fontSize:12,fontWeight:600,
                             background:sigFilters.length===0?C.muted+'22':'transparent',color:sigFilters.length===0?C.text:C.muted}}>All</button>
-                        {[['ht','🚀HT',C.orange],['hy','📊HY',C.pink],['ibv','🏛️IBV',C.blue],['pp','🔥PP',C.green],['ema9','⚡EMA9',C.teal],['ema21','⚡EMA21',C.teal],['ema50','⚡EMA50',C.teal],['power','⭐Power',C.accent],['r1breakout','🎯R1 Breakout',C.red],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.purple],['vcp2t','🌀VCP 2T',C.purple],['vcp3t','🌀VCP 3T',C.purple],['vcp4t','🌀VCP 4T',C.purple]].map(([v,label,color])=>{
+                        {[['ht','🚀HT',C.orange],['hy','📊HY',C.pink],['ibv','🏛️IBV',C.blue],['pp','🔥PP',C.green],['ppconsec2','🔥PP 2x Consecutive',C.green],['ppgt2','🔥PP >2 in 10d',C.green],['ema9','⚡EMA9',C.teal],['ema21','⚡EMA21',C.teal],['ema50','⚡EMA50',C.teal],['power','⭐Power',C.accent],['r1breakout','🎯R1 Breakout',C.red],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.purple],['vcp2t','🌀VCP 2T',C.purple],['vcp3t','🌀VCP 3T',C.purple],['vcp4t','🌀VCP 4T',C.purple]].map(([v,label,color])=>{
                           const active = sigFilters.includes(v)
                           return (
                             <button key={v} onClick={()=>setSigFilters(prev=>active?prev.filter(x=>x!==v):[...prev,v])}
