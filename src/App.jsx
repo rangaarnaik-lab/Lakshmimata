@@ -2185,16 +2185,8 @@ function CandlestickChart({sym, isMobile}){
                 const volColor = signalColor || color
                 const barTopY = volToY(vVol[i])
                 return (
-                  <>
-                    <rect x={x-candleW/2} y={barTopY} width={candleW}
-                      height={volTop+volH-barTopY} fill={volColor} opacity={signal?0.85:0.5}/>
-                    {showPatterns && signal==='PP' && (
-                      <text x={x} y={barTopY-8} fontSize={9} fill={signalColor} textAnchor="middle">★</text>
-                    )}
-                    {showPatterns && signal && signal!=='PP' && (
-                      <text x={x} y={barTopY-8} fontSize={7} fontWeight={700} fill={signalColor} textAnchor="middle">{signal}</text>
-                    )}
-                  </>
+                  <rect x={x-candleW/2} y={barTopY} width={candleW}
+                    height={volTop+volH-barTopY} fill={volColor} opacity={signal?0.85:0.5}/>
                 )
               })()}
               {/* Pattern markers */}
@@ -2260,7 +2252,7 @@ function CandlestickChart({sym, isMobile}){
           <span><span style={{color:C.purple}}>■</span> HT</span>
           <span><span style={{color:C.blue}}>■</span> HY</span>
           <span><span style={{color:C.teal}}>■</span> IBV</span>
-          <span><span style={{color:C.orange}}>★</span> PP</span>
+          <span><span style={{color:C.orange}}>■</span> PP</span>
           <span><span style={{color:C.green}}>■</span> EMA9</span>
           {vcp.isContracting && <span><span style={{color:C.orange}}>—</span> VCP contraction</span>}
           {cup && <span><span style={{color:C.purple}}>┊</span> Cup{cup.hasHandle?' & Handle':''}</span>}
