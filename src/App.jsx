@@ -260,69 +260,171 @@ function useDragScroll(){
 // legally embed or link to an actual music track). A few detuned sine
 // oscillators forming a simple open chord, each slowly breathing in
 // volume via its own LFO, run through a gently sweeping lowpass filter.
+const AMBIENT_SOUNDS = [
+  ['pad','🎐 Ambient Pad'],
+  ['bowl','🔔 Singing Bowl'],
+  ['rain','🌧️ Rain'],
+  ['piano','🎹 Generative Piano'],
+]
+
 function useAmbientSound(){
   const [playing,setPlaying]=useState(false)
   const [enabled,setEnabled]=useState(false) // persisted preference, separate from live playing state
   const [volume,setVolume]=useState(0.25)
+  const [soundType,setSoundTypeState]=useState('pad')
   const ctxRef=useRef(null)
-  const nodesRef=useRef([])
+  const nodesRef=useRef([])   // oscillators/sources to stop() on cleanup
+  const timersRef=useRef([])  // setTimeout ids for generative patterns (bowl strikes, piano notes)
   const masterRef=useRef(null)
 
   const stop=()=>{
-    nodesRef.current.forEach(n=>{ try{n.osc.stop()}catch(e){} })
+    timersRef.current.forEach(id=>clearTimeout(id))
+    timersRef.current=[]
+    nodesRef.current.forEach(n=>{ try{n.stop()}catch(e){} })
     nodesRef.current=[]
     if(ctxRef.current){ ctxRef.current.close().catch(()=>{}); ctxRef.current=null }
     setPlaying(false)
   }
 
+  // -- Ambient Pad -- the original sound, a few detuned sines forming an
+  // open chord, each breathing via its own slow LFO.
+  const startPad=(ctx,filter)=>{
+    const freqs=[110,164.8,220,277.2]
+    freqs.forEach((f,i)=>{
+      const osc=ctx.createOscillator()
+      osc.type='sine'; osc.frequency.value=f
+      osc.detune.value=(i%2===0?1:-1)*(3+i)
+      const voiceGain=ctx.createGain(); voiceGain.gain.value=0
+      const breathLfo=ctx.createOscillator()
+      const breathLfoGain=ctx.createGain()
+      breathLfo.frequency.value=0.05+i*0.015
+      breathLfoGain.gain.value=0.06
+      breathLfo.connect(breathLfoGain); breathLfoGain.connect(voiceGain.gain)
+      osc.connect(voiceGain); voiceGain.connect(filter)
+      osc.start(); breathLfo.start()
+      voiceGain.gain.setValueAtTime(0,ctx.currentTime)
+      voiceGain.gain.linearRampToValueAtTime(0.09,ctx.currentTime+2+i*0.4)
+      nodesRef.current.push(osc,breathLfo)
+    })
+  }
+
+  // -- Tibetan Singing Bowl -- a struck bowl's inharmonic overtone
+  // structure (real bowls aren't a clean harmonic series), fast attack,
+  // very long decay, periodically re-struck at a slightly different
+  // pitch. Two near-identical oscillators per partial, a few cents
+  // apart, give the characteristic slow "singing" beating/warble.
+  const strikeBowl=(ctx,filter,baseFreq)=>{
+    const partials=[1,2.76,4.1,5.43,6.79] // inharmonic ratios
+    partials.forEach((ratio,i)=>{
+      const freq=baseFreq*ratio
+      const amp=0.5/(i+1)
+      ;[-3,3].forEach(detuneCents=>{
+        const osc=ctx.createOscillator()
+        osc.type='sine'; osc.frequency.value=freq; osc.detune.value=detuneCents
+        const g=ctx.createGain(); g.gain.value=0
+        osc.connect(g); g.connect(filter)
+        osc.start()
+        const now=ctx.currentTime
+        g.gain.setValueAtTime(0,now)
+        g.gain.linearRampToValueAtTime(amp*0.18,now+0.05) // fast attack
+        g.gain.exponentialRampToValueAtTime(0.0001,now+16+i*1.5) // long decay
+        osc.stop(now+18)
+        nodesRef.current.push(osc)
+      })
+    })
+  }
+  const startBowl=(ctx,filter)=>{
+    const pitches=[196,220,261.6] // a few pleasant strike pitches to cycle through
+    let i=0
+    const scheduleStrike=()=>{
+      strikeBowl(ctx,filter,pitches[i%pitches.length])
+      i++
+      const next=12000+Math.random()*8000 // re-strike every 12-20s
+      timersRef.current.push(setTimeout(scheduleStrike,next))
+    }
+    scheduleStrike()
+  }
+
+  // -- Rain -- filtered noise (Web Audio has no built-in noise node, so
+  // a buffer of random samples stands in for one), shaped toward the
+  // mid/high energy real rain has, with slow amplitude swells so it
+  // doesn't sound like a flat hiss.
+  const startRain=(ctx,filter)=>{
+    const bufferSize=2*ctx.sampleRate
+    const buffer=ctx.createBuffer(1,bufferSize,ctx.sampleRate)
+    const data=buffer.getChannelData(0)
+    for(let i=0;i<bufferSize;i++) data[i]=Math.random()*2-1
+    const noise=ctx.createBufferSource()
+    noise.buffer=buffer; noise.loop=true
+    const hp=ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=800
+    const shelf=ctx.createBiquadFilter(); shelf.type='highshelf'; shelf.frequency.value=3000; shelf.gain.value=-6
+    const swellGain=ctx.createGain(); swellGain.gain.value=0.22
+    const swellLfo=ctx.createOscillator()
+    const swellLfoGain=ctx.createGain()
+    swellLfo.frequency.value=0.04
+    swellLfoGain.gain.value=0.06
+    swellLfo.connect(swellLfoGain); swellLfoGain.connect(swellGain.gain)
+    noise.connect(hp); hp.connect(shelf); shelf.connect(swellGain); swellGain.connect(filter)
+    noise.start(); swellLfo.start()
+    nodesRef.current.push(noise,swellLfo)
+  }
+
+  // -- Generative Piano -- sparse, randomized notes from a pentatonic
+  // scale (always sounds consonant regardless of order/combination, a
+  // standard generative-music trick), each a simple decaying tone. Not
+  // any existing composition -- a new arrangement every time.
+  const startPiano=(ctx,filter)=>{
+    // C major pentatonic across two octaves
+    const scale=[261.6,293.7,329.6,392.0,440.0,523.3,587.3,659.3,784.0,880.0]
+    const playNote=()=>{
+      const freq=scale[Math.floor(Math.random()*scale.length)]
+      const osc=ctx.createOscillator()
+      osc.type='triangle'; osc.frequency.value=freq
+      const osc2=ctx.createOscillator() // a quiet octave-up partial for a brighter timbre
+      osc2.type='sine'; osc2.frequency.value=freq*2
+      const g=ctx.createGain(); g.gain.value=0
+      const g2=ctx.createGain(); g2.gain.value=0
+      osc.connect(g); g.connect(filter)
+      osc2.connect(g2); g2.connect(filter)
+      osc.start(); osc2.start()
+      const now=ctx.currentTime
+      g.gain.setValueAtTime(0,now); g.gain.linearRampToValueAtTime(0.11,now+0.02)
+      g.gain.exponentialRampToValueAtTime(0.0001,now+3.5)
+      g2.gain.setValueAtTime(0,now); g2.gain.linearRampToValueAtTime(0.03,now+0.02)
+      g2.gain.exponentialRampToValueAtTime(0.0001,now+2)
+      osc.stop(now+4); osc2.stop(now+2.2)
+      nodesRef.current.push(osc,osc2)
+      const next=1800+Math.random()*3200 // next note in 1.8-5s
+      timersRef.current.push(setTimeout(playNote,next))
+    }
+    playNote()
+  }
+
+  const SOUND_STARTERS={pad:startPad,bowl:startBowl,rain:startRain,piano:startPiano}
+
   const start=()=>{
     if(playing) return
-    const ctx = new (window.AudioContext||window.webkitAudioContext)()
-    ctxRef.current = ctx
-    const master = ctx.createGain()
-    master.gain.value = volume
-    const filter = ctx.createBiquadFilter()
-    filter.type = 'lowpass'
-    filter.frequency.value = 900
-    filter.connect(master)
-    master.connect(ctx.destination)
-    masterRef.current = master
+    const ctx=new (window.AudioContext||window.webkitAudioContext)()
+    ctxRef.current=ctx
+    const master=ctx.createGain(); master.gain.value=volume
+    const filter=ctx.createBiquadFilter()
+    filter.type='lowpass'; filter.frequency.value=soundType==='rain'?4000:900
+    filter.connect(master); master.connect(ctx.destination)
+    masterRef.current=master
 
-    // Slowly sweep the filter for gentle movement
-    const filterLfo = ctx.createOscillator()
-    const filterLfoGain = ctx.createGain()
-    filterLfo.frequency.value = 0.03
-    filterLfoGain.gain.value = 350
-    filterLfo.connect(filterLfoGain)
-    filterLfoGain.connect(filter.frequency)
-    filterLfo.start()
+    if(soundType!=='rain'){
+      // Slowly sweep the filter for gentle movement (rain shapes its own
+      // texture via the highpass/shelf chain instead, this would just
+      // muffle it)
+      const filterLfo=ctx.createOscillator()
+      const filterLfoGain=ctx.createGain()
+      filterLfo.frequency.value=0.03; filterLfoGain.gain.value=350
+      filterLfo.connect(filterLfoGain); filterLfoGain.connect(filter.frequency)
+      filterLfo.start()
+      nodesRef.current.push(filterLfo)
+    }
 
-    // Simple open chord: root, fifth, octave, tenth — detuned slightly
-    // per voice so they beat gently against each other rather than
-    // sounding like a flat synth tone.
-    const freqs = [110, 164.8, 220, 277.2]
-    const nodes = freqs.map((f,i)=>{
-      const osc = ctx.createOscillator()
-      osc.type = 'sine'
-      osc.frequency.value = f
-      osc.detune.value = (i%2===0?1:-1) * (3+i)
-      const voiceGain = ctx.createGain()
-      voiceGain.gain.value = 0
-      const breathLfo = ctx.createOscillator()
-      const breathLfoGain = ctx.createGain()
-      breathLfo.frequency.value = 0.05 + i*0.015
-      breathLfoGain.gain.value = 0.06
-      breathLfo.connect(breathLfoGain)
-      breathLfoGain.connect(voiceGain.gain)
-      osc.connect(voiceGain)
-      voiceGain.connect(filter)
-      osc.start(); breathLfo.start()
-      // Fade this voice in over a couple seconds instead of snapping on
-      voiceGain.gain.setValueAtTime(0, ctx.currentTime)
-      voiceGain.gain.linearRampToValueAtTime(0.09, ctx.currentTime + 2 + i*0.4)
-      return {osc, breathLfo}
-    })
-    nodesRef.current = [...nodes, {osc:filterLfo}]
+    ;(SOUND_STARTERS[soundType]||startPad)(ctx,filter)
     setPlaying(true)
   }
 
@@ -331,14 +433,24 @@ function useAmbientSound(){
     if(masterRef.current) masterRef.current.gain.setTargetAtTime(v, ctxRef.current.currentTime, 0.1)
   }
 
-  // Load the persisted enable/disable preference once on mount.
+  const setSoundType = (type) => {
+    setSoundTypeState(type)
+    try{ localStorage.setItem('lakshmimata-ambient-sound', type) }catch(e){}
+    if(playing){ stop(); setTimeout(()=>start(),50) } // restart with the new soundscape
+  }
+
+  // Load the persisted enable/disable + sound-type preference once on mount.
   useEffect(()=>{
-    let pref=false
-    try{ pref = localStorage.getItem('lakshmimata-ambient-enabled')==='true' }catch(e){}
+    let pref=false, savedType='pad'
+    try{
+      pref = localStorage.getItem('lakshmimata-ambient-enabled')==='true'
+      savedType = localStorage.getItem('lakshmimata-ambient-sound') || 'pad'
+    }catch(e){}
     setEnabled(pref)
+    setSoundTypeState(savedType)
   },[])
 
-  // Browsers block autoplay-with-sound unconditionally — a saved
+  // Browsers block autoplay-with-sound unconditionally -- a saved
   // 'enabled' preference from a past session can't just resume itself
   // on page load. Instead, listen for the person's FIRST genuine click
   // anywhere in the app this session and resume then, so re-enabling it
@@ -351,6 +463,7 @@ function useAmbientSound(){
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[enabled])
 
+
   const toggle = () => {
     const next = !enabled
     setEnabled(next)
@@ -360,7 +473,7 @@ function useAmbientSound(){
 
   useEffect(()=>()=>stop(),[]) // cleanup on unmount
 
-  return { playing, enabled, volume, toggle, setVolume: setVol }
+  return { playing, enabled, volume, toggle, setVolume: setVol, soundType, setSoundType }
 }
 
 function useIsMobile(){
@@ -2911,7 +3024,7 @@ function SettingsPanel({session,onUpdate,onLogout,themeKey,switchTheme,ambient})
             letterSpacing:'0.08em',display:'block',marginBottom:8}}>
             Ambient Sound <span style={{color:C.muted,fontWeight:400,textTransform:'none'}}>(optional, synthesized — not a music track)</span>
           </label>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
             <button onClick={ambient.toggle}
               style={{padding:'10px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
                 border:`1px solid ${ambient.enabled?C.accent:C.border}`,
@@ -2923,10 +3036,21 @@ function SettingsPanel({session,onUpdate,onLogout,themeKey,switchTheme,ambient})
               onChange={e=>ambient.setVolume(+e.target.value)}
               style={{flex:1}}/>
           </div>
-          <div style={{fontSize:10,color:C.muted,marginTop:6}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+            {AMBIENT_SOUNDS.map(([key,label])=>(
+              <button key={key} onClick={()=>ambient.setSoundType(key)}
+                style={{padding:'8px 10px',borderRadius:8,cursor:'pointer',fontSize:11.5,fontWeight:600,
+                  border:`1px solid ${ambient.soundType===key?C.accent:C.border}`,
+                  background:ambient.soundType===key?C.accent+'18':C.bg,
+                  color:ambient.soundType===key?C.accent:C.muted}}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div style={{fontSize:10,color:C.muted,marginTop:8}}>
             {ambient.enabled && !ambient.playing
               ? 'Enabled — will start on your next tap anywhere (browsers block silent autoplay).'
-              : 'A soft ambient tone generated in your browser. Your choice is remembered next time you visit.'}
+              : 'Generated in your browser, not a recording. Your choices are remembered next time you visit.'}
           </div>
         </div>
         {ownerMode&&(
