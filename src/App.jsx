@@ -273,6 +273,32 @@ const SIGNAL_TOOLTIPS = {
   guppy: 'Short-term moving average group just crossed above the long-term group — momentum picking up.',
 }
 
+// Tooltips for the Index Performance Dashboard's column headers.
+const IDX_COLUMN_TOOLTIPS = {
+  name: 'Which NSE sector/index this row tracks.',
+  lastPrice: 'Current level of this index.',
+  rsTv: 'Relative Strength (1-99) — how this index is performing vs the broader market. Above 70 = leading; below 40 = lagging.',
+  stage: "Weinstein stage — where this index sits in its trend cycle (1=base, 2=uptrend, 3=topping, 4=downtrend).",
+  chgD: '% change today.',
+  chgW: '% change over the last week, with rank vs other indices.',
+  chgM: '% change over the last month, with rank vs other indices.',
+  chgQ: '% change over the last 3 months.',
+  chgY: '% change over the last year.',
+}
+
+// Tooltips for the Sectors table's column headers.
+const SEC_COLUMN_TOOLTIPS = {
+  sector: 'Which sector this row tracks.',
+  rank: "This sector's current rank vs all other sectors, by average RS.",
+  avgRS: 'Average Relative Strength (1-99) across every stock in this sector — the core leadership signal.',
+  count: 'How many stocks are tracked in this sector.',
+  ppCount: "Stocks in this sector showing a Pocket Pivot today — early accumulation, real-time.",
+  improving: "% of this sector's stocks whose RS trend is currently improving, not just high.",
+  advancesD: '% of this sector\'s stocks that are up today.',
+  advancesW: '% of this sector\'s stocks that are up over the last week.',
+  advancesM: '% of this sector\'s stocks that are up over the last month.',
+}
+
 const SIGNAL_GLOSSARY = [
   ['🚀 HT', 'High Turnover — today\'s volume is near the highest it\'s ever been for this stock, on an up day.'],
   ['📊 HY', 'High Yield (volume) — today\'s volume is near the highest it\'s been in the last 52 weeks, on an up day.'],
@@ -4425,10 +4451,12 @@ export default function App(){
                       gap:4,padding:'10px 12px',background:C.bg,
                       borderBottom:`1px solid ${C.border}`,position:'sticky',top:0}}>
                       {[['Index','name'],['Price','lastPrice'],['RS-TV','rsTv'],['Stage','stage'],
-                        ['1D','chgD'],['1W','chgW'],['1M','chgM'],['3M','chgQ'],['1Y','chgY']].map(([h,key])=>(
+                        ['1D','chgD'],['1W','chgW'],['1M','chgM'],['3M','chgQ'],['1Y','chgY']].map(([h,key],hi)=>(
                         <div key={h} onClick={()=>setIdxSort(s=>({key,dir:s.key===key?-s.dir:-1}))}
+                          title={IDX_COLUMN_TOOLTIPS[key]}
                           style={{fontSize:10,fontWeight:700,cursor:'pointer',userSelect:'none',
-                            color:idxSort.key===key?C.accent:C.muted,textTransform:'uppercase'}}>
+                            color:idxSort.key===key?C.accent:C.muted,textTransform:'uppercase',
+                            ...(hi===0?{position:'sticky',left:0,background:C.bg,zIndex:2,paddingRight:8}:{})}}>
                           {h}{idxSort.key===key?(idxSort.dir===-1?' ↓':' ↑'):''}
                         </div>
                       ))}
@@ -4454,7 +4482,8 @@ export default function App(){
                           gap:4,padding:'10px 12px',alignItems:'center',cursor:'pointer',
                           background:isExpanded?C.active:(i%2===0?'transparent':C.bg+'55'),
                           borderBottom:`1px solid ${C.border}33`}}>
-                          <div style={cellStyle}>
+                          <div style={{...cellStyle,position:'sticky',left:0,
+                            background:isExpanded?C.active:(i%2===0?C.card:C.bg),zIndex:1,paddingRight:8}}>
                             <div style={{fontWeight:700,fontSize:12,color:C.text,display:'flex',alignItems:'center',gap:4}}>{idx.name} <span style={{fontSize:9,color:C.muted}}>{isExpanded?'▲':'▼'}</span></div>
                           </div>
                           <div style={cellStyle}>
@@ -4514,8 +4543,19 @@ export default function App(){
                         </div>
                         {isExpanded && (() => {
                           const constituents = getIndexConstituents(idx.name, stocks)
+                          const rankStreak = idx.rankD<=3 && idx.rankW<=3 && idx.rankM<=3
                           return (
                             <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,position:'sticky',left:0,width:'calc(100vw - 60px)',maxWidth:900}}>
+                              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
+                                padding:'10px 12px',marginBottom:12,fontSize:11,color:C.muted,lineHeight:1.6}}>
+                                <strong style={{color:C.text}}>How to read this:</strong> RS-TV above 70 with
+                                a rising Stage (2 or 3) means money is actively rotating into {idx.name} right
+                                now, not just a one-day blip. {rankStreak
+                                  ? <span style={{color:C.green}}> This index is currently ranked in the top 3 across 1D, 1W, and 1M — sustained leadership, not a fluke spike.</span>
+                                  : <span> Compare the 1D rank against 1W/1M — a strong single day with a weak longer trend usually means chasing a spike, not real leadership.</span>}{' '}
+                                Tap any stock below to open its chart and check if it's actually participating
+                                in the move, or just riding the index's headline number.
+                              </div>
                               {constituents===null ? (
                                 <div style={{fontSize:11,color:C.muted,textAlign:'center',padding:10}}>
                                   Constituent list not available for {idx.name} yet — this index doesn't
@@ -4553,10 +4593,12 @@ export default function App(){
                           borderBottom:`1px solid ${C.border}`}}>
                           {[['Sector','sector'],['Rank','rank'],['Avg RS','avgRS'],['Stocks','count'],
                             ['PP Today','ppCount'],['Improving','improving'],
-                            ['Adv 1D','advancesD'],['Adv 1W','advancesW'],['Adv 1M','advancesM']].map(([h,key])=>(
+                            ['Adv 1D','advancesD'],['Adv 1W','advancesW'],['Adv 1M','advancesM']].map(([h,key],hi)=>(
                             <div key={h} onClick={()=>setSecSort(s=>({key,dir:s.key===key?-s.dir:-1}))}
+                              title={SEC_COLUMN_TOOLTIPS[key]}
                               style={{fontSize:10,fontWeight:700,cursor:'pointer',userSelect:'none',
-                                color:secSort.key===key?C.accent:C.muted,textTransform:'uppercase'}}>
+                                color:secSort.key===key?C.accent:C.muted,textTransform:'uppercase',
+                                ...(hi===0?{position:'sticky',left:0,background:C.bg,zIndex:2,paddingRight:8}:{})}}>
                               {h}{secSort.key===key?(secSort.dir===-1?' ↓':' ↑'):''}
                             </div>
                           ))}
@@ -4592,7 +4634,8 @@ export default function App(){
                                 gap:4,padding:'10px 12px',alignItems:'center',cursor:'pointer',
                                 background:isExp?C.active:(i%2===0?'transparent':C.bg+'55'),
                                 borderBottom:`1px solid ${C.border}33`}}>
-                                <div style={cellStyle}>
+                                <div style={{...cellStyle,position:'sticky',left:0,
+                                  background:isExp?C.active:(i%2===0?C.card:C.bg),zIndex:1,paddingRight:8}}>
                                   <div style={{fontWeight:700,fontSize:12,color:C.text,display:'flex',alignItems:'center',gap:4}}>{sec.sector} <span style={{fontSize:9,color:C.muted}}>{isExp?'▲':'▼'}</span></div>
                                 </div>
                                 <div style={cellStyle}>
@@ -4625,8 +4668,19 @@ export default function App(){
                               </div>
                               {isExp&&(()=>{
                                 const secStocks = (stocks||[]).filter(s=>s.sector===sec.sector).sort((a,b)=>b.rs-a.rs)
+                                const strong = sec.rank<=3 && sec.improving>=50
                                 return (
                                   <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,position:'sticky',left:0,width:'calc(100vw - 60px)',maxWidth:900}}>
+                                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
+                                      padding:'10px 12px',marginBottom:12,fontSize:11,color:C.muted,lineHeight:1.6}}>
+                                      <strong style={{color:C.text}}>How to read this:</strong> A high sector
+                                      rank alone can be a few large stocks pulling the average up — check
+                                      "Improving %" too, since that's how many stocks in {sec.sector} are
+                                      genuinely broadening the move, not just riding one or two leaders.{' '}
+                                      {strong
+                                        ? <span style={{color:C.green}}>This sector is top-3 ranked with over half its stocks improving — real breadth, not a narrow rally.</span>
+                                        : <span>Sort the stock list below by RS to see which specific names are actually driving this sector's number right now.</span>}
+                                    </div>
                                     <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
                                       {sec.sector} stocks ({secStocks.length})
                                     </div>
