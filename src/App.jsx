@@ -2537,14 +2537,19 @@ export default function App(){
 
   const currentFilterState = () => ({
     search, rsMin, rsMax, mcapMin, mcapMax, rsImprFilter,
-    sigFilter, stageFilter, sectorFilter, presetFilter,
+    sigFilters, stageFilter, sectorFilter, presetFilter,
   })
   const applyFilterState = (f) => {
     setSearch(f.search??'')
     setRsMin(f.rsMin??0); setRsMax(f.rsMax??99)
     setMcapMin(f.mcapMin??''); setMcapMax(f.mcapMax??'')
     setRsImprFilter(f.rsImprFilter??'all')
-    setSigFilter(f.sigFilter??'all')
+    // Backward compatible: scanners saved before the Signal filter
+    // became multi-select stored a single string (sigFilter); newer
+    // ones store an array (sigFilters).
+    if(Array.isArray(f.sigFilters)) setSigFilters(f.sigFilters)
+    else if(f.sigFilter&&f.sigFilter!=='all') setSigFilters([f.sigFilter])
+    else setSigFilters([])
     setStageFilter(f.stageFilter??'all')
     setSectorFilter(f.sectorFilter??'all')
     setPresetFilter(f.presetFilter??'all')
@@ -2698,18 +2703,32 @@ export default function App(){
   // RS tab filters
   const [rsMin,setRsMin]=useState(0),[rsMax,setRsMax]=useState(99)
   const [rsImprFilter,setRsImprFilter]=useState('all')
-  const [sigFilter,setSigFilter]=useState('all')
+  const [sigFilters,setSigFilters]=useState([]) // multi-select, [] = no filter (all)
   const [stageFilter,setStageFilter]=useState('all')
   const [sectorFilter,setSectorFilter]=useState('all')
   const [mcapMin,setMcapMin]=useState('')
   const [mcapMax,setMcapMax]=useState('')
   const [savedScanners,setSavedScanners]=useState([])
+  const [selectedScannerId,setSelectedScannerId]=useState('')
   const [showSaveScannerInput,setShowSaveScannerInput]=useState(false)
   const [scannerNameInput,setScannerNameInput]=useState('')
   // Shared market cap check, used everywhere a stock list gets filtered
   // (RS Scanner's rsBase above, and the Breakout tab's sections below) so
   // the filter is consistent across tabs, not just the main scanner.
   const passesMcap = s => (mcapMin===''||(s.marketCap??-1)>=+mcapMin) && (mcapMax===''||(s.marketCap??Infinity)<=+mcapMax)
+  // Used by the multi-select Signal filter (OR logic — a stock matches
+  // if it satisfies ANY of the selected signals).
+  const matchesSignal = (s,sig) => {
+    if(sig==='pp') return !!s.pp?.isPP
+    if(sig==='hy') return !!s.hy?.isHY
+    if(sig==='ht') return !!s.ht?.isHT
+    if(sig==='ema9') return !!s.nearEMA9?.isNearEMA9
+    if(sig==='power') return !!(s.pp?.isPP&&s.rs>=80)
+    if(sig==='ibv') return calcIBV(s).isIBV
+    if(sig==='r1breakout') return !!s.isResistanceBreakout
+    if(sig==='cupbreakout') return !!s.isCupHandleBreakout
+    return false
+  }
   const [search,setSearch]=useState(''),[sortBy,setSortBy]=useState('rs')
   const [sortDir,setSortDir]=useState('desc')
   const handleSort = useCallback(key=>{
@@ -2896,14 +2915,7 @@ export default function App(){
     if(mcapMin!==''&&(s.marketCap==null||s.marketCap<+mcapMin))return false
     if(mcapMax!==''&&(s.marketCap==null||s.marketCap>+mcapMax))return false
     if(rsImprFilter!=='all'&&s.rsTrend?.trend!==rsImprFilter)return false
-    if(sigFilter==='pp'&&!s.pp?.isPP)return false
-    if(sigFilter==='hy'&&!s.hy?.isHY)return false
-    if(sigFilter==='ht'&&!s.ht?.isHT)return false
-    if(sigFilter==='ema9'&&!s.nearEMA9?.isNearEMA9)return false
-    if(sigFilter==='power'&&!(s.pp?.isPP&&s.rs>=80))return false
-    if(sigFilter==='ibv'&&!calcIBV(s).isIBV)return false
-    if(sigFilter==='r1breakout'&&!s.isResistanceBreakout)return false
-    if(sigFilter==='cupbreakout'&&!s.isCupHandleBreakout)return false
+    if(sigFilters.length>0&&!sigFilters.some(sig=>matchesSignal(s,sig)))return false
     if(stageFilter!=='all'&&calcWeinsteinStage(s).stage!==+stageFilter)return false
     if(sectorFilter!=='all'&&s.sector!==sectorFilter)return false
     // Preset filter
@@ -2945,7 +2957,7 @@ export default function App(){
     if(av===-1&&bv!==-1) return 1
     if(bv===-1&&av!==-1) return -1
     return dir===1?(av-bv):(bv-av)
-  }),[stocks,search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilter,stageFilter,sectorFilter,presetFilter,sortBy,sortDir])
+  }),[stocks,search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,sectorFilter,presetFilter,sortBy,sortDir])
   const displayedRS=useMemo(()=>applyPP(rsBase,ppFilterRS),[rsBase,ppFilterRS])
 
   const wlBase=stocks.filter(s=>s.scanner52wl.near52wLow&&s.sym.toLowerCase().includes(wlSearch.toLowerCase())&&(!wlSigOnly||s.scanner52wl.isSignal)).sort((a,b)=>a.scanner52wl.pctFrom52wLow-b.scanner52wl.pctFrom52wLow)
@@ -3296,9 +3308,10 @@ export default function App(){
                 ].map(({label,val,color,f})=>(
                   <div key={label} onClick={()=>{
                     if(f==='__impr')setRsImprFilter(v=>v==='improving'?'all':'improving')
-                    else setSigFilter(v=>v===f?'all':f)
+                    else if(f==='all')setSigFilters([])
+                    else setSigFilters(prev=>prev.includes(f)?prev.filter(x=>x!==f):[...prev,f])
                   }} style={{flexShrink:0,padding:'8px 14px',borderRadius:20,cursor:'pointer',
-                    background:C.card,border:`1px solid ${(f===sigFilter||(f==='__impr'&&rsImprFilter==='improving'))?color:C.border}`,textAlign:'center',minWidth:60}}>
+                    background:C.card,border:`1px solid ${((f==='all'&&sigFilters.length===0)||sigFilters.includes(f)||(f==='__impr'&&rsImprFilter==='improving'))?color:C.border}`,textAlign:'center',minWidth:60}}>
                     <div style={{fontWeight:800,fontSize:17,color}}>{val}</div>
                     <div style={{fontSize:10,color:C.muted,marginTop:1}}>{label}</div>
                   </div>
@@ -3354,39 +3367,44 @@ export default function App(){
                               color:'#0a0a0f',fontSize:12,fontWeight:700,cursor:'pointer'}}>Save</button>
                         </div>
                       )}
-                      {savedScanners.length>0&&(
-                        <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                          {savedScanners.map(sc=>{
-                            const f = sc.filters||{}
-                            const parts = []
-                            if(f.search) parts.push(`"${f.search}"`)
-                            if((f.rsMin??0)!==0||(f.rsMax??99)!==99) parts.push(`RS ${f.rsMin??0}-${f.rsMax??99}`)
-                            if(f.mcapMin!==''&&f.mcapMin!=null) parts.push(`Mcap ≥${f.mcapMin}Cr`)
-                            if(f.mcapMax!==''&&f.mcapMax!=null) parts.push(`Mcap ≤${f.mcapMax}Cr`)
-                            if(f.rsImprFilter&&f.rsImprFilter!=='all') parts.push(f.rsImprFilter)
-                            if(f.sigFilter&&f.sigFilter!=='all') parts.push(f.sigFilter.toUpperCase())
-                            if(f.stageFilter&&f.stageFilter!=='all') parts.push(`Stage ${f.stageFilter}`)
-                            if(f.sectorFilter&&f.sectorFilter!=='all') parts.push(f.sectorFilter)
-                            if(f.presetFilter&&f.presetFilter!=='all') parts.push(f.presetFilter)
-                            const summary = parts.length ? parts.join(' · ') : 'No filters (all stocks)'
-                            return (
-                              <div key={sc.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',
-                                background:C.bg,borderRadius:8,padding:'8px 10px'}}>
-                                <button onClick={()=>applyFilterState(sc.filters)}
-                                  style={{flex:1,textAlign:'left',background:'transparent',border:'none',
-                                    cursor:'pointer'}}>
-                                  <div style={{color:C.text,fontSize:12,fontWeight:700}}>{sc.name}</div>
-                                  <div style={{color:C.muted,fontSize:10,marginTop:2}}>{summary}</div>
-                                </button>
-                                <button onClick={()=>handleDeleteScanner(sc.id)}
-                                  style={{background:'transparent',border:'none',color:C.muted,fontSize:12,cursor:'pointer',padding:'0 4px'}}>
-                                  ✕
-                                </button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
+                      {savedScanners.length>0&&(() => {
+                        const describeScanner = (sc) => {
+                          const f = sc.filters||{}
+                          const parts = []
+                          if(f.search) parts.push(`"${f.search}"`)
+                          if((f.rsMin??0)!==0||(f.rsMax??99)!==99) parts.push(`RS ${f.rsMin??0}-${f.rsMax??99}`)
+                          if(f.mcapMin!==''&&f.mcapMin!=null) parts.push(`Mcap ≥${f.mcapMin}Cr`)
+                          if(f.mcapMax!==''&&f.mcapMax!=null) parts.push(`Mcap ≤${f.mcapMax}Cr`)
+                          if(f.rsImprFilter&&f.rsImprFilter!=='all') parts.push(f.rsImprFilter)
+                          if(Array.isArray(f.sigFilters)&&f.sigFilters.length) parts.push(f.sigFilters.map(x=>x.toUpperCase()).join('/'))
+                          else if(f.sigFilter&&f.sigFilter!=='all') parts.push(f.sigFilter.toUpperCase())
+                          if(f.stageFilter&&f.stageFilter!=='all') parts.push(`Stage ${f.stageFilter}`)
+                          if(f.sectorFilter&&f.sectorFilter!=='all') parts.push(f.sectorFilter)
+                          if(f.presetFilter&&f.presetFilter!=='all') parts.push(f.presetFilter)
+                          return parts.length ? parts.join(' · ') : 'No filters (all stocks)'
+                        }
+                        return (
+                          <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                            <select value={selectedScannerId} onChange={e=>{
+                                setSelectedScannerId(e.target.value)
+                                const sc = savedScanners.find(x=>String(x.id)===e.target.value)
+                                if(sc) applyFilterState(sc.filters)
+                              }}
+                              style={{flex:1,padding:'8px 10px',borderRadius:6,border:`1px solid ${C.border}`,
+                                background:C.bg,color:C.text,fontSize:12}}>
+                              <option value="">Load a saved scanner…</option>
+                              {savedScanners.map(sc=>(
+                                <option key={sc.id} value={sc.id}>{sc.name} — {describeScanner(sc)}</option>
+                              ))}
+                            </select>
+                            {selectedScannerId&&(
+                              <button onClick={()=>{handleDeleteScanner(selectedScannerId);setSelectedScannerId('')}}
+                                style={{padding:'8px 10px',borderRadius:6,border:`1px solid ${C.border}`,
+                                  background:'transparent',color:C.muted,fontSize:12,cursor:'pointer'}}>✕</button>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </div>
                     <div style={{marginBottom:14}}>
                       <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>
@@ -3446,14 +3464,23 @@ export default function App(){
                       </div>
                     </div>
                     <div>
-                      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>Signal</div>
+                      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>
+                        Signal <span style={{color:C.muted,fontWeight:400}}>(tap multiple — matches any selected)</span>
+                      </div>
                       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                        {[['all','All',C.muted],['pp','🔥PP',C.orange],['hy','📊HY',C.blue],['ht','🚀HT',C.purple],['ema9','⚡EMA9',C.green],['power','⭐Power',C.accent],['ibv','🏛️IBV',C.teal],['r1breakout','🎯R1 Breakout',C.red],['cupbreakout','☕Cup Breakout',C.yellow]].map(([v,label,color])=>(
-                          <button key={v} onClick={()=>setSigFilter(v)}
-                            style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilter===v?color:C.border}`,
-                              cursor:'pointer',fontSize:12,fontWeight:600,
-                              background:sigFilter===v?color+'22':'transparent',color:sigFilter===v?color:C.muted}}>{label}</button>
-                        ))}
+                        <button onClick={()=>setSigFilters([])}
+                          style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilters.length===0?C.muted:C.border}`,
+                            cursor:'pointer',fontSize:12,fontWeight:600,
+                            background:sigFilters.length===0?C.muted+'22':'transparent',color:sigFilters.length===0?C.text:C.muted}}>All</button>
+                        {[['pp','🔥PP',C.orange],['hy','📊HY',C.blue],['ht','🚀HT',C.purple],['ema9','⚡EMA9',C.green],['power','⭐Power',C.accent],['ibv','🏛️IBV',C.teal],['r1breakout','🎯R1 Breakout',C.red],['cupbreakout','☕Cup Breakout',C.yellow]].map(([v,label,color])=>{
+                          const active = sigFilters.includes(v)
+                          return (
+                            <button key={v} onClick={()=>setSigFilters(prev=>active?prev.filter(x=>x!==v):[...prev,v])}
+                              style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${active?color:C.border}`,
+                                cursor:'pointer',fontSize:12,fontWeight:600,
+                                background:active?color+'22':'transparent',color:active?color:C.muted}}>{label}</button>
+                          )
+                        })}
                       </div>
                     </div>
                     <div style={{marginTop:10}}>
