@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase, fetchOwnerToken } from './lib/supabase'
 import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
@@ -3216,6 +3216,70 @@ function isMarketOpen(){
 }
 
 // ── Main App ──────────────────────────────────────────────────────────
+// ── Error Boundary ───────────────────────────────────────────────────
+// Without this, ANY uncaught render error anywhere in the tree takes
+// the entire app to a blank screen with zero information — which has
+// happened repeatedly in this project and is nearly impossible to
+// diagnose on mobile without a proper console. This catches it and
+// shows the actual error message + component stack on screen instead.
+export class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props)
+    this.state = { error: null, info: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { error }
+  }
+  componentDidCatch(error, info) {
+    this.setState({ info })
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{minHeight:'100vh',background:'#0a0d12',color:'#e2e8f0',
+          padding:20,fontFamily:'monospace',fontSize:13,lineHeight:1.6}}>
+          <div style={{fontSize:18,fontWeight:700,color:'#ef4444',marginBottom:12}}>
+            ⚠️ Something broke
+          </div>
+          <div style={{marginBottom:16}}>
+            The app hit an error and couldn't render. Screenshot this whole
+            screen and send it — this is the actual error message, which is
+            what's needed to fix it (much more useful than "blank screen").
+          </div>
+          <div style={{background:'#1c2333',border:'1px solid #ef4444',borderRadius:8,
+            padding:12,marginBottom:12,whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+            {String(this.state.error?.message || this.state.error)}
+          </div>
+          {this.state.error?.stack && (
+            <details style={{marginBottom:12}}>
+              <summary style={{cursor:'pointer',color:'#4f8ef7'}}>Stack trace</summary>
+              <div style={{background:'#0e1117',border:'1px solid #1c2333',borderRadius:8,
+                padding:12,marginTop:8,whiteSpace:'pre-wrap',wordBreak:'break-word',fontSize:10.5,color:'#4a5568'}}>
+                {this.state.error.stack}
+              </div>
+            </details>
+          )}
+          {this.state.info?.componentStack && (
+            <details>
+              <summary style={{cursor:'pointer',color:'#4f8ef7'}}>Component stack</summary>
+              <div style={{background:'#0e1117',border:'1px solid #1c2333',borderRadius:8,
+                padding:12,marginTop:8,whiteSpace:'pre-wrap',wordBreak:'break-word',fontSize:10.5,color:'#4a5568'}}>
+                {this.state.info.componentStack}
+              </div>
+            </details>
+          )}
+          <button onClick={()=>window.location.reload()}
+            style={{marginTop:16,padding:'10px 20px',background:'#4f8ef7',color:'#0a0d12',
+              border:'none',borderRadius:8,fontWeight:700,cursor:'pointer'}}>
+            Reload
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 export default function App(){
   const isMobile=useIsMobile()
   const [session,setSession]=useState(null)
