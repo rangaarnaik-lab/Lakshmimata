@@ -227,6 +227,16 @@ export async function fetchAvailableHistoryDates() {
  * `stock_full_history` table (dates, prices, volumes, highs, lows).
  * Returns null if the symbol hasn't been fetched yet.
  */
+export async function fetchMarketBreadthHistory(days=180) {
+  const { data, error } = await supabase
+    .from('market_breadth_history')
+    .select('*')
+    .order('date', { ascending: false })
+    .limit(days)
+  if (error) { console.error('fetchMarketBreadthHistory error:', error.message); return [] }
+  return (data || []).reverse() // chronological order for charting
+}
+
 export async function fetchSavedScanners(userId) {
   const { data, error } = await supabase
     .from('saved_scanners')
