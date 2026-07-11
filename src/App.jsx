@@ -1494,21 +1494,21 @@ function BreadthChart({data,isMobile}){
 
 // ── EMA Breadth Table — % of stocks above 9/21/50-day EMA per day,
 // plus daily Stage 2 count (going forward only, see backend notes). ──
-function EmaBreadthTable({data,isMobile,dragProps}){
+function EmaBreadthTable({data,isMobile,dragProps,rangeLabel}){
   if(!data||data.length===0) return null
   const pct=(n,total)=>total?Math.round(n/total*100):0
   return(
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 14px 4px',marginBottom:14}}>
-      <div style={{fontWeight:800,fontSize:13,marginBottom:2}}>📅 Stocks Above EMA — Last Month</div>
+      <div style={{fontWeight:800,fontSize:13,marginBottom:2}}>📅 Stocks Above EMA{rangeLabel?` — ${rangeLabel}`:''}</div>
       <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
         % of tracked stocks trading above their 9/21/50-day average, plus daily Stage 2 count
         {data.some(d=>d.stage2_count==null) && ' (Stage 2 only available from when this was added — no history before that)'}
       </div>
       <div ref={dragProps?.ref} {...(dragProps?.handlers||{})}
-        style={{overflowX:'auto',...(dragProps?.style||{})}}>
+        style={{overflowX:'auto',overflowY:'auto',maxHeight:420,...(dragProps?.style||{})}}>
         <table style={{width:'100%',borderCollapse:'collapse',minWidth:520}}>
           <thead>
-            <tr style={{borderBottom:`1px solid ${C.border}`}}>
+            <tr style={{borderBottom:`1px solid ${C.border}`,position:'sticky',top:0,background:C.card}}>
               {['Date','Above EMA9','Above EMA21','Above EMA50','Stage 2'].map(h=>(
                 <th key={h} style={{textAlign:h==='Date'?'left':'right',padding:'6px 10px',
                   fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.04em'}}>{h}</th>
@@ -3254,6 +3254,7 @@ export default function App(){
   const [showSignalGlossary,setShowSignalGlossary]=useState(false)
   const [breadthHistory,setBreadthHistory]=useState([])
   const [emaBreadthHistory,setEmaBreadthHistory]=useState([])
+  const [breadthRange,setBreadthRange]=useState('1M')
   const [mainTab,setMainTab]=useState('rs')
   const [presetFilter,setPresetFilter]=useState('all')
   const [rsMin,setRsMin]=useState(0),[rsMax,setRsMax]=useState(99)
@@ -3270,8 +3271,8 @@ export default function App(){
   const [search,setSearch]=useState('')
   useEffect(()=>{
     if(mainTab==='indices' && breadthHistory.length===0){
-      fetchMarketBreadthHistory(180).then(setBreadthHistory)
-      fetchEmaBreadthHistory(35).then(setEmaBreadthHistory)
+      fetchMarketBreadthHistory(500).then(setBreadthHistory)
+      fetchEmaBreadthHistory(500).then(setEmaBreadthHistory)
     }
   },[mainTab])
 
@@ -4732,9 +4733,27 @@ export default function App(){
                         Industry data comes from Upstox company profiles and fills in gradually — stocks without it yet aren't shown here.
                       </div>
 
-                      <BreadthChart data={breadthHistory} isMobile={isMobile}/>
+                      <div style={{display:'flex',gap:6,marginBottom:10,flexWrap:'wrap'}}>
+                        {[['1M',21],['3M',63],['6M',126],['1Y',252],['2Y',504]].map(([label])=>(
+                          <button key={label} onClick={()=>setBreadthRange(label)}
+                            style={{padding:'5px 12px',borderRadius:20,cursor:'pointer',fontSize:11,fontWeight:600,
+                              border:`1px solid ${breadthRange===label?C.accent:C.border}`,
+                              background:breadthRange===label?C.accent+'18':'transparent',
+                              color:breadthRange===label?C.accent:C.muted}}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      {(()=>{
+                        const days = {'1M':21,'3M':63,'6M':126,'1Y':252,'2Y':504}[breadthRange]
+                        const breadthSlice = breadthHistory.slice(-days)
+                        const emaSlice = emaBreadthHistory.slice(-days)
+                        return <>
+                          <BreadthChart data={breadthSlice} isMobile={isMobile}/>
 
-                      <EmaBreadthTable data={emaBreadthHistory} isMobile={isMobile} dragProps={emaBreadthTableDrag}/>
+                          <EmaBreadthTable data={emaSlice} isMobile={isMobile} dragProps={emaBreadthTableDrag} rangeLabel={{'1M':'Last Month','3M':'Last 3 Months','6M':'Last 6 Months','1Y':'Last Year','2Y':'Last 2 Years'}[breadthRange]}/>
+                        </>
+                      })()}
                     </>
                   )
                 })()}
