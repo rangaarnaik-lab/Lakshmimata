@@ -2512,7 +2512,15 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
         const{data:td}=await supabase.from('user_tokens').select('upstox_token').eq('user_id',data.user.id).single()
         onLogin({user:data.user,token:td?.upstox_token||OWNER_TOKEN})
       } else {
-        // Register
+        // Register — password must be at least 10 characters and contain
+        // both letters and numbers, checked client-side before hitting
+        // Supabase so the person gets immediate, specific feedback.
+        if(password.length<10){
+          throw new Error('Password must be at least 10 characters long.')
+        }
+        if(!/[a-zA-Z]/.test(password)||!/[0-9]/.test(password)){
+          throw new Error('Password must contain both letters and numbers.')
+        }
         const{data,error:e}=await supabase.auth.signUp({
           email,password,
           options:{data:{full_name:name||email.split('@')[0]}}
@@ -2653,11 +2661,16 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
                   )}
                 </div>
                 <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
-                  placeholder={mode==='register'?'Min 6 characters':'Enter password'}
+                  placeholder={mode==='register'?'Min 10 characters, letters + numbers':'Enter password'}
                   onKeyDown={e=>e.key==='Enter'&&handleEmailAuth()}
                   style={{width:'100%',padding:'12px 13px',background:C.bg,
                     border:`1px solid ${C.border}`,borderRadius:9,color:C.text,
                     fontSize:14,outline:'none',boxSizing:'border-box'}}/>
+                {mode==='register'&&(
+                  <div style={{fontSize:11,color:C.muted,marginTop:6}}>
+                    At least 10 characters, with both letters and numbers.
+                  </div>
+                )}
               </div>
             )}
             {mode==='register'&&(
