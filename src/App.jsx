@@ -293,7 +293,7 @@ const SEC_COLUMN_TOOLTIPS = {
   avgRS: 'Average Relative Strength (1-99) across every stock in this sector — the core leadership signal.',
   count: 'How many stocks are tracked in this sector.',
   ppCount: "Stocks in this sector showing a Pocket Pivot today — early accumulation, real-time.",
-  improving: "% of this sector's stocks whose RS trend is currently improving, not just high.",
+  improving: "Count of this sector's stocks whose RS trend is currently improving, not just high.",
   advancesD: '% of this sector\'s stocks that are up today.',
   advancesW: '% of this sector\'s stocks that are up over the last week.',
   advancesM: '% of this sector\'s stocks that are up over the last month.',
@@ -4443,7 +4443,7 @@ export default function App(){
                 <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:12,alignItems:'start'}}>
                 <div>
                 <div style={{fontWeight:800,fontSize:14,margin:'0 0 8px'}}>📊 Indices</div>
-                <div ref={idxTableDrag.ref} {...idxTableDrag.handlers} style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12,...idxTableDrag.style}}>
+                <div ref={idxTableDrag.ref} {...idxTableDrag.handlers} style={{overflowX:'auto',overflowY:'auto',maxHeight:520,border:`1px solid ${C.border}`,borderRadius:12,...idxTableDrag.style}}>
                   <div style={{minWidth:820}}>
                     {/* Header row — click to sort */}
                     <div style={{display:'grid',
@@ -4585,12 +4585,12 @@ export default function App(){
                 {sectorData.length>0&&(
                   <>
                     <div style={{fontWeight:800,fontSize:14,margin:'0 0 8px'}}>🏭 Sectors</div>
-                    <div ref={secTableDrag.ref} {...secTableDrag.handlers} style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12,...secTableDrag.style}}>
+                    <div ref={secTableDrag.ref} {...secTableDrag.handlers} style={{overflowX:'auto',overflowY:'auto',maxHeight:520,border:`1px solid ${C.border}`,borderRadius:12,...secTableDrag.style}}>
                       <div style={{minWidth:760}}>
                         <div style={{display:'grid',
                           gridTemplateColumns:'170px 70px 60px 60px 70px 70px 90px 90px 90px',
                           gap:4,padding:'10px 12px',background:C.bg,
-                          borderBottom:`1px solid ${C.border}`}}>
+                          borderBottom:`1px solid ${C.border}`,position:'sticky',top:0,zIndex:1}}>
                           {[['Sector','sector'],['Rank','rank'],['Avg RS','avgRS'],['Stocks','count'],
                             ['PP Today','ppCount'],['Improving','improving'],
                             ['Adv 1D','advancesD'],['Adv 1W','advancesW'],['Adv 1M','advancesM']].map(([h,key],hi)=>(
@@ -4668,17 +4668,17 @@ export default function App(){
                               </div>
                               {isExp&&(()=>{
                                 const secStocks = (stocks||[]).filter(s=>s.sector===sec.sector).sort((a,b)=>b.rs-a.rs)
-                                const strong = sec.rank<=3 && sec.improving>=50
+                                const strong = sec.rank<=3 && sec.count>0 && (sec.improving/sec.count)>=0.5
                                 return (
                                   <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,position:'sticky',left:0,width:'calc(100vw - 60px)',maxWidth:900}}>
                                     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
                                       padding:'10px 12px',marginBottom:12,fontSize:11,color:C.muted,lineHeight:1.6}}>
                                       <strong style={{color:C.text}}>How to read this:</strong> A high sector
-                                      rank alone can be a few large stocks pulling the average up — check
-                                      "Improving %" too, since that's how many stocks in {sec.sector} are
+                                      rank alone can be a few large stocks pulling the average up — check the
+                                      "Improving" count too, since that's how many stocks in {sec.sector} are
                                       genuinely broadening the move, not just riding one or two leaders.{' '}
                                       {strong
-                                        ? <span style={{color:C.green}}>This sector is top-3 ranked with over half its stocks improving — real breadth, not a narrow rally.</span>
+                                        ? <span style={{color:C.green}}>This sector is top-3 ranked with over half its stocks improving ({sec.improving}/{sec.count}) — real breadth, not a narrow rally.</span>
                                         : <span>Sort the stock list below by RS to see which specific names are actually driving this sector's number right now.</span>}
                                     </div>
                                     <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
@@ -4717,6 +4717,7 @@ export default function App(){
                       name, count: members.length,
                       avgRS: Math.round(members.reduce((a,m)=>a+(m.rs||0),0)/members.length),
                       ppCount: members.filter(m=>m.pp?.isPP).length,
+                      improving: members.filter(m=>m.rsTrend?.trend==='improving').length,
                       advD: advPct('chg'), advW: advPct('chgW'), advM: advPct('chgM'),
                       members,
                     }
@@ -4728,11 +4729,13 @@ export default function App(){
                       <div ref={indTableDrag.ref} {...indTableDrag.handlers} style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12,maxHeight:520,overflowY:'auto',...indTableDrag.style}}>
                         <div style={{minWidth:760}}>
                           <div style={{display:'grid',
-                            gridTemplateColumns:'220px 60px 60px 60px 70px 90px 90px 90px',
+                            gridTemplateColumns:'220px 60px 60px 60px 70px 70px 90px 90px 90px',
                             gap:4,padding:'10px 12px',background:C.bg,
                             borderBottom:`1px solid ${C.border}`,position:'sticky',top:0,zIndex:1}}>
-                            {['Industry','Rank','Avg RS','Stocks','PP Today','Adv 1D','Adv 1W','Adv 1M'].map(h=>(
-                              <div key={h} style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase'}}>{h}</div>
+                            {['Industry','Rank','Avg RS','Stocks','PP Today','Improving','Adv 1D','Adv 1W','Adv 1M'].map((h,hi)=>(
+                              <div key={h} title={SEC_COLUMN_TOOLTIPS[{Industry:'sector',Rank:'rank','Avg RS':'avgRS',Stocks:'count','PP Today':'ppCount',Improving:'improving','Adv 1D':'advancesD','Adv 1W':'advancesW','Adv 1M':'advancesM'}[h]]}
+                                style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
+                                  ...(hi===0?{position:'sticky',left:0,background:C.bg,zIndex:2,paddingRight:8}:{})}}>{h}</div>
                             ))}
                           </div>
                           {rows.map((ind,i)=>{
@@ -4755,11 +4758,12 @@ export default function App(){
                               <div key={ind.name}>
                                 <div onClick={()=>setExpandedIndex(isExp?null:'industry:'+ind.name)}
                                   style={{display:'grid',
-                                  gridTemplateColumns:'220px 60px 60px 60px 70px 90px 90px 90px',
+                                  gridTemplateColumns:'220px 60px 60px 60px 70px 70px 90px 90px 90px',
                                   gap:4,padding:'9px 12px',alignItems:'center',cursor:'pointer',
                                   background:isExp?C.active:(i%2===0?'transparent':C.bg+'55'),
                                   borderBottom:`1px solid ${C.border}33`}}>
-                                  <div style={cellStyle}>
+                                  <div style={{...cellStyle,position:'sticky',left:0,
+                                    background:isExp?C.active:(i%2===0?C.card:C.bg),zIndex:1,paddingRight:8}}>
                                     <div style={{fontWeight:700,fontSize:11,color:C.text,display:'flex',alignItems:'center',gap:4}}>{ind.name} <span style={{fontSize:9,color:C.muted}}>{isExp?'▲':'▼'}</span></div>
                                   </div>
                                   <div style={cellStyle}><div style={{fontWeight:700,fontSize:11,color:C.muted}}>#{i+1}</div></div>
@@ -4768,6 +4772,11 @@ export default function App(){
                                   <div style={cellStyle}>
                                     <div style={{fontSize:11,color:ind.ppCount>0?C.orange:C.muted,fontWeight:700}}>
                                       {ind.ppCount>0?`🔥${ind.ppCount}`:'—'}
+                                    </div>
+                                  </div>
+                                  <div style={cellStyle}>
+                                    <div style={{fontSize:11,color:ind.improving>0?C.green:C.muted,fontWeight:700}}>
+                                      {ind.improving}
                                     </div>
                                   </div>
                                   {advCell(ind.advD)}
