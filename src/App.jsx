@@ -855,9 +855,10 @@ function HistoryCalendarPicker({historyDate, setHistoryDate, availableDates, isM
     setViewMonth(`${d.getFullYear()}-${pad(d.getMonth()+1)}`)
   }
 
+  const todayStr = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short'})
   const label = historyDate
-    ? new Date(historyDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})
-    : (isMobile ? '📅 Live' : '📅 Today')
+    ? `📅 ${new Date(historyDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}`
+    : `📅 ${todayStr}`
 
   return (
     <div style={{position:'relative'}}>
