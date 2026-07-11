@@ -262,6 +262,7 @@ function useDragScroll(){
 // volume via its own LFO, run through a gently sweeping lowpass filter.
 function useAmbientSound(){
   const [playing,setPlaying]=useState(false)
+  const [enabled,setEnabled]=useState(false) // persisted preference, separate from live playing state
   const [volume,setVolume]=useState(0.25)
   const ctxRef=useRef(null)
   const nodesRef=useRef([])
@@ -330,9 +331,36 @@ function useAmbientSound(){
     if(masterRef.current) masterRef.current.gain.setTargetAtTime(v, ctxRef.current.currentTime, 0.1)
   }
 
+  // Load the persisted enable/disable preference once on mount.
+  useEffect(()=>{
+    let pref=false
+    try{ pref = localStorage.getItem('lakshmimata-ambient-enabled')==='true' }catch(e){}
+    setEnabled(pref)
+  },[])
+
+  // Browsers block autoplay-with-sound unconditionally — a saved
+  // 'enabled' preference from a past session can't just resume itself
+  // on page load. Instead, listen for the person's FIRST genuine click
+  // anywhere in the app this session and resume then, so re-enabling it
+  // every single visit isn't necessary once they've opted in once.
+  useEffect(()=>{
+    if(!enabled || playing) return
+    const resumeOnce = () => { start(); document.removeEventListener('click', resumeOnce) }
+    document.addEventListener('click', resumeOnce)
+    return () => document.removeEventListener('click', resumeOnce)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[enabled])
+
+  const toggle = () => {
+    const next = !enabled
+    setEnabled(next)
+    try{ localStorage.setItem('lakshmimata-ambient-enabled', String(next)) }catch(e){}
+    if(next) start(); else stop()
+  }
+
   useEffect(()=>()=>stop(),[]) // cleanup on unmount
 
-  return { playing, volume, start, stop, setVolume: setVol }
+  return { playing, enabled, volume, toggle, setVolume: setVol }
 }
 
 function useIsMobile(){
@@ -2884,19 +2912,21 @@ function SettingsPanel({session,onUpdate,onLogout,themeKey,switchTheme,ambient})
             Ambient Sound <span style={{color:C.muted,fontWeight:400,textTransform:'none'}}>(optional, synthesized — not a music track)</span>
           </label>
           <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <button onClick={()=>ambient.playing?ambient.stop():ambient.start()}
+            <button onClick={ambient.toggle}
               style={{padding:'10px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
-                border:`1px solid ${ambient.playing?C.accent:C.border}`,
-                background:ambient.playing?C.accent+'18':C.bg,
-                color:ambient.playing?C.accent:C.muted,whiteSpace:'nowrap'}}>
-              {ambient.playing?'⏸ Playing':'▶ Play'}
+                border:`1px solid ${ambient.enabled?C.accent:C.border}`,
+                background:ambient.enabled?C.accent+'18':C.bg,
+                color:ambient.enabled?C.accent:C.muted,whiteSpace:'nowrap'}}>
+              {ambient.enabled?'🔔 Enabled':'🔕 Disabled'}
             </button>
             <input type="range" min={0} max={1} step={0.05} value={ambient.volume}
               onChange={e=>ambient.setVolume(+e.target.value)}
               style={{flex:1}}/>
           </div>
           <div style={{fontSize:10,color:C.muted,marginTop:6}}>
-            A soft ambient tone generated in your browser — turns off automatically if you close the tab.
+            {ambient.enabled && !ambient.playing
+              ? 'Enabled — will start on your next tap anywhere (browsers block silent autoplay).'
+              : 'A soft ambient tone generated in your browser. Your choice is remembered next time you visit.'}
           </div>
         </div>
         {ownerMode&&(
