@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -2526,6 +2526,41 @@ function isMarketOpen(){
 export default function App(){
   const isMobile=useIsMobile()
   const [session,setSession]=useState(null)
+
+  useEffect(()=>{
+    if(session?.user?.id){
+      fetchSavedScanners(session.user.id).then(setSavedScanners)
+    } else {
+      setSavedScanners([])
+    }
+  },[session])
+
+  const currentFilterState = () => ({
+    search, rsMin, rsMax, mcapMin, mcapMax, rsImprFilter,
+    sigFilter, stageFilter, sectorFilter, presetFilter,
+  })
+  const applyFilterState = (f) => {
+    setSearch(f.search??'')
+    setRsMin(f.rsMin??0); setRsMax(f.rsMax??99)
+    setMcapMin(f.mcapMin??''); setMcapMax(f.mcapMax??'')
+    setRsImprFilter(f.rsImprFilter??'all')
+    setSigFilter(f.sigFilter??'all')
+    setStageFilter(f.stageFilter??'all')
+    setSectorFilter(f.sectorFilter??'all')
+    setPresetFilter(f.presetFilter??'all')
+  }
+  const handleSaveScanner = async () => {
+    if(!session?.user?.id || !scannerNameInput.trim()) return
+    const res = await saveScanner(session.user.id, scannerNameInput.trim(), currentFilterState())
+    if(res.data){
+      setSavedScanners(prev=>[res.data,...prev])
+      setShowSaveScannerInput(false); setScannerNameInput('')
+    }
+  }
+  const handleDeleteScanner = async (id) => {
+    await deleteScanner(id)
+    setSavedScanners(prev=>prev.filter(s=>s.id!==id))
+  }
   const [authLoading,setAuthLoading]=useState(true)
 
   useEffect(()=>{
@@ -2666,6 +2701,15 @@ export default function App(){
   const [sigFilter,setSigFilter]=useState('all')
   const [stageFilter,setStageFilter]=useState('all')
   const [sectorFilter,setSectorFilter]=useState('all')
+  const [mcapMin,setMcapMin]=useState('')
+  const [mcapMax,setMcapMax]=useState('')
+  const [savedScanners,setSavedScanners]=useState([])
+  const [showSaveScannerInput,setShowSaveScannerInput]=useState(false)
+  const [scannerNameInput,setScannerNameInput]=useState('')
+  // Shared market cap check, used everywhere a stock list gets filtered
+  // (RS Scanner's rsBase above, and the Breakout tab's sections below) so
+  // the filter is consistent across tabs, not just the main scanner.
+  const passesMcap = s => (mcapMin===''||(s.marketCap??-1)>=+mcapMin) && (mcapMax===''||(s.marketCap??Infinity)<=+mcapMax)
   const [search,setSearch]=useState(''),[sortBy,setSortBy]=useState('rs')
   const [sortDir,setSortDir]=useState('desc')
   const handleSort = useCallback(key=>{
@@ -2849,6 +2893,8 @@ export default function App(){
   const rsBase=useMemo(()=>stocks.filter(s=>{
     if(!s.sym.toLowerCase().includes(search.toLowerCase()))return false
     if(s.rs<rsMin||s.rs>rsMax)return false
+    if(mcapMin!==''&&(s.marketCap==null||s.marketCap<+mcapMin))return false
+    if(mcapMax!==''&&(s.marketCap==null||s.marketCap>+mcapMax))return false
     if(rsImprFilter!=='all'&&s.rsTrend?.trend!==rsImprFilter)return false
     if(sigFilter==='pp'&&!s.pp?.isPP)return false
     if(sigFilter==='hy'&&!s.hy?.isHY)return false
@@ -2899,7 +2945,7 @@ export default function App(){
     if(av===-1&&bv!==-1) return 1
     if(bv===-1&&av!==-1) return -1
     return dir===1?(av-bv):(bv-av)
-  }),[stocks,search,rsMin,rsMax,rsImprFilter,sigFilter,stageFilter,sectorFilter,presetFilter,sortBy,sortDir])
+  }),[stocks,search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilter,stageFilter,sectorFilter,presetFilter,sortBy,sortDir])
   const displayedRS=useMemo(()=>applyPP(rsBase,ppFilterRS),[rsBase,ppFilterRS])
 
   const wlBase=stocks.filter(s=>s.scanner52wl.near52wLow&&s.sym.toLowerCase().includes(wlSearch.toLowerCase())&&(!wlSigOnly||s.scanner52wl.isSignal)).sort((a,b)=>a.scanner52wl.pctFrom52wLow-b.scanner52wl.pctFrom52wLow)
@@ -3283,6 +3329,50 @@ export default function App(){
                 )}
                 {showFilters&&(
                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px'}}>
+                    {/* My Scanners — save/load the current filter combination */}
+                    <div style={{marginBottom:14,paddingBottom:14,borderBottom:`1px solid ${C.divider}`}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                        <div style={{fontSize:11,fontWeight:700,color:C.text}}>💾 My Scanners</div>
+                        {session?.user?.id?(
+                          <button onClick={()=>setShowSaveScannerInput(v=>!v)}
+                            style={{fontSize:11,color:C.accent,background:'transparent',border:'none',cursor:'pointer',fontWeight:700}}>
+                            + Save current filters
+                          </button>
+                        ):(
+                          <span style={{fontSize:10,color:C.muted}}>Log in to save scanners</span>
+                        )}
+                      </div>
+                      {showSaveScannerInput&&(
+                        <div style={{display:'flex',gap:6,marginBottom:10}}>
+                          <input type="text" placeholder="Scanner name…" value={scannerNameInput}
+                            onChange={e=>setScannerNameInput(e.target.value)}
+                            onKeyDown={e=>e.key==='Enter'&&handleSaveScanner()}
+                            style={{flex:1,padding:'6px 10px',borderRadius:6,border:`1px solid ${C.border}`,
+                              background:C.bg,color:C.text,fontSize:12}}/>
+                          <button onClick={handleSaveScanner}
+                            style={{padding:'6px 14px',borderRadius:6,border:'none',background:C.accent,
+                              color:'#0a0a0f',fontSize:12,fontWeight:700,cursor:'pointer'}}>Save</button>
+                        </div>
+                      )}
+                      {savedScanners.length>0&&(
+                        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                          {savedScanners.map(sc=>(
+                            <div key={sc.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+                              background:C.bg,borderRadius:8,padding:'8px 10px'}}>
+                              <button onClick={()=>applyFilterState(sc.filters)}
+                                style={{flex:1,textAlign:'left',background:'transparent',border:'none',
+                                  color:C.text,fontSize:12,fontWeight:600,cursor:'pointer'}}>
+                                {sc.name}
+                              </button>
+                              <button onClick={()=>handleDeleteScanner(sc.id)}
+                                style={{background:'transparent',border:'none',color:C.muted,fontSize:12,cursor:'pointer',padding:'0 4px'}}>
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <div style={{marginBottom:14}}>
                       <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>
                         RS Range: <span style={{color:C.accent,fontWeight:800}}>{rsMin}–{rsMax}</span>
@@ -3304,6 +3394,29 @@ export default function App(){
                           style={{position:'absolute',top:7,left:0,right:0,width:'100%',appearance:'none',background:'transparent',zIndex:2,margin:0,height:20,cursor:'pointer'}}/>
                         <input type="range" min={0} max={99} value={rsMax} onChange={e=>{const v=+e.target.value;if(v>rsMin)setRsMax(v)}}
                           style={{position:'absolute',top:7,left:0,right:0,width:'100%',appearance:'none',background:'transparent',zIndex:3,margin:0,height:20,cursor:'pointer'}}/>
+                      </div>
+                    </div>
+                    <div style={{marginBottom:14}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>
+                        Market Cap (₹ Cr)
+                        {(mcapMin!==''||mcapMax!=='')&&<span style={{color:C.muted}}> ({stocks.filter(s=>(mcapMin===''||((s.marketCap??-1)>=+mcapMin))&&(mcapMax===''||((s.marketCap??Infinity)<=+mcapMax))).length})</span>}
+                      </div>
+                      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                        <input type="number" placeholder="Min" value={mcapMin} onChange={e=>setMcapMin(e.target.value)}
+                          style={{flex:1,padding:'7px 10px',borderRadius:6,border:`1px solid ${C.border}`,
+                            background:C.bg,color:C.text,fontSize:12}}/>
+                        <span style={{color:C.muted,fontSize:11}}>to</span>
+                        <input type="number" placeholder="Max" value={mcapMax} onChange={e=>setMcapMax(e.target.value)}
+                          style={{flex:1,padding:'7px 10px',borderRadius:6,border:`1px solid ${C.border}`,
+                            background:C.bg,color:C.text,fontSize:12}}/>
+                        {(mcapMin!==''||mcapMax!=='')&&(
+                          <button onClick={()=>{setMcapMin('');setMcapMax('')}}
+                            style={{padding:'6px 10px',borderRadius:6,border:`1px solid ${C.border}`,
+                              background:'transparent',color:C.muted,fontSize:11,cursor:'pointer'}}>✕</button>
+                        )}
+                      </div>
+                      <div style={{fontSize:9,color:C.muted,marginTop:4}}>
+                        Coverage may be incomplete for stocks where fundamentals haven't been fetched yet
                       </div>
                     </div>
                     <div style={{marginBottom:10}}>
@@ -3907,8 +4020,8 @@ export default function App(){
                       display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
                       <div style={{display:'flex',alignItems:'center',gap:12,flex:1,minWidth:0}}>
                         <div>
-                          <div style={{fontWeight:700,fontSize:14,color:C.text,
-                            cursor:'pointer',color:C.accent}}
+                          <div style={{fontWeight:700,fontSize:14,color:C.accent,
+                            cursor:'pointer'}}
                             onClick={()=>s&&setChartSym(s.sym)}>{h.sym}</div>
                           <div style={{fontSize:10,color:C.muted,marginTop:2}}>{s?.sector||'—'}</div>
                         </div>
@@ -4208,14 +4321,14 @@ export default function App(){
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
                 {[
-                  {l:'🚀 Power Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&s.rs>=80&&s.chg>=3).length,c:C.accent},
-                  {l:'⭐ Strong Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&s.rs>=70&&s.chg>=2).length,c:C.green},
-                  {l:'✅ All Breakouts',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout).length,c:C.teal},
-                  {l:'🏛️ IBV Signals',v:stocks.filter(s=>calcIBV(s).isIBV).length,c:C.purple},
-                  {l:'🔥 PP + Break',v:stocks.filter(s=>s.pp?.isPP&&calcHYHTBreakout(s).isBreakout).length,c:C.orange},
-                  {l:'👑 RS 90+ Break',v:stocks.filter(s=>s.rs>=90&&calcHYHTBreakout(s).isBreakout).length,c:C.yellow},
-                  {l:'🎯 R1 Breakout',v:stocks.filter(s=>s.isResistanceBreakout).length,c:C.red},
-                  {l:'☕ Cup Breakout',v:stocks.filter(s=>s.isCupHandleBreakout).length,c:C.yellow},
+                  {l:'🚀 Power Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)&&s.rs>=80&&s.chg>=3).length,c:C.accent},
+                  {l:'⭐ Strong Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)&&s.rs>=70&&s.chg>=2).length,c:C.green},
+                  {l:'✅ All Breakouts',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length,c:C.teal},
+                  {l:'🏛️ IBV Signals',v:stocks.filter(s=>calcIBV(s).isIBV&&passesMcap(s)).length,c:C.purple},
+                  {l:'🔥 PP + Break',v:stocks.filter(s=>s.pp?.isPP&&calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length,c:C.orange},
+                  {l:'👑 RS 90+ Break',v:stocks.filter(s=>s.rs>=90&&calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length,c:C.yellow},
+                  {l:'🎯 R1 Breakout',v:stocks.filter(s=>s.isResistanceBreakout&&passesMcap(s)).length,c:C.red},
+                  {l:'☕ Cup Breakout',v:stocks.filter(s=>s.isCupHandleBreakout&&passesMcap(s)).length,c:C.yellow},
                 ].map(({l,v,c})=>(
                   <div key={l} style={{background:C.bg,borderRadius:8,padding:'10px',textAlign:'center'}}>
                     <div style={{fontSize:22,fontWeight:900,color:c}}>{v}</div>
@@ -4231,9 +4344,9 @@ export default function App(){
               <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
                 Stocks with 2+ Pocket Pivot days in last 10 days = institutional accumulation
               </div>
-              <TVCopyPanel stocks={stocks.filter(s=>calcIBV(s).isIBV)} label="IBV Stocks"/>
+              <TVCopyPanel stocks={stocks.filter(s=>calcIBV(s).isIBV&&passesMcap(s))} label="IBV Stocks"/>
               <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
-                {stocks.filter(s=>calcIBV(s).isIBV).slice(0,20).map(s=>{
+                {stocks.filter(s=>calcIBV(s).isIBV&&passesMcap(s)).slice(0,20).map(s=>{
                   const ibv=calcIBV(s)
                   return(
                     <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
@@ -4258,13 +4371,13 @@ export default function App(){
               <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
                 Stocks whose price just crossed above a significant recent resistance level
               </div>
-              <TVCopyPanel stocks={stocks.filter(s=>s.isResistanceBreakout)} label="R1 Breakouts"/>
+              <TVCopyPanel stocks={stocks.filter(s=>s.isResistanceBreakout&&passesMcap(s))} label="R1 Breakouts"/>
               <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
-                {stocks.filter(s=>s.isResistanceBreakout).length===0?(
+                {stocks.filter(s=>s.isResistanceBreakout&&passesMcap(s)).length===0?(
                   <div style={{textAlign:'center',padding:'20px 0',color:C.muted,fontSize:12}}>
                     No resistance breakouts right now.
                   </div>
-                ):stocks.filter(s=>s.isResistanceBreakout).sort((a,b)=>b.rs-a.rs).slice(0,20).map(s=>(
+                ):stocks.filter(s=>s.isResistanceBreakout&&passesMcap(s)).sort((a,b)=>b.rs-a.rs).slice(0,20).map(s=>(
                   <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
                     display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}>
                     <div>
@@ -4286,13 +4399,13 @@ export default function App(){
               <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
                 Stocks breaking out above a cup-and-handle formation today — algorithmic approximation, use as a visual aid
               </div>
-              <TVCopyPanel stocks={stocks.filter(s=>s.isCupHandleBreakout)} label="Cup Breakouts"/>
+              <TVCopyPanel stocks={stocks.filter(s=>s.isCupHandleBreakout&&passesMcap(s))} label="Cup Breakouts"/>
               <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
-                {stocks.filter(s=>s.isCupHandleBreakout).length===0?(
+                {stocks.filter(s=>s.isCupHandleBreakout&&passesMcap(s)).length===0?(
                   <div style={{textAlign:'center',padding:'20px 0',color:C.muted,fontSize:12}}>
                     No cup & handle breakouts right now.
                   </div>
-                ):stocks.filter(s=>s.isCupHandleBreakout).sort((a,b)=>b.rs-a.rs).slice(0,20).map(s=>(
+                ):stocks.filter(s=>s.isCupHandleBreakout&&passesMcap(s)).sort((a,b)=>b.rs-a.rs).slice(0,20).map(s=>(
                   <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
                     display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}>
                     <div>
@@ -4309,8 +4422,8 @@ export default function App(){
             </div>
 
             {/* HY/HT Breakout list */}
-            <TVCopyPanel stocks={stocks.filter(s=>calcHYHTBreakout(s).isBreakout)} label="HY/HT Breakouts"/>
-            {stocks.filter(s=>calcHYHTBreakout(s).isBreakout).length===0?(
+            <TVCopyPanel stocks={stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s))} label="HY/HT Breakouts"/>
+            {stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length===0?(
               <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
                 <div style={{fontSize:42,marginBottom:12}}>💥</div>
                 <div style={{fontSize:14,fontWeight:700,color:C.text}}>No breakouts today</div>
@@ -4318,7 +4431,7 @@ export default function App(){
                   Stocks need HY/HT volume in last 5 days + price up &gt;1% today
                 </div>
               </div>
-            ):stocks.filter(s=>calcHYHTBreakout(s).isBreakout)
+            ):stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s))
               .sort((a,b)=>b.rs-a.rs)
               .map((s,i)=>{
                 const bo=calcHYHTBreakout(s)
