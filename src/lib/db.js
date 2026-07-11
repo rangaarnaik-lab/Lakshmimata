@@ -124,6 +124,7 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
       pctOfATH:  row.ht_pct || 0,
       history:   row.ht_hist || [],
     },
+    ibvHistory: row.ibv_hist || [],
     nearEMA9: {
       isNearEMA9:  row.near_ema9 || false,
       ema9:        row.ema9,

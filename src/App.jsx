@@ -709,14 +709,21 @@ function RankedBarChart({title, subtitle, items, formatVal, positiveOnly, compac
 
 function PPDots({ppHistory, color=C.orange}){
   return(
-    <div style={{display:'flex',gap:2,alignItems:'center'}}>
-      {(ppHistory||[]).map((isOn,i)=>{
-        const d=(ppHistory.length-1-i)
-        return<div key={i} title={`${d===0?'Today':`${d}d ago`}: ${isOn?'✅':'No'}`}
-          style={{width:8,height:8,flexShrink:0,borderRadius:'50%',
-            background:isOn?color:C.border,
-            boxShadow:isOn?`0 0 4px ${color}`:'none'}}/>
-      })}
+    <div style={{display:'flex',flexDirection:'column',gap:4}}>
+      <div style={{display:'flex',gap:2,alignItems:'center'}}>
+        {(ppHistory||[]).map((isOn,i)=>{
+          const d=(ppHistory.length-1-i)
+          const isToday = d===0
+          return<div key={i} title={`${isToday?'Today':`${d}d ago`}: ${isOn?'✅':'No'}`}
+            style={{width:isToday?11:8,height:isToday?11:8,flexShrink:0,borderRadius:'50%',
+              background:isOn?color:C.border,
+              border:isToday?`1.5px solid ${C.text}`:'none',
+              boxShadow:isOn?`0 0 4px ${color}`:'none'}}/>
+        })}
+      </div>
+      {(ppHistory||[]).length>0&&(
+        <div style={{fontSize:8,color:C.muted}}>← oldest &nbsp;·&nbsp; newest/today is the outlined dot →</div>
+      )}
     </div>
   )
 }
@@ -1236,31 +1243,38 @@ function StockDetail({s}){
 
       {/* PP 10-day */}
       <div style={{marginBottom:14}}>
-        <div style={{fontSize:11,fontWeight:800,color:C.orange,marginBottom:8,textTransform:'uppercase'}}>🔥 Pocket Pivot — Last 10 Days</div>
+        <div style={{fontSize:11,fontWeight:800,color:C.green,marginBottom:8,textTransform:'uppercase'}}>🔥 Pocket Pivot — Last 10 Days</div>
         <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
-          <PPDots ppHistory={s.pp.ppHistory||[]}/>
-          <span style={{fontSize:12,color:C.orange,fontWeight:700}}>{s.pp.ppCount10d} PP in 10 days</span>
+          <PPDots ppHistory={s.pp.ppHistory||[]} color={C.green}/>
+          <span style={{fontSize:12,color:C.green,fontWeight:700}}>{s.pp.ppCount10d} PP in 10 days</span>
         </div>
         <div style={{fontSize:11,color:C.muted,marginTop:6}}>
           10-MA: <strong style={{color:C.text}}>{s.pp.ma10?fmtP(s.pp.ma10):'—'}</strong>&nbsp;·&nbsp;
           50-MA: <strong style={{color:C.text}}>{s.pp.ma50?fmtP(s.pp.ma50):'—'}</strong>&nbsp;·&nbsp;
-          Vol: <strong style={{color:s.pp.isPP?C.orange:C.muted}}>{s.pp.volRatio}x</strong>
+          Vol: <strong style={{color:s.pp.isPP?C.green:C.muted}}>{s.pp.volRatio}x</strong>
         </div>
       </div>
 
-      {/* HY / HT 10-day */}
+      {/* IBV / HY / HT 10-day */}
       <div style={{marginBottom:14}}>
-        <div style={{fontSize:11,fontWeight:800,color:C.blue,marginBottom:8,textTransform:'uppercase'}}>📊 HY — Last 10 Days</div>
+        <div style={{fontSize:11,fontWeight:800,color:C.blue,marginBottom:8,textTransform:'uppercase'}}>🏛️ IBV — Last 10 Days</div>
         <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
-          <PPDots ppHistory={s.hy.history} color={C.blue}/>
-          <span style={{fontSize:12,color:C.blue,fontWeight:700}}>{s.hy.history.filter(Boolean).length} HY in 10 days</span>
+          <PPDots ppHistory={s.ibvHistory||[]} color={C.blue}/>
+          <span style={{fontSize:12,color:C.blue,fontWeight:700}}>{(s.ibvHistory||[]).filter(Boolean).length} IBV in 10 days</span>
         </div>
       </div>
       <div style={{marginBottom:14}}>
-        <div style={{fontSize:11,fontWeight:800,color:C.purple,marginBottom:8,textTransform:'uppercase'}}>🚀 HT — Last 10 Days</div>
+        <div style={{fontSize:11,fontWeight:800,color:C.pink,marginBottom:8,textTransform:'uppercase'}}>📊 HY — Last 10 Days</div>
         <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
-          <PPDots ppHistory={s.ht.history} color={C.purple}/>
-          <span style={{fontSize:12,color:C.purple,fontWeight:700}}>{s.ht.history.filter(Boolean).length} HT in 10 days</span>
+          <PPDots ppHistory={s.hy.history} color={C.pink}/>
+          <span style={{fontSize:12,color:C.pink,fontWeight:700}}>{s.hy.history.filter(Boolean).length} HY in 10 days</span>
+        </div>
+      </div>
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:11,fontWeight:800,color:C.orange,marginBottom:8,textTransform:'uppercase'}}>🚀 HT — Last 10 Days</div>
+        <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+          <PPDots ppHistory={s.ht.history} color={C.orange}/>
+          <span style={{fontSize:12,color:C.orange,fontWeight:700}}>{s.ht.history.filter(Boolean).length} HT in 10 days</span>
         </div>
       </div>
 
@@ -1397,7 +1411,7 @@ function StockCard({s,i,onChart}){
         </div>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <span style={{fontSize:10,color:C.muted}}>PP 10d:</span>
-          <PPDots ppHistory={s.pp.ppHistory||[]}/>
+          <PPDots ppHistory={s.pp.ppHistory||[]} color={C.green}/>
           <span style={{fontSize:10,color:s.pp.ppCount10d>0?C.orange:C.muted,fontWeight:700}}>{s.pp.ppCount10d}×</span>
         </div>
       </div>
@@ -2322,7 +2336,7 @@ function DesktopRow({s,i,onChart}){
 
         {/* PP 10 days */}
         <div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'center',minWidth:0,overflow:'hidden'}}>
-          <PPDots ppHistory={s.pp.ppHistory||[]}/>
+          <PPDots ppHistory={s.pp.ppHistory||[]} color={C.green}/>
           <span style={{fontSize:9,color:s.pp.ppCount10d>0?C.orange:C.muted,fontWeight:700,whiteSpace:'nowrap'}}>
             {s.pp.ppCount10d}× PP
           </span>
@@ -5390,7 +5404,7 @@ export default function App(){
                     </div>
                     <div style={{marginTop:8,display:'flex',alignItems:'center',gap:8}}>
                       <span style={{fontSize:10,color:C.muted}}>PP 10d:</span>
-                      <PPDots ppHistory={s.pp?.ppHistory||[]}/>
+                      <PPDots ppHistory={s.pp?.ppHistory||[]} color={C.green}/>
                     </div>
                   </div>
                 )
@@ -5468,7 +5482,7 @@ export default function App(){
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:8}}>
                   <span style={{fontSize:10,color:C.muted}}>PP 10d:</span>
-                  <PPDots ppHistory={s.pp.ppHistory||[]}/>
+                  <PPDots ppHistory={s.pp.ppHistory||[]} color={C.green}/>
                   <span style={{fontSize:10,color:s.pp.ppCount10d>0?C.orange:C.muted,fontWeight:700}}>{s.pp.ppCount10d}×</span>
                 </div>
               </div>
@@ -5550,7 +5564,7 @@ export default function App(){
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:8}}>
                   <span style={{fontSize:10,color:C.muted}}>PP 10d:</span>
-                  <PPDots ppHistory={s.pp.ppHistory||[]}/>
+                  <PPDots ppHistory={s.pp.ppHistory||[]} color={C.green}/>
                   <span style={{fontSize:10,color:s.pp.ppCount10d>0?C.orange:C.muted,fontWeight:700}}>{s.pp.ppCount10d}×</span>
                 </div>
               </div>
