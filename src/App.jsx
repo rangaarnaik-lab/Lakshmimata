@@ -2723,7 +2723,7 @@ function SectorPanel({sectorData,allStocks,isMobile,onChart,onViewInRS}){
 
 // ── Auth Screen ────────────────────────────────────────────────────────
 // ── Landing Page ─────────────────────────────────────────────────────
-function LandingPage({onEnroll,onSignIn}){
+function LandingPage({onEnroll,onSignIn,onDemo}){
   const [slide,setSlide]=useState(0)
   const [paused,setPaused]=useState(false)
   const [topGainers,setTopGainers]=useState([])
@@ -2797,8 +2797,16 @@ function LandingPage({onEnroll,onSignIn}){
               alignItems:'center',justifyContent:'center',...serif,color:gold,fontSize:16,fontStyle:'italic'}}>L</div>
             <div style={{...serif,fontSize:20,color:'#fff'}}>Lakshmi<em style={{color:gold,fontStyle:'italic'}}>mata</em></div>
           </div>
-          <button onClick={onSignIn} style={{border:`1px solid ${C.border}`,padding:'9px 20px',fontSize:12.5,
-            ...mono,background:'transparent',color:C.text,cursor:'pointer'}}>Sign In</button>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <button onClick={onDemo} title="Browse with sample data — no signup"
+              style={{border:`1px solid ${gold}66`,padding:'9px 16px',fontSize:12.5,borderRadius:3,
+                ...mono,background:'transparent',color:goldSoft,cursor:'pointer',
+                display:'flex',alignItems:'center',gap:6}}>
+              👁 Demo
+            </button>
+            <button onClick={onSignIn} style={{border:`1px solid ${C.border}`,padding:'9px 20px',fontSize:12.5,
+              ...mono,background:'transparent',color:C.text,cursor:'pointer'}}>Sign In</button>
+          </div>
         </nav>
 
         {/* Hero */}
@@ -2819,6 +2827,13 @@ function LandingPage({onEnroll,onSignIn}){
               fontWeight:700,fontSize:14,letterSpacing:'0.02em',border:`1px solid ${gold}`,cursor:'pointer'}}>
               Enroll — No Charge to Begin
             </button>
+            <div style={{marginTop:14}}>
+              <button onClick={onDemo} style={{background:'transparent',border:'none',cursor:'pointer',
+                color:goldSoft,fontSize:12.5,...mono,letterSpacing:'0.02em',textDecoration:'underline',
+                textUnderlineOffset:3}}>
+                👁 Or browse with sample data first — no signup
+              </button>
+            </div>
           </div>
           <p style={{fontSize:11.5,color:C.muted,...mono,letterSpacing:'0.03em',marginTop:14}}>
             2,380+ NSE STOCKS TRACKED · UPDATED THROUGH THE SESSION
@@ -3480,6 +3495,15 @@ export class ErrorBoundary extends React.Component {
 export default function App(){
   const isMobile=useIsMobile()
   const [session,setSession]=useState(null)
+  // Demo mode: lets a logged-out visitor see the RS Rating scanner
+  // populated with sample data (the existing DEMO dataset, previously
+  // only reachable via the 👁 button INSIDE the already-authenticated
+  // app) without signing up first. session stays null throughout —
+  // every session-gated feature (DB-backed tabs, portfolio sync, etc.)
+  // naturally no-ops on a null session, which is the correct behavior
+  // here: demo mode is RS Rating with sample data only, not a fake
+  // account with fake access to everything else.
+  const [demoMode,setDemoMode]=useState(false)
   const [showAuth,setShowAuth]=useState(false)
   const [authMode,setAuthMode]=useState('login')
   const [themeVersion,setThemeVersion]=useState(0)
@@ -3875,14 +3899,28 @@ export default function App(){
     setStocks(processed);setLastRefresh(Date.now());setLoading(false)
   },[session,indexFilter,weakThreshold,activeWl,watchlists])
 
-  // Auto-refresh from DB every 1 minute — disabled while viewing a past date
+  // Demo mode: auto-run the sample-data scan once, right when demoMode
+  // flips on, and land on the RS tab (the only place demo data is
+  // actually meaningful to look at) rather than wherever mainTab
+  // happened to default to.
+  useEffect(()=>{
+    if(demoMode&&stocks.length===0){
+      setMainTab('rs')
+      runScan(true)
+    }
+  },[demoMode])
+
+  // Auto-refresh from DB every 1 minute — disabled while viewing a past
+  // date, and disabled in demo mode (a real runDBScan() would silently
+  // replace the curated sample dataset with a live scan, breaking the
+  // 'sample data — not live' promise the demo banner makes).
   useEffect(()=>{
     clearInterval(refreshTimer.current)
-    if(autoRefresh&&!historyDate){
+    if(autoRefresh&&!historyDate&&!demoMode){
       refreshTimer.current=setInterval(()=>runDBScan(),refreshInterval)
     }
     return()=>clearInterval(refreshTimer.current)
-  },[autoRefresh,refreshInterval,runDBScan,historyDate])
+  },[autoRefresh,refreshInterval,runDBScan,historyDate,demoMode])
 
   // Auto-open the #1 RS-ranked stock's chart the first time stocks load,
   // so the app doesn't start on an empty panel. Only fires once per
@@ -4014,10 +4052,11 @@ export default function App(){
       <div style={{width:32,height:32,border:`3px solid ${C.accent}`,borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
     </div>
   )
-  if(!session){
+  if(!session && !demoMode){
     if(!showAuth) return <LandingPage
       onEnroll={()=>{setAuthMode('register');setShowAuth(true)}}
       onSignIn={()=>{setAuthMode('login');setShowAuth(true)}}
+      onDemo={()=>setDemoMode(true)}
     />
     return <AuthScreen onLogin={s=>setSession(s)} initialMode={authMode} onBack={()=>setShowAuth(false)}/>
   }
@@ -4138,9 +4177,22 @@ export default function App(){
                  mainTab==='watchlist'?'Watchlist':'Account'}
               </div>
               {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1}}>
-                {session?.user?.email} · {scanLabel}
+                {demoMode?'Sample data — not live':`${session?.user?.email} · ${scanLabel}`}
               </div>}
             </div>
+            {demoMode&&(
+              <div style={{display:'flex',alignItems:'center',gap:6,marginLeft:6}}>
+                <span style={{fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:20,
+                  background:C.yellow+'22',color:C.yellow,border:`1px solid ${C.yellow}44`,whiteSpace:'nowrap'}}>
+                  👁 DEMO
+                </span>
+                <button onClick={()=>{setDemoMode(false);setStocks([]);setAuthMode('register');setShowAuth(true)}}
+                  style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:20,cursor:'pointer',
+                    background:C.accent,color:'#000',border:'none',whiteSpace:'nowrap'}}>
+                  Sign Up
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Controls */}
@@ -4207,7 +4259,7 @@ export default function App(){
               )}
 
               {/* Scan button */}
-              <button onClick={()=>runDBScan()} disabled={loading}
+              <button onClick={()=>demoMode?runScan(true):runDBScan()} disabled={loading}
                 style={{padding:'6px 14px',borderRadius:6,border:'none',cursor:'pointer',
                   background:loading?C.border:C.accent,color:loading?C.muted:'#000',
                   fontWeight:700,fontSize:12,whiteSpace:'nowrap'}}>
@@ -4309,7 +4361,7 @@ export default function App(){
                 )}
                 <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
                   availableDates={availableDates} isMobile={true}/>
-                <button onClick={()=>runDBScan()} disabled={loading}
+                <button onClick={()=>demoMode?runScan(true):runDBScan()} disabled={loading}
                   style={{flex:1,padding:'12px',borderRadius:8,border:'none',cursor:'pointer',
                     background:loading?C.border:C.accent,color:loading?C.muted:'#000',fontWeight:700,fontSize:13}}>
                   {loading?`${progress}%…`:'🚀 Scan'}
