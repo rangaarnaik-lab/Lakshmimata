@@ -6257,6 +6257,7 @@ export default function App(){
                     const ty=t=>yFor(t.level-l0)
                     const pathD=s.trail.map((t,i)=>`${i===0?'M':'L'} ${tx(t)} ${ty(t)}`).join(' ')
                     const cx=xFor(s.level), cy=yFor(s.momentum)
+                    const sx=tx(s.trail[0]), sy=ty(s.trail[0])
                     const r=rotationScope==='sector'?7+Math.min(6,(s.count||1)/3):7
                     const color=identityColor(s)
                     const markerId=`rrg-arrow-${idx}`
@@ -6269,8 +6270,12 @@ export default function App(){
                               it always points toward wherever the trail is
                               actually heading (Lagging→Leading, Leading→
                               Lagging, or any other direction), not a fixed
-                              guess. This is the answer to "which way is the
-                              tail moving" — follow the arrow, not the line. */}
+                              guess. Clean two-marker grammar: dot = where the
+                              trail STARTED (oldest day in the window), arrow
+                              = where it ends up NOW and which way it's still
+                              heading. No dot at the end anymore — the arrow
+                              alone marks it, so there's no redundant overlap
+                              between "current position" and "direction". */}
                           <marker id={markerId} viewBox="0 0 10 10" refX="8" refY="5"
                             markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                             <path d="M 0 0 L 10 5 L 0 10 z" fill={color}/>
@@ -6278,15 +6283,15 @@ export default function App(){
                         </defs>
                         <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" opacity="0.55"
                           markerEnd={`url(#${markerId})`}/>
-                        {/* Small hollow dots along the trail — thinned to
-                            every 3rd day (not every single day) so a 30-day
-                            trail doesn't turn into a wall of overlapping
-                            markers; the line itself still traces the full
-                            path, this is just decoration along it. */}
-                        {s.trail.slice(0,-1).filter((_,i)=>i%3===0).map((t,i)=>(
-                          <circle key={i} cx={tx(t)} cy={ty(t)} r="2.5" fill={C.bg} stroke={color} strokeWidth="1.2"/>
-                        ))}
-                        <circle cx={cx} cy={cy} r={r} fill={color}/>
+                        {/* Start dot — smaller and hollow, so it reads as
+                            "where this began" rather than competing with the
+                            arrow for attention as the important endpoint. */}
+                        <circle cx={sx} cy={sy} r="4" fill={C.bg} stroke={color} strokeWidth="1.5"/>
+                        {/* Invisible larger hit-target at the end, since the
+                            arrowhead alone is a small/thin click target —
+                            keeps tap-to-open-chart easy without drawing an
+                            extra visible dot there. */}
+                        <circle cx={cx} cy={cy} r={r+3} fill="transparent"/>
                         <text x={cx+r+4} y={cy+4} fontSize="12" fontWeight="700" fill={color}>{s.label}</text>
                       </g>
                     )
@@ -6294,7 +6299,7 @@ export default function App(){
                 </svg>
                 <div style={{fontSize:10,color:C.muted,marginTop:8}}>
                   Dot color = which {scopeLabel.toLowerCase()} (matches its label) — position tells you the status below, not the color.
-                  The arrow at the end of each trail shows which way it's moving.
+                  The hollow dot marks where each trail started (oldest day shown) — the arrow marks where it is now and which way it's heading.
                 </div>
                 <div style={{display:'flex',gap:14,flexWrap:'wrap',marginTop:8,paddingTop:10,borderTop:`1px solid ${C.divider}`}}>
                   {[['Leading — strong & still improving',C.green],['Improving — gaining strength',C.accent],
