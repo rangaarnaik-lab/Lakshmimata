@@ -6089,13 +6089,31 @@ export default function App(){
           const ROTATION_WINDOWS=[{label:'10D',days:10},{label:'1M',days:22},{label:'3M',days:66},{label:'6M',days:126},{label:'1Y',days:252}]
           const data=rotationData||[]
           const displayData=rotationSelectedIds.size>0 ? data.filter(s=>rotationSelectedIds.has(s.id)) : data
+          // Rolling (local) momentum at every trail point, instead of
+          // "change since the start of the whole window" — real RRG charts
+          // get their organic curves and loops because RS-Momentum is a
+          // LOCAL rate of change recalculated at every point, not a
+          // cumulative drift from one fixed anchor. Anchoring to the
+          // window's first day made a steadily-trending stock's trail
+          // render as close to a straight diagonal line (cumulative drift
+          // grows ~linearly for a steady trend); recalculating locally at
+          // each point lets short-term reversals and accelerations actually
+          // show up as curvature, matching how a real RRG looks.
+          const ROLL_K=5 // ~1 trading week lookback for the local rate of change
+          const rolledData=displayData.map(s=>{
+            const trail=(s.trail||[]).map((t,i,arr)=>{
+              const j=Math.max(0,i-ROLL_K)
+              return {level:t.level, mom:t.level-arr[j].level}
+            })
+            return {...s, trail, momentum: trail.length?trail[trail.length-1].mom:(s.momentum||0)}
+          })
           const toggleSel=id=>setRotationSelectedIds(prev=>{
             const next=new Set(prev)
             next.has(id)?next.delete(id):next.add(id)
             return next
           })
           const xFor=level=>20+(Math.max(0,Math.min(100,level??50))/100)*580
-          const maxAbsMom=Math.max(5,...displayData.map(s=>Math.abs(s.momentum||0)))
+          const maxAbsMom=Math.max(5,...rolledData.flatMap(s=>s.trail.map(t=>Math.abs(t.mom))))
           const yFor=mom=>230-(Math.max(-maxAbsMom,Math.min(maxAbsMom,mom||0))/maxAbsMom)*205
           const quadColor=s=>{
             const leading=(s.level??50)>=50&&(s.momentum||0)>=0
@@ -6252,9 +6270,8 @@ export default function App(){
                   <text x="310" y="455" textAnchor="middle" fontSize="10" fill={C.muted}>{levelLabel.toUpperCase()} LEVEL →</text>
                   <text x="12" y="230" textAnchor="middle" fontSize="10" fill={C.muted} transform="rotate(-90 12 230)">MOMENTUM ({requestedWindow?.label||rotationWindow+'d'}) →</text>
 
-                  {displayData.filter(s=>s.trail&&s.trail.length>0).map((s,idx)=>{
-                    const l0=s.trail[0].level, tx=t=>xFor(t.level)
-                    const ty=t=>yFor(t.level-l0)
+                  {rolledData.filter(s=>s.trail&&s.trail.length>0).map((s,idx)=>{
+                    const tx=t=>xFor(t.level), ty=t=>yFor(t.mom)
                     const pathD=s.trail.map((t,i)=>`${i===0?'M':'L'} ${tx(t)} ${ty(t)}`).join(' ')
                     const cx=xFor(s.level), cy=yFor(s.momentum)
                     const sx=tx(s.trail[0]), sy=ty(s.trail[0])
