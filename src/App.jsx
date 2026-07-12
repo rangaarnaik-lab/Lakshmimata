@@ -1084,11 +1084,39 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
   const [showCreate,setShowCreate]=useState(false)
   const [wlName,setWlName]=useState('')
   const [manualSym,setManualSym]=useState('')
+  const [showSuggest,setShowSuggest]=useState(false)
   const [editId,setEditId]=useState(null)
   const [editStocks,setEditStocks]=useState([])
   const [dragOver,setDragOver]=useState(false)
   const fileRef=useRef()
   const {copy,copied}=useCopy()
+
+  // Autocomplete suggestions for the manual-add input, sourced from the
+  // full live stock universe (allKnownStocks) — previously this prop was
+  // passed in but never actually used, so this field was pure blind text
+  // entry with no way to browse/search what's trackable. Matches on the
+  // last comma/space-separated token being typed, so multi-symbol paste
+  // still works; prefix matches rank above substring matches.
+  const suggestQuery=manualSym.split(/[\s,;]+/).pop().toUpperCase().trim()
+  const suggestions=suggestQuery.length>=1?(()=>{
+    const already=new Set(editStocks)
+    const prefix=[],substr=[]
+    for(const st of allKnownStocks){
+      if(already.has(st.sym))continue
+      if(st.sym.startsWith(suggestQuery))prefix.push(st)
+      else if(st.sym.includes(suggestQuery))substr.push(st)
+      if(prefix.length>=8)break
+    }
+    return [...prefix,...substr].slice(0,8)
+  })():[]
+
+  const pickSuggestion=sym=>{
+    const parts=manualSym.split(/[\s,;]+/).map(s=>s.trim().toUpperCase()).filter(Boolean)
+    parts[parts.length-1]=sym  // replace the in-progress token with the picked symbol
+    setEditStocks(prev=>[...new Set([...prev,...parts])])
+    setManualSym('')
+    setShowSuggest(false)
+  }
 
   const createWL=()=>{
     if(!wlName.trim())return
@@ -1100,7 +1128,7 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
   const addManual=()=>{
     const syms=manualSym.toUpperCase().split(/[\s,;]+/).map(s=>s.trim()).filter(Boolean)
     const deduped=[...new Set([...editStocks,...syms])]
-    setEditStocks(deduped);setManualSym('')
+    setEditStocks(deduped);setManualSym('');setShowSuggest(false)
   }
 
   const parseCSV=file=>{
@@ -1195,10 +1223,13 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
             </div>
 
             {/* Manual add */}
-            <div style={{marginBottom:12}}>
+            <div style={{marginBottom:12,position:'relative'}}>
               <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:6}}>Add stocks manually (comma or space separated)</div>
               <div style={{display:'flex',gap:8}}>
-                <input value={manualSym} onChange={e=>setManualSym(e.target.value)}
+                <input value={manualSym}
+                  onChange={e=>{setManualSym(e.target.value);setShowSuggest(true)}}
+                  onFocus={()=>setShowSuggest(true)}
+                  onBlur={()=>setTimeout(()=>setShowSuggest(false),150)}
                   onKeyDown={e=>e.key==='Enter'&&addManual()}
                   placeholder="RELIANCE, TCS, INFY..."
                   style={{flex:1,padding:'8px 12px',background:C.bg,border:`1px solid ${C.border}`,
@@ -1207,6 +1238,21 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
                   style={{padding:'8px 14px',borderRadius:8,border:'none',cursor:'pointer',
                     background:C.accent,color:'#000',fontWeight:700,fontSize:13}}>Add</button>
               </div>
+              {showSuggest&&suggestions.length>0&&(
+                <div style={{position:'absolute',top:'100%',left:0,right:70,marginTop:4,zIndex:20,
+                  background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
+                  maxHeight:220,overflowY:'auto',boxShadow:'0 8px 20px rgba(0,0,0,0.4)'}}>
+                  {suggestions.map(st=>(
+                    <div key={st.sym} onMouseDown={()=>pickSuggestion(st.sym)}
+                      style={{padding:'8px 12px',cursor:'pointer',display:'flex',
+                        justifyContent:'space-between',alignItems:'center',
+                        borderBottom:`1px solid ${C.divider}`,fontSize:12}}>
+                      <span style={{fontWeight:700}}>{st.sym}</span>
+                      {st.sector&&<span style={{color:C.muted,fontSize:10}}>{st.sector}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* CSV upload / drag-drop */}
@@ -4206,7 +4252,10 @@ export default function App(){
               </div>
             </div>
             <WatchlistManager watchlists={watchlists} activeWl={activeWl} setActiveWl={id=>{setActiveWl(id);setMainTab('rs')}}
-              onSave={saveWL} onDelete={deleteWL} allKnownStocks={[...new Set([...NIFTY50,...MIDCAP,...SMALLCAP])]}/>
+              onSave={saveWL} onDelete={deleteWL}
+              allKnownStocks={stocks.length>0
+                ? stocks.map(s=>({sym:s.sym,sector:s.sector}))
+                : [...new Set([...NIFTY50,...MIDCAP,...SMALLCAP])].map(sym=>({sym,sector:null}))}/>
           </div>
         )}
 
@@ -6306,7 +6355,7 @@ export default function App(){
             borderTop:`1px solid ${C.border}`,display:'flex',zIndex:40,
             paddingBottom:'env(safe-area-inset-bottom)'}}>
             {[
-              ['rs','📊','RS'],['indices','🗂','Indices'],['breakout','💥','Break'],['52wl','🎯','52WL'],
+              ['rs','📊','RS'],['indices','🗂','Indices'],['rotation','🔄','Rotate'],['breakout','💥','Break'],['52wl','🎯','52WL'],
             ].map(([t,icon,label])=>(
               <button key={t} onClick={()=>setMainTab(t)}
                 style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
@@ -6321,8 +6370,8 @@ export default function App(){
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <span style={{fontSize:15}}>⋯</span>
               <span style={{fontSize:8,fontWeight:600,
-                color:['breadth','squeeze','weak','portfolio','compare','watchlist','alerts','rotation','settings'].includes(mainTab)?C.accent:C.muted}}>More</span>
-              {['breadth','squeeze','weak','portfolio','compare','watchlist','alerts','rotation','settings'].includes(mainTab)&&
+                color:['breadth','squeeze','weak','portfolio','compare','watchlist','alerts','settings'].includes(mainTab)?C.accent:C.muted}}>More</span>
+              {['breadth','squeeze','weak','portfolio','compare','watchlist','alerts','settings'].includes(mainTab)&&
                 <div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           </div>
@@ -6341,7 +6390,7 @@ export default function App(){
                   {[
                     ['breadth','📈','Breadth'],['squeeze','🌀','Squeeze'],['weak','🚨','Weak'],
                     ['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],
-                    ['alerts','🔔','Alerts'],['rotation','🔄','Rotation'],['settings','⚙','Account'],
+                    ['alerts','🔔','Alerts'],['settings','⚙','Account'],
                   ].map(([t,icon,label])=>(
                     <button key={t} onClick={()=>{setMainTab(t);setShowMoreMenu(false)}}
                       style={{padding:'16px 8px',background:mainTab===t?C.accent+'18':'transparent',
