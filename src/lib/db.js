@@ -37,6 +37,56 @@ export async function fetchRecentAlerts(limit=100) {
   return data || []
 }
 
+/**
+ * Fetch sector rotation data — each sector's avg RS + rank over the last
+ * `days` trading days, plus derived momentum (avg_rs change over the
+ * window) and rank change (positive = moved up, since rank 1 is best).
+ * Powers both the quadrant (RRG-style) chart and the ranked list view.
+ *
+ * Pulls a generous flat row limit rather than querying per-distinct-date
+ * (PostgREST has no simple "last N distinct dates" query) and does the
+ * date-window trim + grouping client-side — sector_history is small
+ * (~20 sectors × a handful of days), so this is cheap.
+ */
+export async function fetchSectorRotation(days=10) {
+  const { data, error } = await supabase
+    .from('sector_history')
+    .select('snapshot_date,sector,avg_rs,rank,count')
+    .order('snapshot_date', { ascending: false })
+    .limit(days * 40)
+  if (error) { console.error('fetchSectorRotation error:', error.message); return [] }
+  if (!data || data.length === 0) return []
+
+  const recentDates = [...new Set(data.map(r => r.snapshot_date))].sort().slice(-days)
+  const dateSet = new Set(recentDates)
+
+  const bySector = {}
+  for (const row of data) {
+    if (!dateSet.has(row.snapshot_date)) continue
+    if (!bySector[row.sector]) bySector[row.sector] = []
+    bySector[row.sector].push(row)
+  }
+
+  return Object.entries(bySector).map(([sector, rows]) => {
+    const sorted = [...rows].sort((a,b) => a.snapshot_date.localeCompare(b.snapshot_date))
+    const first = sorted[0]
+    const last  = sorted[sorted.length - 1]
+    const mid   = sorted[Math.floor((sorted.length - 1) / 2)]
+    return {
+      sector,
+      count:      last.count,
+      avgRs:      last.avg_rs,
+      rank:       last.rank,
+      history:    sorted.map(r => ({ date: r.snapshot_date, avgRs: r.avg_rs, rank: r.rank })),
+      // Trail for the quadrant chart: first -> mid -> last of the window,
+      // so the dot's recent direction is visible, not just its position.
+      trail:      [first, mid, last].map(r => ({ avgRs: r.avg_rs, rank: r.rank })),
+      momentum:   sorted.length > 1 ? +(last.avg_rs - first.avg_rs).toFixed(1) : 0,
+      rankChange: sorted.length > 1 ? (first.rank - last.rank) : 0,
+    }
+  }).sort((a,b) => a.rank - b.rank)
+}
+
 export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = null, historyDate = null } = {}) {
   const table = historyDate ? 'stock_history' : 'stocks'
 

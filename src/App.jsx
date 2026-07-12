@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchRecentAlerts } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -3710,6 +3710,9 @@ export default function App(){
   const [breadthData,setBreadthData]=useState(null)
   const [alertsLog,setAlertsLog]=useState(null)
   const [loadingAlerts,setLoadingAlerts]=useState(false)
+  const [rotationData,setRotationData]=useState(null)
+  const [loadingRotation,setLoadingRotation]=useState(false)
+  const [rotationDays,setRotationDays]=useState(10)
   const [portfolioHoldings,setPortfolioHoldings]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('lm_portfolio')||'[]')}catch{return []}
   })
@@ -3868,8 +3871,15 @@ export default function App(){
         .catch(e=>console.error('Alerts fetch:',e))
         .finally(()=>setLoadingAlerts(false))
     }
+    if(mainTab==='rotation'){
+      setLoadingRotation(true)
+      fetchSectorRotation(rotationDays)
+        .then(setRotationData)
+        .catch(e=>console.error('Sector rotation fetch:',e))
+        .finally(()=>setLoadingRotation(false))
+    }
     return ()=>{ if(timer) clearInterval(timer) }
-  },[session,mainTab])
+  },[session,mainTab,rotationDays])
 
   // Save portfolio to localStorage whenever it changes
   useEffect(()=>{
@@ -3980,6 +3990,7 @@ export default function App(){
             {[
               {id:'rs',       label:'RS Rating', abbr:'RS'},
               {id:'indices',  label:'Indices',   abbr:'IX'},
+              {id:'rotation', label:'Sector Rotation', abbr:'RO'},
               {id:'breadth',  label:'Breadth',   abbr:'BR'},
               {id:'squeeze',  label:'Squeeze',   abbr:'SQ'},
               {id:'breakout', label:'Breakout',  abbr:'BO'},
@@ -4062,7 +4073,7 @@ export default function App(){
               <div style={{fontWeight:600,fontSize:14,color:C.text,lineHeight:1}}>
                 {mainTab==='rs'?'RS Rating':mainTab==='indices'?'Indices':mainTab==='squeeze'?'Squeeze':
                  mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
-                 mainTab==='weak'?'Weak RS':mainTab==='alerts'?'Alerts':
+                 mainTab==='weak'?'Weak RS':mainTab==='alerts'?'Alerts':mainTab==='rotation'?'Sector Rotation':
                  mainTab==='watchlist'?'Watchlist':'Account'}
               </div>
               {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1}}>
@@ -4072,7 +4083,7 @@ export default function App(){
           </div>
 
           {/* Controls */}
-          {mainTab!=='settings'&&mainTab!=='watchlist'&&mainTab!=='alerts'&&(
+          {mainTab!=='settings'&&mainTab!=='watchlist'&&mainTab!=='alerts'&&mainTab!=='rotation'&&(
             <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
 
               {/* Watchlist OR index selector */}
@@ -5943,6 +5954,126 @@ export default function App(){
           </div>
         )}
 
+        {/* ══ SECTOR ROTATION ══ */}
+        {mainTab==='rotation'&&(()=>{
+          const data=rotationData||[]
+          const xFor=avgRs=>20+(Math.max(0,Math.min(100,avgRs??50))/100)*580
+          const maxAbsMom=Math.max(5,...data.map(s=>Math.abs(s.momentum||0)),5)
+          const yFor=mom=>230-(Math.max(-maxAbsMom,Math.min(maxAbsMom,mom||0))/maxAbsMom)*205
+          const quadColor=s=>{
+            const leading=(s.avgRs??50)>=50&&(s.momentum||0)>=0
+            const improving=(s.avgRs??50)<50&&(s.momentum||0)>=0
+            const weakening=(s.avgRs??50)>=50&&(s.momentum||0)<0
+            return leading?C.green:improving?C.accent:weakening?C.orange:C.muted
+          }
+          const goToSector=sec=>{setSectorFilter(sec);setMainTab('rs')}
+          return(
+          <div style={{padding:'0 0 20px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14,flexWrap:'wrap',gap:10}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:15,color:C.accent}}>🔄 Sector Rotation</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:2}}>
+                  Which sectors are gaining or losing relative strength, and how fast. Click a sector to filter RS Rating by it.
+                </div>
+              </div>
+              <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                <span style={{fontSize:11,color:C.muted,fontWeight:600}}>Window:</span>
+                {[5,10,20].map(d=>(
+                  <button key={d} onClick={()=>setRotationDays(d)}
+                    style={{padding:'5px 12px',borderRadius:20,border:`1px solid ${rotationDays===d?C.accent:C.border}`,
+                      cursor:'pointer',fontSize:12,fontWeight:700,
+                      background:rotationDays===d?C.accent+'22':'transparent',
+                      color:rotationDays===d?C.accent:C.muted}}>{d}d</button>
+                ))}
+              </div>
+            </div>
+
+            {loadingRotation&&!rotationData&&(
+              <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>Loading…</div>
+            )}
+
+            {rotationData&&rotationData.length===0&&(
+              <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
+                <div style={{fontSize:42,marginBottom:12}}>🔄</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No sector history yet</div>
+                <div style={{fontSize:12,marginTop:6}}>Needs a few days of daily snapshots to show rotation.</div>
+              </div>
+            )}
+
+            {data.length>0&&(<>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16,marginBottom:16}}>
+                <svg viewBox="0 0 620 460" style={{width:'100%',height:'auto',display:'block'}}>
+                  <rect x="310" y="20" width="290" height="210" fill={C.green} opacity="0.06"/>
+                  <rect x="20" y="20" width="290" height="210" fill={C.accent} opacity="0.06"/>
+                  <rect x="20" y="230" width="290" height="210" fill={C.muted} opacity="0.08"/>
+                  <rect x="310" y="230" width="290" height="210" fill={C.orange} opacity="0.06"/>
+                  <line x1="310" y1="20" x2="310" y2="440" stroke={C.border} strokeWidth="1.5"/>
+                  <line x1="20" y1="230" x2="600" y2="230" stroke={C.border} strokeWidth="1.5"/>
+                  <text x="580" y="38" textAnchor="end" fontSize="11" fontWeight="700" fill={C.green}>LEADING</text>
+                  <text x="40" y="38" textAnchor="start" fontSize="11" fontWeight="700" fill={C.accent}>IMPROVING</text>
+                  <text x="40" y="428" textAnchor="start" fontSize="11" fontWeight="700" fill={C.muted}>LAGGING</text>
+                  <text x="580" y="428" textAnchor="end" fontSize="11" fontWeight="700" fill={C.orange}>WEAKENING</text>
+                  <text x="310" y="455" textAnchor="middle" fontSize="10" fill={C.muted}>RS LEVEL →</text>
+                  <text x="12" y="230" textAnchor="middle" fontSize="10" fill={C.muted} transform="rotate(-90 12 230)">MOMENTUM ({rotationDays}d) →</text>
+
+                  {data.map(s=>{
+                    const x0=s.trail[0].avgRs, tx=t=>xFor(t.avgRs)
+                    const ty=t=>yFor(t.avgRs-x0)
+                    const pathD=s.trail.map((t,i)=>`${i===0?'M':'L'} ${tx(t)} ${ty(t)}`).join(' ')
+                    const cx=xFor(s.avgRs), cy=yFor(s.momentum)
+                    const r=7+Math.min(6,(s.count||1)/3)
+                    const color=quadColor(s)
+                    return(
+                      <g key={s.sector} style={{cursor:'pointer'}} onClick={()=>goToSector(s.sector)}>
+                        <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" strokeDasharray="3,3" opacity="0.5"/>
+                        <circle cx={cx} cy={cy} r={r} fill={color}/>
+                        <text x={cx+r+4} y={cy+4} fontSize="12" fontWeight="700" fill={C.text}>{s.sector}</text>
+                      </g>
+                    )
+                  })}
+                </svg>
+                <div style={{display:'flex',gap:14,flexWrap:'wrap',marginTop:10,paddingTop:10,borderTop:`1px solid ${C.divider}`}}>
+                  {[['Leading — strong & still improving',C.green],['Improving — gaining strength',C.accent],
+                    ['Weakening — losing momentum',C.orange],['Lagging — weak & still falling',C.muted]].map(([label,color])=>(
+                    <div key={label} style={{display:'flex',alignItems:'center',gap:6,fontSize:10,color:C.muted}}>
+                      <span style={{width:8,height:8,borderRadius:'50%',background:color,display:'inline-block'}}/>{label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>RANKED LIST</div>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+                {data.map((s,i)=>(
+                  <div key={s.sector} onClick={()=>goToSector(s.sector)}
+                    style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,
+                      padding:'11px 14px',borderBottom:i<data.length-1?`1px solid ${C.divider}`:'none',cursor:'pointer'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:10,minWidth:0}}>
+                      <div style={{width:22,height:22,borderRadius:6,background:C.bg,display:'flex',
+                        alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:C.muted,flexShrink:0}}>
+                        {s.rank}
+                      </div>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontWeight:700,fontSize:13}}>{s.sector}</div>
+                        <div style={{fontSize:10,color:C.muted,marginTop:2}}>{s.count} stocks · avg RS {s.avgRs}</div>
+                      </div>
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+                      <div style={{textAlign:'right'}}>
+                        <div style={{fontWeight:800,fontSize:15,color:quadColor(s)}}>{s.avgRs}</div>
+                        <div style={{fontSize:10,fontWeight:700,color:s.rankChange>0?C.green:s.rankChange<0?C.red:C.muted}}>
+                          {s.rankChange>0?'▲':s.rankChange<0?'▼':'–'} {s.rankChange!==0?Math.abs(s.rankChange):''}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>)}
+          </div>
+          )
+        })()}
+
         {/* ══ ALERTS HISTORY ══ */}
         {mainTab==='alerts'&&(
           <div>
@@ -6107,8 +6238,8 @@ export default function App(){
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <span style={{fontSize:15}}>⋯</span>
               <span style={{fontSize:8,fontWeight:600,
-                color:['breadth','squeeze','weak','portfolio','compare','watchlist','alerts','settings'].includes(mainTab)?C.accent:C.muted}}>More</span>
-              {['breadth','squeeze','weak','portfolio','compare','watchlist','alerts','settings'].includes(mainTab)&&
+                color:['breadth','squeeze','weak','portfolio','compare','watchlist','alerts','rotation','settings'].includes(mainTab)?C.accent:C.muted}}>More</span>
+              {['breadth','squeeze','weak','portfolio','compare','watchlist','alerts','rotation','settings'].includes(mainTab)&&
                 <div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           </div>
@@ -6127,7 +6258,7 @@ export default function App(){
                   {[
                     ['breadth','📈','Breadth'],['squeeze','🌀','Squeeze'],['weak','🚨','Weak'],
                     ['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],
-                    ['alerts','🔔','Alerts'],['settings','⚙','Account'],
+                    ['alerts','🔔','Alerts'],['rotation','🔄','Rotation'],['settings','⚙','Account'],
                   ].map(([t,icon,label])=>(
                     <button key={t} onClick={()=>{setMainTab(t);setShowMoreMenu(false)}}
                       style={{padding:'16px 8px',background:mainTab===t?C.accent+'18':'transparent',
