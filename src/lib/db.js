@@ -587,3 +587,22 @@ export async function fetchIndexDashboard() {
     lastUpdated:   row.last_updated,
   }))
 }
+
+/**
+ * Lightweight single-row fetch of a stock's current live price + volume
+ * from the `stocks` table (updated ~every minute during market hours by
+ * the backend scan). Used to make "Our Chart"'s TODAY candle live-update
+ * instead of only refreshing once at EOD — not a full intraday feed
+ * (no separate O/H/L tracked server-side beyond last_price), so the
+ * running high/low for today's synthetic candle is tracked client-side
+ * across polls instead.
+ */
+export async function fetchLiveStockPrice(sym) {
+  const { data, error } = await supabase
+    .from('stocks')
+    .select('last_price,volume')
+    .ilike('sym', (sym||'').trim())
+    .maybeSingle()
+  if (error || !data) return null
+  return { price: data.last_price, volume: data.volume }
+}
