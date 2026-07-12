@@ -1329,7 +1329,7 @@ const HISTORY_RANGES = { '3M': 63, '6M': 126, '1Y': 252, '2Y': 100000 }
 function PriceHistoryChart({ sym }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [range, setRange] = useState('1Y')
+  const [range, setRange] = useState('3M')
 
   useEffect(() => {
     let cancelled = false
@@ -1757,7 +1757,7 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile, symList, onNavi
   useEffect(() => { setLoaded(false) }, [sym])
 
   if(!sym) return null
-  const src = `https://s.tradingview.com/widgetembed/?symbol=${tvExchange}%3A${encodeURIComponent(sym)}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=0e1117&studies=RSI%40tv-basicstudies%1FVolume%40tv-basicstudies%1FMACD%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata&withdateranges=1&locale=en`
+  const src = `https://s.tradingview.com/widgetembed/?symbol=${tvExchange}%3A${encodeURIComponent(sym)}&interval=D&range=3M&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=0e1117&studies=RSI%40tv-basicstudies%1FVolume%40tv-basicstudies%1FMACD%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata&withdateranges=1&locale=en`
 
   // Prev/Next within whatever list was showing when the chart was
   // opened — so you can flip through stocks one by one without closing
@@ -1897,8 +1897,8 @@ const RANGE_BARS = {'5D':5,'1M':21,'3M':63,'6M':126,'YTD':null,'1Y':252,'5Y':126
 function CandlestickChart({sym, isMobile}){
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [range, setRange] = useState('6M')
-  const [zoomBars, setZoomBars] = useState(RANGE_BARS['6M'])
+  const [range, setRange] = useState('3M')
+  const [zoomBars, setZoomBars] = useState(RANGE_BARS['3M'])
   const [panOffset, setPanOffset] = useState(0) // bars back from the most recent
   const [showMA, setShowMA] = useState(true)
   const [showSR, setShowSR] = useState(true)
@@ -1948,7 +1948,7 @@ function CandlestickChart({sym, isMobile}){
   useEffect(() => {
     let cancelled = false
     setLoading(true); setData(null)
-    setZoomBars(RANGE_BARS['6M']); setPanOffset(0) // reset zoom/pan for the new symbol
+    setZoomBars(RANGE_BARS['3M']); setPanOffset(0) // reset zoom/pan for the new symbol
     setPinnedIdx(null)
     fetchStockFullHistory(sym)
       .then(res => { if(!cancelled) setData(res) })
