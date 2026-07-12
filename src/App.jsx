@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -1956,6 +1956,54 @@ function CandlestickChart({sym, isMobile}){
     return () => { cancelled = true }
   }, [sym])
 
+  // Live-update TODAY's candle from the same live price feed the rest of
+  // the app already polls (stocks.last_price, refreshed ~every minute
+  // during market hours by the backend scan) — this is NOT a full
+  // intraday feed (no server-side O/H/L tracked beyond last_price), so
+  // the running high/low for today's bar is tracked client-side across
+  // polls instead. Every prior day stays exactly what stock_full_history
+  // already has (real daily EOD candles); only today's bar moves.
+  const [isLiveUpdating, setIsLiveUpdating] = useState(false)
+  useEffect(() => {
+    if (!isMarketOpen()) return
+    let cancelled = false
+    const poll = () => {
+      fetchLiveStockPrice(sym).then(live => {
+        if (cancelled || !live || live.price == null) return
+        setData(prev => {
+          if (!prev || prev.error || !prev.dates || prev.dates.length === 0) return prev
+          const todayStr = new Date(Date.now() + ((330 + new Date().getTimezoneOffset())*60000))
+            .toISOString().split('T')[0]
+          const lastIdx = prev.dates.length - 1
+          if (prev.dates[lastIdx] === todayStr) {
+            // Already have a bar for today (either from an earlier poll this
+            // session, or EOD already ran) — extend high/low, update close.
+            const highs = [...prev.highs]; highs[lastIdx] = Math.max(highs[lastIdx], live.price)
+            const lows = [...prev.lows]; lows[lastIdx] = Math.min(lows[lastIdx], live.price)
+            const prices = [...prev.prices]; prices[lastIdx] = live.price
+            const volumes = [...prev.volumes]; if (live.volume != null) volumes[lastIdx] = live.volume
+            return { ...prev, highs, lows, prices, volumes }
+          }
+          // No bar for today yet — append a new synthetic one, open=first
+          // live price seen today.
+          return {
+            ...prev,
+            dates:   [...prev.dates, todayStr],
+            opens:   [...prev.opens, live.price],
+            highs:   [...prev.highs, live.price],
+            lows:    [...prev.lows, live.price],
+            prices:  [...prev.prices, live.price],
+            volumes: [...prev.volumes, live.volume ?? (prev.volumes[prev.volumes.length-1]||0)],
+          }
+        })
+        setIsLiveUpdating(true)
+      }).catch(()=>{})
+    }
+    poll()
+    const t = setInterval(poll, 45000)
+    return () => { cancelled = true; clearInterval(t); setIsLiveUpdating(false) }
+  }, [sym])
+
   if(loading){
     return <div style={{padding:20,fontSize:12,color:C.muted,textAlign:'center'}}>Loading {sym} chart…</div>
   }
@@ -2155,8 +2203,18 @@ function CandlestickChart({sym, isMobile}){
 
   return (
     <div style={{padding:'10px 12px'}}>
+      <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
       {/* Controls */}
       <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8,alignItems:'center'}}>
+        {isLiveUpdating&&(
+          <div title="Today's candle is updating from the live price feed (~every 45s during market hours). Prior days are final daily closes."
+            style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:6,
+              background:C.red+'18',border:`1px solid ${C.red}44`}}>
+            <span style={{width:6,height:6,borderRadius:'50%',background:C.red,
+              animation:'pulse 1.5s ease-in-out infinite'}}/>
+            <span style={{fontSize:9,fontWeight:800,color:C.red,letterSpacing:'0.04em'}}>LIVE</span>
+          </div>
+        )}
         <div style={{display:'flex',gap:3}}>
           {Object.keys(RANGE_BARS).map(r=>(
             <button key={r} onClick={()=>{setRange(r);applyRangePreset(r)}}
