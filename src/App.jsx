@@ -4620,7 +4620,7 @@ export default function App(){
               </div>
             )}
             {displayedRS.length>0&&(
-              isMobile?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={setChartSym}/>):(
+              (isMobile||(chartSym&&chartWide>=1))?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={setChartSym}/>):(
                 <>
                 {chartSym&&(
                   <div style={{fontSize:10,color:C.accent,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
