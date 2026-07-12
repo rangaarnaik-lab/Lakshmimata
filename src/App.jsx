@@ -4180,7 +4180,16 @@ export default function App(){
 
           {/* Left pane — stock list */}
           <div style={{flex:1,overflowY:'auto',minWidth:0,
-            transition:'border 0.2s',
+            transition:'padding-right 0.2s, border 0.2s',
+            // The chart panel is position:fixed (an overlay, not a flex
+            // sibling) so it doesn't naturally shrink this pane's layout
+            // at all — it just visually covers whatever's underneath it.
+            // Reserving matching right-padding here means the table's
+            // own overflowX:'auto' (below) correctly detects less
+            // available space and lets you scroll to the columns that
+            // would otherwise just be hidden behind the chart with no
+            // way to reach them.
+            paddingRight:(!isMobile&&chartSym)?(['50%','70%','92%'][chartWide]||'50%'):0,
             borderRight:chartSym?`1px solid ${C.divider}`:'none'}}>
             <LastUpdatedBar
               scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
@@ -4469,6 +4478,12 @@ export default function App(){
             )}
             {displayedRS.length>0&&(
               isMobile?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={setChartSym}/>):(
+                <>
+                {chartSym&&(
+                  <div style={{fontSize:10,color:C.accent,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
+                    ↔ Table can scroll — drag left/right (or use the scrollbar below) to see all columns while the chart is open
+                  </div>
+                )}
                 <div ref={rsTableDrag.ref} {...rsTableDrag.handlers}
                   style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflowX:'auto',...rsTableDrag.style}}>
                   <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px 32px 32px',
@@ -4507,6 +4522,7 @@ export default function App(){
                   </div>
                   {displayedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>setChartSym(s.sym)}/>)}
                 </div>
+                </>
               )
             )}
           </div>
