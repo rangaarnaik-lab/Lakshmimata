@@ -1598,7 +1598,7 @@ function SimpleStockTable({stocks, isMobile, onChart}){
 // once at the top level and overlays via position:fixed. Swaps symbol in
 // place (same panel instance) when a different stock is clicked.
 // ── Market Breadth Chart — advances vs declines over time ──────────────
-function BreadthChart({data,isMobile}){
+function BreadthChart({data,isMobile,breadthRange,setBreadthRange}){
   if(!data||data.length<2) return null
   const W=900,H=isMobile?200:240,padL=40,padR=12,padT=10,padB=28
   const chartW=W-padL-padR,chartH=H-padT-padB
@@ -1610,13 +1610,26 @@ function BreadthChart({data,isMobile}){
   const labelStep=Math.max(1,Math.floor(data.length/6))
   return(
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 14px 8px',marginBottom:14}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:8}}>
         <div style={{fontWeight:800,fontSize:13}}>📈 Market Breadth — Advances vs Declines</div>
         <div style={{display:'flex',gap:12,fontSize:10,color:C.muted}}>
           <span><span style={{color:C.green}}>●</span> Advances</span>
           <span><span style={{color:C.red}}>●</span> Declines</span>
         </div>
       </div>
+      {setBreadthRange&&(
+        <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
+          {['1M','3M','6M','1Y','2Y'].map(label=>(
+            <button key={label} onClick={()=>setBreadthRange(label)}
+              style={{padding:'5px 12px',borderRadius:20,cursor:'pointer',fontSize:11,fontWeight:600,
+                border:`1px solid ${breadthRange===label?C.accent:C.border}`,
+                background:breadthRange===label?C.accent+'18':'transparent',
+                color:breadthRange===label?C.accent:C.muted}}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
       <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:isMobile?160:190,display:'block'}}>
         {[0,0.5,1].map(f=>(
           <g key={f}>
@@ -4866,23 +4879,13 @@ export default function App(){
                         Industry data comes from Upstox company profiles and fills in gradually — stocks without it yet aren't shown here.
                       </div>
 
-                      <div style={{display:'flex',gap:6,marginBottom:10,flexWrap:'wrap'}}>
-                        {[['1M',21],['3M',63],['6M',126],['1Y',252],['2Y',504]].map(([label])=>(
-                          <button key={label} onClick={()=>setBreadthRange(label)}
-                            style={{padding:'5px 12px',borderRadius:20,cursor:'pointer',fontSize:11,fontWeight:600,
-                              border:`1px solid ${breadthRange===label?C.accent:C.border}`,
-                              background:breadthRange===label?C.accent+'18':'transparent',
-                              color:breadthRange===label?C.accent:C.muted}}>
-                            {label}
-                          </button>
-                        ))}
-                      </div>
                       {(()=>{
                         const days = {'1M':21,'3M':63,'6M':126,'1Y':252,'2Y':504}[breadthRange]
                         const breadthSlice = breadthHistory.slice(-days)
                         const emaSlice = emaBreadthHistory.slice(-days)
                         return <>
-                          <BreadthChart data={breadthSlice} isMobile={isMobile}/>
+                          <BreadthChart data={breadthSlice} isMobile={isMobile}
+                            breadthRange={breadthRange} setBreadthRange={setBreadthRange}/>
 
                           <EmaBreadthTable data={emaSlice} isMobile={isMobile} dragProps={emaBreadthTableDrag} rangeLabel={{'1M':'Last Month','3M':'Last 3 Months','6M':'Last 6 Months','1Y':'Last Year','2Y':'Last 2 Years'}[breadthRange]}/>
                         </>
