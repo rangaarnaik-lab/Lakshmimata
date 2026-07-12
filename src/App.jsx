@@ -3762,6 +3762,12 @@ export default function App(){
   const [rotationWindow,setRotationWindow]=useState(10) // trading days
   const [rotationScope,setRotationScope]=useState('sector') // 'sector' | 'index' | 'watchlist'
   const [rotationWlId,setRotationWlId]=useState(null)
+  // Which sectors/indices/stocks are focused on in the Rotation chart.
+  // Empty set = show everyone (unfiltered, the original behavior).
+  // Non-empty = show ONLY the selected ones — lets the chart zoom in on
+  // just a handful, like a real RRG chart does, instead of always
+  // plotting all ~20 sectors at once regardless of how cluttered that is.
+  const [rotationSelectedIds,setRotationSelectedIds]=useState(()=>new Set())
   const [portfolioHoldings,setPortfolioHoldings]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('lm_portfolio')||'[]')}catch{return []}
   })
@@ -6031,8 +6037,14 @@ export default function App(){
         {mainTab==='rotation'&&(()=>{
           const ROTATION_WINDOWS=[{label:'10D',days:10},{label:'1M',days:22},{label:'3M',days:66},{label:'6M',days:126},{label:'1Y',days:252}]
           const data=rotationData||[]
+          const displayData=rotationSelectedIds.size>0 ? data.filter(s=>rotationSelectedIds.has(s.id)) : data
+          const toggleSel=id=>setRotationSelectedIds(prev=>{
+            const next=new Set(prev)
+            next.has(id)?next.delete(id):next.add(id)
+            return next
+          })
           const xFor=level=>20+(Math.max(0,Math.min(100,level??50))/100)*580
-          const maxAbsMom=Math.max(5,...data.map(s=>Math.abs(s.momentum||0)))
+          const maxAbsMom=Math.max(5,...displayData.map(s=>Math.abs(s.momentum||0)))
           const yFor=mom=>230-(Math.max(-maxAbsMom,Math.min(maxAbsMom,mom||0))/maxAbsMom)*205
           const quadColor=s=>{
             const leading=(s.level??50)>=50&&(s.momentum||0)>=0
@@ -6065,7 +6077,7 @@ export default function App(){
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,flexWrap:'wrap',gap:10}}>
               <div style={{display:'flex',gap:4,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:3}}>
                 {[['sector','Sector'],['index','Index'],['watchlist','Watchlist']].map(([id,label])=>(
-                  <button key={id} onClick={()=>setRotationScope(id)}
+                  <button key={id} onClick={()=>{setRotationScope(id);setRotationSelectedIds(new Set())}}
                     style={{border:'none',background:rotationScope===id?C.accent+'22':'transparent',
                       color:rotationScope===id?C.accent:C.muted,fontSize:11,fontWeight:600,
                       padding:'6px 12px',borderRadius:6,cursor:'pointer'}}>{label}</button>
@@ -6091,7 +6103,7 @@ export default function App(){
               ):(
                 <div style={{marginBottom:14,display:'flex',alignItems:'center',gap:8}}>
                   <span style={{fontSize:11,color:C.muted,fontWeight:600}}>Watchlist:</span>
-                  <select value={effectiveWlId||''} onChange={e=>setRotationWlId(e.target.value)}
+                  <select value={effectiveWlId||''} onChange={e=>{setRotationWlId(e.target.value);setRotationSelectedIds(new Set())}}
                     style={{padding:'5px 8px',background:C.card,border:`1px solid ${C.border}`,
                       borderRadius:6,color:C.text,fontSize:12,outline:'none',cursor:'pointer'}}>
                     {watchlists.map(w=><option key={w.id} value={w.id}>{w.name} ({w.stocks?.length||0})</option>)}
@@ -6125,6 +6137,32 @@ export default function App(){
             )}
 
             {data.length>0&&(<>
+              <div style={{marginBottom:14}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                  <span style={{fontSize:11,fontWeight:700,color:C.muted}}>
+                    FOCUS ON {rotationSelectedIds.size>0?`(${rotationSelectedIds.size} selected)`:'(showing all — tap to focus on a few)'}
+                  </span>
+                  {rotationSelectedIds.size>0&&(
+                    <button onClick={()=>setRotationSelectedIds(new Set())}
+                      style={{fontSize:11,fontWeight:700,color:C.accent,background:'transparent',
+                        border:'none',cursor:'pointer',padding:'2px 4px'}}>Show all</button>
+                  )}
+                </div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:6,maxHeight:120,overflowY:'auto'}}>
+                  {data.map(s=>{
+                    const on=rotationSelectedIds.size===0||rotationSelectedIds.has(s.id)
+                    return(
+                      <button key={s.id} onClick={()=>toggleSel(s.id)}
+                        style={{padding:'4px 10px',borderRadius:20,cursor:'pointer',fontSize:11,fontWeight:600,
+                          border:`1px solid ${rotationSelectedIds.has(s.id)?C.accent:C.border}`,
+                          background:rotationSelectedIds.has(s.id)?C.accent+'22':'transparent',
+                          color:on?C.text:C.muted,opacity:on?1:0.55}}>
+                        {s.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
               {requestedWindow&&maxAvailable>0&&maxAvailable<rotationWindow&&(
                 <div style={{fontSize:11,color:C.yellow,background:C.yellow+'14',border:`1px solid ${C.yellow}33`,
                   borderRadius:8,padding:'8px 12px',marginBottom:12}}>
@@ -6147,7 +6185,7 @@ export default function App(){
                   <text x="310" y="455" textAnchor="middle" fontSize="10" fill={C.muted}>{levelLabel.toUpperCase()} LEVEL →</text>
                   <text x="12" y="230" textAnchor="middle" fontSize="10" fill={C.muted} transform="rotate(-90 12 230)">MOMENTUM ({requestedWindow?.label||rotationWindow+'d'}) →</text>
 
-                  {data.filter(s=>s.trail&&s.trail.length>0).map(s=>{
+                  {displayData.filter(s=>s.trail&&s.trail.length>0).map(s=>{
                     const l0=s.trail[0].level, tx=t=>xFor(t.level)
                     const ty=t=>yFor(t.level-l0)
                     const pathD=s.trail.map((t,i)=>`${i===0?'M':'L'} ${tx(t)} ${ty(t)}`).join(' ')
