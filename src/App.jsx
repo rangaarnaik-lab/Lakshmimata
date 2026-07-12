@@ -3713,6 +3713,7 @@ export default function App(){
   const [portfolioHoldings,setPortfolioHoldings]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('lm_portfolio')||'[]')}catch{return []}
   })
+  const [journalOpenSym,setJournalOpenSym]=useState(null)
   const [compareSyms,setCompareSyms]=useState([])
   const [compareInput,setCompareInput]=useState('')
   const [historyDate,setHistoryDate]=useState(null) // null = live today, else 'YYYY-MM-DD'
@@ -5121,11 +5122,20 @@ export default function App(){
             <div style={{marginBottom:14,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
               <div>
                 <div style={{fontWeight:700,fontSize:16}}>Portfolio Tracker</div>
-                <div style={{fontSize:11,color:C.muted}}>Track your holdings — RS, Stage, and exit signals</div>
+                <div style={{fontSize:11,color:C.muted}}>Track your holdings — RS, Stage, exit signals &amp; trade journal</div>
               </div>
               <button onClick={()=>{
                 const sym=prompt('Enter stock symbol (e.g. RELIANCE):')?.toUpperCase().trim()
-                if(sym) setPortfolioHoldings(h=>[...h.filter(x=>x.sym!==sym),{sym,addedAt:new Date().toISOString()}])
+                if(!sym) return
+                const entryPriceRaw=prompt('Entry price (optional — leave blank to skip):')
+                const qtyRaw=prompt('Quantity (optional — leave blank to skip):')
+                const entryPrice=entryPriceRaw&&!isNaN(+entryPriceRaw)?+entryPriceRaw:null
+                const qty=qtyRaw&&!isNaN(+qtyRaw)?+qtyRaw:null
+                const note=prompt('Why this trade? (optional — first journal entry):')
+                setPortfolioHoldings(h=>[...h.filter(x=>x.sym!==sym),{
+                  sym,addedAt:new Date().toISOString(),entryPrice,qty,
+                  journal:note?[{ts:new Date().toISOString(),note}]:[],
+                }])
               }}
                 style={{padding:'7px 14px',borderRadius:7,border:'none',
                   background:C.accent,color:'#000',fontWeight:700,fontSize:12,cursor:'pointer'}}>
@@ -5145,46 +5155,113 @@ export default function App(){
                   const s=stocks.find(x=>x.sym===h.sym)
                   const stage=s?calcWeinsteinStage(s):null
                   const dangerZone=stage&&(stage.stage===3||stage.stage===4)
+                  const pnlPct=(h.entryPrice&&s?.last)?((s.last-h.entryPrice)/h.entryPrice*100):null
+                  const journalOpen=journalOpenSym===h.sym
+                  const journal=h.journal||[]
                   return(
                     <div key={h.sym} style={{background:C.card,
                       border:`1px solid ${dangerZone?C.red+'55':C.divider}`,
-                      borderRadius:10,padding:'12px 16px',
-                      display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
-                      <div style={{display:'flex',alignItems:'center',gap:12,flex:1,minWidth:0}}>
-                        <div>
-                          <div style={{fontWeight:700,fontSize:14,color:C.accent,
-                            cursor:'pointer'}}
-                            onClick={()=>s&&setChartSym(s.sym)}>{h.sym}</div>
-                          <div style={{fontSize:10,color:C.muted,marginTop:2}}>{s?.sector||'—'}</div>
-                        </div>
-                        {s?(
-                          <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-                            <div style={{textAlign:'center'}}>
-                              <div style={{fontWeight:700,fontSize:16,color:rsColor(s.rsTv||s.rs)}}>{s.rsTv||s.rs}</div>
-                              <div style={{fontSize:8,color:C.muted}}>RS-TV</div>
+                      borderRadius:10,padding:'12px 16px'}}>
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
+                        <div style={{display:'flex',alignItems:'center',gap:12,flex:1,minWidth:0}}>
+                          <div>
+                            <div style={{fontWeight:700,fontSize:14,color:C.accent,
+                              cursor:'pointer'}}
+                              onClick={()=>s&&setChartSym(s.sym)}>{h.sym}</div>
+                            <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+                              {s?.sector||'—'}{h.entryPrice?` · Entry ${fmtP(h.entryPrice)}${h.qty?` × ${h.qty}`:''}`:''}
                             </div>
-                            {stage&&<StageBadge stage={stage}/>}
-                            {topVolumeSignal(s)==='pp'&&<Badge color={C.green}>PP</Badge>}
-                            {dangerZone&&(
-                              <div style={{padding:'3px 8px',borderRadius:5,fontSize:10,fontWeight:700,
-                                background:C.red+'22',color:C.red,border:`1px solid ${C.red}44`}}>
-                                ⚠️ EXIT SIGNAL
-                              </div>
-                            )}
                           </div>
-                        ):<span style={{color:C.muted,fontSize:11}}>No data</span>}
+                          {s?(
+                            <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+                              <div style={{textAlign:'center'}}>
+                                <div style={{fontWeight:700,fontSize:16,color:rsColor(s.rsTv||s.rs)}}>{s.rsTv||s.rs}</div>
+                                <div style={{fontSize:8,color:C.muted}}>RS-TV</div>
+                              </div>
+                              {stage&&<StageBadge stage={stage}/>}
+                              {topVolumeSignal(s)==='pp'&&<Badge color={C.green}>PP</Badge>}
+                              {pnlPct!=null&&(
+                                <Badge color={pnlPct>=0?C.green:C.red}>
+                                  {pnlPct>=0?'+':''}{pnlPct.toFixed(1)}% P&amp;L
+                                </Badge>
+                              )}
+                              {dangerZone&&(
+                                <div style={{padding:'3px 8px',borderRadius:5,fontSize:10,fontWeight:700,
+                                  background:C.red+'22',color:C.red,border:`1px solid ${C.red}44`}}>
+                                  ⚠️ EXIT SIGNAL
+                                </div>
+                              )}
+                            </div>
+                          ):<span style={{color:C.muted,fontSize:11}}>No data</span>}
+                        </div>
+                        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                          {s&&<span style={{fontWeight:600,fontSize:13}}>{fmtP(s.last)}</span>}
+                          {s&&<span style={{fontWeight:700,fontSize:12,color:s.chg>=0?C.green:C.red}}>
+                            {s.chg>=0?'+':''}{s.chg?.toFixed(2)}%
+                          </span>}
+                          <button onClick={()=>setJournalOpenSym(journalOpen?null:h.sym)}
+                            title="Trade journal"
+                            style={{background:journalOpen?C.accent+'22':'transparent',
+                              border:`1px solid ${journalOpen?C.accent:C.border}`,
+                              color:journalOpen?C.accent:C.muted,fontSize:12,padding:'3px 8px',
+                              borderRadius:5,cursor:'pointer'}}>
+                            📝{journal.length>0?` ${journal.length}`:''}
+                          </button>
+                          <button onClick={()=>setPortfolioHoldings(h2=>h2.filter(x=>x.sym!==h.sym))}
+                            style={{background:'transparent',border:`1px solid ${C.border}`,
+                              color:C.muted,fontSize:12,padding:'3px 8px',borderRadius:5,cursor:'pointer'}}>
+                            ×
+                          </button>
+                        </div>
                       </div>
-                      <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                        {s&&<span style={{fontWeight:600,fontSize:13}}>{fmtP(s.last)}</span>}
-                        {s&&<span style={{fontWeight:700,fontSize:12,color:s.chg>=0?C.green:C.red}}>
-                          {s.chg>=0?'+':''}{s.chg?.toFixed(2)}%
-                        </span>}
-                        <button onClick={()=>setPortfolioHoldings(h2=>h2.filter(x=>x.sym!==h.sym))}
-                          style={{background:'transparent',border:`1px solid ${C.border}`,
-                            color:C.muted,fontSize:12,padding:'3px 8px',borderRadius:5,cursor:'pointer'}}>
-                          ×
-                        </button>
-                      </div>
+
+                      {journalOpen&&(
+                        <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.divider}`}}>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                            <div style={{fontSize:11,fontWeight:700,color:C.muted}}>TRADE JOURNAL</div>
+                            <button onClick={()=>{
+                              const note=prompt('Journal note:')
+                              if(note?.trim()){
+                                setPortfolioHoldings(hs=>hs.map(x=>x.sym===h.sym
+                                  ?{...x,journal:[...(x.journal||[]),{ts:new Date().toISOString(),note:note.trim()}]}
+                                  :x))
+                              }
+                            }}
+                              style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.accent}44`,
+                                background:C.accent+'18',color:C.accent,fontSize:11,fontWeight:600,cursor:'pointer'}}>
+                              + Add Note
+                            </button>
+                          </div>
+                          {journal.length===0?(
+                            <div style={{fontSize:11,color:C.muted,padding:'8px 0'}}>
+                              No notes yet — record why you entered, what you're watching for, or your exit plan.
+                            </div>
+                          ):(
+                            <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                              {[...journal].reverse().map((j,ji)=>(
+                                <div key={ji} style={{background:C.bg,borderRadius:7,padding:'8px 10px',
+                                  display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8}}>
+                                  <div style={{minWidth:0}}>
+                                    <div style={{fontSize:9,color:C.muted,marginBottom:2}}>
+                                      {new Date(j.ts).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}
+                                      {' · '}
+                                      {new Date(j.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}
+                                    </div>
+                                    <div style={{fontSize:12,color:C.text,wordBreak:'break-word'}}>{j.note}</div>
+                                  </div>
+                                  <button onClick={()=>{
+                                    setPortfolioHoldings(hs=>hs.map(x=>x.sym===h.sym
+                                      ?{...x,journal:(x.journal||[]).filter(jj=>jj.ts!==j.ts)}
+                                      :x))
+                                  }}
+                                    style={{background:'transparent',border:'none',color:C.muted,
+                                      fontSize:12,cursor:'pointer',flexShrink:0,padding:'0 2px'}}>×</button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
