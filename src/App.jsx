@@ -3411,6 +3411,7 @@ export default function App(){
   const [showQuickSettings,setShowQuickSettings]=useState(false)
   const [showMoreMenu,setShowMoreMenu]=useState(false)
   const [showSignalGlossary,setShowSignalGlossary]=useState(false)
+  const [expandedTileInfo,setExpandedTileInfo]=useState(null)
   const [breadthHistory,setBreadthHistory]=useState([])
   const [emaBreadthHistory,setEmaBreadthHistory]=useState([])
   const [breadthRange,setBreadthRange]=useState('1M')
@@ -4501,22 +4502,48 @@ export default function App(){
             ):(
               <>
                 {/* Summary strip */}
-                <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
-                  {[
-                    {l:'Stage 2 (Up)',   v:indexData.filter(i=>i.stage===2).length, c:C.green},
-                    {l:'Stage 1 (Base)', v:indexData.filter(i=>i.stage===1).length, c:C.yellow},
-                    {l:'Stage 3 (Top)',  v:indexData.filter(i=>i.stage===3).length, c:C.orange},
-                    {l:'Stage 4 (Down)', v:indexData.filter(i=>i.stage===4).length, c:C.red},
-                    {l:'RS-TV ≥ 70',     v:indexData.filter(i=>(i.rsTv||0)>=70).length,    c:C.accent},
-                    {l:'RS-TV < 40',     v:indexData.filter(i=>i.rsTv!=null&&i.rsTv<40).length, c:C.red},
-                  ].map(({l,v,c})=>(
-                    <div key={l} style={{background:C.card,border:`1px solid ${c}33`,
-                      borderRadius:8,padding:'8px 14px',textAlign:'center',minWidth:80}}>
-                      <div style={{fontWeight:800,fontSize:20,color:c}}>{v}</div>
-                      <div style={{fontSize:9,color:C.muted,marginTop:2}}>{l}</div>
+                {(()=>{
+                  const tiles=[
+                    {l:'Stage 2 (Up)',   v:indexData.filter(i=>i.stage===2).length, c:C.green,
+                      why:"Indices actively in an uptrend — RS-TV 50+ with a rising trend. These are the sectors currently leading the market. Check here first when deciding where to focus stock-picking — a stock in a Stage 2 sector has the wind at its back, while the same stock in a Stage 4 sector is fighting the current. Tap any 'S2 Up' index below to drill into which stocks are driving that strength right now."},
+                    {l:'Stage 1 (Base)', v:indexData.filter(i=>i.stage===1).length, c:C.yellow,
+                      why:"Indices building a base — not yet trending either way, RS-TV below 50. These are potential future leaders still consolidating. Worth watching for an eventual breakout into Stage 2, but the momentum isn't there yet to justify aggressive buying — patience here, not urgency."},
+                    {l:'Stage 3 (Top)',  v:indexData.filter(i=>i.stage===3).length, c:C.orange,
+                      why:"Indices showing signs of topping — still strong (RS-TV 70+) but the trend is flattening or turning down. Be cautious about new buys here even though the RS number looks good — this is often where late-cycle money gets trapped. Better time to tighten stops on existing positions than add fresh ones."},
+                    {l:'Stage 4 (Down)', v:indexData.filter(i=>i.stage===4).length, c:C.red,
+                      why:"Indices in an active downtrend — weak RS-TV, falling trend. Avoid new long positions here regardless of how cheap individual stocks look — a falling sector tends to drag even good stocks down with it. Stay away or look elsewhere rather than bargain-hunt."},
+                    {l:'RS-TV ≥ 70',     v:indexData.filter(i=>(i.rsTv||0)>=70).length,    c:C.accent,
+                      why:"Indices outperforming the broader market right now. This is your shortlist for where money is actively rotating into. Cross-reference with the Stage tiles — an index that's both RS-TV≥70 and Stage 2 is the strongest combination, since momentum and trend agree."},
+                    {l:'RS-TV < 40',     v:indexData.filter(i=>i.rsTv!=null&&i.rsTv<40).length, c:C.red,
+                      why:"Indices lagging the broader market. Generally avoid for new positions, but worth watching for a potential turnaround if the RS Trend column starts improving — early positioning often happens here, before the crowd notices."},
+                  ]
+                  const expanded = tiles.find(t=>t.l===expandedTileInfo)
+                  return <>
+                    <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
+                      {tiles.map(({l,v,c})=>(
+                        <div key={l} style={{background:C.card,border:`1px solid ${c}33`,
+                          borderRadius:8,padding:'8px 14px',textAlign:'center',minWidth:80,position:'relative'}}>
+                          <button onClick={()=>setExpandedTileInfo(expandedTileInfo===l?null:l)}
+                            style={{position:'absolute',top:3,right:3,width:14,height:14,borderRadius:'50%',
+                              border:`1px solid ${C.muted}`,background:'transparent',color:C.muted,
+                              fontSize:9,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,lineHeight:1}}>
+                            i
+                          </button>
+                          <div style={{fontWeight:800,fontSize:20,color:c}}>{v}</div>
+                          <div style={{fontSize:9,color:C.muted,marginTop:2}}>{l}</div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                    <div style={{marginBottom:14}}>
+                      {expanded&&(
+                        <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,
+                          padding:'10px 12px',fontSize:11,color:C.muted,lineHeight:1.6}}>
+                          <strong style={{color:C.text}}>{expanded.l} — how to use this:</strong> {expanded.why}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                })()}
 
                 {/* Indices + Sectors side by side on desktop, stacked on
                     mobile. Each table scrolls horizontally independently.
