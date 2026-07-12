@@ -3919,7 +3919,7 @@ export default function App(){
   const weakBase=stocks.filter(s=>s.weakRS.chg1d>=weakThreshold&&s.rs<50&&s.sym.toLowerCase().includes(weakSearch.toLowerCase())&&(!weakSigOnly||s.weakRS.isSignal)).sort((a,b)=>b.weakRS.chg1d-a.weakRS.chg1d)
   const displayedWeak=applyPP(weakBase,ppFilterWeak)
 
-  const tabs=[['rs','📊','RS'],['indices','🗂','Indices'],['breadth','📈','Breadth'],['squeeze','🌀','Squeeze'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['weak','🚨','Weak'],['sector','🏭','Sectors'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
+  const tabs=[['rs','📊','RS'],['indices','🗂','Indices'],['breadth','📈','Breadth'],['squeeze','🌀','Squeeze'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['weak','🚨','Weak'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
 
   if(authLoading)return(
     <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -3987,7 +3987,6 @@ export default function App(){
             <div style={{width:28,height:1,background:C.divider,margin:'4px 0'}}/>
 
             {[
-              {id:'sector',    label:'Sectors',   abbr:'SEC'},
               {id:'portfolio', label:'Portfolio', abbr:'PF'},
               {id:'compare',   label:'Compare',   abbr:'CMP'},
               {id:'watchlist', label:'Watchlist', abbr:'WL'},
@@ -4045,7 +4044,7 @@ export default function App(){
               <div style={{fontWeight:600,fontSize:14,color:C.text,lineHeight:1}}>
                 {mainTab==='rs'?'RS Rating':mainTab==='indices'?'Indices':mainTab==='squeeze'?'Squeeze':
                  mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
-                 mainTab==='weak'?'Weak RS':mainTab==='sector'?'Sectors':
+                 mainTab==='weak'?'Weak RS':
                  mainTab==='watchlist'?'Watchlist':'Account'}
               </div>
               {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1}}>
@@ -5850,21 +5849,6 @@ export default function App(){
           </div>
         )}
 
-        {/* ══ SECTORS ══ */}
-        {mainTab==='sector'&&(
-          <div>
-            <LastUpdatedBar
-              scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
-              autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
-              refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
-              onRefresh={runDBScan}
-            />
-
-            <SectorPanel sectorData={sectorData} allStocks={stocks} isMobile={isMobile} onChart={setChartSym}
-              onViewInRS={sec=>{setSectorFilter(sec);setMainTab('rs')}}/>
-          </div>
-        )}
-
         {/* ══ SETTINGS ══ */}
         {mainTab==='settings'&&(
           <SettingsPanel session={session} onUpdate={s=>setSession(s)} onLogout={()=>{setSession(null);setShowAuth(false)}}
@@ -5954,7 +5938,6 @@ export default function App(){
             paddingBottom:'env(safe-area-inset-bottom)'}}>
             {[
               ['rs','📊','RS'],['indices','🗂','Indices'],['breakout','💥','Break'],['52wl','🎯','52WL'],
-              ['sector','🏭','Sectors']
             ].map(([t,icon,label])=>(
               <button key={t} onClick={()=>setMainTab(t)}
                 style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
