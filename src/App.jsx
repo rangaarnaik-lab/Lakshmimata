@@ -1081,7 +1081,6 @@ function PresetFilterBar({active,setActive,stocks}){
 
 // ── Watchlist Manager ─────────────────────────────────────────────────
 function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKnownStocks}){
-  const [showCreate,setShowCreate]=useState(false)
   const [wlName,setWlName]=useState('')
   const [manualSym,setManualSym]=useState('')
   const [showSuggest,setShowSuggest]=useState(false)
@@ -1118,13 +1117,6 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
     setShowSuggest(false)
   }
 
-  const createWL=()=>{
-    if(!wlName.trim())return
-    const id=Date.now().toString()
-    onSave({id,name:wlName.trim(),stocks:[],createdAt:Date.now()})
-    setWlName('');setShowCreate(false);setEditId(id);setEditStocks([])
-  }
-
   const addManual=()=>{
     const syms=manualSym.toUpperCase().split(/[\s,;]+/).map(s=>s.trim()).filter(Boolean)
     const deduped=[...new Set([...editStocks,...syms])]
@@ -1148,13 +1140,20 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
   }
 
   const saveEdit=()=>{
-    const wl=watchlists.find(w=>w.id===editId)
-    if(!wl)return
-    onSave({...wl,stocks:editStocks})
-    setEditId(null);setEditStocks([])
+    if(editId==='__draft__'){
+      if(!wlName.trim())return  // require a name before creating
+      const id=Date.now().toString()
+      onSave({id,name:wlName.trim(),stocks:editStocks,createdAt:Date.now()})
+    }else{
+      const wl=watchlists.find(w=>w.id===editId)
+      if(!wl)return
+      onSave({...wl,name:wlName.trim()||wl.name,stocks:editStocks})
+    }
+    setEditId(null);setEditStocks([]);setWlName('')
   }
 
-  const startEdit=wl=>{setEditId(wl.id);setEditStocks([...wl.stocks])}
+  const startEdit=wl=>{setEditId(wl.id);setEditStocks([...wl.stocks]);setWlName(wl.name)}
+  const startCreate=()=>{setEditId('__draft__');setEditStocks([]);setWlName('')}
 
   return(
     <div>
@@ -1177,49 +1176,51 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
             {wl.name} <span style={{color:C.muted,fontWeight:400}}>({wl.stocks.length})</span>
           </button>
         ))}
-        <button onClick={()=>setShowCreate(v=>!v)}
+        <button onClick={startCreate}
           style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${C.green}44`,
             cursor:'pointer',fontSize:12,fontWeight:600,background:'transparent',color:C.green}}>
           + New Watchlist
         </button>
       </div>
 
-      {/* Create new */}
-      {showCreate&&(
-        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
-          <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>New Watchlist</div>
-          <div style={{display:'flex',gap:8}}>
-            <input value={wlName} onChange={e=>setWlName(e.target.value)}
-              onKeyDown={e=>e.key==='Enter'&&createWL()}
-              placeholder="Watchlist name (e.g. My Top Picks)"
-              style={{flex:1,padding:'8px 12px',background:C.bg,border:`1px solid ${C.border}`,
-                borderRadius:8,color:C.text,fontSize:13,outline:'none'}}/>
-            <button onClick={createWL}
-              style={{padding:'8px 16px',borderRadius:8,border:'none',cursor:'pointer',
-                background:C.green,color:'#000',fontWeight:700,fontSize:13}}>Create</button>
-          </div>
-        </div>
-      )}
-
-      {/* Edit panel */}
+      {/* Create/Edit panel — one unified flow instead of a separate
+          "name it, click Create, THEN see a different screen to add
+          stocks" split, which people kept getting stuck on (typing a
+          stock symbol into the name field, expecting suggestions there).
+          editId==='__draft__' is the sentinel for "creating a new one";
+          everything else works exactly like editing an existing list. */}
       {editId&&(()=>{
-        const wl=watchlists.find(w=>w.id===editId)
+        const isDraft=editId==='__draft__'
+        const wl=isDraft?{name:wlName,id:'__draft__'}:watchlists.find(w=>w.id===editId)
         if(!wl)return null
         return(
           <div style={{background:C.card,border:`1px solid ${C.accent}44`,borderRadius:12,padding:'16px',marginBottom:12}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:14,color:C.accent}}>✏️ Editing: {wl.name}</div>
+              <div style={{fontWeight:800,fontSize:14,color:C.accent}}>{isDraft?'✨ New Watchlist':`✏️ Editing: ${wl.name}`}</div>
               <div style={{display:'flex',gap:8}}>
                 <button onClick={saveEdit}
                   style={{padding:'6px 14px',borderRadius:7,border:'none',cursor:'pointer',
-                    background:C.accent,color:'#000',fontWeight:700,fontSize:12}}>💾 Save</button>
-                <button onClick={()=>{setEditId(null);setEditStocks([])}}
+                    background:C.accent,color:'#000',fontWeight:700,fontSize:12}}>
+                  {isDraft?'✓ Create':'💾 Save'}
+                </button>
+                <button onClick={()=>{setEditId(null);setEditStocks([]);setWlName('')}}
                   style={{padding:'6px 14px',borderRadius:7,border:`1px solid ${C.border}`,cursor:'pointer',
                     background:'transparent',color:C.muted,fontWeight:600,fontSize:12}}>Cancel</button>
-                <button onClick={()=>{onDelete(wl.id);setEditId(null);setEditStocks([])}}
-                  style={{padding:'6px 14px',borderRadius:7,border:`1px solid ${C.red}44`,cursor:'pointer',
-                    background:'transparent',color:C.red,fontWeight:600,fontSize:12}}>🗑 Delete</button>
+                {!isDraft&&(
+                  <button onClick={()=>{onDelete(wl.id);setEditId(null);setEditStocks([]);setWlName('')}}
+                    style={{padding:'6px 14px',borderRadius:7,border:`1px solid ${C.red}44`,cursor:'pointer',
+                      background:'transparent',color:C.red,fontWeight:600,fontSize:12}}>🗑 Delete</button>
+                )}
               </div>
+            </div>
+
+            {/* Name field — always shown, whether creating or editing */}
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:6}}>Watchlist name</div>
+              <input value={wlName} onChange={e=>setWlName(e.target.value)}
+                placeholder="e.g. My Top Picks"
+                style={{width:'100%',padding:'8px 12px',background:C.bg,border:`1px solid ${C.border}`,
+                  borderRadius:8,color:C.text,fontSize:13,outline:'none',boxSizing:'border-box'}}/>
             </div>
 
             {/* Manual add */}
@@ -6146,7 +6147,7 @@ export default function App(){
                   <text x="310" y="455" textAnchor="middle" fontSize="10" fill={C.muted}>{levelLabel.toUpperCase()} LEVEL →</text>
                   <text x="12" y="230" textAnchor="middle" fontSize="10" fill={C.muted} transform="rotate(-90 12 230)">MOMENTUM ({requestedWindow?.label||rotationWindow+'d'}) →</text>
 
-                  {data.map(s=>{
+                  {data.filter(s=>s.trail&&s.trail.length>0).map(s=>{
                     const l0=s.trail[0].level, tx=t=>xFor(t.level)
                     const ty=t=>yFor(t.level-l0)
                     const pathD=s.trail.map((t,i)=>`${i===0?'M':'L'} ${tx(t)} ${ty(t)}`).join(' ')
@@ -6155,7 +6156,14 @@ export default function App(){
                     const color=quadColor(s)
                     return(
                       <g key={s.id} style={{cursor:'pointer'}} onClick={()=>goTo(s)}>
-                        <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" strokeDasharray="3,3" opacity="0.5"/>
+                        <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" opacity="0.55"/>
+                        {/* Small hollow dots along the trail (every day except
+                            the current one, which gets the solid dot below) —
+                            same "beads on a string" look as a real RRG chart,
+                            not just a bare line between two points. */}
+                        {s.trail.slice(0,-1).map((t,i)=>(
+                          <circle key={i} cx={tx(t)} cy={ty(t)} r="2.5" fill={C.bg} stroke={color} strokeWidth="1.2"/>
+                        ))}
                         <circle cx={cx} cy={cy} r={r} fill={color}/>
                         <text x={cx+r+4} y={cy+4} fontSize="12" fontWeight="700" fill={C.text}>{s.label}</text>
                       </g>
