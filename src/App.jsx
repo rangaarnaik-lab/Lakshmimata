@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -3712,7 +3712,9 @@ export default function App(){
   const [loadingAlerts,setLoadingAlerts]=useState(false)
   const [rotationData,setRotationData]=useState(null)
   const [loadingRotation,setLoadingRotation]=useState(false)
-  const [rotationDays,setRotationDays]=useState(10)
+  const [rotationWindow,setRotationWindow]=useState(10) // trading days
+  const [rotationScope,setRotationScope]=useState('sector') // 'sector' | 'index' | 'watchlist'
+  const [rotationWlId,setRotationWlId]=useState(null)
   const [portfolioHoldings,setPortfolioHoldings]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('lm_portfolio')||'[]')}catch{return []}
   })
@@ -3873,13 +3875,19 @@ export default function App(){
     }
     if(mainTab==='rotation'){
       setLoadingRotation(true)
-      fetchSectorRotation(rotationDays)
+      const effectiveWlId = rotationWlId ?? activeWl ?? watchlists[0]?.id ?? null
+      const loader = rotationScope==='index'
+        ? fetchIndexRotation(rotationWindow)
+        : rotationScope==='watchlist'
+          ? fetchWatchlistRotation((watchlists.find(w=>w.id===effectiveWlId)?.stocks)||[], rotationWindow)
+          : fetchSectorRotation(rotationWindow)
+      loader
         .then(setRotationData)
         .catch(e=>console.error('Sector rotation fetch:',e))
         .finally(()=>setLoadingRotation(false))
     }
     return ()=>{ if(timer) clearInterval(timer) }
-  },[session,mainTab,rotationDays])
+  },[session,mainTab,rotationWindow,rotationScope,rotationWlId,watchlists,activeWl])
 
   // Save portfolio to localStorage whenever it changes
   useEffect(()=>{
@@ -5956,51 +5964,109 @@ export default function App(){
 
         {/* ══ SECTOR ROTATION ══ */}
         {mainTab==='rotation'&&(()=>{
+          const ROTATION_WINDOWS=[{label:'10D',days:10},{label:'1M',days:22},{label:'3M',days:66},{label:'6M',days:126},{label:'1Y',days:252}]
           const data=rotationData||[]
-          const xFor=avgRs=>20+(Math.max(0,Math.min(100,avgRs??50))/100)*580
-          const maxAbsMom=Math.max(5,...data.map(s=>Math.abs(s.momentum||0)),5)
+          const xFor=level=>20+(Math.max(0,Math.min(100,level??50))/100)*580
+          const maxAbsMom=Math.max(5,...data.map(s=>Math.abs(s.momentum||0)))
           const yFor=mom=>230-(Math.max(-maxAbsMom,Math.min(maxAbsMom,mom||0))/maxAbsMom)*205
           const quadColor=s=>{
-            const leading=(s.avgRs??50)>=50&&(s.momentum||0)>=0
-            const improving=(s.avgRs??50)<50&&(s.momentum||0)>=0
-            const weakening=(s.avgRs??50)>=50&&(s.momentum||0)<0
+            const leading=(s.level??50)>=50&&(s.momentum||0)>=0
+            const improving=(s.level??50)<50&&(s.momentum||0)>=0
+            const weakening=(s.level??50)>=50&&(s.momentum||0)<0
             return leading?C.green:improving?C.accent:weakening?C.orange:C.muted
           }
-          const goToSector=sec=>{setSectorFilter(sec);setMainTab('rs')}
+          const goTo=s=>{
+            if(rotationScope==='sector'){setSectorFilter(s.id);setMainTab('rs')}
+            else if(rotationScope==='index'){setExpandedIndex(s.id);setMainTab('indices')}
+            else{setChartSym(s.id)}
+          }
+          const effectiveWlId=rotationWlId??activeWl??watchlists[0]?.id??null
+          const effectiveWl=watchlists.find(w=>w.id===effectiveWlId)
+          const maxAvailable=data.length?Math.max(...data.map(s=>s.windowDays||1)):0
+          const requestedWindow=ROTATION_WINDOWS.find(w=>w.days===rotationWindow)
+          const scopeLabel=rotationScope==='sector'?'Sector':rotationScope==='index'?'Index':'Watchlist'
+          const levelLabel=rotationScope==='sector'?'avg RS':'RS-TV'
           return(
           <div style={{padding:'0 0 20px'}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14,flexWrap:'wrap',gap:10}}>
-              <div>
-                <div style={{fontWeight:800,fontSize:15,color:C.accent}}>🔄 Sector Rotation</div>
-                <div style={{fontSize:12,color:C.muted,marginTop:2}}>
-                  Which sectors are gaining or losing relative strength, and how fast. Click a sector to filter RS Rating by it.
-                </div>
+            <div style={{marginBottom:12}}>
+              <div style={{fontWeight:800,fontSize:15,color:C.accent}}>🔄 {scopeLabel} Rotation</div>
+              <div style={{fontSize:12,color:C.muted,marginTop:2}}>
+                Which {rotationScope==='watchlist'?'stocks':scopeLabel.toLowerCase()+'s'} are gaining or losing relative strength, and how fast.
+                {rotationScope!=='watchlist'&&` Click to jump to that ${rotationScope==='sector'?'sector\u2019s filtered RS list':'index'}.`}
+                {rotationScope==='watchlist'&&' Click a stock to open its chart.'}
               </div>
-              <div style={{display:'flex',gap:6,alignItems:'center'}}>
+            </div>
+
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,flexWrap:'wrap',gap:10}}>
+              <div style={{display:'flex',gap:4,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:3}}>
+                {[['sector','Sector'],['index','Index'],['watchlist','Watchlist']].map(([id,label])=>(
+                  <button key={id} onClick={()=>setRotationScope(id)}
+                    style={{border:'none',background:rotationScope===id?C.accent+'22':'transparent',
+                      color:rotationScope===id?C.accent:C.muted,fontSize:11,fontWeight:600,
+                      padding:'6px 12px',borderRadius:6,cursor:'pointer'}}>{label}</button>
+                ))}
+              </div>
+              <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
                 <span style={{fontSize:11,color:C.muted,fontWeight:600}}>Window:</span>
-                {[5,10,20].map(d=>(
-                  <button key={d} onClick={()=>setRotationDays(d)}
-                    style={{padding:'5px 12px',borderRadius:20,border:`1px solid ${rotationDays===d?C.accent:C.border}`,
+                {ROTATION_WINDOWS.map(w=>(
+                  <button key={w.days} onClick={()=>setRotationWindow(w.days)}
+                    style={{padding:'5px 12px',borderRadius:20,border:`1px solid ${rotationWindow===w.days?C.accent:C.border}`,
                       cursor:'pointer',fontSize:12,fontWeight:700,
-                      background:rotationDays===d?C.accent+'22':'transparent',
-                      color:rotationDays===d?C.accent:C.muted}}>{d}d</button>
+                      background:rotationWindow===w.days?C.accent+'22':'transparent',
+                      color:rotationWindow===w.days?C.accent:C.muted}}>{w.label}</button>
                 ))}
               </div>
             </div>
+
+            {rotationScope==='watchlist'&&(
+              watchlists.length===0?(
+                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:14,fontSize:12,color:C.muted}}>
+                  No watchlists yet — create one from the Watchlist tab first.
+                </div>
+              ):(
+                <div style={{marginBottom:14,display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:11,color:C.muted,fontWeight:600}}>Watchlist:</span>
+                  <select value={effectiveWlId||''} onChange={e=>setRotationWlId(e.target.value)}
+                    style={{padding:'5px 8px',background:C.card,border:`1px solid ${C.border}`,
+                      borderRadius:6,color:C.text,fontSize:12,outline:'none',cursor:'pointer'}}>
+                    {watchlists.map(w=><option key={w.id} value={w.id}>{w.name} ({w.stocks?.length||0})</option>)}
+                  </select>
+                </div>
+              )
+            )}
+
+            {rotationScope==='watchlist'&&effectiveWl&&(effectiveWl.stocks?.length||0)===0&&(
+              <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
+                <div style={{fontSize:42,marginBottom:12}}>📋</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>"{effectiveWl.name}" is empty</div>
+                <div style={{fontSize:12,marginTop:6}}>Add some stocks to it first.</div>
+              </div>
+            )}
 
             {loadingRotation&&!rotationData&&(
               <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>Loading…</div>
             )}
 
-            {rotationData&&rotationData.length===0&&(
+            {rotationData&&rotationData.length===0&&!(rotationScope==='watchlist'&&(!effectiveWl||(effectiveWl.stocks?.length||0)===0))&&(
               <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
                 <div style={{fontSize:42,marginBottom:12}}>🔄</div>
-                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No sector history yet</div>
-                <div style={{fontSize:12,marginTop:6}}>Needs a few days of daily snapshots to show rotation.</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No history yet</div>
+                <div style={{fontSize:12,marginTop:6}}>
+                  {rotationScope==='index'
+                    ?'Index-level history starts accumulating once index_history exists in Supabase — check backend logs if this persists.'
+                    :'Needs a few days of daily snapshots to show rotation.'}
+                </div>
               </div>
             )}
 
             {data.length>0&&(<>
+              {requestedWindow&&maxAvailable>0&&maxAvailable<rotationWindow&&(
+                <div style={{fontSize:11,color:C.yellow,background:C.yellow+'14',border:`1px solid ${C.yellow}33`,
+                  borderRadius:8,padding:'8px 12px',marginBottom:12}}>
+                  ⚠ Only {maxAvailable} day{maxAvailable===1?'':'s'} of history available yet — showing the full {maxAvailable}-day window
+                  instead of the requested {requestedWindow.label}. This fills in automatically as more daily snapshots accumulate.
+                </div>
+              )}
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16,marginBottom:16}}>
                 <svg viewBox="0 0 620 460" style={{width:'100%',height:'auto',display:'block'}}>
                   <rect x="310" y="20" width="290" height="210" fill={C.green} opacity="0.06"/>
@@ -6013,21 +6079,21 @@ export default function App(){
                   <text x="40" y="38" textAnchor="start" fontSize="11" fontWeight="700" fill={C.accent}>IMPROVING</text>
                   <text x="40" y="428" textAnchor="start" fontSize="11" fontWeight="700" fill={C.muted}>LAGGING</text>
                   <text x="580" y="428" textAnchor="end" fontSize="11" fontWeight="700" fill={C.orange}>WEAKENING</text>
-                  <text x="310" y="455" textAnchor="middle" fontSize="10" fill={C.muted}>RS LEVEL →</text>
-                  <text x="12" y="230" textAnchor="middle" fontSize="10" fill={C.muted} transform="rotate(-90 12 230)">MOMENTUM ({rotationDays}d) →</text>
+                  <text x="310" y="455" textAnchor="middle" fontSize="10" fill={C.muted}>{levelLabel.toUpperCase()} LEVEL →</text>
+                  <text x="12" y="230" textAnchor="middle" fontSize="10" fill={C.muted} transform="rotate(-90 12 230)">MOMENTUM ({requestedWindow?.label||rotationWindow+'d'}) →</text>
 
                   {data.map(s=>{
-                    const x0=s.trail[0].avgRs, tx=t=>xFor(t.avgRs)
-                    const ty=t=>yFor(t.avgRs-x0)
+                    const l0=s.trail[0].level, tx=t=>xFor(t.level)
+                    const ty=t=>yFor(t.level-l0)
                     const pathD=s.trail.map((t,i)=>`${i===0?'M':'L'} ${tx(t)} ${ty(t)}`).join(' ')
-                    const cx=xFor(s.avgRs), cy=yFor(s.momentum)
-                    const r=7+Math.min(6,(s.count||1)/3)
+                    const cx=xFor(s.level), cy=yFor(s.momentum)
+                    const r=rotationScope==='sector'?7+Math.min(6,(s.count||1)/3):7
                     const color=quadColor(s)
                     return(
-                      <g key={s.sector} style={{cursor:'pointer'}} onClick={()=>goToSector(s.sector)}>
+                      <g key={s.id} style={{cursor:'pointer'}} onClick={()=>goTo(s)}>
                         <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" strokeDasharray="3,3" opacity="0.5"/>
                         <circle cx={cx} cy={cy} r={r} fill={color}/>
-                        <text x={cx+r+4} y={cy+4} fontSize="12" fontWeight="700" fill={C.text}>{s.sector}</text>
+                        <text x={cx+r+4} y={cy+4} fontSize="12" fontWeight="700" fill={C.text}>{s.label}</text>
                       </g>
                     )
                   })}
@@ -6045,25 +6111,27 @@ export default function App(){
               <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>RANKED LIST</div>
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
                 {data.map((s,i)=>(
-                  <div key={s.sector} onClick={()=>goToSector(s.sector)}
+                  <div key={s.id} onClick={()=>goTo(s)}
                     style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,
                       padding:'11px 14px',borderBottom:i<data.length-1?`1px solid ${C.divider}`:'none',cursor:'pointer'}}>
                     <div style={{display:'flex',alignItems:'center',gap:10,minWidth:0}}>
                       <div style={{width:22,height:22,borderRadius:6,background:C.bg,display:'flex',
                         alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:C.muted,flexShrink:0}}>
-                        {s.rank}
+                        {s.rank??'—'}
                       </div>
                       <div style={{minWidth:0}}>
-                        <div style={{fontWeight:700,fontSize:13}}>{s.sector}</div>
-                        <div style={{fontSize:10,color:C.muted,marginTop:2}}>{s.count} stocks · avg RS {s.avgRs}</div>
+                        <div style={{fontWeight:700,fontSize:13}}>{s.label}</div>
+                        <div style={{fontSize:10,color:C.muted,marginTop:2}}>{s.meta} · {levelLabel} {s.level}</div>
                       </div>
                     </div>
                     <div style={{display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
                       <div style={{textAlign:'right'}}>
-                        <div style={{fontWeight:800,fontSize:15,color:quadColor(s)}}>{s.avgRs}</div>
-                        <div style={{fontSize:10,fontWeight:700,color:s.rankChange>0?C.green:s.rankChange<0?C.red:C.muted}}>
-                          {s.rankChange>0?'▲':s.rankChange<0?'▼':'–'} {s.rankChange!==0?Math.abs(s.rankChange):''}
-                        </div>
+                        <div style={{fontWeight:800,fontSize:15,color:quadColor(s)}}>{s.level}</div>
+                        {s.rankChange!=null&&(
+                          <div style={{fontSize:10,fontWeight:700,color:s.rankChange>0?C.green:s.rankChange<0?C.red:C.muted}}>
+                            {s.rankChange>0?'▲':s.rankChange<0?'▼':'–'} {s.rankChange!==0?Math.abs(s.rankChange):''}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
