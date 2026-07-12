@@ -73,18 +73,122 @@ export async function fetchSectorRotation(days=10) {
     const last  = sorted[sorted.length - 1]
     const mid   = sorted[Math.floor((sorted.length - 1) / 2)]
     return {
-      sector,
+      id:         sector,
+      label:      sector,
+      meta:       `${last.count} stocks`,
       count:      last.count,
-      avgRs:      last.avg_rs,
+      level:      last.avg_rs,
       rank:       last.rank,
-      history:    sorted.map(r => ({ date: r.snapshot_date, avgRs: r.avg_rs, rank: r.rank })),
-      // Trail for the quadrant chart: first -> mid -> last of the window,
-      // so the dot's recent direction is visible, not just its position.
-      trail:      [first, mid, last].map(r => ({ avgRs: r.avg_rs, rank: r.rank })),
+      windowDays: sorted.length,
+      trail:      [first, mid, last].map(r => ({ level: r.avg_rs })),
       momentum:   sorted.length > 1 ? +(last.avg_rs - first.avg_rs).toFixed(1) : 0,
       rankChange: sorted.length > 1 ? (first.rank - last.rank) : 0,
     }
   }).sort((a,b) => a.rank - b.rank)
+}
+
+/**
+ * Fetch index rotation data from index_history (daily RS-TV/rank
+ * snapshots per index — see backend commit adding this table). Same
+ * shape/derivation as fetchSectorRotation, just a different source
+ * table and level metric (rs_tv instead of avg_rs).
+ *
+ * If index_history doesn't exist yet in Supabase (needs to be created —
+ * see the backend's loud error log for the exact SQL), this returns []
+ * rather than throwing, same graceful-degradation as the other fetchers.
+ */
+export async function fetchIndexRotation(days=10) {
+  const { data, error } = await supabase
+    .from('index_history')
+    .select('snapshot_date,name,rs_tv,rank_d')
+    .order('snapshot_date', { ascending: false })
+    .limit(days * 40)
+  if (error) { console.error('fetchIndexRotation error (index_history table may not exist yet):', error.message); return [] }
+  if (!data || data.length === 0) return []
+
+  const recentDates = [...new Set(data.map(r => r.snapshot_date))].sort().slice(-days)
+  const dateSet = new Set(recentDates)
+
+  const byIndex = {}
+  for (const row of data) {
+    if (!dateSet.has(row.snapshot_date)) continue
+    if (row.rs_tv == null) continue
+    if (!byIndex[row.name]) byIndex[row.name] = []
+    byIndex[row.name].push(row)
+  }
+
+  return Object.entries(byIndex).map(([name, rows]) => {
+    const sorted = [...rows].sort((a,b) => a.snapshot_date.localeCompare(b.snapshot_date))
+    const first = sorted[0]
+    const last  = sorted[sorted.length - 1]
+    const mid   = sorted[Math.floor((sorted.length - 1) / 2)]
+    return {
+      id:         name,
+      label:      name,
+      meta:       'Index',
+      level:      last.rs_tv,
+      rank:       last.rank_d,
+      windowDays: sorted.length,
+      trail:      [first, mid, last].map(r => ({ level: r.rs_tv })),
+      momentum:   sorted.length > 1 ? +(last.rs_tv - first.rs_tv).toFixed(1) : 0,
+      rankChange: sorted.length > 1 && first.rank_d!=null && last.rank_d!=null ? (first.rank_d - last.rank_d) : 0,
+    }
+  }).sort((a,b) => (a.rank??999) - (b.rank??999))
+}
+
+/**
+ * Fetch watchlist rotation data — same RRG shape as sector/index, but
+ * per-stock, sourced from stock_history (already populated daily by the
+ * live scan + the 30-day backfill, no new backend work needed here).
+ * Rank is computed locally (1 = highest current RS-TV) since it's only
+ * meaningful within this specific watchlist, not a rank Supabase stores.
+ */
+export async function fetchWatchlistRotation(syms=[], days=10) {
+  if (!syms || syms.length === 0) return []
+  const { data, error } = await supabase
+    .from('stock_history')
+    .select('snapshot_date,sym,rs_tv,rs,sector')
+    .in('sym', syms)
+    .order('snapshot_date', { ascending: false })
+    .limit(days * syms.length * 2)
+  if (error) { console.error('fetchWatchlistRotation error:', error.message); return [] }
+  if (!data || data.length === 0) return []
+
+  const recentDates = [...new Set(data.map(r => r.snapshot_date))].sort().slice(-days)
+  const dateSet = new Set(recentDates)
+
+  const bySym = {}
+  for (const row of data) {
+    if (!dateSet.has(row.snapshot_date)) continue
+    const level = row.rs_tv ?? row.rs
+    if (level == null) continue
+    if (!bySym[row.sym]) bySym[row.sym] = []
+    bySym[row.sym].push({ ...row, level })
+  }
+
+  const items = Object.entries(bySym).map(([sym, rows]) => {
+    const sorted = [...rows].sort((a,b) => a.snapshot_date.localeCompare(b.snapshot_date))
+    const first = sorted[0]
+    const last  = sorted[sorted.length - 1]
+    const mid   = sorted[Math.floor((sorted.length - 1) / 2)]
+    return {
+      id:         sym,
+      label:      sym,
+      meta:       last.sector || '—',
+      level:      last.level,
+      windowDays: sorted.length,
+      trail:      [first, mid, last].map(r => ({ level: r.level })),
+      momentum:   sorted.length > 1 ? +(last.level - first.level).toFixed(1) : 0,
+    }
+  })
+  // Rank locally by current level, since this is a rank within the
+  // watchlist only — not something stock_history stores.
+  items.sort((a,b) => b.level - a.level)
+  items.forEach((it,i) => {
+    it.rank = i + 1
+    it.rankChange = null // no prior-rank baseline within a watchlist-scoped rank; omitted rather than shown wrong
+  })
+  return items
 }
 
 export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = null, historyDate = null } = {}) {
