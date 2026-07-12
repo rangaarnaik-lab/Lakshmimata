@@ -6103,6 +6103,22 @@ export default function App(){
             const weakening=(s.level??50)>=50&&(s.momentum||0)<0
             return leading?C.green:improving?C.accent:weakening?C.orange:C.muted
           }
+          // Distinct per-item color for the CHART specifically — quadColor
+          // only has 4 possible values (one per quadrant), so whenever
+          // several sectors land in the same quadrant their dots were
+          // visually identical, distinguishable only by tiny overlapping
+          // labels. The quadrant itself is already shown by the colored
+          // background zone each dot sits in, so quadColor was redundant
+          // there anyway. Hash-based (not index-based) so a given sector
+          // keeps the same color across window/selection changes instead
+          // of jumping around as the displayed set changes.
+          const IDENTITY_PALETTE=['#4f8ef7','#ef4444','#eab308','#22c55e','#a855f7','#ec4899',
+            '#f97316','#06b6d4','#84cc16','#f43f5e','#8b5cf6','#14b8a6','#e879f9','#facc15']
+          const identityColor=s=>{
+            let hash=0
+            for(let i=0;i<s.id.length;i++)hash=(hash*31+s.id.charCodeAt(i))|0
+            return IDENTITY_PALETTE[Math.abs(hash)%IDENTITY_PALETTE.length]
+          }
           const goTo=s=>{
             if(rotationScope==='sector'){setSectorFilter(s.id);setMainTab('rs')}
             else if(rotationScope==='index'){setExpandedIndex(s.id);setMainTab('indices')}
@@ -6242,24 +6258,28 @@ export default function App(){
                     const pathD=s.trail.map((t,i)=>`${i===0?'M':'L'} ${tx(t)} ${ty(t)}`).join(' ')
                     const cx=xFor(s.level), cy=yFor(s.momentum)
                     const r=rotationScope==='sector'?7+Math.min(6,(s.count||1)/3):7
-                    const color=quadColor(s)
+                    const color=identityColor(s)
                     return(
                       <g key={s.id} style={{cursor:'pointer'}} onClick={()=>goTo(s)}>
                         <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" opacity="0.55"/>
-                        {/* Small hollow dots along the trail (every day except
-                            the current one, which gets the solid dot below) —
-                            same "beads on a string" look as a real RRG chart,
-                            not just a bare line between two points. */}
-                        {s.trail.slice(0,-1).map((t,i)=>(
+                        {/* Small hollow dots along the trail — thinned to
+                            every 3rd day (not every single day) so a 30-day
+                            trail doesn't turn into a wall of overlapping
+                            markers; the line itself still traces the full
+                            path, this is just decoration along it. */}
+                        {s.trail.slice(0,-1).filter((_,i)=>i%3===0).map((t,i)=>(
                           <circle key={i} cx={tx(t)} cy={ty(t)} r="2.5" fill={C.bg} stroke={color} strokeWidth="1.2"/>
                         ))}
                         <circle cx={cx} cy={cy} r={r} fill={color}/>
-                        <text x={cx+r+4} y={cy+4} fontSize="12" fontWeight="700" fill={C.text}>{s.label}</text>
+                        <text x={cx+r+4} y={cy+4} fontSize="12" fontWeight="700" fill={color}>{s.label}</text>
                       </g>
                     )
                   })}
                 </svg>
-                <div style={{display:'flex',gap:14,flexWrap:'wrap',marginTop:10,paddingTop:10,borderTop:`1px solid ${C.divider}`}}>
+                <div style={{fontSize:10,color:C.muted,marginTop:8}}>
+                  Dot color = which {scopeLabel.toLowerCase()} (matches its label) — position tells you the status below, not the color.
+                </div>
+                <div style={{display:'flex',gap:14,flexWrap:'wrap',marginTop:8,paddingTop:10,borderTop:`1px solid ${C.divider}`}}>
                   {[['Leading — strong & still improving',C.green],['Improving — gaining strength',C.accent],
                     ['Weakening — losing momentum',C.orange],['Lagging — weak & still falling',C.muted]].map(([label,color])=>(
                     <div key={label} style={{display:'flex',alignItems:'center',gap:6,fontSize:10,color:C.muted}}>
