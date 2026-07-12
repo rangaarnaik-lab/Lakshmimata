@@ -20,6 +20,23 @@ export async function fetchTopGainers(limit=15) {
   return data || []
 }
 
+/**
+ * Fetch recent squeeze/VCP/HY/HT fires for the Alerts History page.
+ * Same table the browser-notification poller reads from, just without
+ * the 90-second "since" window — this pulls a longer scrollback so past
+ * alerts (including ones fired while the tab was closed, which browser
+ * notifications never catch) are visible.
+ */
+export async function fetchRecentAlerts(limit=100) {
+  const { data, error } = await supabase
+    .from('squeeze_alerts')
+    .select('*')
+    .order('fired_at', { ascending: false })
+    .limit(limit)
+  if (error) { console.error('fetchRecentAlerts error:', error.message); return [] }
+  return data || []
+}
+
 export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = null, historyDate = null } = {}) {
   const table = historyDate ? 'stock_history' : 'stocks'
 
