@@ -3412,6 +3412,7 @@ export default function App(){
   const [showMoreMenu,setShowMoreMenu]=useState(false)
   const [showSignalGlossary,setShowSignalGlossary]=useState(false)
   const [expandedTileInfo,setExpandedTileInfo]=useState(null)
+  const [showRowGuidance,setShowRowGuidance]=useState(false)
   const [breadthHistory,setBreadthHistory]=useState([])
   const [emaBreadthHistory,setEmaBreadthHistory]=useState([])
   const [breadthRange,setBreadthRange]=useState('1M')
@@ -4655,16 +4656,27 @@ export default function App(){
                           const rankStreak = idx.rankD<=3 && idx.rankW<=3 && idx.rankM<=3
                           return (
                             <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,position:'sticky',left:0,width:'calc(100vw - 60px)',maxWidth:900}}>
-                              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
-                                padding:'10px 12px',marginBottom:12,fontSize:11,color:C.muted,lineHeight:1.6}}>
-                                <strong style={{color:C.text}}>How to read this:</strong> RS-TV above 70 with
-                                a rising Stage (2 or 3) means money is actively rotating into {idx.name} right
-                                now, not just a one-day blip. {rankStreak
-                                  ? <span style={{color:C.green}}> This index is currently ranked in the top 3 across 1D, 1W, and 1M — sustained leadership, not a fluke spike.</span>
-                                  : <span> Compare the 1D rank against 1W/1M — a strong single day with a weak longer trend usually means chasing a spike, not real leadership.</span>}{' '}
-                                Tap any stock below to open its chart and check if it's actually participating
-                                in the move, or just riding the index's headline number.
+                              <div style={{display:'flex',justifyContent:'flex-end',marginBottom:constituents?8:0}}>
+                                <button onClick={()=>setShowRowGuidance(v=>!v)}
+                                  style={{width:18,height:18,borderRadius:'50%',border:`1px solid ${C.muted}`,
+                                    background:showRowGuidance?C.accent+'22':'transparent',
+                                    color:showRowGuidance?C.accent:C.muted,fontSize:10,cursor:'pointer',
+                                    display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>
+                                  i
+                                </button>
                               </div>
+                              {showRowGuidance&&(
+                                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
+                                  padding:'10px 12px',marginBottom:12,fontSize:11,color:C.muted,lineHeight:1.6}}>
+                                  <strong style={{color:C.text}}>How to read this:</strong> RS-TV above 70 with
+                                  a rising Stage (2 or 3) means money is actively rotating into {idx.name} right
+                                  now, not just a one-day blip. {rankStreak
+                                    ? <span style={{color:C.green}}> This index is currently ranked in the top 3 across 1D, 1W, and 1M — sustained leadership, not a fluke spike.</span>
+                                    : <span> Compare the 1D rank against 1W/1M — a strong single day with a weak longer trend usually means chasing a spike, not real leadership.</span>}{' '}
+                                  Tap any stock below to open its chart and check if it's actually participating
+                                  in the move, or just riding the index's headline number.
+                                </div>
+                              )}
                               {constituents===null ? (
                                 <div style={{fontSize:11,color:C.muted,textAlign:'center',padding:10}}>
                                   Constituent list not available for {idx.name} yet — this index doesn't
@@ -4780,16 +4792,27 @@ export default function App(){
                                 const strong = sec.rank<=3 && sec.count>0 && (sec.improving/sec.count)>=0.5
                                 return (
                                   <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,position:'sticky',left:0,width:'calc(100vw - 60px)',maxWidth:900}}>
-                                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
-                                      padding:'10px 12px',marginBottom:12,fontSize:11,color:C.muted,lineHeight:1.6}}>
-                                      <strong style={{color:C.text}}>How to read this:</strong> A high sector
-                                      rank alone can be a few large stocks pulling the average up — check the
-                                      "Improving" count too, since that's how many stocks in {sec.sector} are
-                                      genuinely broadening the move, not just riding one or two leaders.{' '}
-                                      {strong
-                                        ? <span style={{color:C.green}}>This sector is top-3 ranked with over half its stocks improving ({sec.improving}/{sec.count}) — real breadth, not a narrow rally.</span>
-                                        : <span>Sort the stock list below by RS to see which specific names are actually driving this sector's number right now.</span>}
+                                    <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
+                                      <button onClick={()=>setShowRowGuidance(v=>!v)}
+                                        style={{width:18,height:18,borderRadius:'50%',border:`1px solid ${C.muted}`,
+                                          background:showRowGuidance?C.accent+'22':'transparent',
+                                          color:showRowGuidance?C.accent:C.muted,fontSize:10,cursor:'pointer',
+                                          display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>
+                                        i
+                                      </button>
                                     </div>
+                                    {showRowGuidance&&(
+                                      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
+                                        padding:'10px 12px',marginBottom:12,fontSize:11,color:C.muted,lineHeight:1.6}}>
+                                        <strong style={{color:C.text}}>How to read this:</strong> A high sector
+                                        rank alone can be a few large stocks pulling the average up — check the
+                                        "Improving" count too, since that's how many stocks in {sec.sector} are
+                                        genuinely broadening the move, not just riding one or two leaders.{' '}
+                                        {strong
+                                          ? <span style={{color:C.green}}>This sector is top-3 ranked with over half its stocks improving ({sec.improving}/{sec.count}) — real breadth, not a narrow rally.</span>
+                                          : <span>Sort the stock list below by RS to see which specific names are actually driving this sector's number right now.</span>}
+                                      </div>
+                                    )}
                                     <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
                                       {sec.sector} stocks ({secStocks.length})
                                     </div>
