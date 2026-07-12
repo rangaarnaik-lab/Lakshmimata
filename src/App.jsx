@@ -6252,16 +6252,32 @@ export default function App(){
                   <text x="310" y="455" textAnchor="middle" fontSize="10" fill={C.muted}>{levelLabel.toUpperCase()} LEVEL →</text>
                   <text x="12" y="230" textAnchor="middle" fontSize="10" fill={C.muted} transform="rotate(-90 12 230)">MOMENTUM ({requestedWindow?.label||rotationWindow+'d'}) →</text>
 
-                  {displayData.filter(s=>s.trail&&s.trail.length>0).map(s=>{
+                  {displayData.filter(s=>s.trail&&s.trail.length>0).map((s,idx)=>{
                     const l0=s.trail[0].level, tx=t=>xFor(t.level)
                     const ty=t=>yFor(t.level-l0)
                     const pathD=s.trail.map((t,i)=>`${i===0?'M':'L'} ${tx(t)} ${ty(t)}`).join(' ')
                     const cx=xFor(s.level), cy=yFor(s.momentum)
                     const r=rotationScope==='sector'?7+Math.min(6,(s.count||1)/3):7
                     const color=identityColor(s)
+                    const markerId=`rrg-arrow-${idx}`
                     return(
                       <g key={s.id} style={{cursor:'pointer'}} onClick={()=>goTo(s)}>
-                        <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" opacity="0.55"/>
+                        <defs>
+                          {/* Arrowhead pointing along the trail's direction of
+                              travel — orient="auto" makes SVG compute the
+                              angle from the path's tangent automatically, so
+                              it always points toward wherever the trail is
+                              actually heading (Lagging→Leading, Leading→
+                              Lagging, or any other direction), not a fixed
+                              guess. This is the answer to "which way is the
+                              tail moving" — follow the arrow, not the line. */}
+                          <marker id={markerId} viewBox="0 0 10 10" refX="8" refY="5"
+                            markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                            <path d="M 0 0 L 10 5 L 0 10 z" fill={color}/>
+                          </marker>
+                        </defs>
+                        <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" opacity="0.55"
+                          markerEnd={`url(#${markerId})`}/>
                         {/* Small hollow dots along the trail — thinned to
                             every 3rd day (not every single day) so a 30-day
                             trail doesn't turn into a wall of overlapping
@@ -6278,6 +6294,7 @@ export default function App(){
                 </svg>
                 <div style={{fontSize:10,color:C.muted,marginTop:8}}>
                   Dot color = which {scopeLabel.toLowerCase()} (matches its label) — position tells you the status below, not the color.
+                  The arrow at the end of each trail shows which way it's moving.
                 </div>
                 <div style={{display:'flex',gap:14,flexWrap:'wrap',marginTop:8,paddingTop:10,borderTop:`1px solid ${C.divider}`}}>
                   {[['Leading — strong & still improving',C.green],['Improving — gaining strength',C.accent],
