@@ -3604,7 +3604,8 @@ export default function App(){
     }
   },[])
 
-  // Poll for new squeeze fires every minute
+  // Poll for new squeeze/VCP and HY/HT fires every minute — both write to
+  // the same squeeze_alerts table on the backend.
   useEffect(()=>{
     if(!session) return
     const checkSqueezeAlerts = async()=>{
@@ -3623,19 +3624,25 @@ export default function App(){
           data.forEach(alert=>{
             // Browser notification
             if(typeof Notification!=='undefined' && Notification.permission==='granted'){
+              const isVolAlert = /HY|HT/.test(alert.fire_type) && !/Squeeze|VCP/.test(alert.fire_type)
+              const title = isVolAlert
+                ? `🔊 ${alert.sym} — ${alert.fire_type} Volume!`
+                : `🔥 ${alert.sym} — Squeeze Fired!`
               const n = new Notification(
-                `🔥 ${alert.sym} — Squeeze Fired!`,
+                title,
                 {
                   body: `${alert.fire_type} | RS: ${alert.rs_tv||alert.rs} | ${alert.chg_pct>=0?'+':''}${alert.chg_pct?.toFixed(2)}% | ${alert.sector}`,
                   icon: '/favicon.ico',
-                  tag: `squeeze-${alert.sym}`,  // prevents duplicate for same stock
+                  tag: `alert-${alert.sym}-${alert.fire_type}`,  // prevents duplicate for same stock+signal
                   requireInteraction: false,
                 }
               )
-              // Click notification → switch to squeeze tab
+              // Click notification → HY/HT alerts live in the RS tab
+              // (they're columns there, not a separate tab); squeeze/VCP
+              // still go to the Squeeze tab.
               n.onclick = ()=>{
                 window.focus()
-                setMainTab('squeeze')
+                setMainTab(isVolAlert ? 'rs' : 'squeeze')
               }
               // Auto-close after 8 seconds
               setTimeout(()=>n.close(), 8000)
