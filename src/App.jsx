@@ -583,21 +583,15 @@ function TVCopyPanel({stocks,label,compact}){
   const {copy,copied}=useCopy()
   if(!stocks||stocks.length===0)return null
   const syms=stocks.map(s=>s.sym)
-  const symbolList=syms.join(',')
-  const tvFormat=syms.map(s=>`NSE:${s}`).join(',')
+  const symbolList=syms.map(s=>`NSE:${s}`).join(',')
   const alertStr=syms.map(s=>`NSE:${s}`).join('\n')
   if(compact){
     return(
       <div style={{display:'flex',gap:4}}>
-        <button onClick={()=>copy(symbolList,'symlist')} title="Copy symbol list to paste into TradingView's watchlist import box"
+        <button onClick={()=>copy(symbolList,'symlist')} title="Copy NSE:SYM list — paste into TradingView's watchlist import or symbol search"
           style={{padding:'5px 10px',borderRadius:6,border:'none',cursor:'pointer',
             background:copied==='symlist'?C.green:C.teal,color:'#000',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
-          {copied==='symlist'?'✅ Copied':'📋 Copy List'}
-        </button>
-        <button onClick={()=>copy(tvFormat,'tv')} title="Copy NSE:SYM format"
-          style={{padding:'5px 10px',borderRadius:6,border:'none',cursor:'pointer',
-            background:copied==='tv'?C.green:C.teal,color:'#000',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
-          {copied==='tv'?'✅':'🔗 TV'} <span style={{background:'#00000033',borderRadius:4,padding:'0 4px',fontSize:10}}>{syms.length}</span>
+          {copied==='symlist'?'✅ Copied':'📋 Copy for TV'} <span style={{background:'#00000033',borderRadius:4,padding:'0 4px',fontSize:10}}>{syms.length}</span>
         </button>
       </div>
     )
@@ -609,17 +603,11 @@ function TVCopyPanel({stocks,label,compact}){
       <span style={{color:C.teal,fontWeight:700,whiteSpace:'nowrap'}}>
         📊 TV ({syms.length})
       </span>
-      <button onClick={()=>copy(symbolList,'symlist')} title="Copy list of symbols — paste into TradingView's watchlist import box"
+      <button onClick={()=>copy(symbolList,'symlist')} title="Copy NSE:SYM list — paste into TradingView's watchlist import or symbol search"
         style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.teal}33`,cursor:'pointer',
           background:copied==='symlist'?C.teal+'22':'transparent',
           color:copied==='symlist'?C.teal:C.muted,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>
-        {copied==='symlist'?'✅ Copied':'📋 Copy List'}
-      </button>
-      <button onClick={()=>copy(tvFormat,'tv')} title="Paste in TV symbol search"
-        style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.teal}33`,cursor:'pointer',
-          background:copied==='tv'?C.teal+'22':'transparent',
-          color:copied==='tv'?C.teal:C.muted,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>
-        {copied==='tv'?'✅ Copied':'🔗 NSE:SYM'}
+        {copied==='symlist'?'✅ Copied':'📋 Copy for TV'}
       </button>
       <button onClick={()=>copy(alertStr,'alert')} title="One symbol per line for alert wizard"
         style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.teal}33`,cursor:'pointer',
@@ -1367,12 +1355,6 @@ function StockDetail({s}){
             background:copied==='tv'?C.teal+'22':'transparent',color:copied==='tv'?C.teal:C.muted,
             fontSize:11,fontWeight:600}}>
           {copied==='tv'?'✅ Copied!':'📊 Copy NSE:'+s.sym}
-        </button>
-        <button onClick={()=>copy(s.sym,'symlist')}
-          style={{padding:'5px 12px',borderRadius:7,border:`1px solid ${C.teal}44`,cursor:'pointer',
-            background:copied==='symlist'?C.teal+'22':'transparent',color:copied==='symlist'?C.teal:C.muted,
-            fontSize:11,fontWeight:600}}>
-          {copied==='symlist'?'✅ Copied!':'📋 Copy: '+s.sym}
         </button>
       </div>
 
