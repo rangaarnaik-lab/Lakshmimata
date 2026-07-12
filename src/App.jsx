@@ -4914,15 +4914,21 @@ export default function App(){
 
                 {/* Industries table — finer-grained than sectors (like
                     Chartink's segment breakdown). Aggregated client-side
-                    from each stock's industry field (populated gradually
-                    via Upstox company-profile). */}
+                    from each stock's industry field (populated via the
+                    static sector/industry lookup + live Upstox/Screener
+                    fetch). Real NSE industry categories are genuinely
+                    granular — many have just 1-2 listed stocks — so
+                    below MIN_INDUSTRY_STOCKS they're hidden rather than
+                    shown as noise; the header notes how many were
+                    hidden so this doesn't look like data is missing. */}
                 {(()=>{
+                  const MIN_INDUSTRY_STOCKS = 3
                   const groups = {}
                   for(const s of stocks){
                     if(!s.industry) continue
                     ;(groups[s.industry] = groups[s.industry] || []).push(s)
                   }
-                  const rows = Object.entries(groups).map(([name,members])=>{
+                  const allRows = Object.entries(groups).map(([name,members])=>{
                     const advPct = f => {
                       const vals = members.map(m=>m[f]).filter(v=>v!=null)
                       return vals.length ? vals.filter(v=>v>0).length/vals.length*100 : null
@@ -4936,10 +4942,19 @@ export default function App(){
                       members,
                     }
                   }).sort((a,b)=>b.avgRS-a.avgRS)
+                  const rows = allRows.filter(r=>r.count>=MIN_INDUSTRY_STOCKS)
+                  const hiddenCount = allRows.length - rows.length
                   if(rows.length===0) return null
                   return (
                     <>
-                      <div style={{fontWeight:800,fontSize:14,margin:'18px 0 8px'}}>🏗 Industries ({rows.length})</div>
+                      <div style={{fontWeight:800,fontSize:14,margin:'18px 0 8px'}}>
+                        🏗 Industries ({rows.length})
+                        {hiddenCount>0&&(
+                          <span style={{fontWeight:500,fontSize:11,color:C.muted,marginLeft:8}}>
+                            · {hiddenCount} more hidden (&lt;{MIN_INDUSTRY_STOCKS} stocks each)
+                          </span>
+                        )}
+                      </div>
                       <div ref={indTableDrag.ref} {...indTableDrag.handlers} style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12,maxHeight:520,overflowY:'auto',...indTableDrag.style}}>
                         <div style={{minWidth:760}}>
                           <div style={{display:'grid',
