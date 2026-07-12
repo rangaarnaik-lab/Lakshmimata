@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -2679,12 +2679,16 @@ function SectorPanel({sectorData,allStocks,isMobile,onChart,onViewInRS}){
 function LandingPage({onEnroll,onSignIn}){
   const [slide,setSlide]=useState(0)
   const [paused,setPaused]=useState(false)
+  const [topGainers,setTopGainers]=useState([])
   const slideCount=3
   useEffect(()=>{
     if(paused) return
     const t=setInterval(()=>setSlide(s=>(s+1)%slideCount),4200)
     return ()=>clearInterval(t)
   },[paused])
+  useEffect(()=>{
+    fetchTopGainers(15).then(setTopGainers)
+  },[])
 
   const gold='#C9A227', goldSoft='#E8D28A'
   const mono={fontFamily:"'IBM Plex Mono',monospace"}
@@ -2710,6 +2714,32 @@ function LandingPage({onEnroll,onSignIn}){
         padding:'8px 0',...mono,fontSize:10.5,letterSpacing:'0.12em',color:C.muted}}>
         FOR INFORMATIONAL AND EDUCATIONAL PURPOSES · NOT INVESTMENT ADVICE
       </div>
+
+      {/* Live ticker — today's real top gainers, not sample data. Public
+          read on the stocks table (no auth needed), so this works for
+          logged-out visitors too. */}
+      {topGainers.length>0 && (
+        <div style={{background:C.card,borderBottom:`1px solid ${C.divider}`,overflow:'hidden',
+          whiteSpace:'nowrap',padding:'9px 0'}}>
+          <style>{`
+            @keyframes lakshmimata-ticker-scroll {
+              from { transform: translateX(0); }
+              to { transform: translateX(-50%); }
+            }
+          `}</style>
+          <div style={{display:'inline-block',animation:'lakshmimata-ticker-scroll 32s linear infinite'}}>
+            {[...topGainers,...topGainers].map((s,i)=>(
+              <span key={i} style={{...mono,fontSize:12.5,letterSpacing:'0.02em',color:'#aab0c0',marginRight:36}}>
+                <b style={{color:'#fff',fontWeight:500}}>{s.sym}</b>{' '}
+                ₹{s.last_price?.toLocaleString('en-IN',{maximumFractionDigits:2})}{' '}
+                <span style={{color:s.chg_pct>=0?'#5C8A6C':'#B4544A'}}>
+                  {s.chg_pct>=0?'▲':'▼'} {Math.abs(s.chg_pct||0).toFixed(2)}%
+                </span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={{maxWidth:1080,margin:'0 auto',padding:'0 24px'}}>
         {/* Nav */}

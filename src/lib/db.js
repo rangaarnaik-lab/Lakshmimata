@@ -10,6 +10,16 @@ import { supabase } from './supabase'
  * Pass historyDate (format 'YYYY-MM-DD') to replay any past trading day
  * from the stock_history archive instead of today's live `stocks` table.
  */
+export async function fetchTopGainers(limit=15) {
+  const { data, error } = await supabase
+    .from('stocks')
+    .select('sym,chg_pct,last_price,sector')
+    .order('chg_pct', { ascending: false })
+    .limit(limit)
+  if (error) { console.error('fetchTopGainers error:', error.message); return [] }
+  return data || []
+}
+
 export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = null, historyDate = null } = {}) {
   const table = historyDate ? 'stock_history' : 'stocks'
 
