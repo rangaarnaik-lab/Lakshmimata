@@ -1778,7 +1778,7 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile, symList, onNavi
     <div style={panelStyle}>
       {/* Header */}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
-        padding:'8px 14px',borderBottom:`1px solid ${C.divider}`,flexShrink:0,height:42}}>
+        padding:'14px 14px 8px',borderBottom:`1px solid ${C.divider}`,flexShrink:0,height:48}}>
         <div style={{display:'flex',alignItems:'center',gap:6}}>
           <button onClick={()=>prevSym&&onNavigate(prevSym)} disabled={!prevSym}
             title="Previous stock"
