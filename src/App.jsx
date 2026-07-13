@@ -3388,11 +3388,38 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
 }
 
 // ── Settings Panel ────────────────────────────────────────────────────
-function SettingsPanel({session,onUpdate,onLogout,themeKey,switchTheme,ambient}){
+function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchTheme,ambient}){
   const [newToken,setNewToken]=useState('')
   const [msg,setMsg]=useState('')
   const [loading,setLoading]=useState(false)
   const ownerMode=!!OWNER_TOKEN
+
+  // Demo mode: session is deliberately null (see the demoMode feature —
+  // it's real sample data, not a fake account), and this whole panel is
+  // account management (token, saved scanners, sign out) that doesn't
+  // apply without one. Everything below this point assumes session.user
+  // exists without optional chaining, so without this guard a demo user
+  // clicking into Settings would crash the whole app (this is exactly
+  // what happened — 'Cannot read properties of null (reading user)').
+  if(!session){
+    return (
+      <div style={{maxWidth:480,margin:'32px auto',padding:'0 16px'}}>
+        <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:24,textAlign:'center'}}>
+          <div style={{fontSize:32,marginBottom:10}}>👁</div>
+          <div style={{fontWeight:800,fontSize:16,marginBottom:6}}>You're in Demo Mode</div>
+          <div style={{color:C.muted,fontSize:12,marginBottom:20,lineHeight:1.6}}>
+            Account settings, saved scanners, and your Upstox token need a real account.
+            Sign up to unlock these — it's free to start.
+          </div>
+          <button onClick={onExitDemo}
+            style={{padding:'10px 24px',borderRadius:8,border:'none',cursor:'pointer',
+              background:C.accent,color:'#000',fontWeight:700,fontSize:13}}>
+            Sign Up
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const saveToken=async()=>{
     if(!newToken){setMsg('❌ Enter a token');return}
@@ -6562,6 +6589,7 @@ export default function App(){
         {/* ══ SETTINGS ══ */}
         {mainTab==='settings'&&(
           <SettingsPanel session={session} onUpdate={s=>setSession(s)} onLogout={()=>{setSession(null);setShowAuth(false)}}
+            onExitDemo={()=>{setDemoMode(false);setStocks([]);setAuthMode('register');setShowAuth(true)}}
             themeKey={themeKey} switchTheme={switchTheme} ambient={ambient}/>
         )}
 
