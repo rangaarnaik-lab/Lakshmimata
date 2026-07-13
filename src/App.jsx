@@ -2285,7 +2285,9 @@ function CandlestickChart({sym, isMobile}){
       </div>
 
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`}
-        style={{width:'100%',height:isMobile?400:380,display:'block',touchAction:'none',cursor:dragRef.current?'grabbing':'grab'}}
+        style={isMobile
+          ? {width:'100%',height:400,display:'block',touchAction:'none',cursor:dragRef.current?'grabbing':'grab'}
+          : {width:'100%',aspectRatio:`${W} / ${H}`,display:'block',touchAction:'none',cursor:dragRef.current?'grabbing':'grab'}}
         onMouseLeave={()=>{setHoverIdx(null);dragRef.current=null}}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
