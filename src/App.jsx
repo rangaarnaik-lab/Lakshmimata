@@ -4341,6 +4341,19 @@ export default function App(){
         </div>
       )}
 
+      {/* Inner row for Main area + Chart panel — sized to whatever's left
+          after the sidebar (flex:1, not a fixed % of the outer container).
+          Measured this via a headless-browser inspection after repeated
+          reports of a persistent gap/overflow: Main area's 75% and
+          ChartPanel's 25% were both being resolved against the OUTER
+          container's full width (e.g. 1600px), not the ~1548px actually
+          left after the 52px sidebar — so 75%+25% summed to 100% of a
+          width that was never actually available, overflowing the
+          viewport by exactly the sidebar's width every time, regardless
+          of screen size. This wrapper's own width becomes the correct
+          100% baseline for that inner split. */}
+      <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'row'}}>
+
       {/* ── Main area ── */}
       <div style={{flex:(chartSym&&!isMobile)?['0 0 75%','0 0 55%','0 0 30%'][chartWide]:1,display:'flex',flexDirection:'column',minWidth:0,paddingBottom:isMobile?72:0}}>
 
@@ -6687,6 +6700,7 @@ export default function App(){
         symList={displayedRS.map(s=>s.sym)}
         onNavigate={setChartSym}
       />
+      </div>
 
       {/* Mobile bottom nav */}
       {isMobile&&(
