@@ -3877,7 +3877,7 @@ export default function App(){
               // still go to the Squeeze tab.
               n.onclick = ()=>{
                 window.focus()
-                setMainTab(isVolAlert ? 'rs' : 'squeeze')
+                setMainTab(isVolAlert ? 'rs' : 'breadth')
               }
               // Auto-close after 8 seconds
               setTimeout(()=>n.close(), 8000)
@@ -4329,7 +4329,7 @@ export default function App(){
   const weakBase=stocks.filter(s=>s.weakRS.chg1d>=weakThreshold&&s.rs<50&&s.sym.toLowerCase().includes(weakSearch.toLowerCase())&&(!weakSigOnly||s.weakRS.isSignal)).sort((a,b)=>b.weakRS.chg1d-a.weakRS.chg1d)
   const displayedWeak=applyPP(weakBase,ppFilterWeak)
 
-  const tabs=[['rs','📊','RS'],['indices','🗂','Indices'],['breadth','📈','Breadth'],['squeeze','🌀','Squeeze'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['weak','🚨','Weak'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
+  const tabs=[['rs','📊','RS'],['indices','🗂','Indices'],['breadth','📈','Breadth'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['weak','🚨','Weak'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
 
   if(authLoading)return(
     <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -4376,7 +4376,6 @@ export default function App(){
               {id:'indices',  label:'Indices',   abbr:'IX'},
               {id:'rotation', label:'Sector Rotation', abbr:'RO'},
               {id:'breadth',  label:'Breadth',   abbr:'BR'},
-              {id:'squeeze',  label:'Squeeze',   abbr:'SQ'},
               {id:'breakout', label:'Breakout',  abbr:'BO'},
               {id:'52wl',     label:'52WL',      abbr:'WL'},
               {id:'weak',     label:'Weak RS',   abbr:'WK'},
@@ -4468,7 +4467,7 @@ export default function App(){
             )}
             <div style={{minWidth:0}}>
               <div style={{fontWeight:600,fontSize:14,color:C.text,lineHeight:1}}>
-                {mainTab==='rs'?'RS Rating':mainTab==='indices'?'Indices':mainTab==='squeeze'?'Squeeze':
+                {mainTab==='rs'?'RS Rating':mainTab==='indices'?'Indices':
                  mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
                  mainTab==='weak'?'Weak RS':mainTab==='alerts'?'Alerts':mainTab==='rotation'?'Sector Rotation':
                  mainTab==='watchlist'?'Watchlist':'Account'}
@@ -5850,7 +5849,7 @@ export default function App(){
         )}
 
         {/* ══ SQUEEZE ══ */}
-        {mainTab==='squeeze'&&(
+        {mainTab==='breadth'&&(
           <div>
             <LastUpdatedBar
               scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
@@ -6914,8 +6913,8 @@ export default function App(){
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <span style={{fontSize:15}}>⋯</span>
               <span style={{fontSize:8,fontWeight:600,
-                color:['breadth','squeeze','weak','portfolio','compare','watchlist','alerts','settings'].includes(mainTab)?C.accent:C.muted}}>More</span>
-              {['breadth','squeeze','weak','portfolio','compare','watchlist','alerts','settings'].includes(mainTab)&&
+                color:['breadth','weak','portfolio','compare','watchlist','alerts','settings'].includes(mainTab)?C.accent:C.muted}}>More</span>
+              {['breadth','weak','portfolio','compare','watchlist','alerts','settings'].includes(mainTab)&&
                 <div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           </div>
@@ -6932,7 +6931,7 @@ export default function App(){
                 <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:'8px auto 16px'}}/>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:4}}>
                   {[
-                    ['breadth','📈','Breadth'],['squeeze','🌀','Squeeze'],['weak','🚨','Weak'],
+                    ['breadth','📈','Breadth'],['weak','🚨','Weak'],
                     ['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],
                     ['alerts','🔔','Alerts'],['settings','⚙','Account'],
                   ].map(([t,icon,label])=>(
