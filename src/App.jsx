@@ -2409,8 +2409,8 @@ function CandlestickChart({sym, isMobile}){
                   same day). Each gets a distinct color + label, matching
                   the reference indicator's colored-bar style. */}
               {vVol[i]!=null && (() => {
-                const signal = vHT[i] ? 'HT' : vHY[i] ? 'HY' : vIBV[i] ? 'IBV' : vPP[i] ? 'PP' : vNearEma9[i] ? 'EMA9' : null
-                const signalColor = {HT:C.orange, HY:C.pink, IBV:C.blue, PP:C.green, EMA9:C.teal}[signal]
+                const signal = vHT[i] ? 'HT' : vHY[i] ? 'HY' : vIBV[i] ? 'IBV' : vPP[i] ? 'PP' : null
+                const signalColor = {HT:C.orange, HY:C.pink, IBV:C.blue, PP:C.green}[signal]
                 const volColor = signalColor || color
                 const barTopY = volToY(vVol[i])
                 return (
@@ -2482,7 +2482,6 @@ function CandlestickChart({sym, isMobile}){
           <span><span style={{color:C.pink}}>■</span> HY</span>
           <span><span style={{color:C.blue}}>■</span> IBV</span>
           <span><span style={{color:C.green}}>■</span> PP</span>
-          <span><span style={{color:C.teal}}>■</span> EMA9</span>
           {vcp.isContracting && <span><span style={{color:C.orange}}>—</span> VCP contraction</span>}
           {cup && <span><span style={{color:C.purple}}>┊</span> Cup{cup.hasHandle?' & Handle':''}</span>}
         </>}
