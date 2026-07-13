@@ -1770,7 +1770,7 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile, symList, onNavi
   const panelStyle = isMobile
     ? {position:'fixed',inset:0,zIndex:1000,display:'flex',flexDirection:'column',background:C.sidebar}
     : {flex:['0 0 25%','0 0 45%','0 0 70%'][wide]||'0 0 25%',minWidth:320,
-        position:'sticky',top:0,height:'100vh',overflowY:'auto',
+        height:'100vh',overflowY:'auto',
         display:'flex',flexDirection:'column',background:C.sidebar,
         borderLeft:`1px solid ${C.divider}`,transition:'flex 0.2s ease'}
 
