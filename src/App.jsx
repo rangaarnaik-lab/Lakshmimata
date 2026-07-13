@@ -1769,10 +1769,11 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile, symList, onNavi
 
   const panelStyle = isMobile
     ? {position:'fixed',inset:0,zIndex:1000,display:'flex',flexDirection:'column',background:C.sidebar}
-    : {flex:['0 0 25%','0 0 45%','0 0 70%'][wide]||'0 0 25%',minWidth:320,
-        position:'sticky',top:0,height:'100vh',overflowY:'auto',
+    : {position:'fixed',top:0,right:0,bottom:0,zIndex:1000,
+        width:['50%','70%','92%'][wide]||'50%',minWidth:460,
         display:'flex',flexDirection:'column',background:C.sidebar,
-        borderLeft:`1px solid ${C.divider}`,transition:'flex 0.2s ease'}
+        borderLeft:`1px solid ${C.divider}`,boxShadow:'-8px 0 24px rgba(0,0,0,0.35)',
+        transition:'width 0.2s ease'}
 
   return(
     <div style={panelStyle}>
@@ -4212,7 +4213,7 @@ export default function App(){
       )}
 
       {/* ── Main area ── */}
-      <div style={{flex:(chartSym&&!isMobile)?['0 0 75%','0 0 55%','0 0 30%'][chartWide]:1,display:'flex',flexDirection:'column',minWidth:0,paddingBottom:isMobile?72:0}}>
+      <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,paddingBottom:isMobile?72:0}}>
 
         {/* Top bar */}
         <div style={{borderBottom:`1px solid ${C.divider}`,
@@ -4678,7 +4679,7 @@ export default function App(){
               </div>
             )}
             {displayedRS.length>0&&(
-              (isMobile||(chartSym&&chartWide>=1))?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={setChartSym}/>):(
+              isMobile?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={setChartSym}/>):(
                 <>
                 {chartSym&&(
                   <div style={{fontSize:10,color:C.accent,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
