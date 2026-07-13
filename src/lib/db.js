@@ -606,3 +606,46 @@ export async function fetchLiveStockPrice(sym) {
   if (error || !data) return null
   return { price: data.last_price, volume: data.volume }
 }
+
+/**
+ * Fetch an index's price history for "Our Chart" — index_price_history
+ * only stores a bare `prices` array (no dates/opens/highs/lows/volumes
+ * like stock_full_history has), populated by the backend for RS-TV
+ * calculations, not originally meant for charting. Synthesizes dates by
+ * counting back trading days from today, and sets opens=highs=lows=
+ * prices so it can still be handed to the same chart component — the
+ * caller should force line-chart display (no real OHLC exists) rather
+ * than candles, which would just show degenerate flat-body candles.
+ */
+export async function fetchIndexPriceHistory(name) {
+  const { data, error } = await supabase
+    .from('index_price_history')
+    .select('prices')
+    .eq('name', name)
+    .maybeSingle()
+  if (error || !data || !data.prices) {
+    return { error: `No price history stored yet for ${name}.` }
+  }
+  const prices = typeof data.prices === 'string' ? JSON.parse(data.prices) : data.prices
+  if (!Array.isArray(prices) || prices.length === 0) {
+    return { error: `No price history stored yet for ${name}.` }
+  }
+  // Synthesize dates counting backward from today (no real per-point
+  // dates exist in this table) — approximate trading days by skipping
+  // weekends, close enough for a chart x-axis label.
+  const dates = []
+  let d = new Date()
+  for (let i = 0; i < prices.length; i++) {
+    while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1)
+    dates.unshift(d.toISOString().split('T')[0])
+    d.setDate(d.getDate() - 1)
+  }
+  return {
+    sym: name,
+    dates,
+    prices,
+    opens: prices, highs: prices, lows: prices,
+    volumes: prices.map(() => 0),
+    daysCount: prices.length,
+  }
+}

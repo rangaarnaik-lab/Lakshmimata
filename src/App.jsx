@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -1746,9 +1746,10 @@ function EmaBreadthTable({data,isMobile,dragProps,rangeLabel}){
   )
 }
 
-function ChartPanel({sym, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate}){
+function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate}){
   const [loaded, setLoaded] = useState(false)
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
+  useEffect(()=>{ if(isIndex) setChartTab('own') },[isIndex])
   // is the default: NSE restricted its symbols in TradingView's embeddable
   // widget ("This symbol is only available on TradingView" even for major
   // stocks), so the embed frequently fails. BSE listings still work in
@@ -1824,9 +1825,11 @@ function ChartPanel({sym, wide, customPct, onToggleWide, onClose, isMobile, symL
         </div>
       </div>
 
-      {/* Chart source tabs */}
+      {/* Chart source tabs — TradingView hidden for indices, since its
+          exchange:symbol format doesn't map to index names correctly
+          (would just show a broken/wrong chart) */}
       <div style={{display:'flex',gap:0,borderBottom:`1px solid ${C.divider}`,flexShrink:0}}>
-        {[['own','Our Chart'],['tv','TradingView']].map(([v,label])=>(
+        {(isIndex?[['own','Our Chart']]:[['own','Our Chart'],['tv','TradingView']]).map(([v,label])=>(
           <button key={v} onClick={()=>setChartTab(v)}
             style={{flex:1,padding:'8px 0',fontSize:11,fontWeight:700,cursor:'pointer',
               background:chartTab===v?C.card:'transparent',
@@ -1877,7 +1880,7 @@ function ChartPanel({sym, wide, customPct, onToggleWide, onClose, isMobile, symL
             />
           </>
         ):(
-          <CandlestickChart sym={sym} isMobile={isMobile}/>
+          <CandlestickChart sym={sym} isMobile={isMobile} isIndex={isIndex}/>
         )}
       </div>
     </div>
@@ -1893,7 +1896,7 @@ function ChartPanel({sym, wide, customPct, onToggleWide, onClose, isMobile, symL
 // seeing our own scanner's signals drawn directly on the chart.
 const RANGE_BARS = {'5D':5,'1M':21,'3M':63,'6M':126,'YTD':null,'1Y':252,'5Y':1260,'All':100000}
 
-function CandlestickChart({sym, isMobile}){
+function CandlestickChart({sym, isMobile, isIndex}){
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [range, setRange] = useState('3M')
@@ -1950,12 +1953,14 @@ function CandlestickChart({sym, isMobile}){
     setLoading(true); setData(null)
     setZoomBars(RANGE_BARS['3M']); setPanOffset(0) // reset zoom/pan for the new symbol
     setPinnedIdx(null)
-    fetchStockFullHistory(sym)
+    if (isIndex) setChartStyle('line') // no real OHLC exists for indices, only a close-price series
+    const fetcher = isIndex ? fetchIndexPriceHistory(sym) : fetchStockFullHistory(sym)
+    fetcher
       .then(res => { if(!cancelled) setData(res) })
       .catch(() => { if(!cancelled) setData(null) })
       .finally(() => { if(!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [sym])
+  }, [sym, isIndex])
 
   // Live-update TODAY's candle from the same live price feed the rest of
   // the app already polls (stocks.last_price, refreshed ~every minute
@@ -1981,6 +1986,7 @@ function CandlestickChart({sym, isMobile}){
   const [isLiveUpdating, setIsLiveUpdating] = useState(false)
   useEffect(() => {
     setLiveOverlay(null); setIsLiveUpdating(false) // reset for the new symbol
+    if (isIndex) return // no live per-index price feed exists — stocks-only
     if (!isMarketOpen()) return
     let cancelled = false
     const poll = () => {
@@ -2000,7 +2006,7 @@ function CandlestickChart({sym, isMobile}){
     poll()
     const t = setInterval(poll, 45000)
     return () => { cancelled = true; clearInterval(t); setIsLiveUpdating(false) }
-  }, [sym])
+  }, [sym, isIndex])
 
   if(loading){
     return <div style={{padding:20,fontSize:12,color:C.muted,textAlign:'center'}}>Loading {sym} chart…</div>
@@ -5129,7 +5135,13 @@ export default function App(){
                           borderBottom:`1px solid ${C.border}33`}}>
                           <div style={{...cellStyle,position:'sticky',left:0,
                             background:isExpanded?C.active:(i%2===0?C.card:C.bg),zIndex:1,paddingRight:8}}>
-                            <div style={{fontWeight:700,fontSize:12,color:C.text,display:'flex',alignItems:'center',gap:4}}>{idx.name} <span style={{fontSize:9,color:C.muted}}>{isExpanded?'▲':'▼'}</span></div>
+                            <div style={{fontWeight:700,fontSize:12,color:C.text,display:'flex',alignItems:'center',gap:4}}>
+                              <span onClick={e=>{e.stopPropagation();setChartSym(idx.name)}}
+                                style={{color:C.accent,cursor:'pointer',textDecoration:'underline',
+                                  textDecorationColor:C.accent+'55',textUnderlineOffset:'2px'}}
+                                title={`Open ${idx.name} chart`}>{idx.name}</span>
+                              <span style={{fontSize:9,color:C.muted}}>{isExpanded?'▲':'▼'}</span>
+                            </div>
                           </div>
                           <div style={cellStyle}>
                             <div style={{fontSize:11,color:C.muted}}>₹{idx.lastPrice?.toLocaleString('en-IN')}</div>
@@ -6836,6 +6848,7 @@ export default function App(){
           the same panel instance in place. */}
       <ChartPanel
         sym={chartSym}
+        isIndex={indexData.some(idx=>idx.name===chartSym)}
         wide={chartWide}
         customPct={chartPanelPct}
         onToggleWide={()=>{setChartPanelPct(null);setChartWide(v=>(v+1)%3)}}
