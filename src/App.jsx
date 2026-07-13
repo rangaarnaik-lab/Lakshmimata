@@ -2878,7 +2878,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
             <div style={{...serif,fontSize:20,color:'#fff'}}>Lakshmi<em style={{color:gold,fontStyle:'italic'}}>mata</em></div>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
-            <button onClick={onDemo} title="Browse with sample data — no signup"
+            <button onClick={onDemo} title="Browse with real data from ~1 week ago — no signup"
               style={{border:`1px solid ${gold}66`,padding:'9px 16px',fontSize:12.5,borderRadius:3,
                 ...mono,background:'transparent',color:goldSoft,cursor:'pointer',
                 display:'flex',alignItems:'center',gap:6}}>
@@ -2911,7 +2911,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
               <button onClick={onDemo} style={{background:'transparent',border:'none',cursor:'pointer',
                 color:goldSoft,fontSize:12.5,...mono,letterSpacing:'0.02em',textDecoration:'underline',
                 textUnderlineOffset:3}}>
-                👁 Or browse with sample data first — no signup
+                👁 Or browse with real data from ~1 week ago — no signup
               </button>
             </div>
           </div>
@@ -3611,6 +3611,7 @@ export default function App(){
   // here: demo mode is RS Rating with sample data only, not a fake
   // account with fake access to everything else.
   const [demoMode,setDemoMode]=useState(false)
+  const [showRealtimeUpsell,setShowRealtimeUpsell]=useState(false)
   const [showAuth,setShowAuth]=useState(false)
   const [authMode,setAuthMode]=useState('login')
   const [themeVersion,setThemeVersion]=useState(0)
@@ -4021,14 +4022,21 @@ export default function App(){
     setStocks(processed);setLastRefresh(Date.now());setLoading(false)
   },[session,indexFilter,weakThreshold,activeWl,watchlists])
 
-  // Demo mode: auto-run the sample-data scan once, right when demoMode
-  // flips on, and land on the RS tab (the only place demo data is
-  // actually meaningful to look at) rather than wherever mainTab
-  // happened to default to.
+  // Demo mode: land on the RS tab and load REAL data from ~1 week ago
+  // (via the existing historyDate/runDBScan machinery — the same
+  // mechanism used for viewing any past date), instead of the old
+  // hardcoded 34-stock DEMO dataset. Real symbols, real prices, real
+  // signals — just not live/current, which is the actual product
+  // difference a free account unlocks.
   useEffect(()=>{
     if(demoMode&&stocks.length===0){
       setMainTab('rs')
-      runScan(true)
+      fetchAvailableHistoryDates().then(dates=>{
+        if(dates.length>0){
+          const idx = Math.min(dates.length-1, 6) // ~1 trading week back, or oldest available if fewer days exist
+          setHistoryDate(dates[idx])
+        }
+      }).catch(e=>console.error('Demo mode history date fetch:',e))
     }
   },[demoMode])
 
@@ -4058,8 +4066,8 @@ export default function App(){
 
   // Load from DB on mount, and whenever the selected history date changes
   useEffect(()=>{
-    if(session)runDBScan()
-  },[session,historyDate])
+    if(session||demoMode)runDBScan()
+  },[session,demoMode,historyDate])
 
   // Load index dashboard and breadth data on tab switch. The Indices tab
   // also auto-refreshes every 60s while active — the backend writes live
@@ -4377,7 +4385,7 @@ export default function App(){
                  mainTab==='watchlist'?'Watchlist':'Account'}
               </div>
               {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1}}>
-                {demoMode?'Sample data — not live':`${session?.user?.email} · ${scanLabel}`}
+                {demoMode?(historyDate?`Real data from ${historyDate} — not live`:'Loading real data…'):`${session?.user?.email} · ${scanLabel}`}
               </div>}
             </div>
             {demoMode&&(
@@ -4426,7 +4434,7 @@ export default function App(){
 
               {/* Auto refresh toggle */}
               {lastRefresh&&!isMobile&&(
-                <button onClick={()=>setAutoRefresh(v=>!v)}
+                <button onClick={()=>demoMode?setShowRealtimeUpsell(true):setAutoRefresh(v=>!v)}
                   style={{padding:'5px 10px',borderRadius:6,
                     border:`1px solid ${autoRefresh?C.green:C.border}`,
                     background:autoRefresh?C.green+'22':'transparent',
@@ -4459,7 +4467,7 @@ export default function App(){
               )}
 
               {/* Scan button */}
-              <button onClick={()=>demoMode?runScan(true):runDBScan()} disabled={loading}
+              <button onClick={()=>demoMode?setShowRealtimeUpsell(true):runDBScan()} disabled={loading}
                 style={{padding:'6px 14px',borderRadius:6,border:'none',cursor:'pointer',
                   background:loading?C.border:C.accent,color:loading?C.muted:'#000',
                   fontWeight:700,fontSize:12,whiteSpace:'nowrap'}}>
@@ -4561,7 +4569,7 @@ export default function App(){
                 )}
                 <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
                   availableDates={availableDates} isMobile={true}/>
-                <button onClick={()=>demoMode?runScan(true):runDBScan()} disabled={loading}
+                <button onClick={()=>demoMode?setShowRealtimeUpsell(true):runDBScan()} disabled={loading}
                   style={{flex:1,padding:'12px',borderRadius:8,border:'none',cursor:'pointer',
                     background:loading?C.border:C.accent,color:loading?C.muted:'#000',fontWeight:700,fontSize:13}}>
                   {loading?`${progress}%…`:'🚀 Scan'}
@@ -6701,6 +6709,39 @@ export default function App(){
         onNavigate={setChartSym}
       />
       </div>
+
+      {/* Real-time data upsell — shown when a demo user tries to Scan or
+          enable Auto-refresh, both of which only make sense with live
+          data. Demo mode shows real symbols/prices from ~1 week back
+          (not the old fake sample dataset), so this is the actual,
+          honest product difference a free account unlocks: today's
+          data instead of last week's, refreshed live instead of static. */}
+      {showRealtimeUpsell&&(
+        <div onClick={()=>setShowRealtimeUpsell(false)}
+          style={{position:'fixed',inset:0,zIndex:2000,background:'rgba(0,0,0,0.6)',
+            display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,
+              padding:28,maxWidth:380,textAlign:'center',boxShadow:'0 20px 50px rgba(0,0,0,0.5)'}}>
+            <div style={{fontSize:36,marginBottom:12}}>🔒</div>
+            <div style={{fontWeight:800,fontSize:17,marginBottom:8}}>Real-Time Data</div>
+            <div style={{color:C.muted,fontSize:13,lineHeight:1.6,marginBottom:22}}>
+              You're viewing real data from about a week ago. Sign up free to unlock
+              today's live prices, auto-refresh every minute, and the full scanner.
+            </div>
+            <button onClick={()=>{setShowRealtimeUpsell(false);setDemoMode(false);setStocks([]);setAuthMode('register');setShowAuth(true)}}
+              style={{width:'100%',padding:'12px 0',borderRadius:9,border:'none',cursor:'pointer',
+                background:C.accent,color:'#000',fontWeight:700,fontSize:14,marginBottom:10}}>
+              Sign Up Free
+            </button>
+            <button onClick={()=>setShowRealtimeUpsell(false)}
+              style={{width:'100%',padding:'10px 0',borderRadius:9,border:'none',cursor:'pointer',
+                background:'transparent',color:C.muted,fontSize:12,fontWeight:600}}>
+              Maybe later
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Mobile bottom nav */}
       {isMobile&&(
