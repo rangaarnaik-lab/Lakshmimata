@@ -4836,6 +4836,12 @@ export default function App(){
                         ))}
                       </div>
                     </div>
+                    <button onClick={()=>setShowFilters(false)}
+                      style={{width:'100%',marginTop:14,padding:'9px 0',borderRadius:8,
+                        border:`1px solid ${C.accent}44`,background:C.accent+'12',color:C.accent,
+                        fontSize:12,fontWeight:700,cursor:'pointer'}}>
+                      ▲ Collapse Filters
+                    </button>
                   </div>
                 )}
               </div>
