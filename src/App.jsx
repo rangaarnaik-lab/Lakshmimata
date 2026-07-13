@@ -1964,39 +1964,36 @@ function CandlestickChart({sym, isMobile}){
   // the running high/low for today's bar is tracked client-side across
   // polls instead. Every prior day stays exactly what stock_full_history
   // already has (real daily EOD candles); only today's bar moves.
+  //
+  // IMPORTANT: this must NOT call setData(). `analysis` above is
+  // expensively memoized on `data` specifically (MA20/50/200 + swings +
+  // S/R + several pattern detectors over up to 730 days) — the comment
+  // on that useMemo already explains this was a prior source of hangs
+  // during zoom/pan. Calling setData() here on every 45s poll would
+  // create a new data reference every tick, invalidate that memo, and
+  // force the whole expensive analysis to recompute every 45 seconds
+  // for as long as any chart is open during market hours — which is
+  // exactly what happened when this first shipped (reported as the
+  // browser hanging repeatedly). liveOverlay is a separate, cheap piece
+  // of state instead; it's merged into the RENDER-time candle arrays
+  // further down, never into `data` or `analysis`'s dependency.
+  const [liveOverlay, setLiveOverlay] = useState(null) // {price, volume} | null
   const [isLiveUpdating, setIsLiveUpdating] = useState(false)
   useEffect(() => {
+    setLiveOverlay(null); setIsLiveUpdating(false) // reset for the new symbol
     if (!isMarketOpen()) return
     let cancelled = false
     const poll = () => {
       fetchLiveStockPrice(sym).then(live => {
         if (cancelled || !live || live.price == null) return
-        setData(prev => {
-          if (!prev || prev.error || !prev.dates || prev.dates.length === 0) return prev
-          const todayStr = new Date(Date.now() + ((330 + new Date().getTimezoneOffset())*60000))
-            .toISOString().split('T')[0]
-          const lastIdx = prev.dates.length - 1
-          if (prev.dates[lastIdx] === todayStr) {
-            // Already have a bar for today (either from an earlier poll this
-            // session, or EOD already ran) — extend high/low, update close.
-            const highs = [...prev.highs]; highs[lastIdx] = Math.max(highs[lastIdx], live.price)
-            const lows = [...prev.lows]; lows[lastIdx] = Math.min(lows[lastIdx], live.price)
-            const prices = [...prev.prices]; prices[lastIdx] = live.price
-            const volumes = [...prev.volumes]; if (live.volume != null) volumes[lastIdx] = live.volume
-            return { ...prev, highs, lows, prices, volumes }
-          }
-          // No bar for today yet — append a new synthetic one, open=first
-          // live price seen today.
-          return {
-            ...prev,
-            dates:   [...prev.dates, todayStr],
-            opens:   [...prev.opens, live.price],
-            highs:   [...prev.highs, live.price],
-            lows:    [...prev.lows, live.price],
-            prices:  [...prev.prices, live.price],
-            volumes: [...prev.volumes, live.volume ?? (prev.volumes[prev.volumes.length-1]||0)],
-          }
-        })
+        setLiveOverlay(prev => ({
+          price: live.price,
+          volume: live.volume,
+          // Running high/low tracked here (cheap state, not data/analysis)
+          high: prev ? Math.max(prev.high, live.price) : live.price,
+          low:  prev ? Math.min(prev.low, live.price)  : live.price,
+          open: prev ? prev.open : live.price, // fixed from the first tick seen
+        }))
         setIsLiveUpdating(true)
       }).catch(()=>{})
     }
@@ -2024,13 +2021,37 @@ function CandlestickChart({sym, isMobile}){
     )
   }
 
-  const { dates, prices: closes, opens, highs, lows, volumes } = data
+  const { ma20, ma50, ma200, swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, nearEma9Days, vcp, cup } = analysis
+
+  let { dates, prices: closes, opens, highs, lows, volumes } = data
+  // Merge the live overlay into local copies for RENDERING only — never
+  // into `data` itself (see the comment on the live-poll effect above for
+  // why: analysis is expensively memoized on `data` and must stay stable
+  // while the market's open). Cheap: this is just array construction, not
+  // recomputing MA/S-R/patterns.
+  if (liveOverlay) {
+    const todayStr = new Date(Date.now() + ((330 + new Date().getTimezoneOffset())*60000))
+      .toISOString().split('T')[0]
+    const lastIdx = dates.length - 1
+    if (dates[lastIdx] === todayStr) {
+      highs = [...highs]; highs[lastIdx] = Math.max(highs[lastIdx], liveOverlay.high)
+      lows = [...lows]; lows[lastIdx] = Math.min(lows[lastIdx], liveOverlay.low)
+      closes = [...closes]; closes[lastIdx] = liveOverlay.price
+      if (liveOverlay.volume != null) { volumes = [...volumes]; volumes[lastIdx] = liveOverlay.volume }
+    } else {
+      dates = [...dates, todayStr]
+      opens = [...opens, liveOverlay.open]
+      highs = [...highs, liveOverlay.high]
+      lows = [...lows, liveOverlay.low]
+      closes = [...closes, liveOverlay.price]
+      volumes = [...volumes, liveOverlay.volume ?? (volumes[volumes.length-1]||0)]
+    }
+  }
   const n = closes.length
   // Fall back to close price if opens weren't backfilled yet for this
   // symbol (older stock_full_history rows fetched before Open tracking
   // was added) — draws a thin/neutral candle instead of breaking.
   const o = (opens && opens.length === n) ? opens : closes.map((c,i)=> i>0 ? closes[i-1] : c)
-  const { ma20, ma50, ma200, swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, nearEma9Days, vcp, cup } = analysis
 
   // ── Layout constants needed by both the zoom/pan handlers below and
   // the SVG render further down ──
