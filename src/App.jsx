@@ -3586,6 +3586,19 @@ export default function App(){
   const [authMode,setAuthMode]=useState('login')
   const [themeVersion,setThemeVersion]=useState(0)
   const [themeKey,setThemeKey]=useState('dark')
+  const ZOOM_LEVELS=[0.8,0.9,1,1.1,1.25,1.5]
+  const [zoomLevel,setZoomLevel]=useState(()=>{
+    try{ return parseFloat(localStorage.getItem('lakshmimata-zoom'))||1 }catch(e){ return 1 }
+  })
+  const setZoom=z=>{ setZoomLevel(z); try{ localStorage.setItem('lakshmimata-zoom', String(z)) }catch(e){} }
+  const zoomOut=()=>{
+    const i=ZOOM_LEVELS.indexOf(zoomLevel)
+    setZoom(ZOOM_LEVELS[Math.max(0,(i===-1?2:i)-1)])
+  }
+  const zoomIn=()=>{
+    const i=ZOOM_LEVELS.indexOf(zoomLevel)
+    setZoom(ZOOM_LEVELS[Math.min(ZOOM_LEVELS.length-1,(i===-1?2:i)+1)])
+  }
   const ambient=useAmbientSound()
   const [showQuickSettings,setShowQuickSettings]=useState(false)
   const [showMoreMenu,setShowMoreMenu]=useState(false)
@@ -4145,7 +4158,7 @@ export default function App(){
 
   return(
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:"'Inter','SF Pro Display',sans-serif",
-      color:C.text,fontSize:13,display:'flex',flexDirection:'row'}}>
+      color:C.text,fontSize:13,display:'flex',flexDirection:'row',zoom:zoomLevel}}>
 
       {/* ── WealthLab-style Icon sidebar ── */}
       {!isMobile&&(
@@ -6537,6 +6550,26 @@ export default function App(){
                   {icon}
                 </button>
               ))}
+            </div>
+            <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',
+              letterSpacing:'0.06em',marginBottom:8}}>Zoom</div>
+            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:16}}>
+              <button onClick={zoomOut} disabled={zoomLevel<=ZOOM_LEVELS[0]}
+                style={{width:34,height:34,borderRadius:8,cursor:zoomLevel<=ZOOM_LEVELS[0]?'default':'pointer',
+                  fontSize:16,fontWeight:700,border:`1px solid ${C.border}`,background:C.bg,
+                  color:zoomLevel<=ZOOM_LEVELS[0]?C.muted+'66':C.text}}>−</button>
+              <div style={{flex:1,textAlign:'center',fontSize:13,fontWeight:700,color:C.text}}>
+                {Math.round(zoomLevel*100)}%
+              </div>
+              <button onClick={zoomIn} disabled={zoomLevel>=ZOOM_LEVELS[ZOOM_LEVELS.length-1]}
+                style={{width:34,height:34,borderRadius:8,cursor:zoomLevel>=ZOOM_LEVELS[ZOOM_LEVELS.length-1]?'default':'pointer',
+                  fontSize:16,fontWeight:700,border:`1px solid ${C.border}`,background:C.bg,
+                  color:zoomLevel>=ZOOM_LEVELS[ZOOM_LEVELS.length-1]?C.muted+'66':C.text}}>+</button>
+              {zoomLevel!==1&&(
+                <button onClick={()=>setZoom(1)} title="Reset to 100%"
+                  style={{padding:'0 8px',height:34,borderRadius:8,cursor:'pointer',fontSize:11,fontWeight:600,
+                    border:`1px solid ${C.border}`,background:C.bg,color:C.muted}}>Reset</button>
+              )}
             </div>
             <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',
               letterSpacing:'0.06em',marginBottom:8}}>Ambient Sound</div>
