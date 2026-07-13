@@ -5067,7 +5067,7 @@ export default function App(){
                     mobile. Each table scrolls horizontally independently.
                     All column headers are click-to-sort (click again to
                     flip direction). */}
-                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:12,alignItems:'start'}}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr',gap:12,alignItems:'start'}}>
                 <div>
                 <div style={{fontWeight:800,fontSize:14,margin:'0 0 8px'}}>📊 Indices</div>
                 <div ref={idxTableDrag.ref} {...idxTableDrag.handlers} style={{overflowX:'auto',overflowY:'auto',maxHeight:520,border:`1px solid ${C.border}`,borderRadius:12,...idxTableDrag.style}}>
