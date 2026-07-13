@@ -1900,6 +1900,7 @@ function CandlestickChart({sym, isMobile}){
   const [zoomBars, setZoomBars] = useState(RANGE_BARS['3M'])
   const [panOffset, setPanOffset] = useState(0) // bars back from the most recent
   const [showMA, setShowMA] = useState(true)
+  const [chartStyle, setChartStyle] = useState('candle') // 'candle' | 'line'
   const [showSR, setShowSR] = useState(true)
   const [showPatterns, setShowPatterns] = useState(true)
   const [showForecast, setShowForecast] = useState(false)
@@ -2245,6 +2246,13 @@ function CandlestickChart({sym, isMobile}){
           ))}
         </div>
         <div style={{width:1,height:16,background:C.border,margin:'0 2px'}}/>
+        {[['Candle','candle'],['Line','line']].map(([label,val])=>(
+          <button key={val} onClick={()=>setChartStyle(val)}
+            style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${chartStyle===val?C.accent:C.border}`,
+              background:chartStyle===val?C.accent+'1c':'transparent',color:chartStyle===val?C.accent:C.muted,
+              fontSize:10,fontWeight:700,cursor:'pointer'}}>{label}</button>
+        ))}
+        <div style={{width:1,height:16,background:C.border,margin:'0 2px'}}/>
         {[['MA','showMA',showMA,setShowMA,C.blue],
           ['S/R','showSR',showSR,setShowSR,C.yellow],
           ['Patterns','showPatterns',showPatterns,setShowPatterns,C.accent],
@@ -2387,6 +2395,15 @@ function CandlestickChart({sym, isMobile}){
           return pts.length>1 ? <polyline key={k} points={pts.join(' ')} fill="none" stroke={color} strokeWidth={1.3} opacity={0.9}/> : null
         })}
 
+        {/* Line-chart mode — continuous close-price line instead of
+            candlesticks. Volume bars, pattern markers, hover/click
+            targets all stay exactly as they are; only the price
+            visualization itself changes. */}
+        {chartStyle==='line' && (() => {
+          const pts = vCloses.map((c,i)=> c!=null ? `${idxToX(i)},${priceToY(c)}` : null).filter(Boolean)
+          return pts.length>1 ? <polyline points={pts.join(' ')} fill="none" stroke={C.accent} strokeWidth={1.8}/> : null
+        })()}
+
         {/* Candlesticks */}
         {vCloses.map((c,i)=>{
           const op = vOpens[i], hi = vHighs[i], lo = vLows[i]
@@ -2402,8 +2419,10 @@ function CandlestickChart({sym, isMobile}){
               onClick={(e)=>{e.stopPropagation();setPinnedIdx(p=>p===i?null:i)}}
               style={{cursor:'crosshair'}}>
               <rect x={x-candleW/2-1} y={padT} width={candleW+2} height={priceH} fill="transparent"/>
-              <line x1={x} y1={priceToY(hi)} x2={x} y2={priceToY(lo)} stroke={color} strokeWidth={1}/>
-              <rect x={x-candleW/2} y={bodyTop} width={candleW} height={bodyH} fill={color}/>
+              {chartStyle==='candle' && <>
+                <line x1={x} y1={priceToY(hi)} x2={x} y2={priceToY(lo)} stroke={color} strokeWidth={1}/>
+                <rect x={x-candleW/2} y={bodyTop} width={candleW} height={bodyH} fill={color}/>
+              </>}
               {/* Volume bar — colored per signal, priority order
                   HT > HY > IBV > PP (highest wins if several fire the
                   same day). Each gets a distinct color + label, matching
