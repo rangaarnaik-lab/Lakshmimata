@@ -4532,17 +4532,16 @@ export default function App(){
 
           {/* Left pane — stock list */}
           <div style={{flex:1,overflowY:'auto',minWidth:0,
-            transition:'padding-right 0.2s, border 0.2s',
-            // The chart panel is position:fixed (an overlay, not a flex
-            // sibling) so it doesn't naturally shrink this pane's layout
-            // at all — it just visually covers whatever's underneath it.
-            // Reserving matching right-padding here means the table's
-            // own overflowX:'auto' (below) correctly detects less
-            // available space and lets you scroll to the columns that
-            // would otherwise just be hidden behind the chart with no
-            // way to reach them.
-            paddingRight:(!isMobile&&chartSym)?(['50%','70%','92%'][chartWide]||'50%'):0,
-            borderRight:chartSym?`1px solid ${C.divider}`:'none'}}>
+            // NOTE: chartPanel is now a flex sibling (converted in 72b62f8),
+            // not a position:fixed overlay — this pane's own flex-basis
+            // (75/55/30%) already correctly shrinks to make room for it.
+            // A paddingRight reservation here used to compensate for the
+            // OLD overlay design and was never removed after that
+            // conversion — it was stacking on top of the already-correct
+            // outer flex split, additionally shrinking the visible table
+            // area by another 50-92% on top of the real 75%, which is what
+            // was actually causing the persistent gap reported repeatedly.
+            }}>
             <LastUpdatedBar
               scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
               autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
