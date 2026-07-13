@@ -2508,10 +2508,29 @@ function SortableHeader({label,sortKey,sortBy,sortDir,onSort,align='left'}){
   )
 }
 
-function DesktopRow({s,i,onChart}){
+// Shared between the RS table's header row and DesktopRow so both always
+// compute the exact same grid-column layout from the same visibility
+// state — if they ever drifted out of sync, headers and cells would
+// misalign. 'true' entries are the core columns that always stay visible
+// (#, Symbol, RS-TV, Price, Chg%, Expand, TV, Scr link) — vis.X entries
+// are the customizable ones.
+function computeRsGridCols(vis){
+  const cols=[
+    ['32px',true],['130px',true],['52px',true],
+    ['48px',vis.mid],['48px',vis.sml],['52px',vis.sec],['52px',vis.trend],
+    ['64px',true],['90px',true],
+    ['112px',vis.pp10],['182px',vis.rs7d],['140px',vis.stage],
+    ['55px',vis.mcap],['55px',vis.pe],['48px',vis.roe],['48px',vis.de],['48px',vis.prom],
+    ['55px',true],['32px',true],['32px',true],
+  ]
+  return cols.filter(([,show])=>show).map(([w])=>w).join(' ')
+}
+
+function DesktopRow({s,i,onChart,visibleRsCols}){
   const [open,setOpen]=useState(false)
-  // Grid: # | Symbol+Sector+Badges | RS | Trend | Price | Chg% | PP 10d | RS 7d | expand
-  const COLS='32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px 32px 32px'
+  const vis=visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true}
+  // Grid: # | Symbol+Sector+Badges | RS | [MID] | [SML] | [SEC] | [Trend] | Price | Chg% | [PP 10d] | [RS 7d] | [Stage] | [MCap] | [P/E] | [ROE] | [D/E] | [Prom] | expand | TV | Scr
+  const COLS=computeRsGridCols(vis)
   return(
     <div style={{borderBottom:`1px solid ${C.border}22`}}>
       <div onClick={()=>onChart&&onChart(s.sym)}
@@ -2554,42 +2573,42 @@ function DesktopRow({s,i,onChart}){
         </div>
 
         {/* RS within Midcap */}
-        <div style={{textAlign:'center'}} title={`RS vs Midcap 150 index as benchmark (same TV formula, Midcap index price used instead of Nifty): ${s.rsMidcap??'N/A'}`}>
+        {vis.mid&&<div style={{textAlign:'center'}} title={`RS vs Midcap 150 index as benchmark (same TV formula, Midcap index price used instead of Nifty): ${s.rsMidcap??'N/A'}`}>
           {s.rsMidcap!=null?(
             <>
               <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsMidcap)}}>{s.rsMidcap}</div>
               <div style={{fontSize:7,color:C.blue,marginTop:1,fontWeight:600}}>vs MID</div>
             </>
           ):<span style={{color:C.border,fontSize:9}}>—</span>}
-        </div>
+        </div>}
 
         {/* RS within Smallcap */}
-        <div style={{textAlign:'center'}} title={`RS vs Smallcap 250 index as benchmark (same TV formula, Smallcap index price used instead of Nifty): ${s.rsSmallcap??'N/A'}`}>
+        {vis.sml&&<div style={{textAlign:'center'}} title={`RS vs Smallcap 250 index as benchmark (same TV formula, Smallcap index price used instead of Nifty): ${s.rsSmallcap??'N/A'}`}>
           {s.rsSmallcap!=null?(
             <>
               <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsSmallcap)}}>{s.rsSmallcap}</div>
               <div style={{fontSize:7,color:C.yellow,marginTop:1,fontWeight:600}}>vs SML</div>
             </>
           ):<span style={{color:C.border,fontSize:9}}>—</span>}
-        </div>
+        </div>}
 
 
 
         {/* RS within Sector */}
-        <div style={{textAlign:'center'}} title={`RS rank vs ${s.sector} sector peers: ${s.rsSector??'N/A'}`}>
+        {vis.sec&&<div style={{textAlign:'center'}} title={`RS rank vs ${s.sector} sector peers: ${s.rsSector??'N/A'}`}>
           {s.rsSector!=null?(
             <>
               <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsSector)}}>{s.rsSector}</div>
               <div style={{fontSize:7,color:C.orange,marginTop:1,fontWeight:600}}>SEC</div>
             </>
           ):<span style={{color:C.border,fontSize:9}}>—</span>}
-        </div>
+        </div>}
 
         {/* Slope/Trend */}
-        <div style={{textAlign:'center'}}>
+        {vis.trend&&<div style={{textAlign:'center'}}>
           <div style={{fontWeight:700,fontSize:14,color:trendColor(s.rsTrend.trend)}}>{trendIcon(s.rsTrend.trend)}</div>
           <div style={{fontSize:9,color:C.muted}}>{s.rsTrend.slope>0?'+':''}{s.rsTrend.slope}/d</div>
-        </div>
+        </div>}
 
         {/* Price */}
         <div style={{textAlign:'right'}}>
@@ -2607,25 +2626,25 @@ function DesktopRow({s,i,onChart}){
         </div>
 
         {/* PP 10 days */}
-        <div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'center',minWidth:0,overflow:'hidden'}}>
+        {vis.pp10&&<div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'center',minWidth:0,overflow:'hidden'}}>
           <PPDots ppHistory={s.pp.ppHistory||[]} color={C.green}/>
           <span style={{fontSize:9,color:s.pp.ppCount10d>0?C.orange:C.muted,fontWeight:700,whiteSpace:'nowrap'}}>
             {s.pp.ppCount10d}× PP
           </span>
-        </div>
+        </div>}
 
         {/* RS Last 7d */}
-        <div style={{display:'flex',gap:2,alignItems:'center',minWidth:0,overflow:'hidden'}}>
+        {vis.rs7d&&<div style={{display:'flex',gap:2,alignItems:'center',minWidth:0,overflow:'hidden'}}>
           {s.hist.slice(-7).map((v,idx)=>{
             const color=v===null?C.border:v>=90?C.green:v>=70?C.accent:v>=50?C.yellow:C.red
             return<div key={idx} style={{flex:'1 1 0',minWidth:0,height:24,borderRadius:4,background:color+'28',
               border:`1px solid ${color}55`,display:'flex',alignItems:'center',justifyContent:'center',
               fontSize:9,fontWeight:800,color}}>{v??'—'}</div>
           })}
-        </div>
+        </div>}
 
         {/* Stage compact */}
-        <div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'flex-start'}}>
+        {vis.stage&&<div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'flex-start'}}>
           <StageBadge stage={calcWeinsteinStage(s)}/>
           {(()=>{const ibv=calcIBV(s);return ibv.isIBV&&(
             <div style={{padding:'2px 6px',borderRadius:5,fontSize:9,fontWeight:700,
@@ -2642,10 +2661,10 @@ function DesktopRow({s,i,onChart}){
             </div>
           )})()}
           <VolBadge vol={calcVolAnalysis(s)}/>
-        </div>
+        </div>}
 
         {/* Market Cap */}
-        <div style={{textAlign:'right',fontSize:10}}>
+        {vis.mcap&&<div style={{textAlign:'right',fontSize:10}}>
           {s.marketCap!=null?(
             <span style={{color:C.text}}>
               {s.marketCap>=100000?`${(s.marketCap/100000).toFixed(1)}L`:
@@ -2654,39 +2673,39 @@ function DesktopRow({s,i,onChart}){
             </span>
           ):<span style={{color:C.muted}}>—</span>}
           <div style={{fontSize:8,color:C.muted}}>MCap</div>
-        </div>
+        </div>}
 
         {/* P/E */}
-        <div style={{textAlign:'right',fontSize:10}}>
+        {vis.pe&&<div style={{textAlign:'right',fontSize:10}}>
           {s.pe!=null?(
             <span style={{color:s.pe<20?C.green:s.pe<40?C.yellow:C.red}}>{s.pe.toFixed(1)}</span>
           ):<span style={{color:C.muted}}>—</span>}
           <div style={{fontSize:8,color:C.muted}}>P/E</div>
-        </div>
+        </div>}
 
         {/* ROE */}
-        <div style={{textAlign:'right',fontSize:10}}>
+        {vis.roe&&<div style={{textAlign:'right',fontSize:10}}>
           {s.roe!=null?(
             <span style={{color:s.roe>20?C.green:s.roe>10?C.yellow:C.red}}>{s.roe.toFixed(1)}%</span>
           ):<span style={{color:C.muted}}>—</span>}
           <div style={{fontSize:8,color:C.muted}}>ROE</div>
-        </div>
+        </div>}
 
         {/* Debt/Equity */}
-        <div style={{textAlign:'right',fontSize:10}}>
+        {vis.de&&<div style={{textAlign:'right',fontSize:10}}>
           {s.debtEq!=null?(
             <span style={{color:s.debtEq<0.5?C.green:s.debtEq<1.5?C.yellow:C.red}}>{s.debtEq.toFixed(2)}</span>
           ):<span style={{color:C.muted}}>—</span>}
           <div style={{fontSize:8,color:C.muted}}>D/E</div>
-        </div>
+        </div>}
 
         {/* Promoter % */}
-        <div style={{textAlign:'right',fontSize:10}}>
+        {vis.prom&&<div style={{textAlign:'right',fontSize:10}}>
           {s.promoter!=null?(
             <span style={{color:s.promoter>55?C.green:s.promoter>35?C.yellow:C.red}}>{s.promoter.toFixed(1)}%</span>
           ):<span style={{color:C.muted}}>—</span>}
           <div style={{fontSize:8,color:C.muted}}>Prom</div>
-        </div>
+        </div>}
 
         {/* Expand — separate click target from the row (which now opens
             the chart), so both actions stay reachable */}
@@ -3914,6 +3933,31 @@ export default function App(){
     })
   },[])
   const [showFilters,setShowFilters]=useState(false)
+  // RS table column customization — the 20-column grid was previously
+  // fixed. These are the "optional" ones (core identity/price columns
+  // like Symbol/RS-TV/Price/Chg%/Expand/TV/Scr always stay visible,
+  // same as before). Persisted to localStorage as the user's saved
+  // layout, so it survives reloads.
+  const [showColumns,setShowColumns]=useState(false)
+  const [visibleRsCols,setVisibleRsCols]=useState(()=>{
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true}
+    try{
+      const saved=JSON.parse(localStorage.getItem('lakshmimata-rs-columns')||'null')
+      return saved?{...defaults,...saved}:defaults
+    }catch(e){return defaults}
+  })
+  const toggleRsCol=(key)=>{
+    setVisibleRsCols(prev=>{
+      const next={...prev,[key]:!prev[key]}
+      try{localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(next))}catch(e){}
+      return next
+    })
+  }
+  const resetRsCols=()=>{
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true}
+    setVisibleRsCols(defaults)
+    try{localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(defaults))}catch(e){}
+  }
   const [wlSearch,setWlSearch]=useState(''),[wlSigOnly,setWlSigOnly]=useState(false)
   const [weakSearch,setWeakSearch]=useState(''),[weakSigOnly,setWeakSigOnly]=useState(false)
 
@@ -4654,7 +4698,40 @@ export default function App(){
                     style={{padding:'8px 14px',borderRadius:8,border:`1px solid ${showFilters?C.accent:C.border}`,
                       cursor:'pointer',fontSize:12,fontWeight:600,background:showFilters?C.accent+'22':'transparent',
                       color:showFilters?C.accent:C.muted,whiteSpace:'nowrap'}}>⚙ Filters</button>
+                  <button onClick={()=>setShowColumns(v=>!v)}
+                    style={{padding:'8px 14px',borderRadius:8,border:`1px solid ${showColumns?C.accent:C.border}`,
+                      cursor:'pointer',fontSize:12,fontWeight:600,background:showColumns?C.accent+'22':'transparent',
+                      color:showColumns?C.accent:C.muted,whiteSpace:'nowrap'}}>📊 Columns</button>
                 </div>
+                {showColumns&&(
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
+                    padding:14,marginBottom:12}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em'}}>
+                        Show Columns
+                      </div>
+                      <button onClick={resetRsCols}
+                        style={{fontSize:11,fontWeight:700,color:C.accent,background:'transparent',
+                          border:'none',cursor:'pointer'}}>Reset to default</button>
+                    </div>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                      {[['mid','MID (Midcap RS)'],['sml','SML (Smallcap RS)'],['sec','SEC (Sector RS)'],
+                        ['trend','Trend'],['pp10','PP 10d'],['rs7d','RS Last 7d'],['stage','Stage/Vol'],
+                        ['mcap','MCap'],['pe','P/E'],['roe','ROE'],['de','D/E'],['prom','Prom%']].map(([key,label])=>(
+                        <button key={key} onClick={()=>toggleRsCol(key)}
+                          style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,
+                            border:`1px solid ${visibleRsCols[key]?C.accent:C.border}`,cursor:'pointer',
+                            background:visibleRsCols[key]?C.accent+'18':'transparent',
+                            color:visibleRsCols[key]?C.accent:C.muted,fontSize:12,fontWeight:600}}>
+                          {visibleRsCols[key]?'✓':'○'} {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{fontSize:10,color:C.muted,marginTop:10}}>
+                      Your column layout is saved automatically and stays the same next time you visit.
+                    </div>
+                  </div>
+                )}
                 {sectorFilter!=='all'&&(
                   <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
                     <span style={{fontSize:11,color:C.muted}}>Filtering by sector:</span>
@@ -4864,41 +4941,41 @@ export default function App(){
                 )}
                 <div ref={rsTableDrag.ref} {...rsTableDrag.handlers}
                   style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflowX:'auto',...rsTableDrag.style}}>
-                  <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px 32px 32px',
+                  <div style={{display:'grid',gridTemplateColumns:computeRsGridCols(visibleRsCols),
                     padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
                     fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
                     <span style={{textAlign:'center',color:C.muted}}>#</span>
                     <SortableHeader label="Symbol" sortKey="sym" sortBy={sortBy} sortDir={sortDir} onSort={handleSort}/>
                     <SortableHeader label="RS-TV" sortKey="rsTv" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
-                    <div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsMidcap')}>
+                    {visibleRsCols.mid&&<div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsMidcap')}>
                       <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsMidcap'?C.accent:C.muted}}>MID ↕</div>
                       <div style={{fontSize:7,color:C.blue,fontWeight:600}}>Midcap</div>
-                    </div>
-                    <div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsSmallcap')}>
+                    </div>}
+                    {visibleRsCols.sml&&<div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsSmallcap')}>
                       <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsSmallcap'?C.accent:C.muted}}>SML ↕</div>
                       <div style={{fontSize:7,color:C.yellow,fontWeight:600}}>Small</div>
-                    </div>
+                    </div>}
 
-                    <div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsSector')}>
+                    {visibleRsCols.sec&&<div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsSector')}>
                       <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsSector'?C.accent:C.muted}}>SEC ↕</div>
                       <div style={{fontSize:7,color:C.orange,fontWeight:600}}>Sector</div>
-                    </div>
-                    <SortableHeader label="Trend" sortKey="slope" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+                    </div>}
+                    {visibleRsCols.trend&&<SortableHeader label="Trend" sortKey="slope" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
                     <SortableHeader label="Price" sortKey="last" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>
                     <SortableHeader label="Chg%" sortKey="chg" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
-                    <SortableHeader label="PP 10d" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
-                    <span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>
-                    <span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>
-                    <span style={{textAlign:'right',color:C.muted,fontSize:9}}>MCap</span>
-                    <span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>
-                    <span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>
-                    <span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>
-                    <span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>
+                    {visibleRsCols.pp10&&<SortableHeader label="PP 10d" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
+                    {visibleRsCols.rs7d&&<span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>}
+                    {visibleRsCols.stage&&<span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>}
+                    {visibleRsCols.mcap&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>MCap</span>}
+                    {visibleRsCols.pe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>}
+                    {visibleRsCols.roe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>}
+                    {visibleRsCols.de&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>}
+                    {visibleRsCols.prom&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>}
                     <span/>
                     <span style={{textAlign:'center',color:C.muted,fontSize:9}}>TV</span>
                     <span style={{textAlign:'center',color:C.muted,fontSize:9}}>Scr</span>
                   </div>
-                  {pagedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>setChartSym(s.sym)}/>)}
+                  {pagedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>setChartSym(s.sym)} visibleRsCols={visibleRsCols}/>)}
                 </div>
                 </>
               )
