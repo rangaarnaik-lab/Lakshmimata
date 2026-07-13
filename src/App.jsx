@@ -1746,7 +1746,7 @@ function EmaBreadthTable({data,isMobile,dragProps,rangeLabel}){
   )
 }
 
-function ChartPanel({sym, wide, onToggleWide, onClose, isMobile, symList, onNavigate}){
+function ChartPanel({sym, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate}){
   const [loaded, setLoaded] = useState(false)
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
   // is the default: NSE restricted its symbols in TradingView's embeddable
@@ -1769,10 +1769,10 @@ function ChartPanel({sym, wide, onToggleWide, onClose, isMobile, symList, onNavi
 
   const panelStyle = isMobile
     ? {position:'fixed',inset:0,zIndex:1000,display:'flex',flexDirection:'column',background:C.sidebar}
-    : {flex:['0 0 25%','0 0 45%','0 0 70%'][wide]||'0 0 25%',
+    : {flex:customPct!=null?`0 0 ${customPct}%`:(['0 0 25%','0 0 45%','0 0 70%'][wide]||'0 0 25%'),
         height:'100vh',overflowY:'auto',
         display:'flex',flexDirection:'column',background:C.sidebar,
-        borderLeft:`1px solid ${C.divider}`,transition:'flex 0.2s ease'}
+        borderLeft:`1px solid ${C.divider}`,transition:customPct!=null?'none':'flex 0.2s ease'}
 
   return(
     <div style={panelStyle}>
@@ -3852,6 +3852,27 @@ export default function App(){
     return ()=>clearInterval(timer)
   },[session])
   const [chartWide,setChartWide]=useState(0) // 0=normal 1=wide 2=extra-wide
+  // Drag-to-resize divider between the table and chart panel — continuous
+  // resize in addition to the existing 3-preset expand button. null means
+  // "use the chartWide preset"; once dragged, holds the chart's exact
+  // width % and takes over from the preset until the chart is closed.
+  const [chartPanelPct,setChartPanelPct]=useState(null)
+  const [isDraggingDivider,setIsDraggingDivider]=useState(false)
+  const innerRowRef=useRef(null)
+  useEffect(()=>{
+    if(!isDraggingDivider)return
+    const onMove=(e)=>{
+      if(!innerRowRef.current)return
+      const rect=innerRowRef.current.getBoundingClientRect()
+      const relX=e.clientX-rect.left
+      const chartPct=((rect.width-relX)/rect.width)*100
+      setChartPanelPct(Math.min(80,Math.max(15,chartPct)))
+    }
+    const onUp=()=>setIsDraggingDivider(false)
+    window.addEventListener('mousemove',onMove)
+    window.addEventListener('mouseup',onUp)
+    return()=>{window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp)}
+  },[isDraggingDivider])
   const [ppFilterRS,setPpFilterRS]=useState('all')
   const [rsPage,setRsPage]=useState(0)
   const RS_PAGE_SIZE=100
@@ -4360,10 +4381,10 @@ export default function App(){
           viewport by exactly the sidebar's width every time, regardless
           of screen size. This wrapper's own width becomes the correct
           100% baseline for that inner split. */}
-      <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'row'}}>
+      <div ref={innerRowRef} style={{flex:1,minWidth:0,display:'flex',flexDirection:'row',userSelect:isDraggingDivider?'none':'auto'}}>
 
       {/* ── Main area ── */}
-      <div style={{flex:(chartSym&&!isMobile)?['0 0 75%','0 0 55%','0 0 30%'][chartWide]:1,display:'flex',flexDirection:'column',minWidth:0,overflowX:'hidden',paddingBottom:isMobile?72:0}}>
+      <div style={{flex:(chartSym&&!isMobile)?(chartPanelPct!=null?`0 0 ${100-chartPanelPct}%`:['0 0 75%','0 0 55%','0 0 30%'][chartWide]):1,display:'flex',flexDirection:'column',minWidth:0,overflowX:'hidden',paddingBottom:isMobile?72:0}}>
 
         {/* Top bar */}
         <div style={{borderBottom:`1px solid ${C.divider}`,
@@ -6695,14 +6716,29 @@ export default function App(){
         )}
       </div>
 
+      {/* Draggable divider — continuous resize between table and chart,
+          in addition to the 3-preset expand button. Grabbing this and
+          moving left/right updates chartPanelPct directly; the mousemove/
+          mouseup listeners live in the isDraggingDivider effect above so
+          dragging still works even if the cursor leaves this thin strip. */}
+      {chartSym&&!isMobile&&(
+        <div onMouseDown={()=>setIsDraggingDivider(true)}
+          style={{width:6,flexShrink:0,cursor:'col-resize',background:isDraggingDivider?C.accent:'transparent',
+            position:'relative',zIndex:10}}>
+          <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',
+            width:3,height:36,borderRadius:3,background:isDraggingDivider?C.accent:C.border}}/>
+        </div>
+      )}
+
       {/* Global chart panel — works from any tab, right-docked on desktop,
           full-screen on mobile. Rendered once so swapping symbols updates
           the same panel instance in place. */}
       <ChartPanel
         sym={chartSym}
         wide={chartWide}
-        onToggleWide={()=>setChartWide(v=>(v+1)%3)}
-        onClose={()=>setChartSym(null)}
+        customPct={chartPanelPct}
+        onToggleWide={()=>{setChartPanelPct(null);setChartWide(v=>(v+1)%3)}}
+        onClose={()=>{setChartSym(null);setChartPanelPct(null)}}
         isMobile={isMobile}
         symList={displayedRS.map(s=>s.sym)}
         onNavigate={setChartSym}
