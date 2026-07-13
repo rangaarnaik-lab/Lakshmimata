@@ -4234,7 +4234,8 @@ export default function App(){
       )}
 
       {/* ── Main area ── */}
-      <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,paddingBottom:isMobile?72:0}}>
+      <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,paddingBottom:isMobile?72:0,
+        maxWidth:(chartSym&&!isMobile)?`calc(100% - ${['50%','70%','92%'][chartWide]||'50%'})`:'100%'}}>
 
         {/* Top bar */}
         <div style={{borderBottom:`1px solid ${C.divider}`,
