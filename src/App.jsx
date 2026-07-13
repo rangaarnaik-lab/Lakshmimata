@@ -3825,6 +3825,8 @@ export default function App(){
   },[session])
   const [chartWide,setChartWide]=useState(0) // 0=normal 1=wide 2=extra-wide
   const [ppFilterRS,setPpFilterRS]=useState('all')
+  const [rsPage,setRsPage]=useState(0)
+  const RS_PAGE_SIZE=100
   const [ppFilter52WL,setPpFilter52WL]=useState('all')
   const [ppFilterWeak,setPpFilterWeak]=useState('all')
 
@@ -4131,6 +4133,17 @@ export default function App(){
     return dir===1?(av-bv):(bv-av)
   }),[stocks,search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,sectorFilter,presetFilter,sortBy,sortDir])
   const displayedRS=useMemo(()=>applyPP(rsBase,ppFilterRS),[rsBase,ppFilterRS])
+  const rsTotalPages=Math.max(1,Math.ceil(displayedRS.length/RS_PAGE_SIZE))
+  const rsPageClamped=Math.min(rsPage,rsTotalPages-1)
+  const pagedRS=useMemo(()=>
+    displayedRS.slice(rsPageClamped*RS_PAGE_SIZE,(rsPageClamped+1)*RS_PAGE_SIZE),
+    [displayedRS,rsPageClamped])
+  // Reset to page 1 when the actual filter/sort criteria change — but
+  // deliberately NOT on every `stocks` auto-refresh (every ~1 min), which
+  // would otherwise kick you back to page 1 mid-scroll every minute even
+  // though nothing you asked for actually changed.
+  useEffect(()=>{ setRsPage(0) },
+    [search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,sectorFilter,presetFilter,ppFilterRS,sortBy,sortDir])
 
   // Rotation chart's rolling-momentum trail computation — same issue as
   // the Industries table above: this was an inline IIFE inside JSX,
@@ -4768,7 +4781,7 @@ export default function App(){
               </div>
             )}
             {displayedRS.length>0&&(
-              isMobile?displayedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={setChartSym}/>):(
+              isMobile?pagedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={setChartSym}/>):(
                 <>
                 {chartSym&&(
                   <div style={{fontSize:10,color:C.accent,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
@@ -4811,10 +4824,26 @@ export default function App(){
                     <span style={{textAlign:'center',color:C.muted,fontSize:9}}>TV</span>
                     <span style={{textAlign:'center',color:C.muted,fontSize:9}}>Scr</span>
                   </div>
-                  {displayedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>setChartSym(s.sym)}/>)}
+                  {pagedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>setChartSym(s.sym)}/>)}
                 </div>
                 </>
               )
+            )}
+            {displayedRS.length>RS_PAGE_SIZE&&(
+              <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,
+                marginTop:14,padding:'10px 0'}}>
+                <button onClick={()=>setRsPage(p=>Math.max(0,p-1))} disabled={rsPageClamped===0}
+                  style={{padding:'7px 14px',borderRadius:8,cursor:rsPageClamped===0?'default':'pointer',
+                    border:`1px solid ${C.border}`,background:C.card,fontSize:12,fontWeight:600,
+                    color:rsPageClamped===0?C.muted+'66':C.text}}>← Prev</button>
+                <span style={{fontSize:12,color:C.muted,minWidth:140,textAlign:'center'}}>
+                  Page {rsPageClamped+1} of {rsTotalPages} · {displayedRS.length} stocks
+                </span>
+                <button onClick={()=>setRsPage(p=>Math.min(rsTotalPages-1,p+1))} disabled={rsPageClamped>=rsTotalPages-1}
+                  style={{padding:'7px 14px',borderRadius:8,cursor:rsPageClamped>=rsTotalPages-1?'default':'pointer',
+                    border:`1px solid ${C.border}`,background:C.card,fontSize:12,fontWeight:600,
+                    color:rsPageClamped>=rsTotalPages-1?C.muted+'66':C.text}}>Next →</button>
+              </div>
             )}
           </div>
         </div>
