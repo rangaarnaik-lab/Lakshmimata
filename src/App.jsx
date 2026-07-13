@@ -4130,6 +4130,60 @@ export default function App(){
   }),[stocks,search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,sectorFilter,presetFilter,sortBy,sortDir])
   const displayedRS=useMemo(()=>applyPP(rsBase,ppFilterRS),[rsBase,ppFilterRS])
 
+  // Rotation chart's rolling-momentum trail computation — same issue as
+  // the Industries table above: this was an inline IIFE inside JSX,
+  // recomputing rolling momentum for every point of every displayed
+  // sector/index/stock on every re-render, not just when the underlying
+  // data or selection actually changed. Memoized so it only recomputes
+  // when rotationData or the focus selection changes.
+  const rotationDisplayData=useMemo(()=>{
+    const data = rotationData||[]
+    const displayData = rotationSelectedIds.size>0 ? data.filter(s=>rotationSelectedIds.has(s.id)) : data
+    const ROLL_K=5 // ~1 trading week lookback for the local rate of change
+    const rolledData=displayData.map(s=>{
+      const trail=(s.trail||[]).map((t,i,arr)=>{
+        const j=Math.max(0,i-ROLL_K)
+        return {level:t.level, mom:t.level-arr[j].level}
+      })
+      return {...s, trail, momentum: trail.length?trail[trail.length-1].mom:(s.momentum||0)}
+    })
+    const maxAbsMom=Math.max(5,...rolledData.flatMap(s=>s.trail.map(t=>Math.abs(t.mom))))
+    return { data, displayData, rolledData, maxAbsMom }
+  },[rotationData,rotationSelectedIds])
+
+  // Industries table aggregation — was previously an inline IIFE directly
+  // in JSX (Indices tab render), recomputing this O(n) groupby + sort over
+  // the full ~2400-stock array on EVERY re-render of that tab, not just
+  // when `stocks` actually changed. The Indices tab auto-refreshes every
+  // 60s AND this recomputed on any other unrelated re-render while that
+  // tab was open (typing, clicking, anything) — a real contributor to
+  // "browser hangs often". Memoized here so it only recomputes when
+  // `stocks` itself changes.
+  const MIN_INDUSTRY_STOCKS = 3
+  const industriesRows=useMemo(()=>{
+    const groups = {}
+    for(const s of stocks){
+      if(!s.industry) continue
+      ;(groups[s.industry] = groups[s.industry] || []).push(s)
+    }
+    const allRows = Object.entries(groups).map(([name,members])=>{
+      const advPct = f => {
+        const vals = members.map(m=>m[f]).filter(v=>v!=null)
+        return vals.length ? vals.filter(v=>v>0).length/vals.length*100 : null
+      }
+      return {
+        name, count: members.length,
+        avgRS: Math.round(members.reduce((a,m)=>a+(m.rs||0),0)/members.length),
+        ppCount: members.filter(m=>m.pp?.isPP).length,
+        improving: members.filter(m=>m.rsTrend?.trend==='improving').length,
+        advD: advPct('chg'), advW: advPct('chgW'), advM: advPct('chgM'),
+        members,
+      }
+    }).sort((a,b)=>b.avgRS-a.avgRS)
+    const rows = allRows.filter(r=>r.count>=MIN_INDUSTRY_STOCKS)
+    return { rows, hiddenCount: allRows.length - rows.length }
+  },[stocks])
+
   const wlBase=stocks.filter(s=>s.scanner52wl.near52wLow&&s.sym.toLowerCase().includes(wlSearch.toLowerCase())&&(!wlSigOnly||s.scanner52wl.isSignal)).sort((a,b)=>a.scanner52wl.pctFrom52wLow-b.scanner52wl.pctFrom52wLow)
   const displayed52WL=applyPP(wlBase,ppFilter52WL)
 
@@ -5121,28 +5175,7 @@ export default function App(){
                     shown as noise; the header notes how many were
                     hidden so this doesn't look like data is missing. */}
                 {(()=>{
-                  const MIN_INDUSTRY_STOCKS = 3
-                  const groups = {}
-                  for(const s of stocks){
-                    if(!s.industry) continue
-                    ;(groups[s.industry] = groups[s.industry] || []).push(s)
-                  }
-                  const allRows = Object.entries(groups).map(([name,members])=>{
-                    const advPct = f => {
-                      const vals = members.map(m=>m[f]).filter(v=>v!=null)
-                      return vals.length ? vals.filter(v=>v>0).length/vals.length*100 : null
-                    }
-                    return {
-                      name, count: members.length,
-                      avgRS: Math.round(members.reduce((a,m)=>a+(m.rs||0),0)/members.length),
-                      ppCount: members.filter(m=>m.pp?.isPP).length,
-                      improving: members.filter(m=>m.rsTrend?.trend==='improving').length,
-                      advD: advPct('chg'), advW: advPct('chgW'), advM: advPct('chgM'),
-                      members,
-                    }
-                  }).sort((a,b)=>b.avgRS-a.avgRS)
-                  const rows = allRows.filter(r=>r.count>=MIN_INDUSTRY_STOCKS)
-                  const hiddenCount = allRows.length - rows.length
+                  const { rows, hiddenCount } = industriesRows
                   if(rows.length===0) return null
                   return (
                     <>
@@ -6179,33 +6212,13 @@ export default function App(){
         {/* ══ SECTOR ROTATION ══ */}
         {mainTab==='rotation'&&(()=>{
           const ROTATION_WINDOWS=[{label:'10D',days:10},{label:'1M',days:22},{label:'3M',days:66},{label:'6M',days:126},{label:'1Y',days:252}]
-          const data=rotationData||[]
-          const displayData=rotationSelectedIds.size>0 ? data.filter(s=>rotationSelectedIds.has(s.id)) : data
-          // Rolling (local) momentum at every trail point, instead of
-          // "change since the start of the whole window" — real RRG charts
-          // get their organic curves and loops because RS-Momentum is a
-          // LOCAL rate of change recalculated at every point, not a
-          // cumulative drift from one fixed anchor. Anchoring to the
-          // window's first day made a steadily-trending stock's trail
-          // render as close to a straight diagonal line (cumulative drift
-          // grows ~linearly for a steady trend); recalculating locally at
-          // each point lets short-term reversals and accelerations actually
-          // show up as curvature, matching how a real RRG looks.
-          const ROLL_K=5 // ~1 trading week lookback for the local rate of change
-          const rolledData=displayData.map(s=>{
-            const trail=(s.trail||[]).map((t,i,arr)=>{
-              const j=Math.max(0,i-ROLL_K)
-              return {level:t.level, mom:t.level-arr[j].level}
-            })
-            return {...s, trail, momentum: trail.length?trail[trail.length-1].mom:(s.momentum||0)}
-          })
+          const { data, displayData, rolledData, maxAbsMom } = rotationDisplayData
           const toggleSel=id=>setRotationSelectedIds(prev=>{
             const next=new Set(prev)
             next.has(id)?next.delete(id):next.add(id)
             return next
           })
           const xFor=level=>20+(Math.max(0,Math.min(100,level??50))/100)*580
-          const maxAbsMom=Math.max(5,...rolledData.flatMap(s=>s.trail.map(t=>Math.abs(t.mom))))
           const yFor=mom=>230-(Math.max(-maxAbsMom,Math.min(maxAbsMom,mom||0))/maxAbsMom)*205
           const quadColor=s=>{
             const leading=(s.level??50)>=50&&(s.momentum||0)>=0
