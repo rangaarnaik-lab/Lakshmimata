@@ -4363,7 +4363,7 @@ export default function App(){
       <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'row'}}>
 
       {/* ── Main area ── */}
-      <div style={{flex:(chartSym&&!isMobile)?['0 0 75%','0 0 55%','0 0 30%'][chartWide]:1,display:'flex',flexDirection:'column',minWidth:0,paddingBottom:isMobile?72:0}}>
+      <div style={{flex:(chartSym&&!isMobile)?['0 0 75%','0 0 55%','0 0 30%'][chartWide]:1,display:'flex',flexDirection:'column',minWidth:0,overflowX:'hidden',paddingBottom:isMobile?72:0}}>
 
         {/* Top bar */}
         <div style={{borderBottom:`1px solid ${C.divider}`,
