@@ -1625,7 +1625,7 @@ function SimpleStockTable({stocks, isMobile, onChart}){
         <span style={{textAlign:'center',color:C.muted}}>Trend</span>
         <span style={{textAlign:'right',color:C.muted}}>Price</span>
         <span style={{textAlign:'center',color:C.muted}}>Chg%</span>
-        <span style={{textAlign:'center',color:C.muted}}>PP 10d</span>
+        <span style={{textAlign:'center',color:C.muted}}>10 D Vol</span>
         <span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>
         <span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>
         <span style={{textAlign:'right',color:C.muted,fontSize:9}}>MCap</span>
@@ -4739,7 +4739,7 @@ export default function App(){
                     </div>
                     <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
                       {[['mid','MID (Midcap RS)'],['sml','SML (Smallcap RS)'],['sec','SEC (Sector RS)'],
-                        ['trend','Trend'],['pp10','PP 10d'],['rs7d','RS Last 7d'],['stage','Stage/Vol'],
+                        ['trend','Trend'],['pp10','10 D Vol'],['rs7d','RS Last 7d'],['stage','Stage/Vol'],
                         ['mcap','MCap'],['pe','P/E'],['roe','ROE'],['de','D/E'],['prom','Prom%']].map(([key,label])=>(
                         <button key={key} onClick={()=>toggleRsCol(key)}
                           style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,
@@ -4986,7 +4986,7 @@ export default function App(){
                     {visibleRsCols.trend&&<SortableHeader label="Trend" sortKey="slope" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
                     <SortableHeader label="Price" sortKey="last" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>
                     <SortableHeader label="Chg%" sortKey="chg" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
-                    {visibleRsCols.pp10&&<SortableHeader label="PP 10d" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
+                    {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
                     {visibleRsCols.rs7d&&<span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>}
                     {visibleRsCols.stage&&<span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>}
                     {visibleRsCols.mcap&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>MCap</span>}
@@ -5813,7 +5813,7 @@ export default function App(){
                             ['ROE',     s.roe?`${s.roe.toFixed(1)}%`:'—',  s.roe?s.roe>20?C.green:s.roe>10?C.yellow:C.red:C.muted],
                             ['Promoter',s.promoter?`${s.promoter.toFixed(1)}%`:'—', s.promoter?s.promoter>55?C.green:C.yellow:C.muted],
                             ['RVOL',    s.rvol?.toFixed(2)??'—',           s.rvol?s.rvol>=2?C.orange:s.rvol>=1.5?C.yellow:C.muted:C.muted],
-                            ['PP 10d',  `${s.pp?.ppCount10d||0}×`,         s.pp?.ppCount10d>0?C.orange:C.muted],
+                            ['10 D Vol', `${s.pp?.ppCount10d||0}×`,         s.pp?.ppCount10d>0?C.orange:C.muted],
                             ['Sector',  s.sector,                          C.muted],
                           ].map(([k,v,c])=>(
                             <div key={k} style={{display:'flex',justifyContent:'space-between',
