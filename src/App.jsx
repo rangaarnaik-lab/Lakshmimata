@@ -4329,7 +4329,7 @@ export default function App(){
   const weakBase=stocks.filter(s=>s.weakRS.chg1d>=weakThreshold&&s.rs<50&&s.sym.toLowerCase().includes(weakSearch.toLowerCase())&&(!weakSigOnly||s.weakRS.isSignal)).sort((a,b)=>b.weakRS.chg1d-a.weakRS.chg1d)
   const displayedWeak=applyPP(weakBase,ppFilterWeak)
 
-  const tabs=[['rs','📊','RS'],['indices','🗂','Indices'],['breadth','📈','Breadth'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['weak','🚨','Weak'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
+  const tabs=[['rs','📊','RS'],['indices','🗂','Indices'],['breadth','📈','Breadth'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
 
   if(authLoading)return(
     <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -6343,7 +6343,7 @@ export default function App(){
         )}
 
         {/* ══ WEAK RS ══ */}
-        {mainTab==='weak'&&(
+        {mainTab==='52wl'&&(
           <div>
             <LastUpdatedBar
               scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
