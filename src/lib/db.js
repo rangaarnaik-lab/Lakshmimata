@@ -649,3 +649,56 @@ export async function fetchIndexPriceHistory(name) {
     daysCount: prices.length,
   }
 }
+
+/**
+ * Logs one page view for the landing page's usage stats. visitorId is a
+ * random UUID generated once per browser and persisted to localStorage
+ * — not tied to any real account/login, just enough to count "unique
+ * visitors" and "daily active visits" without needing auth. Upserts on
+ * (visitor_id, viewed_date) so reloading the same day doesn't inflate
+ * the daily count — one row per visitor per day, naturally deduped.
+ */
+export async function logPageView() {
+  try {
+    let visitorId = localStorage.getItem('lakshmimata-visitor-id')
+    if (!visitorId) {
+      visitorId = crypto.randomUUID()
+      localStorage.setItem('lakshmimata-visitor-id', visitorId)
+    }
+    const today = new Date().toISOString().split('T')[0]
+    await supabase.from('page_views').upsert(
+      { visitor_id: visitorId, viewed_date: today },
+      { onConflict: 'visitor_id,viewed_date', ignoreDuplicates: true }
+    )
+  } catch (e) { /* never let analytics break the landing page */ }
+}
+
+/**
+ * Aggregated usage stats for the landing page: all-time unique visitors
+ * and a day-by-day view count for the last `days` days. Aggregated
+ * client-side from raw rows (visitor_id, viewed_date only, no PII) —
+ * fine at this scale; would need a proper Postgres view/RPC if this
+ * table ever grew into the millions of rows.
+ */
+export async function fetchUsageStats(days = 14) {
+  const { data, error } = await supabase
+    .from('page_views')
+    .select('visitor_id,viewed_date')
+  if (error || !data) return { uniqueUsers: null, dailyTrend: [] }
+
+  const uniqueUsers = new Set(data.map(r => r.visitor_id)).size
+
+  const byDate = {}
+  for (const row of data) byDate[row.viewed_date] = (byDate[row.viewed_date] || 0) + 1
+
+  const dailyTrend = []
+  const d = new Date()
+  for (let i = days - 1; i >= 0; i--) {
+    const dt = new Date(d)
+    dt.setDate(dt.getDate() - i)
+    const key = dt.toISOString().split('T')[0]
+    dailyTrend.push({ date: key, count: byDate[key] || 0 })
+  }
+
+  return { uniqueUsers, dailyTrend }
+}

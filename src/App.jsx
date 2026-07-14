@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -2850,6 +2850,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
   const [slide,setSlide]=useState(0)
   const [paused,setPaused]=useState(false)
   const [topGainers,setTopGainers]=useState([])
+  const [usageStats,setUsageStats]=useState(null) // {uniqueUsers, dailyTrend} | null while loading
   const slideCount=3
   useEffect(()=>{
     if(paused) return
@@ -2858,6 +2859,10 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
   },[paused])
   useEffect(()=>{
     fetchTopGainers(15).then(setTopGainers)
+  },[])
+  useEffect(()=>{
+    logPageView()
+    fetchUsageStats(14).then(setUsageStats)
   },[])
 
   const gold='#C9A227', goldSoft='#E8D28A'
@@ -2961,6 +2966,27 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
           <p style={{fontSize:11.5,color:C.muted,...mono,letterSpacing:'0.03em',marginTop:14}}>
             2,380+ NSE STOCKS TRACKED · UPDATED THROUGH THE SESSION
           </p>
+          {usageStats&&usageStats.uniqueUsers!=null&&(
+            <div style={{marginTop:18,display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+              <span style={{fontSize:11.5,color:goldSoft,...mono,letterSpacing:'0.03em'}}>
+                {usageStats.uniqueUsers.toLocaleString('en-IN')}+ TRADERS HAVE VISITED
+              </span>
+              {usageStats.dailyTrend.length>1&&(()=>{
+                const max=Math.max(1,...usageStats.dailyTrend.map(d=>d.count))
+                const W=120,H=24,n=usageStats.dailyTrend.length
+                const barW=W/n*0.6
+                return(
+                  <svg width={W} height={H} style={{display:'block'}} title="Daily visits, last 14 days">
+                    {usageStats.dailyTrend.map((d,i)=>{
+                      const h=Math.max(1,(d.count/max)*H)
+                      return <rect key={d.date} x={i*(W/n)} y={H-h} width={barW} height={h}
+                        fill={gold} opacity={0.35+0.5*(d.count/max)}/>
+                    })}
+                  </svg>
+                )
+              })()}
+            </div>
+          )}
         </section>
 
         {/* Slideshow */}
