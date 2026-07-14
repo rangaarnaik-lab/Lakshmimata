@@ -2861,8 +2861,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
     fetchTopGainers(15).then(setTopGainers)
   },[])
   useEffect(()=>{
-    logPageView()
-    fetchUsageStats(14).then(setUsageStats)
+    logPageView().finally(() => fetchUsageStats(14).then(setUsageStats))
   },[])
 
   const gold='#C9A227', goldSoft='#E8D28A'
@@ -2967,22 +2966,42 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
             2,380+ NSE STOCKS TRACKED · UPDATED THROUGH THE SESSION
           </p>
           {usageStats&&usageStats.uniqueUsers!=null&&(
-            <div style={{marginTop:18,display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
-              <span style={{fontSize:11.5,color:goldSoft,...mono,letterSpacing:'0.03em'}}>
-                {usageStats.uniqueUsers.toLocaleString('en-IN')}+ TRADERS HAVE VISITED
-              </span>
+            <div style={{marginTop:18}}>
+              <div style={{display:'flex',alignItems:'baseline',gap:20,flexWrap:'wrap',marginBottom:10}}>
+                <span style={{fontSize:11.5,color:goldSoft,...mono,letterSpacing:'0.03em'}}>
+                  {usageStats.uniqueUsers.toLocaleString('en-IN')} UNIQUE TRADERS
+                </span>
+                <span style={{fontSize:11.5,color:C.muted,...mono,letterSpacing:'0.03em'}}>
+                  {usageStats.totalViews.toLocaleString('en-IN')} TOTAL VISITS
+                </span>
+              </div>
               {usageStats.dailyTrend.length>1&&(()=>{
-                const max=Math.max(1,...usageStats.dailyTrend.map(d=>d.count))
-                const W=120,H=24,n=usageStats.dailyTrend.length
-                const barW=W/n*0.6
+                const maxViews=Math.max(1,...usageStats.dailyTrend.map(d=>d.views))
+                const maxUsers=Math.max(1,...usageStats.dailyTrend.map(d=>d.uniqueUsers))
+                const W=260,H=44,n=usageStats.dailyTrend.length
+                const barW=(W/n)*0.55
+                const xFor=i=>i*(W/n)+(W/n-barW)/2
+                const lineY=v=>H-2-((v/maxUsers)*(H-6))
+                const linePts=usageStats.dailyTrend.map((d,i)=>`${xFor(i)+barW/2},${lineY(d.uniqueUsers)}`).join(' ')
                 return(
-                  <svg width={W} height={H} style={{display:'block'}} title="Daily visits, last 14 days">
-                    {usageStats.dailyTrend.map((d,i)=>{
-                      const h=Math.max(1,(d.count/max)*H)
-                      return <rect key={d.date} x={i*(W/n)} y={H-h} width={barW} height={h}
-                        fill={gold} opacity={0.35+0.5*(d.count/max)}/>
-                    })}
-                  </svg>
+                  <div>
+                    <svg width={W} height={H} style={{display:'block'}}>
+                      {usageStats.dailyTrend.map((d,i)=>{
+                        const h=Math.max(1,(d.views/maxViews)*(H-4))
+                        return <rect key={d.date} x={xFor(i)} y={H-h} width={barW} height={h}
+                          fill={gold} opacity={0.3} rx={1}>
+                          <title>{d.date}: {d.views} visit{d.views===1?'':'s'}, {d.uniqueUsers} unique</title>
+                        </rect>
+                      })}
+                      <polyline points={linePts} fill="none" stroke={goldSoft} strokeWidth={1.4}/>
+                      {usageStats.dailyTrend.map((d,i)=>(
+                        <circle key={d.date} cx={xFor(i)+barW/2} cy={lineY(d.uniqueUsers)} r={1.8} fill={goldSoft}/>
+                      ))}
+                    </svg>
+                    <div style={{fontSize:9,color:C.muted,...mono,letterSpacing:'0.02em',marginTop:3}}>
+                      LAST 14 DAYS — BARS: VISITS · LINE: UNIQUE TRADERS
+                    </div>
+                  </div>
                 )
               })()}
             </div>
