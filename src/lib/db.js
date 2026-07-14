@@ -653,10 +653,13 @@ export async function fetchIndexPriceHistory(name) {
 /**
  * Logs one page view for the landing page's usage stats. visitorId is a
  * random UUID generated once per browser and persisted to localStorage
- * — not tied to any real account/login, just enough to count "unique
- * visitors" and "daily active visits" without needing auth. Upserts on
- * (visitor_id, viewed_date) so reloading the same day doesn't inflate
- * the daily count — one row per visitor per day, naturally deduped.
+ * — not tied to any real account/login. Every visit gets its own row
+ * (no dedup at insert time) so "total views" and "unique visitors" can
+ * be told apart later — a visitor who reloads 3 times in a day adds 3
+ * views but still counts as 1 unique visitor. Returns the visitor_id so
+ * callers can await this before fetching stats, otherwise the visitor's
+ * own just-logged visit can lose a race against the stats query and not
+ * show up until their next visit.
  */
 export async function logPageView() {
   try {
@@ -666,30 +669,33 @@ export async function logPageView() {
       localStorage.setItem('lakshmimata-visitor-id', visitorId)
     }
     const today = new Date().toISOString().split('T')[0]
-    await supabase.from('page_views').upsert(
-      { visitor_id: visitorId, viewed_date: today },
-      { onConflict: 'visitor_id,viewed_date', ignoreDuplicates: true }
-    )
-  } catch (e) { /* never let analytics break the landing page */ }
+    await supabase.from('page_views').insert({ visitor_id: visitorId, viewed_date: today })
+    return visitorId
+  } catch (e) { return null } // never let analytics break the landing page
 }
 
 /**
- * Aggregated usage stats for the landing page: all-time unique visitors
- * and a day-by-day view count for the last `days` days. Aggregated
- * client-side from raw rows (visitor_id, viewed_date only, no PII) —
- * fine at this scale; would need a proper Postgres view/RPC if this
- * table ever grew into the millions of rows.
+ * Aggregated usage stats for the landing page: all-time unique visitors,
+ * all-time total views, and a day-by-day breakdown of both for the last
+ * `days` days. Aggregated client-side from raw rows — fine at this
+ * scale (a handful of visitors/day), would need a proper Postgres view/
+ * RPC if this ever grew into the millions of rows.
  */
 export async function fetchUsageStats(days = 14) {
   const { data, error } = await supabase
     .from('page_views')
     .select('visitor_id,viewed_date')
-  if (error || !data) return { uniqueUsers: null, dailyTrend: [] }
+  if (error || !data) return { uniqueUsers: null, totalViews: null, dailyTrend: [] }
 
   const uniqueUsers = new Set(data.map(r => r.visitor_id)).size
+  const totalViews = data.length
 
-  const byDate = {}
-  for (const row of data) byDate[row.viewed_date] = (byDate[row.viewed_date] || 0) + 1
+  const byDate = {} // date -> { views, visitorIds: Set }
+  for (const row of data) {
+    if (!byDate[row.viewed_date]) byDate[row.viewed_date] = { views: 0, visitorIds: new Set() }
+    byDate[row.viewed_date].views += 1
+    byDate[row.viewed_date].visitorIds.add(row.visitor_id)
+  }
 
   const dailyTrend = []
   const d = new Date()
@@ -697,8 +703,9 @@ export async function fetchUsageStats(days = 14) {
     const dt = new Date(d)
     dt.setDate(dt.getDate() - i)
     const key = dt.toISOString().split('T')[0]
-    dailyTrend.push({ date: key, count: byDate[key] || 0 })
+    const day = byDate[key]
+    dailyTrend.push({ date: key, views: day?.views || 0, uniqueUsers: day?.visitorIds.size || 0 })
   }
 
-  return { uniqueUsers, dailyTrend }
+  return { uniqueUsers, totalViews, dailyTrend }
 }
