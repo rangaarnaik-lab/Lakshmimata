@@ -4188,6 +4188,9 @@ export default function App(){
   // same as before). Persisted to localStorage as the user's saved
   // layout, so it survives reloads.
   const [showColumns,setShowColumns]=useState(false)
+  // Which breakout type is shown on the Breakout tab — one table with
+  // clickable filter chips instead of 5 always-stacked sections.
+  const [breakoutType,setBreakoutType]=useState('r1')
   const [visibleRsCols,setVisibleRsCols]=useState(()=>{
     const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true}
     try{
@@ -6249,62 +6252,54 @@ export default function App(){
               </div>
             </div>
 
-            {/* Resistance Breakout (R1) Section */}
-            <div style={{background:C.card,border:`1px solid ${C.red}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:14,color:C.red,marginBottom:4}}>🎯 Resistance Breakout (R1)</div>
-              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
-                Stocks whose price just crossed above a significant recent resistance level
-              </div>
-              <TVCopyPanel stocks={stocks.filter(s=>s.isResistanceBreakout&&passesMcap(s))} label="R1 Breakouts"/>
-              <BreakoutTable stocks={stocks.filter(s=>s.isResistanceBreakout&&passesMcap(s))}
-                isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
-            </div>
-
-            {/* 52-Week High Breakout Section */}
-            <div style={{background:C.card,border:`1px solid ${C.yellow}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:14,color:C.yellow,marginBottom:4}}>🏆 52-Week High Breakout</div>
-              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
-                Stocks that just crossed above their prior 52-week high — a fresh new high today, not one from days ago
-              </div>
-              <TVCopyPanel stocks={stocks.filter(s=>s.is52whBreakout&&passesMcap(s))} label="52W High Breakouts"/>
-              <BreakoutTable stocks={stocks.filter(s=>s.is52whBreakout&&passesMcap(s))}
-                isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
-            </div>
-
-            {/* Weekly Breakout Stocks Section — top gainers by 1-week %
-                change, doesn't need a dedicated backend field since chgW
-                is already computed per stock. */}
-            <div style={{background:C.card,border:`1px solid ${C.green}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:14,color:C.green,marginBottom:4}}>📅 Weekly Breakout Stocks</div>
-              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
-                Biggest gainers over the last week
-              </div>
-              <TVCopyPanel stocks={[...stocks].filter(s=>s.chgW>0&&passesMcap(s)).sort((a,b)=>b.chgW-a.chgW)} label="Weekly Gainers"/>
-              <BreakoutTable stocks={stocks.filter(s=>s.chgW>0&&passesMcap(s))}
-                isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym} defaultSortBy="chgW"/>
-            </div>
-
-            {/* Cup & Handle Breakout Section */}
-            <div style={{background:C.card,border:`1px solid ${C.yellow}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:14,color:C.yellow,marginBottom:4}}>☕ Cup & Handle Breakout</div>
-              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
-                Stocks breaking out above a cup-and-handle formation today — algorithmic approximation, use as a visual aid
-              </div>
-              <TVCopyPanel stocks={stocks.filter(s=>s.isCupHandleBreakout&&passesMcap(s))} label="Cup Breakouts"/>
-              <BreakoutTable stocks={stocks.filter(s=>s.isCupHandleBreakout&&passesMcap(s))}
-                isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
-            </div>
-
-            {/* Guppy (GMMA) Crossover Section */}
-            <div style={{background:C.card,border:`1px solid ${C.green}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:14,color:C.green,marginBottom:4}}>🐠 Guppy (GMMA) Crossover</div>
-              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
-                Short-term EMA group just crossed above the long-term EMA group — short-term momentum picking up ahead of the longer trend
-              </div>
-              <TVCopyPanel stocks={stocks.filter(s=>s.isGuppyBullishCrossover&&passesMcap(s))} label="Guppy Crossovers"/>
-              <BreakoutTable stocks={stocks.filter(s=>s.isGuppyBullishCrossover&&passesMcap(s))}
-                isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
-            </div>
+            {/* Breakout type selector — one table, clickable filter chips
+                instead of 5 always-stacked sections. key={breakoutType} on
+                BreakoutTable forces a clean remount on switch, so sort/page
+                state resets per type (Weekly re-opens sorted by weekly
+                gain, R1 by RS, etc.) instead of carrying over stale state
+                from whichever type was previously selected. */}
+            {(()=>{
+              const BREAKOUT_TYPES=[
+                {key:'r1',icon:'🎯',label:'R1 Breakout',color:C.red,
+                  desc:'Stocks whose price just crossed above a significant recent resistance level',
+                  filter:s=>s.isResistanceBreakout&&passesMcap(s), sort:'rs'},
+                {key:'52wh',icon:'🏆',label:'52W High',color:C.yellow,
+                  desc:'Stocks that just crossed above their prior 52-week high — a fresh new high today, not one from days ago',
+                  filter:s=>s.is52whBreakout&&passesMcap(s), sort:'rs'},
+                {key:'weekly',icon:'📅',label:'Weekly',color:C.green,
+                  desc:'Biggest gainers over the last week',
+                  filter:s=>s.chgW>0&&passesMcap(s), sort:'chgW'},
+                {key:'cup',icon:'☕',label:'Cup & Handle',color:C.yellow,
+                  desc:'Stocks breaking out above a cup-and-handle formation today — algorithmic approximation, use as a visual aid',
+                  filter:s=>s.isCupHandleBreakout&&passesMcap(s), sort:'rs'},
+                {key:'guppy',icon:'🐠',label:'Guppy Crossover',color:C.green,
+                  desc:'Short-term EMA group just crossed above the long-term EMA group — short-term momentum picking up ahead of the longer trend',
+                  filter:s=>s.isGuppyBullishCrossover&&passesMcap(s), sort:'rs'},
+              ]
+              const active=BREAKOUT_TYPES.find(t=>t.key===breakoutType)||BREAKOUT_TYPES[0]
+              const filtered=stocks.filter(active.filter)
+              return(
+                <div style={{background:C.card,border:`1px solid ${active.color}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
+                    {BREAKOUT_TYPES.map(t=>(
+                      <button key={t.key} onClick={()=>setBreakoutType(t.key)}
+                        style={{padding:'6px 12px',borderRadius:20,
+                          border:`1px solid ${breakoutType===t.key?t.color:C.border}`,
+                          background:breakoutType===t.key?t.color+'22':'transparent',
+                          color:breakoutType===t.key?t.color:C.muted,
+                          fontSize:12,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
+                        {t.icon} {t.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{fontWeight:800,fontSize:14,color:active.color,marginBottom:4}}>{active.icon} {active.label}</div>
+                  <div style={{fontSize:11,color:C.muted,marginBottom:10}}>{active.desc}</div>
+                  <TVCopyPanel stocks={filtered} label={active.label}/>
+                  <BreakoutTable key={breakoutType} stocks={filtered} isMobile={isMobile} visibleRsCols={visibleRsCols}
+                    onChartOpen={setChartSym} defaultSortBy={active.sort}/>
+                </div>
+              )
+            })()}
 
             {/* HY/HT Breakout list */}
             <TVCopyPanel stocks={stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s))} label="HY/HT Breakouts"/>
