@@ -3841,7 +3841,18 @@ export default function App(){
   const [progress,setProgress]=useState(0)
   const [progressMsg,setProgressMsg]=useState('')
   const [lastRefresh,setLastRefresh]=useState(null)
-  const [autoRefresh,setAutoRefresh]=useState(true)   // ON by default
+  const [autoRefresh,setAutoRefreshRaw]=useState(()=>{
+    try{ return localStorage.getItem('lakshmimata-autorefresh')==='on' }catch(e){ return false }
+  }) // OFF by default — opt-in, not opt-out, so continuous ~1-min polling only
+     // runs for users who actually want it (reduces aggregate egress across
+     // everyone who just glances at the app without needing live updates)
+  const setAutoRefresh=(v)=>{
+    setAutoRefreshRaw(prev=>{
+      const next=typeof v==='function'?v(prev):v
+      try{localStorage.setItem('lakshmimata-autorefresh', next?'on':'off')}catch(e){}
+      return next
+    })
+  }
   const [refreshInterval,setRefreshInterval]=useState(60000) // 1 min default
   const [scanMeta,setScanMeta]=useState(null)
   const [weakThreshold,setWeakThreshold]=useState(8)
