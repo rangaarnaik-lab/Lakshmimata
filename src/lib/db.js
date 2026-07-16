@@ -196,6 +196,32 @@ export async function fetchWatchlistRotation(syms=[], days=10) {
 }
 
 export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = null, historyDate = null } = {}) {
+  // R2 fast-path: only serves today's live snapshot (one file, refreshed
+  // ~60s during market hours) — can't help with historyDate (a specific
+  // past day, only in the stock_history table). When it can help, try it
+  // first and apply the same index/watchlist filtering client-side on
+  // its result; any failure (not configured, network error, stale file)
+  // falls straight through to the unchanged Supabase path below.
+  if (!historyDate) {
+    const r2Rows = await fetchStocksFromR2()
+    if (r2Rows) {
+      let filtered = r2Rows
+      if (watchlistSyms && watchlistSyms.length > 0) {
+        const want = new Set(watchlistSyms)
+        filtered = filtered.filter(s => want.has(s.sym))
+      } else if (indexFilter === 'nifty50') {
+        filtered = filtered.filter(s => s.inNifty50)
+      } else if (indexFilter === 'midcap') {
+        filtered = filtered.filter(s => s.inMidcap)
+      } else if (indexFilter === 'smallcap') {
+        filtered = filtered.filter(s => s.inSmallcap)
+      } else if (indexFilter === 'microcap') {
+        filtered = filtered.filter(s => s.inMicrocap)
+      }
+      return [...filtered].sort((a, b) => (b.rs || 0) - (a.rs || 0))
+    }
+  }
+
   const table = historyDate ? 'stock_history' : 'stocks'
 
   const buildQuery = () => {
@@ -229,8 +255,19 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
     from += PAGE_SIZE
   }
 
-  // Transform DB rows to app format
-  return (data || []).map(row => ({
+  // Transform one raw DB row (snake_case, matching the Postgres/R2
+  // snapshot shape) into the camelCase shape the rest of the app expects.
+  // Extracted as its own top-level function (see transformStockRow below
+  // fetchStocksFromDB) — not inlined here — so the R2 fast-path can
+  // produce byte-for-byte identical output to this Supabase path, instead
+  // of risking two copies of this large mapping drifting apart over time.
+  return (data || []).map(transformStockRow)
+}
+
+// Transform one raw DB row (snake_case, matching the Postgres/R2 snapshot
+// shape) into the camelCase shape the rest of the app expects.
+function transformStockRow(row) {
+  return {
     sym:        row.sym,
     rs:         row.rs || 0,
     rsTv:       row.rs_tv,        // TradingView / Lakshmi Mata Pine Script RS
@@ -360,7 +397,43 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
     },
     lastUpdated: row.last_updated,
     scanType:   row.scan_type,
-  }))
+  }
+}
+
+/**
+ * Fetches today's live stock snapshot from R2 (Cloudflare CDN) instead of
+ * querying Supabase directly — same data, served from cache to everyone
+ * requesting it within the same ~60s window instead of every user
+ * triggering their own database read. Returns null (never throws) on any
+ * failure — missing env var, network error, 404, stale/malformed file —
+ * so the caller can cleanly fall back to Supabase rather than needing to
+ * handle a thrown exception.
+ *
+ * Staleness check: the snapshot is refreshed roughly every 60s during
+ * market hours by the backend. If the newest lastUpdated timestamp in the
+ * file is more than 5 minutes old, treat it as unreliable (backend upload
+ * stuck, R2 serving a cached-too-long copy, etc.) and fall back to
+ * Supabase instead of silently showing stale data.
+ */
+export async function fetchStocksFromR2() {
+  const url = import.meta.env.VITE_R2_SNAPSHOT_URL
+  if (!url) return null // R2 not configured yet — not an error, just not set up
+  try {
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) return null
+    const rows = await res.json()
+    if (!Array.isArray(rows) || rows.length === 0) return null
+    const transformed = rows.map(transformStockRow)
+    const newest = transformed.reduce((max, s) => {
+      const t = s.lastUpdated ? new Date(s.lastUpdated).getTime() : 0
+      return t > max ? t : max
+    }, 0)
+    const STALE_LIMIT_MS = 5 * 60 * 1000
+    if (newest && (Date.now() - newest) > STALE_LIMIT_MS) return null
+    return transformed
+  } catch (e) {
+    return null // network error, malformed JSON, etc. — fall back silently
+  }
 }
 
 /**
