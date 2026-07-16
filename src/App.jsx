@@ -3854,6 +3854,33 @@ export default function App(){
     })
   }
   const [refreshInterval,setRefreshInterval]=useState(60000) // 1 min default
+
+  // Auto-disable auto-refresh after 5 minutes of no user activity — even
+  // someone who explicitly opted in shouldn't keep generating background
+  // polling traffic indefinitely once they've walked away from the tab.
+  // lastActivityRef is a ref (not state) since it updates on every mouse
+  // move/keystroke — using state here would cause a re-render storm.
+  const lastActivityRef=useRef(Date.now())
+  useEffect(()=>{
+    if(!autoRefresh) return // nothing to track or check if it's already off
+    const markActive=()=>{ lastActivityRef.current=Date.now() }
+    const events=['mousemove','keydown','touchstart','click','scroll']
+    events.forEach(e=>window.addEventListener(e,markActive,{passive:true}))
+    const onVisibility=()=>{ if(!document.hidden) markActive() }
+    document.addEventListener('visibilitychange',onVisibility)
+    markActive() // reset the clock the moment autoRefresh turns on
+    const INACTIVITY_LIMIT=5*60*1000 // 5 minutes
+    const checkTimer=setInterval(()=>{
+      if(Date.now()-lastActivityRef.current>INACTIVITY_LIMIT){
+        setAutoRefresh(false)
+      }
+    },30000) // check every 30s — no need to check more often than that
+    return ()=>{
+      events.forEach(e=>window.removeEventListener(e,markActive))
+      document.removeEventListener('visibilitychange',onVisibility)
+      clearInterval(checkTimer)
+    }
+  },[autoRefresh])
   const [scanMeta,setScanMeta]=useState(null)
   const [weakThreshold,setWeakThreshold]=useState(8)
   const [indexFilter,setIndexFilter]=useState('all')
