@@ -4360,11 +4360,16 @@ export default function App(){
   // Auto-refresh from DB every 1 minute — disabled while viewing a past
   // date, and disabled in demo mode (a real runDBScan() would silently
   // replace the curated sample dataset with a live scan, breaking the
-  // 'sample data — not live' promise the demo banner makes).
+  // 'sample data — not live' promise the demo banner makes). Also only
+  // actually scans during market hours — isMarketOpen() is checked fresh
+  // on every tick (not just once at setup), so it correctly goes quiet
+  // if the market closes while the interval is still running, rather
+  // than continuing to poll all night/weekend for someone who left the
+  // tab open with auto-refresh on.
   useEffect(()=>{
     clearInterval(refreshTimer.current)
     if(autoRefresh&&!historyDate&&!demoMode){
-      refreshTimer.current=setInterval(()=>runDBScan(),refreshInterval)
+      refreshTimer.current=setInterval(()=>{ if(isMarketOpen()) runDBScan() },refreshInterval)
     }
     return()=>clearInterval(refreshTimer.current)
   },[autoRefresh,refreshInterval,runDBScan,historyDate,demoMode])
