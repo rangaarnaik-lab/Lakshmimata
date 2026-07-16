@@ -6118,7 +6118,6 @@ export default function App(){
                   {l:'🚀 Power Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)&&s.rs>=80&&s.chg>=3).length,c:C.accent},
                   {l:'⭐ Strong Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)&&s.rs>=70&&s.chg>=2).length,c:C.green},
                   {l:'✅ All Breakouts',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length,c:C.teal},
-                  {l:'🏛️ IBV Signals',v:stocks.filter(s=>calcIBV(s).isIBV&&passesMcap(s)).length,c:C.purple},
                   {l:'🔥 PP + Break',v:stocks.filter(s=>s.pp?.isPP&&calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length,c:C.orange},
                   {l:'👑 RS 90+ Break',v:stocks.filter(s=>s.rs>=90&&calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length,c:C.yellow},
                   {l:'🎯 R1 Breakout',v:stocks.filter(s=>s.isResistanceBreakout&&passesMcap(s)).length,c:C.red},
@@ -6130,33 +6129,6 @@ export default function App(){
                     <div style={{fontSize:10,color:C.muted,marginTop:3}}>{l}</div>
                   </div>
                 ))}
-              </div>
-            </div>
-
-            {/* IBV Section */}
-            <div style={{background:C.card,border:`1px solid ${C.purple}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:14,color:C.purple,marginBottom:4}}>🏛️ IBV — Institutional Buying Volume</div>
-              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
-                Stocks with 2+ Pocket Pivot days in last 10 days = institutional accumulation
-              </div>
-              <TVCopyPanel stocks={stocks.filter(s=>calcIBV(s).isIBV&&passesMcap(s))} label="IBV Stocks"/>
-              <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
-                {stocks.filter(s=>calcIBV(s).isIBV&&passesMcap(s)).slice(0,20).map(s=>{
-                  const ibv=calcIBV(s)
-                  return(
-                    <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
-                      display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}>
-                      <div>
-                        <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
-                        <div style={{fontSize:10,color:C.muted}}>{s.sector} · {ibv.ppCount} PP days · score {ibv.ibvScore}/7</div>
-                      </div>
-                      <div style={{textAlign:'right'}}>
-                        <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
-                        <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
-                      </div>
-                    </div>
-                  )
-                })}
               </div>
             </div>
 
