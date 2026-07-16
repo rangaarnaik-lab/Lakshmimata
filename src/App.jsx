@@ -3846,13 +3846,33 @@ export default function App(){
   }) // OFF by default — opt-in, not opt-out, so continuous ~1-min polling only
      // runs for users who actually want it (reduces aggregate egress across
      // everyone who just glances at the app without needing live updates)
+  // Which tab auto-refresh was turned on from — it's scoped to that specific
+  // page, not global; navigating away turns it back off (see the effect
+  // below), since there's no reason to keep polling live data for a tab
+  // you're no longer looking at.
+  const [autoRefreshTab,setAutoRefreshTab]=useState(null)
   const setAutoRefresh=(v)=>{
     setAutoRefreshRaw(prev=>{
       const next=typeof v==='function'?v(prev):v
       try{localStorage.setItem('lakshmimata-autorefresh', next?'on':'off')}catch(e){}
+      setAutoRefreshTab(next?mainTab:null)
       return next
     })
   }
+  // Turning auto-refresh off from elsewhere (inactivity timeout, this
+  // effect itself) should also clear which tab it was scoped to, so a
+  // stale tab reference doesn't linger — handled by setAutoRefresh always
+  // setting autoRefreshTab to null whenever next is false, above.
+
+  // Auto-disable when navigating away from the tab auto-refresh was
+  // enabled on. Deliberately does NOT fire on the very first render (when
+  // autoRefreshTab is still null because nothing's been turned on yet) —
+  // only reacts to actual tab changes after that.
+  useEffect(()=>{
+    if(autoRefresh && autoRefreshTab && mainTab!==autoRefreshTab){
+      setAutoRefresh(false)
+    }
+  },[mainTab])
   const [refreshInterval,setRefreshInterval]=useState(60000) // 1 min default
 
   // Auto-disable auto-refresh after 5 minutes of no user activity — even
