@@ -2550,6 +2550,123 @@ function computeRsGridCols(vis){
   return cols.filter(([,show])=>show).map(([w])=>w).join(' ')
 }
 
+// Same sort comparator as the main RS table's rsBase useMemo — extracted so
+// every breakout-style sub-table (R1, 52WH, Weekly, Cup&Handle, Guppy) can
+// share identical, consistent sort behavior instead of 5 near-duplicate
+// copies drifting apart over time.
+function sortStocksForTable(stocks,sortBy,sortDir){
+  const dir=sortDir==='asc'?1:-1
+  const getVal=(s,key)=>{
+    if(key==='rs') return s.rs??-1
+    if(key==='rsTv') return s.rsTv??-1
+    if(key==='rsMidcap') return s.rsMidcap??-1
+    if(key==='rsSmallcap') return s.rsSmallcap??-1
+    if(key==='rsSector') return s.rsSector??-1
+    if(key==='slope') return s.rsTrend?.slope??0
+    if(key==='pp10') return s.pp?.ppCount10d??0
+    if(key==='chg') return s.chg??0
+    if(key==='chgW') return s.chgW??-999
+    if(key==='last') return s.last??0
+    if(key==='sym') return s.sym
+    return 0
+  }
+  return [...stocks].sort((a,b)=>{
+    const av=getVal(a,sortBy), bv=getVal(b,sortBy)
+    if(sortBy==='sym') return dir===1?av.localeCompare(bv):bv.localeCompare(av)
+    if(av===-1&&bv!==-1) return 1 // nulls always sort to bottom regardless of direction
+    if(bv===-1&&av!==-1) return -1
+    return dir===1?(av-bv):(bv-av)
+  })
+}
+
+/**
+ * Same table format as the main RS Rating page — sortable columns,
+ * column-customization-aware (visibleRsCols is a shared preference across
+ * the whole app, not per-table), pagination — dropped into any pre-filtered
+ * stock list. Each instance has its own independent sort/page state, so
+ * sorting the R1 Breakout table doesn't affect the Cup & Handle table.
+ */
+function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,defaultSortBy='rs'}){
+  const [sortBy,setSortBy]=useState(defaultSortBy)
+  const [sortDir,setSortDir]=useState('desc')
+  const [page,setPage]=useState(0)
+  const handleSort=useCallback(key=>{
+    setSortBy(prev=>{
+      if(prev===key){ setSortDir(d=>d==='desc'?'asc':'desc'); return prev }
+      setSortDir('desc')
+      return key
+    })
+  },[])
+  const sorted=useMemo(()=>sortStocksForTable(stocks,sortBy,sortDir),[stocks,sortBy,sortDir])
+  useEffect(()=>{ setPage(0) },[stocks.length]) // reset to page 1 when the underlying filtered set size changes (e.g. after a rescan)
+  const totalPages=Math.max(1,Math.ceil(sorted.length/pageSize))
+  const pageClamped=Math.min(page,totalPages-1)
+  const paged=sorted.slice(pageClamped*pageSize,(pageClamped+1)*pageSize)
+
+  if(stocks.length===0){
+    return <div style={{textAlign:'center',padding:'20px 0',color:C.muted,fontSize:12}}>No matches right now.</div>
+  }
+
+  return(
+    <div>
+      {isMobile?(
+        paged.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={onChartOpen}/>)
+      ):(
+        <div style={{overflowX:'auto'}}>
+        <div style={{minWidth:900}}>
+          <div style={{display:'grid',gridTemplateColumns:computeRsGridCols(visibleRsCols),
+            padding:'7px 10px',borderBottom:`1px solid ${C.border}`,gap:4,
+            fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
+            <span style={{textAlign:'center',color:C.muted}}>#</span>
+            <SortableHeader label="Symbol" sortKey="sym" sortBy={sortBy} sortDir={sortDir} onSort={handleSort}/>
+            <SortableHeader label="RS-TV" sortKey="rsTv" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+            {visibleRsCols.mid&&<div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsMidcap')}>
+              <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsMidcap'?C.accent:C.muted}}>MID ↕</div>
+            </div>}
+            {visibleRsCols.sml&&<div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsSmallcap')}>
+              <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsSmallcap'?C.accent:C.muted}}>SML ↕</div>
+            </div>}
+            {visibleRsCols.sec&&<div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsSector')}>
+              <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsSector'?C.accent:C.muted}}>SEC ↕</div>
+            </div>}
+            {visibleRsCols.trend&&<SortableHeader label="Trend" sortKey="slope" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
+            <SortableHeader label="Price" sortKey="last" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>
+            <SortableHeader label="Chg%" sortKey="chg" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+            {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
+            {visibleRsCols.rs7d&&<span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>}
+            {visibleRsCols.stage&&<span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>}
+            {visibleRsCols.mcap&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>MCap</span>}
+            {visibleRsCols.pe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>}
+            {visibleRsCols.roe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>}
+            {visibleRsCols.de&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>}
+            {visibleRsCols.prom&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>}
+            <span/>
+            <span style={{textAlign:'center',color:C.muted,fontSize:9}}>TV</span>
+            <span style={{textAlign:'center',color:C.muted,fontSize:9}}>Scr</span>
+          </div>
+          {paged.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>onChartOpen(s.sym)} visibleRsCols={visibleRsCols}/>)}
+        </div>
+        </div>
+      )}
+      {sorted.length>pageSize&&(
+        <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginTop:14,padding:'10px 0'}}>
+          <button onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={pageClamped===0}
+            style={{padding:'7px 14px',borderRadius:8,cursor:pageClamped===0?'default':'pointer',
+              border:`1px solid ${C.border}`,background:C.card,fontSize:12,fontWeight:600,
+              color:pageClamped===0?C.muted+'66':C.text}}>← Prev</button>
+          <span style={{fontSize:12,color:C.muted,minWidth:140,textAlign:'center'}}>
+            Page {pageClamped+1} of {totalPages} · {sorted.length} stocks
+          </span>
+          <button onClick={()=>setPage(p=>Math.min(totalPages-1,p+1))} disabled={pageClamped>=totalPages-1}
+            style={{padding:'7px 14px',borderRadius:8,cursor:pageClamped>=totalPages-1?'default':'pointer',
+              border:`1px solid ${C.border}`,background:C.card,fontSize:12,fontWeight:600,
+              color:pageClamped>=totalPages-1?C.muted+'66':C.text}}>Next →</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DesktopRow({s,i,onChart,visibleRsCols}){
   const [open,setOpen]=useState(false)
   const vis=visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true}
@@ -6139,25 +6256,8 @@ export default function App(){
                 Stocks whose price just crossed above a significant recent resistance level
               </div>
               <TVCopyPanel stocks={stocks.filter(s=>s.isResistanceBreakout&&passesMcap(s))} label="R1 Breakouts"/>
-              <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
-                {stocks.filter(s=>s.isResistanceBreakout&&passesMcap(s)).length===0?(
-                  <div style={{textAlign:'center',padding:'20px 0',color:C.muted,fontSize:12}}>
-                    No resistance breakouts right now.
-                  </div>
-                ):stocks.filter(s=>s.isResistanceBreakout&&passesMcap(s)).sort((a,b)=>b.rs-a.rs).slice(0,20).map(s=>(
-                  <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
-                    display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}>
-                    <div>
-                      <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
-                      <div style={{fontSize:10,color:C.muted}}>{s.sector} · R1 @ {s.resistanceR1?fmtP(s.resistanceR1):'—'}</div>
-                    </div>
-                    <div style={{textAlign:'right'}}>
-                      <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
-                      <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <BreakoutTable stocks={stocks.filter(s=>s.isResistanceBreakout&&passesMcap(s))}
+                isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
             </div>
 
             {/* 52-Week High Breakout Section */}
@@ -6167,25 +6267,8 @@ export default function App(){
                 Stocks that just crossed above their prior 52-week high — a fresh new high today, not one from days ago
               </div>
               <TVCopyPanel stocks={stocks.filter(s=>s.is52whBreakout&&passesMcap(s))} label="52W High Breakouts"/>
-              <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
-                {stocks.filter(s=>s.is52whBreakout&&passesMcap(s)).length===0?(
-                  <div style={{textAlign:'center',padding:'20px 0',color:C.muted,fontSize:12}}>
-                    No 52-week high breakouts right now.
-                  </div>
-                ):stocks.filter(s=>s.is52whBreakout&&passesMcap(s)).sort((a,b)=>b.rs-a.rs).slice(0,20).map(s=>(
-                  <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
-                    display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}>
-                    <div>
-                      <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
-                      <div style={{fontSize:10,color:C.muted}}>{s.sector} · ₹{s.lastPrice?.toLocaleString('en-IN')}</div>
-                    </div>
-                    <div style={{textAlign:'right'}}>
-                      <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
-                      <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <BreakoutTable stocks={stocks.filter(s=>s.is52whBreakout&&passesMcap(s))}
+                isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
             </div>
 
             {/* Weekly Breakout Stocks Section — top gainers by 1-week %
@@ -6196,26 +6279,9 @@ export default function App(){
               <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
                 Biggest gainers over the last week
               </div>
-              <TVCopyPanel stocks={[...stocks].filter(s=>s.chgW>0&&passesMcap(s)).sort((a,b)=>b.chgW-a.chgW).slice(0,20)} label="Weekly Gainers"/>
-              <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
-                {[...stocks].filter(s=>s.chgW>0&&passesMcap(s)).length===0?(
-                  <div style={{textAlign:'center',padding:'20px 0',color:C.muted,fontSize:12}}>
-                    No weekly gainers right now.
-                  </div>
-                ):[...stocks].filter(s=>s.chgW>0&&passesMcap(s)).sort((a,b)=>b.chgW-a.chgW).slice(0,20).map(s=>(
-                  <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
-                    display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}>
-                    <div>
-                      <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
-                      <div style={{fontSize:10,color:C.muted}}>{s.sector} · ₹{s.lastPrice?.toLocaleString('en-IN')}</div>
-                    </div>
-                    <div style={{textAlign:'right'}}>
-                      <div style={{fontWeight:800,fontSize:16,color:C.green}}>+{s.chgW?.toFixed(2)}%</div>
-                      <div style={{fontSize:10,color:C.muted}}>RS {s.rs}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <TVCopyPanel stocks={[...stocks].filter(s=>s.chgW>0&&passesMcap(s)).sort((a,b)=>b.chgW-a.chgW)} label="Weekly Gainers"/>
+              <BreakoutTable stocks={stocks.filter(s=>s.chgW>0&&passesMcap(s))}
+                isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym} defaultSortBy="chgW"/>
             </div>
 
             {/* Cup & Handle Breakout Section */}
@@ -6225,25 +6291,8 @@ export default function App(){
                 Stocks breaking out above a cup-and-handle formation today — algorithmic approximation, use as a visual aid
               </div>
               <TVCopyPanel stocks={stocks.filter(s=>s.isCupHandleBreakout&&passesMcap(s))} label="Cup Breakouts"/>
-              <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
-                {stocks.filter(s=>s.isCupHandleBreakout&&passesMcap(s)).length===0?(
-                  <div style={{textAlign:'center',padding:'20px 0',color:C.muted,fontSize:12}}>
-                    No cup & handle breakouts right now.
-                  </div>
-                ):stocks.filter(s=>s.isCupHandleBreakout&&passesMcap(s)).sort((a,b)=>b.rs-a.rs).slice(0,20).map(s=>(
-                  <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
-                    display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}>
-                    <div>
-                      <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
-                      <div style={{fontSize:10,color:C.muted}}>{s.sector} · Cup depth {s.cupDepthPct??'—'}%</div>
-                    </div>
-                    <div style={{textAlign:'right'}}>
-                      <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
-                      <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <BreakoutTable stocks={stocks.filter(s=>s.isCupHandleBreakout&&passesMcap(s))}
+                isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
             </div>
 
             {/* Guppy (GMMA) Crossover Section */}
@@ -6253,25 +6302,8 @@ export default function App(){
                 Short-term EMA group just crossed above the long-term EMA group — short-term momentum picking up ahead of the longer trend
               </div>
               <TVCopyPanel stocks={stocks.filter(s=>s.isGuppyBullishCrossover&&passesMcap(s))} label="Guppy Crossovers"/>
-              <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:300,overflowY:'auto'}}>
-                {stocks.filter(s=>s.isGuppyBullishCrossover&&passesMcap(s)).length===0?(
-                  <div style={{textAlign:'center',padding:'20px 0',color:C.muted,fontSize:12}}>
-                    No Guppy crossovers right now.
-                  </div>
-                ):stocks.filter(s=>s.isGuppyBullishCrossover&&passesMcap(s)).sort((a,b)=>b.rs-a.rs).slice(0,20).map(s=>(
-                  <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.bg,borderRadius:8,padding:'10px 12px',
-                    display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}}>
-                    <div>
-                      <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
-                      <div style={{fontSize:10,color:C.muted}}>{s.sector}</div>
-                    </div>
-                    <div style={{textAlign:'right'}}>
-                      <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
-                      <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <BreakoutTable stocks={stocks.filter(s=>s.isGuppyBullishCrossover&&passesMcap(s))}
+                isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
             </div>
 
             {/* HY/HT Breakout list */}
