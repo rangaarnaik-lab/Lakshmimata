@@ -3896,9 +3896,14 @@ export default function App(){
   },[])
 
   // Poll for new squeeze/VCP and HY/HT fires every minute — both write to
-  // the same squeeze_alerts table on the backend.
+  // the same squeeze_alerts table on the backend. Gated on notifPermission
+  // too, not just session — polling for a notification a user has never
+  // granted permission to receive is pure wasted egress, they'd never see
+  // the result either way. Was previously unconditional for any logged-in
+  // session, an independent source of continuous background traffic the
+  // autoRefresh opt-in change didn't touch.
   useEffect(()=>{
-    if(!session) return
+    if(!session || notifPermission!=='granted') return
     const checkSqueezeAlerts = async()=>{
       try{
         const since = lastAlertCheck.current || new Date(Date.now()-90000).toISOString()
@@ -3949,7 +3954,7 @@ export default function App(){
     checkSqueezeAlerts()
     const timer = setInterval(checkSqueezeAlerts, 60000)
     return ()=>clearInterval(timer)
-  },[session])
+  },[session,notifPermission])
   const [chartWide,setChartWide]=useState(0) // 0=normal 1=wide 2=extra-wide
   // Drag-to-resize divider between the table and chart panel — continuous
   // resize in addition to the existing 3-preset expand button. null means
