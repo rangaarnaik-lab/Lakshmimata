@@ -2671,6 +2671,97 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,de
   )
 }
 
+// Shared identity color palette for RRG chart dots — moved to module
+// level (was previously defined inline inside the Rotation tab's render)
+// so the extracted RRGChart component below can use it regardless of
+// which page/instance is rendering it.
+const RRG_IDENTITY_PALETTE=['#4f8ef7','#ef4444','#eab308','#22c55e','#a855f7','#ec4899',
+  '#06b6d4','#f97316','#84cc16','#6366f1','#14b8a6','#f43f5e','#8b5cf6','#0ea5e9']
+function rrgIdentityColor(id){
+  let hash=0
+  for(let i=0;i<id.length;i++)hash=(hash*31+id.charCodeAt(i))|0
+  return RRG_IDENTITY_PALETTE[Math.abs(hash)%RRG_IDENTITY_PALETTE.length]
+}
+
+/**
+ * Rolling-momentum trail computation for an RRG chart — extracted from
+ * the Rotation tab's rotationDisplayData useMemo so the same logic can
+ * feed a second, independent chart (e.g. an index's constituent stocks)
+ * without duplicating it. Pure function: same inputs always produce the
+ * same output, safe to call from multiple useMemo call sites.
+ */
+function computeRolledRotationData(data,selectedIds){
+  const displayData = selectedIds && selectedIds.size>0 ? data.filter(s=>selectedIds.has(s.id)) : data
+  const ROLL_K=5 // ~1 trading week lookback for the local rate of change
+  const rolledData=displayData.map(s=>{
+    const trail=(s.trail||[]).map((t,i,arr)=>{
+      const j=Math.max(0,i-ROLL_K)
+      return {level:t.level, mom:t.level-arr[j].level}
+    })
+    return {...s, trail, momentum: trail.length?trail[trail.length-1].mom:(s.momentum||0)}
+  })
+  const maxAbsMom=Math.max(5,...rolledData.flatMap(s=>s.trail.map(t=>Math.abs(t.mom))))
+  return { displayData, rolledData, maxAbsMom }
+}
+
+/**
+ * The RRG (Relative Rotation Graph) scatter chart itself — quadrants,
+ * trails, arrowheads, legend. Extracted so it can be rendered more than
+ * once on the same page (the main sector/index/watchlist chart, AND a
+ * second smaller chart for whichever index's constituent stocks are
+ * currently expanded) without copy-pasting this SVG block.
+ *
+ * dotSizing: when true, dots scale up slightly based on each point's
+ * `count` field (used for sector aggregation, where a sector's dot
+ * represents many stocks) — off by default, since that only makes
+ * sense for aggregated points, not individual stocks.
+ */
+function RRGChart({rolledData,maxAbsMom,levelLabel,windowLabel,onDotClick,dotSizing=false,height=460}){
+  const xFor=level=>20+(Math.max(0,Math.min(100,level??50))/100)*580
+  const yFor=mom=>230-(Math.max(-maxAbsMom,Math.min(maxAbsMom,mom||0))/maxAbsMom)*205
+  return(
+    <svg viewBox={`0 0 620 ${height}`} style={{width:'100%',height:'auto',display:'block'}}>
+      <rect x="310" y="20" width="290" height="210" fill="#22c55e" opacity="0.06"/>
+      <rect x="20" y="20" width="290" height="210" fill="#4f8ef7" opacity="0.06"/>
+      <rect x="20" y="230" width="290" height="210" fill="#7c88a8" opacity="0.08"/>
+      <rect x="310" y="230" width="290" height="210" fill="#f97316" opacity="0.06"/>
+      <line x1="310" y1="20" x2="310" y2="440" stroke="#232c42" strokeWidth="1.5"/>
+      <line x1="20" y1="230" x2="600" y2="230" stroke="#232c42" strokeWidth="1.5"/>
+      <text x="580" y="38" textAnchor="end" fontSize="11" fontWeight="700" fill="#22c55e">LEADING</text>
+      <text x="40" y="38" textAnchor="start" fontSize="11" fontWeight="700" fill="#4f8ef7">IMPROVING</text>
+      <text x="40" y="428" textAnchor="start" fontSize="11" fontWeight="700" fill="#7c88a8">LAGGING</text>
+      <text x="580" y="428" textAnchor="end" fontSize="11" fontWeight="700" fill="#f97316">WEAKENING</text>
+      <text x="310" y="455" textAnchor="middle" fontSize="10" fill="#7c88a8">{levelLabel.toUpperCase()} LEVEL →</text>
+      <text x="12" y="230" textAnchor="middle" fontSize="10" fill="#7c88a8" transform="rotate(-90 12 230)">MOMENTUM ({windowLabel}) →</text>
+
+      {rolledData.filter(s=>s.trail&&s.trail.length>0).map((s,idx)=>{
+        const tx=t=>xFor(t.level), ty=t=>yFor(t.mom)
+        const pathD=s.trail.map((t,i)=>`${i===0?'M':'L'} ${tx(t)} ${ty(t)}`).join(' ')
+        const cx=xFor(s.level), cy=yFor(s.momentum)
+        const sx=tx(s.trail[0]), sy=ty(s.trail[0])
+        const r=dotSizing?7+Math.min(6,(s.count||1)/3):7
+        const color=rrgIdentityColor(s.id)
+        const markerId=`rrg-arrow-${idx}-${Math.random().toString(36).slice(2,7)}`
+        return(
+          <g key={s.id} style={{cursor:'pointer'}} onClick={()=>onDotClick(s)}>
+            <defs>
+              <marker id={markerId} viewBox="0 0 10 10" refX="8" refY="5"
+                markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill={color}/>
+              </marker>
+            </defs>
+            <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" opacity="0.55"
+              markerEnd={`url(#${markerId})`}/>
+            <circle cx={sx} cy={sy} r="4" fill="#0b0f1a" stroke={color} strokeWidth="1.5"/>
+            <circle cx={cx} cy={cy} r={r+3} fill="transparent"/>
+            <text x={cx+r+4} y={cy+4} fontSize="12" fontWeight="700" fill={color}>{s.label}</text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
 function DesktopRow({s,i,onChart,visibleRsCols}){
   const [open,setOpen]=useState(false)
   const vis=visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true}
@@ -4318,6 +4409,8 @@ export default function App(){
   const [rotationWindow,setRotationWindow]=useState(10) // trading days
   const [rotationScope,setRotationScope]=useState('sector') // 'sector' | 'index' | 'watchlist'
   const [rotationExpandedId,setRotationExpandedId]=useState(null) // clicked index's constituent stocks, shown inline instead of navigating away
+  const [constituentRotationData,setConstituentRotationData]=useState(null)
+  const [loadingConstituentRotation,setLoadingConstituentRotation]=useState(false)
   const [rotationWlId,setRotationWlId]=useState(null)
   // Which sectors/indices/stocks are focused on in the Rotation chart.
   // Empty set = show everyone (unfiltered, the original behavior).
@@ -4518,6 +4611,26 @@ export default function App(){
     return ()=>{ if(timer) clearInterval(timer) }
   },[session,mainTab,rotationWindow,rotationScope,rotationWlId,watchlists,activeWl])
 
+  // Constituent stocks' own RRG rotation — fetched separately from the
+  // main sector/index/watchlist chart above, only when an index is
+  // actually expanded. Reuses fetchWatchlistRotation (it just takes a
+  // list of symbols, regardless of whether they came from a real
+  // watchlist or an index's constituent list) so this needed zero new
+  // backend work, just a different symbol source.
+  useEffect(()=>{
+    if(mainTab!=='rotation'||rotationScope!=='index'||!rotationExpandedId){
+      setConstituentRotationData(null)
+      return
+    }
+    const constituents=getIndexConstituents(rotationExpandedId,stocks)
+    if(!constituents||constituents.length===0){ setConstituentRotationData(null); return }
+    setLoadingConstituentRotation(true)
+    fetchWatchlistRotation(constituents.map(s=>s.sym),rotationWindow)
+      .then(setConstituentRotationData)
+      .catch(e=>{console.error('Constituent rotation fetch:',e);setConstituentRotationData(null)})
+      .finally(()=>setLoadingConstituentRotation(false))
+  },[mainTab,rotationScope,rotationExpandedId,rotationWindow,stocks])
+
   // Save portfolio to localStorage whenever it changes
   useEffect(()=>{
     localStorage.setItem('lm_portfolio', JSON.stringify(portfolioHoldings))
@@ -4596,18 +4709,14 @@ export default function App(){
   // when rotationData or the focus selection changes.
   const rotationDisplayData=useMemo(()=>{
     const data = rotationData||[]
-    const displayData = rotationSelectedIds.size>0 ? data.filter(s=>rotationSelectedIds.has(s.id)) : data
-    const ROLL_K=5 // ~1 trading week lookback for the local rate of change
-    const rolledData=displayData.map(s=>{
-      const trail=(s.trail||[]).map((t,i,arr)=>{
-        const j=Math.max(0,i-ROLL_K)
-        return {level:t.level, mom:t.level-arr[j].level}
-      })
-      return {...s, trail, momentum: trail.length?trail[trail.length-1].mom:(s.momentum||0)}
-    })
-    const maxAbsMom=Math.max(5,...rolledData.flatMap(s=>s.trail.map(t=>Math.abs(t.mom))))
+    const {displayData,rolledData,maxAbsMom} = computeRolledRotationData(data,rotationSelectedIds)
     return { data, displayData, rolledData, maxAbsMom }
   },[rotationData,rotationSelectedIds])
+
+  const constituentRolledData=useMemo(()=>{
+    if(!constituentRotationData) return null
+    return computeRolledRotationData(constituentRotationData,new Set())
+  },[constituentRotationData])
 
   // Industries table aggregation — was previously an inline IIFE directly
   // in JSX (Indices tab render), recomputing this O(n) groupby + sort over
@@ -6529,29 +6638,11 @@ export default function App(){
             }
             return next
           })
-          const xFor=level=>20+(Math.max(0,Math.min(100,level??50))/100)*580
-          const yFor=mom=>230-(Math.max(-maxAbsMom,Math.min(maxAbsMom,mom||0))/maxAbsMom)*205
           const quadColor=s=>{
             const leading=(s.level??50)>=50&&(s.momentum||0)>=0
             const improving=(s.level??50)<50&&(s.momentum||0)>=0
             const weakening=(s.level??50)>=50&&(s.momentum||0)<0
             return leading?C.green:improving?C.accent:weakening?C.orange:C.muted
-          }
-          // Distinct per-item color for the CHART specifically — quadColor
-          // only has 4 possible values (one per quadrant), so whenever
-          // several sectors land in the same quadrant their dots were
-          // visually identical, distinguishable only by tiny overlapping
-          // labels. The quadrant itself is already shown by the colored
-          // background zone each dot sits in, so quadColor was redundant
-          // there anyway. Hash-based (not index-based) so a given sector
-          // keeps the same color across window/selection changes instead
-          // of jumping around as the displayed set changes.
-          const IDENTITY_PALETTE=['#4f8ef7','#ef4444','#eab308','#22c55e','#a855f7','#ec4899',
-            '#f97316','#06b6d4','#84cc16','#f43f5e','#8b5cf6','#14b8a6','#e879f9','#facc15']
-          const identityColor=s=>{
-            let hash=0
-            for(let i=0;i<s.id.length;i++)hash=(hash*31+s.id.charCodeAt(i))|0
-            return IDENTITY_PALETTE[Math.abs(hash)%IDENTITY_PALETTE.length]
           }
           const goTo=s=>{
             if(rotationScope==='sector'){setSectorFilter(s.id);setMainTab('rs')}
@@ -6690,64 +6781,9 @@ export default function App(){
                     obvious.{rotationScope==='index'&&<> Tap a dot, or a FOCUS chip when it's the only one selected, to see that index's stocks below.</>}
                   </div>
                 )}
-                <svg viewBox="0 0 620 460" style={{width:'100%',height:'auto',display:'block'}}>
-                  <rect x="310" y="20" width="290" height="210" fill={C.green} opacity="0.06"/>
-                  <rect x="20" y="20" width="290" height="210" fill={C.accent} opacity="0.06"/>
-                  <rect x="20" y="230" width="290" height="210" fill={C.muted} opacity="0.08"/>
-                  <rect x="310" y="230" width="290" height="210" fill={C.orange} opacity="0.06"/>
-                  <line x1="310" y1="20" x2="310" y2="440" stroke={C.border} strokeWidth="1.5"/>
-                  <line x1="20" y1="230" x2="600" y2="230" stroke={C.border} strokeWidth="1.5"/>
-                  <text x="580" y="38" textAnchor="end" fontSize="11" fontWeight="700" fill={C.green}>LEADING</text>
-                  <text x="40" y="38" textAnchor="start" fontSize="11" fontWeight="700" fill={C.accent}>IMPROVING</text>
-                  <text x="40" y="428" textAnchor="start" fontSize="11" fontWeight="700" fill={C.muted}>LAGGING</text>
-                  <text x="580" y="428" textAnchor="end" fontSize="11" fontWeight="700" fill={C.orange}>WEAKENING</text>
-                  <text x="310" y="455" textAnchor="middle" fontSize="10" fill={C.muted}>{levelLabel.toUpperCase()} LEVEL →</text>
-                  <text x="12" y="230" textAnchor="middle" fontSize="10" fill={C.muted} transform="rotate(-90 12 230)">MOMENTUM ({requestedWindow?.label||rotationWindow+'d'}) →</text>
-
-                  {rolledData.filter(s=>s.trail&&s.trail.length>0).map((s,idx)=>{
-                    const tx=t=>xFor(t.level), ty=t=>yFor(t.mom)
-                    const pathD=s.trail.map((t,i)=>`${i===0?'M':'L'} ${tx(t)} ${ty(t)}`).join(' ')
-                    const cx=xFor(s.level), cy=yFor(s.momentum)
-                    const sx=tx(s.trail[0]), sy=ty(s.trail[0])
-                    const r=rotationScope==='sector'?7+Math.min(6,(s.count||1)/3):7
-                    const color=identityColor(s)
-                    const markerId=`rrg-arrow-${idx}`
-                    return(
-                      <g key={s.id} style={{cursor:'pointer'}} onClick={()=>goTo(s)}>
-                        <defs>
-                          {/* Arrowhead pointing along the trail's direction of
-                              travel — orient="auto" makes SVG compute the
-                              angle from the path's tangent automatically, so
-                              it always points toward wherever the trail is
-                              actually heading (Lagging→Leading, Leading→
-                              Lagging, or any other direction), not a fixed
-                              guess. Clean two-marker grammar: dot = where the
-                              trail STARTED (oldest day in the window), arrow
-                              = where it ends up NOW and which way it's still
-                              heading. No dot at the end anymore — the arrow
-                              alone marks it, so there's no redundant overlap
-                              between "current position" and "direction". */}
-                          <marker id={markerId} viewBox="0 0 10 10" refX="8" refY="5"
-                            markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                            <path d="M 0 0 L 10 5 L 0 10 z" fill={color}/>
-                          </marker>
-                        </defs>
-                        <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" opacity="0.55"
-                          markerEnd={`url(#${markerId})`}/>
-                        {/* Start dot — smaller and hollow, so it reads as
-                            "where this began" rather than competing with the
-                            arrow for attention as the important endpoint. */}
-                        <circle cx={sx} cy={sy} r="4" fill={C.bg} stroke={color} strokeWidth="1.5"/>
-                        {/* Invisible larger hit-target at the end, since the
-                            arrowhead alone is a small/thin click target —
-                            keeps tap-to-open-chart easy without drawing an
-                            extra visible dot there. */}
-                        <circle cx={cx} cy={cy} r={r+3} fill="transparent"/>
-                        <text x={cx+r+4} y={cy+4} fontSize="12" fontWeight="700" fill={color}>{s.label}</text>
-                      </g>
-                    )
-                  })}
-                </svg>
+                <RRGChart rolledData={rolledData} maxAbsMom={maxAbsMom} levelLabel={levelLabel}
+                  windowLabel={requestedWindow?.label||rotationWindow+'d'} onDotClick={goTo}
+                  dotSizing={rotationScope==='sector'}/>
                 <div style={{fontSize:10,color:C.muted,marginTop:8}}>
                   Dot color = which {scopeLabel.toLowerCase()} (matches its label) — position tells you the status below, not the color.
                   The hollow dot marks where each trail started (oldest day shown) — the arrow marks where it is now and which way it's heading.
@@ -6809,6 +6845,18 @@ export default function App(){
                       </div>
                     ):(
                       <>
+                        {loadingConstituentRotation?(
+                          <div style={{textAlign:'center',padding:'30px 0',color:C.muted,fontSize:12}}>Loading rotation…</div>
+                        ):constituentRolledData&&constituentRolledData.rolledData.some(s=>s.trail?.length>0)?(
+                          <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:12,marginBottom:12}}>
+                            <div style={{fontSize:10,color:C.muted,marginBottom:6,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.04em'}}>
+                              {rotationExpandedId} constituents — rotation vs each other
+                            </div>
+                            <RRGChart rolledData={constituentRolledData.rolledData} maxAbsMom={constituentRolledData.maxAbsMom}
+                              levelLabel="RS-TV" windowLabel={ROTATION_WINDOWS.find(w=>w.days===rotationWindow)?.label||rotationWindow+'d'}
+                              onDotClick={s=>setChartSym(s.id)} height={320}/>
+                          </div>
+                        ):null}
                         <TVCopyPanel stocks={constituents} label={`${rotationExpandedId} Constituents`}/>
                         <BreakoutTable stocks={constituents} isMobile={isMobile}
                           visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
