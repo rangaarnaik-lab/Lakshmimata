@@ -6518,6 +6518,14 @@ export default function App(){
           const toggleSel=id=>setRotationSelectedIds(prev=>{
             const next=new Set(prev)
             next.has(id)?next.delete(id):next.add(id)
+            // Focusing on exactly one index via this chip is functionally
+            // the same intent as clicking its trail in the chart — show
+            // its constituent stocks either way, not just from the chart
+            // click. Collapses again if the selection becomes anything
+            // other than exactly one (0, or 2+).
+            if(rotationScope==='index'){
+              setRotationExpandedId(next.size===1?[...next][0]:null)
+            }
             return next
           })
           const xFor=level=>20+(Math.max(0,Math.min(100,level??50))/100)*580
