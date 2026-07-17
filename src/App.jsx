@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -4191,6 +4191,17 @@ export default function App(){
   // Which breakout type is shown on the Breakout tab — one table with
   // clickable filter chips instead of 5 always-stacked sections.
   const [breakoutType,setBreakoutType]=useState('r1')
+  const [announcements,setAnnouncements]=useState([])
+  const [announcementsLoading,setAnnouncementsLoading]=useState(false)
+  const [announcementsPage,setAnnouncementsPage]=useState(0)
+  const ANNOUNCEMENTS_PAGE_SIZE=50
+  useEffect(()=>{
+    if(mainTab!=='announcements') return
+    setAnnouncementsLoading(true)
+    fetchAnnouncements(ANNOUNCEMENTS_PAGE_SIZE, announcementsPage*ANNOUNCEMENTS_PAGE_SIZE)
+      .then(setAnnouncements)
+      .finally(()=>setAnnouncementsLoading(false))
+  },[mainTab,announcementsPage])
   const [visibleRsCols,setVisibleRsCols]=useState(()=>{
     const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true}
     try{
@@ -4634,6 +4645,7 @@ export default function App(){
               {id:'portfolio', label:'Portfolio', abbr:'PF'},
               {id:'compare',   label:'Compare',   abbr:'CMP'},
               {id:'watchlist', label:'Watchlist', abbr:'WL'},
+              {id:'announcements', label:'Announcements', abbr:'AN'},
               {id:'alerts',    label:'Alerts',    abbr:'AL'},
             ].map(({id,label,abbr})=>(
               <div key={id} onClick={()=>setMainTab(id)}
@@ -4703,7 +4715,7 @@ export default function App(){
                 {mainTab==='rs'?'RS Rating':mainTab==='indices'?'Indices':
                  mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
                  mainTab==='weak'?'Weak RS':mainTab==='alerts'?'Alerts':mainTab==='rotation'?'Sector Rotation':
-                 mainTab==='watchlist'?'Watchlist':'Account'}
+                 mainTab==='watchlist'?'Watchlist':mainTab==='announcements'?'Announcements':'Account'}
               </div>
               {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1}}>
                 {demoMode?(historyDate?`Real data from ${historyDate} — not live`:'Loading real data…'):`${session?.user?.email} · ${scanLabel}`}
@@ -6790,6 +6802,70 @@ export default function App(){
           )
         })()}
 
+        {/* ══ CORPORATE ANNOUNCEMENTS ══ */}
+        {mainTab==='announcements'&&(
+          <div>
+            <div style={{marginBottom:14}}>
+              <div style={{fontWeight:800,fontSize:15,color:C.accent}}>📢 Corporate Announcements</div>
+              <div style={{fontSize:12,color:C.muted,marginTop:2}}>
+                Board meetings, results, and other filings across all tracked stocks — from NSE, updated ~every 15 min
+              </div>
+            </div>
+
+            {announcementsLoading&&announcements.length===0?(
+              <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>Loading…</div>
+            ):announcements.length===0?(
+              <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
+                No announcements yet.
+              </div>
+            ):(
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {announcements.map((a,i)=>{
+                  const parsed=a.announced_at?new Date(a.announced_at):null
+                  const dateStr=(parsed&&!isNaN(parsed))
+                    ?parsed.toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})
+                    :(a.announced_at||'')
+                  return(
+                    <div key={`${a.symbol}-${i}`} style={{background:C.card,border:`1px solid ${C.border}`,
+                      borderRadius:10,padding:'12px 14px',display:'flex',gap:12,alignItems:'flex-start'}}>
+                      <div onClick={()=>setChartSym(a.symbol)}
+                        style={{fontWeight:800,fontSize:13,color:C.accent,cursor:'pointer',
+                          minWidth:76,textDecoration:'underline',textDecorationColor:C.accent+'55'}}>
+                        {a.symbol}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:12.5,color:C.text,lineHeight:1.4}}>{a.subject}</div>
+                        <div style={{fontSize:10,color:C.muted,marginTop:3,display:'flex',gap:8,alignItems:'center'}}>
+                          <span>{dateStr}</span>
+                          {a.attachment_url&&(
+                            <a href={a.attachment_url} target="_blank" rel="noopener noreferrer"
+                              onClick={e=>e.stopPropagation()}
+                              style={{color:C.blue,textDecoration:'none'}}>📎 Attachment</a>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginTop:16,padding:'10px 0'}}>
+              <button onClick={()=>setAnnouncementsPage(p=>Math.max(0,p-1))} disabled={announcementsPage===0}
+                style={{padding:'7px 14px',borderRadius:8,cursor:announcementsPage===0?'default':'pointer',
+                  border:`1px solid ${C.border}`,background:C.card,fontSize:12,fontWeight:600,
+                  color:announcementsPage===0?C.muted+'66':C.text}}>← Prev</button>
+              <span style={{fontSize:12,color:C.muted,minWidth:80,textAlign:'center'}}>Page {announcementsPage+1}</span>
+              <button onClick={()=>setAnnouncementsPage(p=>p+1)}
+                disabled={announcements.length<ANNOUNCEMENTS_PAGE_SIZE}
+                style={{padding:'7px 14px',borderRadius:8,
+                  cursor:announcements.length<ANNOUNCEMENTS_PAGE_SIZE?'default':'pointer',
+                  border:`1px solid ${C.border}`,background:C.card,fontSize:12,fontWeight:600,
+                  color:announcements.length<ANNOUNCEMENTS_PAGE_SIZE?C.muted+'66':C.text}}>Next →</button>
+            </div>
+          </div>
+        )}
+
         {/* ══ ALERTS HISTORY ══ */}
         {mainTab==='alerts'&&(
           <div>
@@ -7025,8 +7101,8 @@ export default function App(){
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <span style={{fontSize:15}}>⋯</span>
               <span style={{fontSize:8,fontWeight:600,
-                color:['breadth','weak','portfolio','compare','watchlist','alerts','settings'].includes(mainTab)?C.accent:C.muted}}>More</span>
-              {['breadth','weak','portfolio','compare','watchlist','alerts','settings'].includes(mainTab)&&
+                color:['breadth','weak','portfolio','compare','watchlist','announcements','alerts','settings'].includes(mainTab)?C.accent:C.muted}}>More</span>
+              {['breadth','weak','portfolio','compare','watchlist','announcements','alerts','settings'].includes(mainTab)&&
                 <div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           </div>
@@ -7045,6 +7121,7 @@ export default function App(){
                   {[
                     ['breadth','📈','Breadth'],['weak','🚨','Weak'],
                     ['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],
+                    ['announcements','📢','Announcements'],
                     ['alerts','🔔','Alerts'],['settings','⚙','Account'],
                   ].map(([t,icon,label])=>(
                     <button key={t} onClick={()=>{setMainTab(t);setShowMoreMenu(false)}}

@@ -782,3 +782,20 @@ export async function fetchUsageStats(days = 14) {
 
   return { uniqueUsers, totalViews, dailyTrend }
 }
+
+/**
+ * Fetches recent corporate announcements across all tracked stocks —
+ * populated by the backend's separate fundamentals+announcements worker
+ * service, polling NSE's announcements feed every ~15 minutes. Paginated
+ * (offset-based) since this feed accumulates continuously and showing
+ * ALL history at once isn't useful or necessary.
+ */
+export async function fetchAnnouncements(limit = 50, offset = 0) {
+  const { data, error } = await supabase
+    .from('corporate_announcements')
+    .select('symbol,subject,attachment_url,announced_at')
+    .order('announced_at', { ascending: false })
+    .range(offset, offset + limit - 1)
+  if (error) { console.error('fetchAnnouncements error:', error.message); return [] }
+  return data || []
+}
