@@ -4316,6 +4316,7 @@ export default function App(){
   const [loadingRotation,setLoadingRotation]=useState(false)
   const [rotationWindow,setRotationWindow]=useState(10) // trading days
   const [rotationScope,setRotationScope]=useState('sector') // 'sector' | 'index' | 'watchlist'
+  const [rotationExpandedId,setRotationExpandedId]=useState(null) // clicked index's constituent stocks, shown inline instead of navigating away
   const [rotationWlId,setRotationWlId]=useState(null)
   // Which sectors/indices/stocks are focused on in the Rotation chart.
   // Empty set = show everyone (unfiltered, the original behavior).
@@ -6545,7 +6546,7 @@ export default function App(){
           }
           const goTo=s=>{
             if(rotationScope==='sector'){setSectorFilter(s.id);setMainTab('rs')}
-            else if(rotationScope==='index'){setExpandedIndex(s.id);setMainTab('indices')}
+            else if(rotationScope==='index'){setRotationExpandedId(prev=>prev===s.id?null:s.id)}
             else{setChartSym(s.id)}
           }
           const effectiveWlId=rotationWlId??activeWl??watchlists[0]?.id??null
@@ -6560,7 +6561,8 @@ export default function App(){
               <div style={{fontWeight:800,fontSize:15,color:C.accent}}>🔄 {scopeLabel} Rotation</div>
               <div style={{fontSize:12,color:C.muted,marginTop:2}}>
                 Which {rotationScope==='watchlist'?'stocks':scopeLabel.toLowerCase()+'s'} are gaining or losing relative strength, and how fast.
-                {rotationScope!=='watchlist'&&` Click to jump to that ${rotationScope==='sector'?'sector\u2019s filtered RS list':'index'}.`}
+                {rotationScope==='sector'&&` Click to jump to that sector\u2019s filtered RS list.`}
+                {rotationScope==='index'&&` Click an index to see its constituent stocks below.`}
                 {rotationScope==='watchlist'&&' Click a stock to open its chart.'}
               </div>
             </div>
@@ -6763,6 +6765,32 @@ export default function App(){
                   </div>
                 ))}
               </div>
+
+              {rotationScope==='index'&&rotationExpandedId&&(()=>{
+                const constituents=getIndexConstituents(rotationExpandedId,stocks)
+                return(
+                  <div style={{marginTop:14,background:C.card,border:`1px solid ${C.accent}44`,borderRadius:10,padding:'14px'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                      <div style={{fontWeight:800,fontSize:13,color:C.accent}}>
+                        📋 {rotationExpandedId} — Constituent Stocks
+                      </div>
+                      <button onClick={()=>setRotationExpandedId(null)}
+                        style={{background:'transparent',border:'none',color:C.muted,cursor:'pointer',fontSize:16,padding:0}}>×</button>
+                    </div>
+                    {constituents===null?(
+                      <div style={{fontSize:12,color:C.muted,padding:'10px 0'}}>
+                        No constituent list available for this index yet.
+                      </div>
+                    ):(
+                      <>
+                        <TVCopyPanel stocks={constituents} label={`${rotationExpandedId} Constituents`}/>
+                        <BreakoutTable stocks={constituents} isMobile={isMobile}
+                          visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
             </>)}
           </div>
           )
