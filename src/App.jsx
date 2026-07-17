@@ -2544,6 +2544,7 @@ function computeRsGridCols(vis){
     ['48px',vis.mid],['48px',vis.sml],['52px',vis.sec],['52px',vis.trend],
     ['64px',true],['90px',true],
     ['112px',vis.pp10],['182px',vis.rs7d],['140px',vis.stage],['170px',vis.squeeze],
+    ['160px',vis.wl52],['150px',vis.weakrs],
     ['55px',vis.mcap],['55px',vis.pe],['48px',vis.roe],['48px',vis.de],['48px',vis.prom],
     ['55px',true],['32px',true],['32px',true],
   ]
@@ -2636,6 +2637,8 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,de
             {visibleRsCols.rs7d&&<span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>}
             {visibleRsCols.stage&&<span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>}
                     {visibleRsCols.squeeze&&<span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>}
+                    {visibleRsCols.wl52&&<span style={{textAlign:'center',color:C.muted}}>52WL Signal</span>}
+                    {visibleRsCols.weakrs&&<span style={{textAlign:'center',color:C.muted}}>Weak RS</span>}
             {visibleRsCols.mcap&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>MCap</span>}
             {visibleRsCols.pe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>}
             {visibleRsCols.roe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>}
@@ -2843,6 +2846,44 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
           )}
           {!s.squeeze?.inSqueeze&&!s.vcp?.isVCP&&!s.squeeze?.squeezeFired&&!s.vcp?.vcpFired&&
             <span style={{color:C.border,fontSize:9}}>—</span>}
+        </div>}
+
+        {/* 52WL Signal — same detail as the original specialized 52WL cards */}
+        {vis.wl52&&<div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'flex-start'}}>
+          {s.scanner52wl?.isSignal&&(
+            <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
+              background:C.pink+'22',color:C.pink,whiteSpace:'nowrap'}}>🎯 Full Signal</div>
+          )}
+          {s.scanner52wl?.near52wLow&&(
+            <div style={{fontSize:9,color:C.yellow,whiteSpace:'nowrap'}}>
+              52WL +{s.scanner52wl.pctFrom52wLow}%
+            </div>
+          )}
+          {s.scanner52wl?.crossedAboveEMA5&&(
+            <div style={{fontSize:9,color:C.green,whiteSpace:'nowrap'}}>✅ 5-EMA Cross</div>
+          )}
+          {s.scanner52wl?.ppVolume&&(
+            <div style={{fontSize:9,color:C.orange,whiteSpace:'nowrap'}}>PP Vol {s.scanner52wl.volRatio}x</div>
+          )}
+          {!s.scanner52wl?.near52wLow&&<span style={{color:C.border,fontSize:9}}>—</span>}
+        </div>}
+
+        {/* Weak RS — same detail as the original specialized Weak RS cards */}
+        {vis.weakrs&&<div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'flex-start'}}>
+          {s.weakRS?.isSignal?(
+            <>
+              <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
+                background:C.lime+'22',color:C.lime,whiteSpace:'nowrap'}}>
+                🚨 RS{s.rs} +{s.weakRS.chg1d}%
+              </div>
+              <div style={{fontSize:9,color:s.weakRS.chg5d>=0?C.green:C.red,whiteSpace:'nowrap'}}>
+                5d: {s.weakRS.chg5d>=0?'+':''}{s.weakRS.chg5d}%
+              </div>
+              {s.weakRS.isVolSpike&&(
+                <div style={{fontSize:9,color:C.orange,whiteSpace:'nowrap'}}>📊 Vol {s.weakRS.volSpike}x</div>
+              )}
+            </>
+          ):<span style={{color:C.border,fontSize:9}}>—</span>}
         </div>}
 
         {/* Market Cap */}
@@ -4244,7 +4285,7 @@ export default function App(){
       .finally(()=>setAnnouncementsLoading(false))
   },[mainTab,announcementsPage])
   const [visibleRsCols,setVisibleRsCols]=useState(()=>{
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,squeeze:false}
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,squeeze:false,wl52:false,weakrs:false}
     try{
       const saved=JSON.parse(localStorage.getItem('lakshmimata-rs-columns')||'null')
       return saved?{...defaults,...saved}:defaults
@@ -4258,7 +4299,7 @@ export default function App(){
     })
   }
   const resetRsCols=()=>{
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,squeeze:false}
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,squeeze:false,wl52:false,weakrs:false}
     setVisibleRsCols(defaults)
     try{localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(defaults))}catch(e){}
   }
@@ -5046,6 +5087,7 @@ export default function App(){
                       {[['mid','MID (Midcap RS)'],['sml','SML (Smallcap RS)'],['sec','SEC (Sector RS)'],
                         ['trend','Trend'],['pp10','10 D Vol'],['rs7d','RS Last 7d'],['stage','Stage/Vol'],
                         ['squeeze','Squeeze/VCP'],
+                        ['wl52','52WL Signal'],['weakrs','Weak RS'],
                         ['mcap','MCap'],['pe','P/E'],['roe','ROE'],['de','D/E'],['prom','Prom%']].map(([key,label])=>(
                         <button key={key} onClick={()=>toggleRsCol(key)}
                           style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,
@@ -5296,6 +5338,8 @@ export default function App(){
                     {visibleRsCols.rs7d&&<span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>}
                     {visibleRsCols.stage&&<span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>}
                     {visibleRsCols.squeeze&&<span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>}
+                    {visibleRsCols.wl52&&<span style={{textAlign:'center',color:C.muted}}>52WL Signal</span>}
+                    {visibleRsCols.weakrs&&<span style={{textAlign:'center',color:C.muted}}>Weak RS</span>}
                     {visibleRsCols.mcap&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>MCap</span>}
                     {visibleRsCols.pe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>}
                     {visibleRsCols.roe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>}
@@ -6419,40 +6463,8 @@ export default function App(){
                 </div>
               </>
             )}
-            {displayed52WL.length>0?displayed52WL.map((s,i)=>(
-              <div key={s.sym} style={{background:C.card,border:`1px solid ${s.scanner52wl.isSignal?C.pink+'88':C.border}`,
-                borderRadius:12,marginBottom:10,padding:'14px'}}>
-                <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
-                  <div>
-                    <div style={{fontWeight:800,fontSize:16}}>{s.sym}</div>
-                    <div style={{fontSize:11,color:C.muted}}>{s.sector}</div>
-                    <div style={{display:'flex',gap:4,marginTop:4}}>
-                      {s.scanner52wl.isSignal&&<Badge color={C.pink} glow>🎯 Full Signal</Badge>}
-                      {topVolumeSignal(s)==='pp'&&<Badge color={C.green}>🔥PP</Badge>}
-                    </div>
-                  </div>
-                  <div style={{textAlign:'right'}}>
-                    <div style={{fontWeight:800,fontSize:18}}>{fmtP(s.last)}</div>
-                    <div style={{color:s.chg>=0?C.green:C.red,fontWeight:700}}>{s.chg>=0?'+':''}{s.chg.toFixed(2)}%</div>
-                  </div>
-                </div>
-                <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:8}}>
-                  {[[s.scanner52wl.near52wLow,`52WL +${s.scanner52wl.pctFrom52wLow}%`,C.yellow],
-                    [s.scanner52wl.crossedAboveEMA5,'5-EMA Cross',C.green],
-                    [s.scanner52wl.ppVolume,`PP Vol ${s.scanner52wl.volRatio}x`,C.orange]].map(([ok,label,color])=>(
-                    <div key={label} style={{padding:'5px 10px',borderRadius:20,fontSize:11,fontWeight:700,
-                      background:ok?color+'22':C.border,color:ok?color:C.muted}}>{ok?'✅':'❌'} {label}</div>
-                  ))}
-                </div>
-                <TopSignalDots s={s}/>
-              </div>
-            )):(
-              <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
-                <div style={{fontSize:42,marginBottom:12}}>🎯</div>
-                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No 52WL stocks</div>
-                <div style={{fontSize:12,marginTop:6}}>Run a scan first.</div>
-              </div>
-            )}
+            <BreakoutTable stocks={displayed52WL} isMobile={isMobile}
+              visibleRsCols={{...visibleRsCols,wl52:true}} onChartOpen={setChartSym}/>
           </div>
         )}
 
@@ -6494,43 +6506,8 @@ export default function App(){
               <PPFilterBar ppFilter={ppFilterWeak} setPpFilter={setPpFilterWeak}
                 ppCount={weakBase.filter(s=>s.pp.isPP).length} total={displayedWeak.length}/>
             )}
-            {displayedWeak.length>0?displayedWeak.map((s,i)=>(
-              <div key={s.sym} style={{background:C.card,border:`1px solid ${C.lime}44`,borderRadius:12,marginBottom:10,padding:'13px 14px'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-                  <div>
-                    <div style={{fontWeight:800,fontSize:15}}>{s.sym}</div>
-                    <div style={{fontSize:11,color:C.muted}}>{s.sector}</div>
-                    <div style={{display:'flex',gap:4,marginTop:4}}>
-                      <Badge color={C.lime} glow>🚨 RS{s.rs} +{s.weakRS.chg1d}%</Badge>
-                      {s.weakRS.isVolSpike&&<Badge color={C.orange}>📊{s.weakRS.volSpike}x</Badge>}
-                      {topVolumeSignal(s)==='pp'&&<Badge color={C.green}>🔥PP</Badge>}
-                    </div>
-                  </div>
-                  <div style={{textAlign:'right'}}>
-                    <div style={{fontWeight:800,fontSize:18}}>{fmtP(s.last)}</div>
-                    <div style={{fontWeight:700,fontSize:14,color:C.lime}}>+{s.weakRS.chg1d}%</div>
-                    <div style={{fontSize:11,color:s.weakRS.chg5d>=0?C.green:C.red}}>5d: {s.weakRS.chg5d>=0?'+':''}{s.weakRS.chg5d}%</div>
-                  </div>
-                </div>
-                <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:8}}>
-                  {[['RS',s.rs,rsColor(s.rs)],['1D',`+${s.weakRS.chg1d}%`,C.lime],
-                    ['5D',`${s.weakRS.chg5d>=0?'+':''}${s.weakRS.chg5d}%`,s.weakRS.chg5d>=0?C.green:C.red],
-                    ['Vol',`${s.weakRS.volSpike}x`,s.weakRS.isVolSpike?C.orange:C.muted]].map(([k,v,c])=>(
-                    <div key={k} style={{background:C.bg,borderRadius:8,padding:'8px 10px',textAlign:'center'}}>
-                      <div style={{fontSize:9,color:C.muted,marginBottom:2}}>{k}</div>
-                      <div style={{fontWeight:800,fontSize:14,color:c}}>{v}</div>
-                    </div>
-                  ))}
-                </div>
-                <TopSignalDots s={s}/>
-              </div>
-            )):(
-              <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
-                <div style={{fontSize:42,marginBottom:12}}>🚨</div>
-                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No signals found</div>
-                <div style={{fontSize:12,marginTop:6}}>Try lowering threshold to +5%.</div>
-              </div>
-            )}
+            <BreakoutTable stocks={displayedWeak} isMobile={isMobile}
+              visibleRsCols={{...visibleRsCols,weakrs:true}} onChartOpen={setChartSym}/>
           </div>
         )}
 
