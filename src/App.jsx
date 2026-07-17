@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -4312,8 +4312,6 @@ export default function App(){
   const [idxSort,setIdxSort]=useState({key:'rsTv',dir:-1})
   const [secSort,setSecSort]=useState({key:'avgRS',dir:-1})
   const [breadthData,setBreadthData]=useState(null)
-  const [alertsLog,setAlertsLog]=useState(null)
-  const [loadingAlerts,setLoadingAlerts]=useState(false)
   const [rotationData,setRotationData]=useState(null)
   const [loadingRotation,setLoadingRotation]=useState(false)
   const [rotationWindow,setRotationWindow]=useState(10) // trading days
@@ -4501,13 +4499,6 @@ export default function App(){
       supabase.from('market_breadth').select('*').order('scan_date',{ascending:false}).limit(30)
         .then(({data})=>setBreadthData(data||[]))
         .catch(e=>console.error('Breadth fetch:',e))
-    }
-    if(mainTab==='alerts'){
-      setLoadingAlerts(true)
-      fetchRecentAlerts(150)
-        .then(setAlertsLog)
-        .catch(e=>console.error('Alerts fetch:',e))
-        .finally(()=>setLoadingAlerts(false))
     }
     if(mainTab==='rotation'){
       setLoadingRotation(true)
@@ -4728,7 +4719,6 @@ export default function App(){
               {id:'compare',   label:'Compare',   abbr:'CMP'},
               {id:'watchlist', label:'Watchlist', abbr:'WL'},
               {id:'announcements', label:'Announcements', abbr:'AN'},
-              {id:'alerts',    label:'Alerts',    abbr:'AL'},
             ].map(({id,label,abbr})=>(
               <div key={id} onClick={()=>setMainTab(id)}
                 title={label}
@@ -4796,7 +4786,7 @@ export default function App(){
               <div style={{fontWeight:600,fontSize:14,color:C.text,lineHeight:1}}>
                 {mainTab==='rs'?'RS Rating':mainTab==='indices'?'Indices':
                  mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
-                 mainTab==='weak'?'Weak RS':mainTab==='alerts'?'Alerts':mainTab==='rotation'?'Sector Rotation':
+                 mainTab==='weak'?'Weak RS':mainTab==='rotation'?'Sector Rotation':
                  mainTab==='watchlist'?'Watchlist':mainTab==='announcements'?'Announcements':'Account'}
               </div>
               {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1}}>
@@ -4819,7 +4809,7 @@ export default function App(){
           </div>
 
           {/* Controls */}
-          {mainTab!=='settings'&&mainTab!=='watchlist'&&mainTab!=='alerts'&&mainTab!=='rotation'&&(
+          {mainTab!=='settings'&&mainTab!=='watchlist'&&mainTab!=='rotation'&&(
             <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
 
               {/* Watchlist OR index selector — one dropdown now covers
@@ -6833,67 +6823,6 @@ export default function App(){
           </div>
         )}
 
-        {/* ══ ALERTS HISTORY ══ */}
-        {mainTab==='alerts'&&(
-          <div>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
-              <div>
-                <div style={{fontWeight:800,fontSize:15,color:C.accent}}>🔔 Alerts History</div>
-                <div style={{fontSize:12,color:C.muted,marginTop:2}}>
-                  Squeeze, VCP, HY &amp; HT fires — same events that trigger your browser notifications,
-                  including any that fired while this tab was closed.
-                </div>
-              </div>
-              <button onClick={()=>{setLoadingAlerts(true);fetchRecentAlerts(150).then(setAlertsLog).finally(()=>setLoadingAlerts(false))}}
-                style={{padding:'6px 12px',borderRadius:8,border:`1px solid ${C.border}`,background:C.card,
-                  color:C.muted,cursor:'pointer',fontSize:12,fontWeight:600}}>
-                {loadingAlerts?'…':'↻ Refresh'}
-              </button>
-            </div>
-
-            {loadingAlerts&&!alertsLog&&(
-              <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>Loading…</div>
-            )}
-
-            {alertsLog&&alertsLog.length===0&&(
-              <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
-                <div style={{fontSize:42,marginBottom:12}}>🔔</div>
-                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No alerts yet</div>
-                <div style={{fontSize:12,marginTop:6}}>New squeeze, VCP, HY, and HT fires will show up here.</div>
-              </div>
-            )}
-
-            {alertsLog&&alertsLog.length>0&&alertsLog.map((a,i)=>{
-              const isVol = /HY|HT/.test(a.fire_type) && !/Squeeze|VCP/.test(a.fire_type)
-              const badgeColor = isVol ? C.orange : C.accent
-              const mins = Math.max(0, Math.round((Date.now()-new Date(a.fired_at).getTime())/60000))
-              const ago = mins<1?'just now':mins<60?`${mins}m ago`:mins<1440?`${Math.round(mins/60)}h ago`:`${Math.round(mins/1440)}d ago`
-              return (
-                <div key={`${a.sym}-${a.fired_at}-${i}`} onClick={()=>setChartSym(a.sym)}
-                  style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
-                    marginBottom:8,padding:'11px 13px',cursor:'pointer',
-                    display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
-                  <div style={{minWidth:0}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-                      <span style={{fontWeight:800,fontSize:14}}>{a.sym}</span>
-                      <Badge color={badgeColor}>{isVol?'🔊':'🔥'} {a.fire_type}</Badge>
-                    </div>
-                    <div style={{fontSize:11,color:C.muted,marginTop:3}}>
-                      {a.sector||'—'} · RS {a.rs_tv??a.rs??'—'} · {ago}
-                    </div>
-                  </div>
-                  <div style={{textAlign:'right',flexShrink:0}}>
-                    <div style={{fontWeight:800,fontSize:14}}>{a.last_price!=null?fmtP(a.last_price):'—'}</div>
-                    <div style={{fontWeight:700,fontSize:12,color:(a.chg_pct??0)>=0?C.green:C.red}}>
-                      {a.chg_pct!=null?`${a.chg_pct>=0?'+':''}${a.chg_pct.toFixed(2)}%`:'—'}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-
         {/* ══ SETTINGS ══ */}
         {mainTab==='settings'&&(
           <SettingsPanel session={session} onUpdate={s=>setSession(s)} onLogout={()=>{setSession(null);setShowAuth(false)}}
@@ -7068,8 +6997,8 @@ export default function App(){
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <span style={{fontSize:15}}>⋯</span>
               <span style={{fontSize:8,fontWeight:600,
-                color:['breadth','weak','portfolio','compare','watchlist','announcements','alerts','settings'].includes(mainTab)?C.accent:C.muted}}>More</span>
-              {['breadth','weak','portfolio','compare','watchlist','announcements','alerts','settings'].includes(mainTab)&&
+                color:['breadth','weak','portfolio','compare','watchlist','announcements','settings'].includes(mainTab)?C.accent:C.muted}}>More</span>
+              {['breadth','weak','portfolio','compare','watchlist','announcements','settings'].includes(mainTab)&&
                 <div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           </div>
@@ -7089,7 +7018,7 @@ export default function App(){
                     ['breadth','📈','Breadth'],['weak','🚨','Weak'],
                     ['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],
                     ['announcements','📢','Announcements'],
-                    ['alerts','🔔','Alerts'],['settings','⚙','Account'],
+                    ['settings','⚙','Account'],
                   ].map(([t,icon,label])=>(
                     <button key={t} onClick={()=>{setMainTab(t);setShowMoreMenu(false)}}
                       style={{padding:'16px 8px',background:mainTab===t?C.accent+'18':'transparent',
