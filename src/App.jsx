@@ -3922,6 +3922,7 @@ export default function App(){
   const [showSignalGlossary,setShowSignalGlossary]=useState(false)
   const [expandedTileInfo,setExpandedTileInfo]=useState(null)
   const [showRowGuidance,setShowRowGuidance]=useState(false)
+  const [showRotationGuidance,setShowRotationGuidance]=useState(false)
   const [breadthHistory,setBreadthHistory]=useState([])
   const [emaBreadthHistory,setEmaBreadthHistory]=useState([])
   const [breadthRange,setBreadthRange]=useState('1M')
@@ -6671,7 +6672,24 @@ export default function App(){
                   instead of the requested {requestedWindow.label}. This fills in automatically as more daily snapshots accumulate.
                 </div>
               )}
-              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16,marginBottom:16}}>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16,marginBottom:16,position:'relative'}}>
+                <button onClick={()=>setShowRotationGuidance(v=>!v)}
+                  title="How to use this chart"
+                  style={{position:'absolute',top:10,right:10,zIndex:1,width:20,height:20,borderRadius:'50%',
+                    border:`1px solid ${C.muted}`,background:showRotationGuidance?C.accent+'22':C.card,
+                    color:showRotationGuidance?C.accent:C.muted,fontSize:11,cursor:'pointer',
+                    display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>
+                  ℹ
+                </button>
+                {showRotationGuidance&&(
+                  <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,
+                    padding:'10px 12px',marginBottom:12,fontSize:11,color:C.muted,lineHeight:1.6}}>
+                    <strong style={{color:C.text}}>How to read this:</strong> each dot is one {rotationScope==='sector'?'sector':rotationScope==='index'?'index':'watchlist stock'},
+                    trailing from where it was to where it is now — momentum (up/down) against RS-TV strength (left/right).
+                    Leading (top-right) is where money's already flowing; Improving (top-left) is early, before it's
+                    obvious.{rotationScope==='index'&&<> Tap a dot, or a FOCUS chip when it's the only one selected, to see that index's stocks below.</>}
+                  </div>
+                )}
                 <svg viewBox="0 0 620 460" style={{width:'100%',height:'auto',display:'block'}}>
                   <rect x="310" y="20" width="290" height="210" fill={C.green} opacity="0.06"/>
                   <rect x="20" y="20" width="290" height="210" fill={C.accent} opacity="0.06"/>
