@@ -2543,7 +2543,7 @@ function computeRsGridCols(vis){
     ['32px',true],['130px',true],['52px',true],
     ['48px',vis.mid],['48px',vis.sml],['52px',vis.sec],['52px',vis.trend],
     ['64px',true],['90px',true],
-    ['112px',vis.pp10],['182px',vis.rs7d],['140px',vis.stage],
+    ['112px',vis.pp10],['182px',vis.rs7d],['140px',vis.stage],['170px',vis.squeeze],
     ['55px',vis.mcap],['55px',vis.pe],['48px',vis.roe],['48px',vis.de],['48px',vis.prom],
     ['55px',true],['32px',true],['32px',true],
   ]
@@ -2635,6 +2635,7 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,de
             {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
             {visibleRsCols.rs7d&&<span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>}
             {visibleRsCols.stage&&<span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>}
+                    {visibleRsCols.squeeze&&<span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>}
             {visibleRsCols.mcap&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>MCap</span>}
             {visibleRsCols.pe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>}
             {visibleRsCols.roe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>}
@@ -2802,6 +2803,46 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
             </div>
           )})()}
           <VolBadge vol={calcVolAnalysis(s)}/>
+        </div>}
+
+        {/* Squeeze/VCP — same badge style/detail as the original specialized
+            Squeeze-page cards, now available as a toggleable column anywhere.
+            Covers both currently-in-squeeze AND just-fired (broken out)
+            status — a fired stock's inSqueeze is false by definition (it's
+            no longer in the squeeze, it just left one), so both states
+            need their own check or fired stocks would show as empty. */}
+        {vis.squeeze&&<div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'flex-start'}}>
+          {s.squeeze?.squeezeFired&&(
+            <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
+              background:C.green+'22',color:C.green,whiteSpace:'nowrap'}}>
+              🟢 BB Fired
+            </div>
+          )}
+          {s.vcp?.vcpFired&&(
+            <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
+              background:C.accent+'22',color:C.accent,whiteSpace:'nowrap'}}>
+              🚀 VCP Fired
+            </div>
+          )}
+          {s.squeeze?.inSqueeze&&(
+            <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
+              background:C.blue+'22',color:C.blue,whiteSpace:'nowrap'}}>
+              BB {s.squeeze.squeezeDays}d · {s.squeeze.bbWidthPct}%
+            </div>
+          )}
+          {s.vcp?.isVCP&&(
+            <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
+              background:C.purple+'22',color:C.purple,whiteSpace:'nowrap'}}>
+              VCP {s.vcp.vcpStage} contractions
+            </div>
+          )}
+          {s.vcp?.contractions?.length>0&&(
+            <div style={{fontSize:8,color:C.muted,whiteSpace:'nowrap'}}>
+              {s.vcp.contractions.map(c=>`${c}%`).join(' → ')}
+            </div>
+          )}
+          {!s.squeeze?.inSqueeze&&!s.vcp?.isVCP&&!s.squeeze?.squeezeFired&&!s.vcp?.vcpFired&&
+            <span style={{color:C.border,fontSize:9}}>—</span>}
         </div>}
 
         {/* Market Cap */}
@@ -4203,7 +4244,7 @@ export default function App(){
       .finally(()=>setAnnouncementsLoading(false))
   },[mainTab,announcementsPage])
   const [visibleRsCols,setVisibleRsCols]=useState(()=>{
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true}
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,squeeze:false}
     try{
       const saved=JSON.parse(localStorage.getItem('lakshmimata-rs-columns')||'null')
       return saved?{...defaults,...saved}:defaults
@@ -4217,7 +4258,7 @@ export default function App(){
     })
   }
   const resetRsCols=()=>{
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true}
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,squeeze:false}
     setVisibleRsCols(defaults)
     try{localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(defaults))}catch(e){}
   }
@@ -4985,6 +5026,7 @@ export default function App(){
                     <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
                       {[['mid','MID (Midcap RS)'],['sml','SML (Smallcap RS)'],['sec','SEC (Sector RS)'],
                         ['trend','Trend'],['pp10','10 D Vol'],['rs7d','RS Last 7d'],['stage','Stage/Vol'],
+                        ['squeeze','Squeeze/VCP'],
                         ['mcap','MCap'],['pe','P/E'],['roe','ROE'],['de','D/E'],['prom','Prom%']].map(([key,label])=>(
                         <button key={key} onClick={()=>toggleRsCol(key)}
                           style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,
@@ -5234,6 +5276,7 @@ export default function App(){
                     {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
                     {visibleRsCols.rs7d&&<span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>}
                     {visibleRsCols.stage&&<span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>}
+                    {visibleRsCols.squeeze&&<span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>}
                     {visibleRsCols.mcap&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>MCap</span>}
                     {visibleRsCols.pe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>}
                     {visibleRsCols.roe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>}
@@ -6127,42 +6170,8 @@ export default function App(){
                 return(
                   <>
                     <TVCopyPanel stocks={inSqueeze} label="In Squeeze"/>
-                    <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:8}}>
-                      {inSqueeze.slice(0,30).map(s=>(
-                        <div key={s.sym} style={{background:C.card,border:`1px solid ${C.blue}33`,
-                          borderRadius:10,padding:'12px'}}>
-                          <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
-                            <div>
-                              <div style={{fontWeight:800,fontSize:13}}>{s.sym}</div>
-                              <div style={{fontSize:10,color:C.muted}}>{s.sector}</div>
-                            </div>
-                            <div style={{textAlign:'right'}}>
-                              <div style={{fontWeight:800,fontSize:16,color:rsColor(s.rs)}}>{s.rs}</div>
-                              <div style={{fontSize:10,color:s.chg>=0?C.green:C.red}}>{s.chg>=0?'+':''}{s.chg?.toFixed(1)}%</div>
-                            </div>
-                          </div>
-                          <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-                            {s.squeeze?.inSqueeze&&(
-                              <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
-                                background:C.blue+'22',color:C.blue}}>
-                                BB {s.squeeze.squeezeDays}d · {s.squeeze.bbWidthPct}%
-                              </div>
-                            )}
-                            {s.vcp?.isVCP&&(
-                              <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
-                                background:C.purple+'22',color:C.purple}}>
-                                VCP {s.vcp.vcpStage} contractions
-                              </div>
-                            )}
-                          </div>
-                          {s.vcp?.contractions?.length>0&&(
-                            <div style={{fontSize:9,color:C.muted,marginTop:4}}>
-                              Pullbacks: {s.vcp.contractions.map(c=>`${c}%`).join(' → ')}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                    <BreakoutTable stocks={inSqueeze} isMobile={isMobile}
+                      visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={setChartSym}/>
                   </>
                 )
               })()}
@@ -6188,33 +6197,8 @@ export default function App(){
                 return(
                   <>
                     <TVCopyPanel stocks={fired} label="Squeeze Fired"/>
-                    {fired.map(s=>(
-                      <div key={s.sym} style={{background:C.card,border:`2px solid ${C.green}44`,
-                        borderRadius:12,marginBottom:10,padding:'14px'}}>
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-                          <div>
-                            <div style={{fontWeight:800,fontSize:16}}>{s.sym}</div>
-                            <div style={{fontSize:11,color:C.muted}}>{s.sector}</div>
-                            <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
-                              {s.squeeze?.squeezeFired&&<Badge color={C.green} glow>🟢 BB Fired</Badge>}
-                              {s.vcp?.vcpFired&&<Badge color={C.accent} glow>🚀 VCP Fired</Badge>}
-                              {topVolumeSignal(s)==='pp'&&<Badge color={C.green}>🔥PP</Badge>}
-                            </div>
-                          </div>
-                          <div style={{textAlign:'right'}}>
-                            <div style={{fontWeight:900,fontSize:20,color:rsColor(s.rs)}}>{s.rs}</div>
-                            <div style={{fontWeight:700,fontSize:13,color:s.chg>=0?C.green:C.red}}>
-                              {s.chg>=0?'+':''}{s.chg?.toFixed(2)}%</div>
-                            <div style={{fontSize:11,color:C.muted}}>{fmtP(s.last)}</div>
-                          </div>
-                        </div>
-                        {s.vcp?.contractions?.length>0&&(
-                          <div style={{fontSize:10,color:C.muted}}>
-                            VCP pullbacks: {s.vcp.contractions.map(c=>`${c}%`).join(' → ')} (contracting)
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                    <BreakoutTable stocks={fired} isMobile={isMobile}
+                      visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={setChartSym}/>
                   </>
                 )
               })()}
