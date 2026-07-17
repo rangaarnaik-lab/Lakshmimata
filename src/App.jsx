@@ -5802,16 +5802,9 @@ export default function App(){
                       <div style={{fontWeight:700,fontSize:13,color:C.teal,marginBottom:8}}>
                         RS Line New Highs — Early Leaders ({rln})
                       </div>
-                      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                        {stocks.filter(s=>s.rsLineNewHigh).sort((a,b)=>(b.rsTv||b.rs)-(a.rsTv||a.rs)).slice(0,20).map(s=>(
-                          <div key={s.sym} onClick={()=>setChartSym(s.sym)}
-                            style={{padding:'4px 10px',borderRadius:6,background:C.teal+'18',
-                              border:`1px solid ${C.teal}33`,cursor:'pointer',fontSize:11,fontWeight:600,
-                              color:C.teal}}>
-                            {s.sym} <span style={{color:C.muted,fontSize:10}}>{s.rsTv||s.rs}</span>
-                          </div>
-                        ))}
-                      </div>
+                      <TVCopyPanel stocks={stocks.filter(s=>s.rsLineNewHigh)} label="RS Line New Highs"/>
+                      <BreakoutTable stocks={stocks.filter(s=>s.rsLineNewHigh)}
+                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
                     </div>
                   )}
 
@@ -5821,15 +5814,9 @@ export default function App(){
                       <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
                         New Stage 2 Entries Today ({stocks.filter(s=>s.isS2NewEntry).length})
                       </div>
-                      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                        {stocks.filter(s=>s.isS2NewEntry).sort((a,b)=>(b.rsTv||b.rs)-(a.rsTv||a.rs)).map(s=>(
-                          <div key={s.sym} onClick={()=>setChartSym(s.sym)}
-                            style={{padding:'4px 10px',borderRadius:6,background:C.green+'18',
-                              border:`1px solid ${C.green}33`,cursor:'pointer',fontSize:11,fontWeight:600,color:C.green}}>
-                            {s.sym} <span style={{color:C.muted,fontSize:10}}>{s.rsTv||s.rs}</span>
-                          </div>
-                        ))}
-                      </div>
+                      <TVCopyPanel stocks={stocks.filter(s=>s.isS2NewEntry)} label="New Stage 2 Entries"/>
+                      <BreakoutTable stocks={stocks.filter(s=>s.isS2NewEntry)}
+                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
                     </div>
                   )}
                 </>
