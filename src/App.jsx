@@ -4781,24 +4781,37 @@ export default function App(){
           {mainTab!=='settings'&&mainTab!=='watchlist'&&mainTab!=='alerts'&&mainTab!=='rotation'&&(
             <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
 
-              {/* Watchlist OR index selector */}
-              {!isMobile&&(activeWl?(
-                <button onClick={()=>setActiveWl(null)}
-                  style={{padding:'5px 10px',borderRadius:6,border:`1px solid ${C.accent}44`,
-                    background:C.accent+'22',color:C.accent,fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>
-                  📋 {activeWlObj?.name} ×
-                </button>
-              ):(
-                <select value={indexFilter} onChange={e=>setIndexFilter(e.target.value)}
-                  style={{padding:'5px 8px',background:C.card,border:`1px solid ${C.border}`,
-                    borderRadius:6,color:C.text,fontSize:11,outline:'none',cursor:'pointer'}}>
-                  <option value="all">All stocks</option>
-                  <option value="nifty50">Nifty 50</option>
-                  <option value="midcap">Midcap 150</option>
-                  <option value="smallcap">Smallcap 250</option>
-                  <option value="microcap">Microcap 250</option>
+              {/* Watchlist OR index selector — one dropdown now covers
+                  both, instead of only being able to CLEAR an
+                  already-active watchlist here (setting one required
+                  leaving this page for the Watchlist tab). Prefixed value
+                  scheme (idx:/wl:) lets a single <select> represent
+                  either kind of choice. */}
+              {!isMobile&&(
+                <select
+                  value={activeWl?`wl:${activeWl}`:`idx:${indexFilter}`}
+                  onChange={e=>{
+                    const [kind,val]=e.target.value.split(':')
+                    if(kind==='wl'){setActiveWl(val)}
+                    else{setActiveWl(null);setIndexFilter(val)}
+                  }}
+                  style={{padding:'5px 8px',background:C.card,border:`1px solid ${activeWl?C.accent+'44':C.border}`,
+                    borderRadius:6,color:activeWl?C.accent:C.text,fontSize:11,outline:'none',cursor:'pointer',
+                    maxWidth:160}}>
+                  <option value="idx:all">All stocks</option>
+                  <option value="idx:nifty50">Nifty 50</option>
+                  <option value="idx:midcap">Midcap 150</option>
+                  <option value="idx:smallcap">Smallcap 250</option>
+                  <option value="idx:microcap">Microcap 250</option>
+                  {watchlists.length>0&&(
+                    <optgroup label="📋 Watchlists">
+                      {watchlists.map(wl=>(
+                        <option key={wl.id} value={`wl:${wl.id}`}>{wl.name} ({wl.stocks.length})</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
-              ))}
+              )}
 
               {/* History date picker */}
               {!isMobile&&(
@@ -4924,22 +4937,28 @@ export default function App(){
             />
             {isMobile&&(
               <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
-                {activeWl?(
-                  <button onClick={()=>setActiveWl(null)}
-                    style={{padding:'8px 12px',borderRadius:8,border:`1px solid ${C.accent}44`,
-                      background:C.accent+'22',color:C.accent,fontSize:12,fontWeight:600,cursor:'pointer'}}>
-                    📋 {activeWlObj?.name} ×
-                  </button>
-                ):(
-                  <select value={indexFilter} onChange={e=>setIndexFilter(e.target.value)}
-                    style={{padding:'8px',background:C.card,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:12,outline:'none'}}>
-                    <option value="all">🌐 All</option>
-                    <option value="nifty50">⭐ Nifty50</option>
-                    <option value="midcap">📊 Midcap</option>
-                    <option value="smallcap">📈 Smallcap</option>
-                    <option value="microcap">🔬 Microcap</option>
-                  </select>
-                )}
+                <select
+                  value={activeWl?`wl:${activeWl}`:`idx:${indexFilter}`}
+                  onChange={e=>{
+                    const [kind,val]=e.target.value.split(':')
+                    if(kind==='wl'){setActiveWl(val)}
+                    else{setActiveWl(null);setIndexFilter(val)}
+                  }}
+                  style={{padding:'8px',background:C.card,border:`1px solid ${activeWl?C.accent+'44':C.border}`,
+                    borderRadius:8,color:activeWl?C.accent:C.text,fontSize:12,outline:'none'}}>
+                  <option value="idx:all">🌐 All</option>
+                  <option value="idx:nifty50">⭐ Nifty50</option>
+                  <option value="idx:midcap">📊 Midcap</option>
+                  <option value="idx:smallcap">📈 Smallcap</option>
+                  <option value="idx:microcap">🔬 Microcap</option>
+                  {watchlists.length>0&&(
+                    <optgroup label="📋 Watchlists">
+                      {watchlists.map(wl=>(
+                        <option key={wl.id} value={`wl:${wl.id}`}>{wl.name} ({wl.stocks.length})</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
                 <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
                   availableDates={availableDates} isMobile={true}/>
                 <button onClick={()=>demoMode?setShowRealtimeUpsell(true):runDBScan()} disabled={loading}
