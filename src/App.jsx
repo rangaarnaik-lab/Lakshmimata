@@ -5574,7 +5574,9 @@ export default function App(){
                                   <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
                                     {idx.name} constituents ({constituents.length})
                                   </div>
-                                  <SimpleStockTable stocks={constituents.sort((a,b)=>b.rs-a.rs)} isMobile={isMobile} onChart={setChartSym}/>
+                                  <TVCopyPanel stocks={constituents} label={`${idx.name} Constituents`}/>
+                                  <BreakoutTable stocks={constituents} isMobile={isMobile}
+                                    visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
                                 </>
                               )}
                             </div>
@@ -5703,7 +5705,9 @@ export default function App(){
                                     <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
                                       {sec.sector} stocks ({secStocks.length})
                                     </div>
-                                    <SimpleStockTable stocks={secStocks} isMobile={isMobile} onChart={setChartSym}/>
+                                    <TVCopyPanel stocks={secStocks} label={`${sec.sector} Stocks`}/>
+                                    <BreakoutTable stocks={secStocks} isMobile={isMobile}
+                                      visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
                                   </div>
                                 )
                               })()}
@@ -5798,7 +5802,12 @@ export default function App(){
                                 </div>
                                 {isExp&&(
                                   <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,position:'sticky',left:0,width:'calc(100vw - 60px)',maxWidth:900}}>
-                                    <SimpleStockTable stocks={[...ind.members].sort((a,b)=>b.rs-a.rs)} isMobile={isMobile} onChart={setChartSym}/>
+                                    <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
+                                      {ind.name} stocks ({ind.members.length})
+                                    </div>
+                                    <TVCopyPanel stocks={ind.members} label={`${ind.name} Stocks`}/>
+                                    <BreakoutTable stocks={ind.members} isMobile={isMobile}
+                                      visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
                                   </div>
                                 )}
                               </div>
