@@ -6662,7 +6662,7 @@ export default function App(){
               <div style={{fontSize:12,color:C.muted,marginTop:2}}>
                 Which {rotationScope==='watchlist'?'stocks':scopeLabel.toLowerCase()+'s'} are gaining or losing relative strength, and how fast.
                 {rotationScope==='sector'&&` Click to jump to that sector\u2019s filtered RS list.`}
-                {rotationScope==='index'&&` Click an index to see its constituent stocks below.`}
+                {rotationScope==='index'&&` Click an index to drill into its own stocks, right in this chart.`}
                 {rotationScope==='watchlist'&&' Click a stock to open its chart.'}
               </div>
             </div>
@@ -6756,13 +6756,6 @@ export default function App(){
                   })}
                 </div>
               </div>
-              {requestedWindow&&maxAvailable>0&&maxAvailable<rotationWindow&&(
-                <div style={{fontSize:11,color:C.yellow,background:C.yellow+'14',border:`1px solid ${C.yellow}33`,
-                  borderRadius:8,padding:'8px 12px',marginBottom:12}}>
-                  ⚠ Only {maxAvailable} day{maxAvailable===1?'':'s'} of history available yet — showing the full {maxAvailable}-day window
-                  instead of the requested {requestedWindow.label}. This fills in automatically as more daily snapshots accumulate.
-                </div>
-              )}
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16,marginBottom:16,position:'relative'}}>
                 <button onClick={()=>setShowRotationGuidance(v=>!v)}
                   title="How to use this chart"
@@ -6778,16 +6771,66 @@ export default function App(){
                     <strong style={{color:C.text}}>How to read this:</strong> each dot is one {rotationScope==='sector'?'sector':rotationScope==='index'?'index':'watchlist stock'},
                     trailing from where it was to where it is now — momentum (up/down) against RS-TV strength (left/right).
                     Leading (top-right) is where money's already flowing; Improving (top-left) is early, before it's
-                    obvious.{rotationScope==='index'&&<> Tap a dot, or a FOCUS chip when it's the only one selected, to see that index's stocks below.</>}
+                    obvious.{rotationScope==='index'&&<> Tap a dot to drill into that index's own stocks, right here in this chart.</>}
                   </div>
                 )}
-                <RRGChart rolledData={rolledData} maxAbsMom={maxAbsMom} levelLabel={levelLabel}
-                  windowLabel={requestedWindow?.label||rotationWindow+'d'} onDotClick={goTo}
-                  dotSizing={rotationScope==='sector'}/>
-                <div style={{fontSize:10,color:C.muted,marginTop:8}}>
-                  Dot color = which {scopeLabel.toLowerCase()} (matches its label) — position tells you the status below, not the color.
-                  The hollow dot marks where each trail started (oldest day shown) — the arrow marks where it is now and which way it's heading.
-                </div>
+
+                {rotationScope==='index'&&rotationExpandedId?(
+                  // Drilled into one index — this chart now shows ITS
+                  // constituent stocks rotating against each other,
+                  // in place, instead of a separate section further down
+                  // the page that required scrolling to find.
+                  <>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,flexWrap:'wrap'}}>
+                      <button onClick={()=>setRotationExpandedId(null)}
+                        style={{padding:'5px 12px',borderRadius:20,border:`1px solid ${C.border}`,
+                          background:'transparent',color:C.muted,fontSize:12,fontWeight:600,cursor:'pointer'}}>
+                        ← All Indices
+                      </button>
+                      <span style={{fontSize:12,color:C.muted}}>/</span>
+                      <span style={{fontSize:13,fontWeight:800,color:C.accent}}>{rotationExpandedId} constituents</span>
+                    </div>
+                    {loadingConstituentRotation?(
+                      <div style={{textAlign:'center',padding:'60px 0',color:C.muted,fontSize:12}}>Loading…</div>
+                    ):constituentRolledData&&constituentRolledData.rolledData.some(s=>s.trail?.length>0)?(
+                      <RRGChart rolledData={constituentRolledData.rolledData} maxAbsMom={constituentRolledData.maxAbsMom}
+                        levelLabel="RS-TV" windowLabel={ROTATION_WINDOWS.find(w=>w.days===rotationWindow)?.label||rotationWindow+'d'}
+                        onDotClick={s=>setChartSym(s.id)}/>
+                    ):(()=>{
+                      const constituents=getIndexConstituents(rotationExpandedId,stocks)||[]
+                      return(
+                        <div style={{background:C.bg,border:`1px solid ${C.orange}44`,borderRadius:8,padding:'10px 12px',fontSize:11,color:C.muted}}>
+                          ⚠️ No rotation chart yet for {rotationExpandedId} —{' '}
+                          {constituentRotationData===null?'no historical data returned for these symbols yet.':
+                           constituentRotationData.length===0?'query returned zero rows.':
+                           'data returned but none of the stocks have a usable trail (need at least 2 days of history).'}
+                          {' '}({(constituentRotationData||[]).length} stocks matched, requesting {constituents.length} symbols
+                          over the last {rotationWindow}d)
+                        </div>
+                      )
+                    })()}
+                    <div style={{fontSize:10,color:C.muted,marginTop:8}}>
+                      Each dot is one stock within {rotationExpandedId}. Tap a dot to open that stock's chart. Tap "← All Indices" to zoom back out.
+                    </div>
+                  </>
+                ):(
+                  <>
+                    {requestedWindow&&maxAvailable>0&&maxAvailable<rotationWindow&&(
+                      <div style={{fontSize:11,color:C.yellow,background:C.yellow+'14',border:`1px solid ${C.yellow}33`,
+                        borderRadius:8,padding:'8px 12px',marginBottom:12}}>
+                        ⚠ Only {maxAvailable} day{maxAvailable===1?'':'s'} of history available yet — showing the full {maxAvailable}-day window
+                        instead of the requested {requestedWindow.label}. This fills in automatically as more daily snapshots accumulate.
+                      </div>
+                    )}
+                    <RRGChart rolledData={rolledData} maxAbsMom={maxAbsMom} levelLabel={levelLabel}
+                      windowLabel={requestedWindow?.label||rotationWindow+'d'} onDotClick={goTo}
+                      dotSizing={rotationScope==='sector'}/>
+                    <div style={{fontSize:10,color:C.muted,marginTop:8}}>
+                      Dot color = which {scopeLabel.toLowerCase()} (matches its label) — position tells you the status below, not the color.
+                      The hollow dot marks where each trail started (oldest day shown) — the arrow marks where it is now and which way it's heading.
+                    </div>
+                  </>
+                )}
                 <div style={{display:'flex',gap:14,flexWrap:'wrap',marginTop:8,paddingTop:10,borderTop:`1px solid ${C.divider}`}}>
                   {[['Leading — strong & still improving',C.green],['Improving — gaining strength',C.accent],
                     ['Weakening — losing momentum',C.orange],['Lagging — weak & still falling',C.muted]].map(([label,color])=>(
@@ -6845,27 +6888,6 @@ export default function App(){
                       </div>
                     ):(
                       <>
-                        {loadingConstituentRotation?(
-                          <div style={{textAlign:'center',padding:'30px 0',color:C.muted,fontSize:12}}>Loading rotation…</div>
-                        ):constituentRolledData&&constituentRolledData.rolledData.some(s=>s.trail?.length>0)?(
-                          <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:12,marginBottom:12}}>
-                            <div style={{fontSize:10,color:C.muted,marginBottom:6,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.04em'}}>
-                              {rotationExpandedId} constituents — rotation vs each other
-                            </div>
-                            <RRGChart rolledData={constituentRolledData.rolledData} maxAbsMom={constituentRolledData.maxAbsMom}
-                              levelLabel="RS-TV" windowLabel={ROTATION_WINDOWS.find(w=>w.days===rotationWindow)?.label||rotationWindow+'d'}
-                              onDotClick={s=>setChartSym(s.id)} height={320}/>
-                          </div>
-                        ):(
-                          <div style={{background:C.bg,border:`1px solid ${C.orange}44`,borderRadius:8,padding:'10px 12px',marginBottom:12,fontSize:11,color:C.muted}}>
-                            ⚠️ No rotation chart yet for {rotationExpandedId} —{' '}
-                            {constituentRotationData===null?'no historical data returned for these symbols yet.':
-                             constituentRotationData.length===0?'query returned zero rows.':
-                             'data returned but none of the stocks have a usable trail (need at least 2 days of history).'}
-                            {' '}({(constituentRotationData||[]).length} stocks matched, requesting {constituents.length} symbols
-                            over the last {rotationWindow}d)
-                          </div>
-                        )}
                         <TVCopyPanel stocks={constituents} label={`${rotationExpandedId} Constituents`}/>
                         <BreakoutTable stocks={constituents} isMobile={isMobile}
                           visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
