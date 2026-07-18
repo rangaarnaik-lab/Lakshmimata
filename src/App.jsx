@@ -6856,7 +6856,16 @@ export default function App(){
                               levelLabel="RS-TV" windowLabel={ROTATION_WINDOWS.find(w=>w.days===rotationWindow)?.label||rotationWindow+'d'}
                               onDotClick={s=>setChartSym(s.id)} height={320}/>
                           </div>
-                        ):null}
+                        ):(
+                          <div style={{background:C.bg,border:`1px solid ${C.orange}44`,borderRadius:8,padding:'10px 12px',marginBottom:12,fontSize:11,color:C.muted}}>
+                            ⚠️ No rotation chart yet for {rotationExpandedId} —{' '}
+                            {constituentRotationData===null?'no historical data returned for these symbols yet.':
+                             constituentRotationData.length===0?'query returned zero rows.':
+                             'data returned but none of the stocks have a usable trail (need at least 2 days of history).'}
+                            {' '}({(constituentRotationData||[]).length} stocks matched, requesting {constituents.length} symbols
+                            over the last {rotationWindow}d)
+                          </div>
+                        )}
                         <TVCopyPanel stocks={constituents} label={`${rotationExpandedId} Constituents`}/>
                         <BreakoutTable stocks={constituents} isMobile={isMobile}
                           visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
