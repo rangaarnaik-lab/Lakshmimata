@@ -4225,6 +4225,7 @@ export default function App(){
     typeof Notification!=='undefined'?Notification.permission:'denied'
   )
   const lastAlertCheck = useRef(null)
+  const lastAnnouncementCheck = useRef(null)
 
   // Request notification permission on mount
   useEffect(()=>{
@@ -4291,6 +4292,57 @@ export default function App(){
     // Check immediately then every 60s
     checkSqueezeAlerts()
     const timer = setInterval(checkSqueezeAlerts, 60000)
+    return ()=>clearInterval(timer)
+  },[session,notifPermission])
+
+  // Same notification pattern as squeeze/VCP alerts above, for new
+  // corporate announcements instead. Checks every 60s per explicit
+  // request, matching the squeeze/VCP cadence — worth knowing the
+  // backend's announcement worker only refreshes every 15 minutes, so
+  // most of these checks will find nothing new; this trades some
+  // extra, mostly-empty checks for not missing a new announcement by
+  // more than a minute once the backend does have one.
+  useEffect(()=>{
+    if(!session || notifPermission!=='granted') return
+    const checkAnnouncementAlerts = async()=>{
+      try{
+        const since = lastAnnouncementCheck.current || new Date(Date.now()-90000).toISOString()
+        const {data} = await supabase
+          .from('corporate_announcements')
+          .select('*')
+          .gte('created_at', since)
+          .order('created_at', {ascending:false})
+          .limit(10)
+
+        lastAnnouncementCheck.current = new Date().toISOString()
+
+        if(data && data.length > 0){
+          data.forEach(ann=>{
+            if(typeof Notification!=='undefined' && Notification.permission==='granted'){
+              const n = new Notification(
+                `📢 ${ann.symbol} — New Announcement`,
+                {
+                  body: ann.subject.length>110 ? ann.subject.slice(0,107)+'…' : ann.subject,
+                  icon: '/favicon.ico',
+                  tag: `announcement-${ann.symbol}-${ann.id}`,
+                  requireInteraction: false,
+                }
+              )
+              n.onclick = ()=>{
+                window.focus()
+                setMainTab('announcements')
+              }
+              setTimeout(()=>n.close(), 8000)
+            }
+          })
+        }
+      }catch(e){
+        console.warn('Announcement alert check failed:', e.message)
+      }
+    }
+
+    checkAnnouncementAlerts()
+    const timer = setInterval(checkAnnouncementAlerts, 60000)
     return ()=>clearInterval(timer)
   },[session,notifPermission])
   const [chartWide,setChartWide]=useState(0) // 0=normal 1=wide 2=extra-wide
