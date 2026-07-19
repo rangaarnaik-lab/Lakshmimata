@@ -2690,18 +2690,27 @@ function rrgIdentityColor(id){
  * without duplicating it. Pure function: same inputs always produce the
  * same output, safe to call from multiple useMemo call sites.
  */
-function computeRolledRotationData(data,selectedIds){
+function computeRolledRotationData(data,selectedIds,asOfDate=null){
   const displayData = selectedIds && selectedIds.size>0 ? data.filter(s=>selectedIds.has(s.id)) : data
+  // asOfDate lets the date-range slider "rewind" the chart — trim each
+  // series' trail to only the days up to and including the selected
+  // date, so momentum/level/quadrant all recompute as of that point.
+  const trimmed = asOfDate
+    ? displayData.map(s=>({...s, trail:(s.trail||[]).filter(t=>!t.date||t.date<=asOfDate)}))
+    : displayData
   const ROLL_K=5 // ~1 trading week lookback for the local rate of change
-  const rolledData=displayData.map(s=>{
+  const rolledData=trimmed.map(s=>{
     const trail=(s.trail||[]).map((t,i,arr)=>{
       const j=Math.max(0,i-ROLL_K)
-      return {level:t.level, mom:t.level-arr[j].level}
+      return {level:t.level, date:t.date, mom:t.level-arr[j].level}
     })
-    return {...s, trail, momentum: trail.length?trail[trail.length-1].mom:(s.momentum||0)}
+    const lastTrail=trail.length?trail[trail.length-1]:null
+    return {...s, trail,
+      level: lastTrail?lastTrail.level:s.level,
+      momentum: lastTrail?lastTrail.mom:(s.momentum||0)}
   })
   const maxAbsMom=Math.max(5,...rolledData.flatMap(s=>s.trail.map(t=>Math.abs(t.mom))))
-  return { displayData, rolledData, maxAbsMom }
+  return { displayData:trimmed, rolledData, maxAbsMom }
 }
 
 /**
@@ -2716,21 +2725,29 @@ function computeRolledRotationData(data,selectedIds){
  * represents many stocks) — off by default, since that only makes
  * sense for aggregated points, not individual stocks.
  */
+// Quadrant fill/label colors matched to the reference RRG design:
+// deep green (leading), blue (improving), maroon (lagging), olive (weakening).
+const RRG_QUAD={
+  leading:    {fill:'#14532d', label:'#4ade80'},
+  improving:  {fill:'#1e3a5f', label:'#60a5fa'},
+  lagging:    {fill:'#450a0a', label:'#f87171'},
+  weakening:  {fill:'#3f2f0a', label:'#facc15'},
+}
 function RRGChart({rolledData,maxAbsMom,levelLabel,windowLabel,onDotClick,dotSizing=false,height=460}){
   const xFor=level=>20+(Math.max(0,Math.min(100,level??50))/100)*580
   const yFor=mom=>230-(Math.max(-maxAbsMom,Math.min(maxAbsMom,mom||0))/maxAbsMom)*205
   return(
     <svg viewBox={`0 0 620 ${height}`} style={{width:'100%',height:'auto',display:'block'}}>
-      <rect x="310" y="20" width="290" height="210" fill="#22c55e" opacity="0.06"/>
-      <rect x="20" y="20" width="290" height="210" fill="#4f8ef7" opacity="0.06"/>
-      <rect x="20" y="230" width="290" height="210" fill="#7c88a8" opacity="0.08"/>
-      <rect x="310" y="230" width="290" height="210" fill="#f97316" opacity="0.06"/>
-      <line x1="310" y1="20" x2="310" y2="440" stroke="#232c42" strokeWidth="1.5"/>
-      <line x1="20" y1="230" x2="600" y2="230" stroke="#232c42" strokeWidth="1.5"/>
-      <text x="580" y="38" textAnchor="end" fontSize="11" fontWeight="700" fill="#22c55e">LEADING</text>
-      <text x="40" y="38" textAnchor="start" fontSize="11" fontWeight="700" fill="#4f8ef7">IMPROVING</text>
-      <text x="40" y="428" textAnchor="start" fontSize="11" fontWeight="700" fill="#7c88a8">LAGGING</text>
-      <text x="580" y="428" textAnchor="end" fontSize="11" fontWeight="700" fill="#f97316">WEAKENING</text>
+      <rect x="310" y="20" width="290" height="210" fill={RRG_QUAD.leading.fill} opacity="0.5"/>
+      <rect x="20" y="20" width="290" height="210" fill={RRG_QUAD.improving.fill} opacity="0.5"/>
+      <rect x="20" y="230" width="290" height="210" fill={RRG_QUAD.lagging.fill} opacity="0.5"/>
+      <rect x="310" y="230" width="290" height="210" fill={RRG_QUAD.weakening.fill} opacity="0.5"/>
+      <line x1="310" y1="20" x2="310" y2="440" stroke="#0b0f1a" strokeWidth="1.5"/>
+      <line x1="20" y1="230" x2="600" y2="230" stroke="#0b0f1a" strokeWidth="1.5"/>
+      <text x="316" y="36" textAnchor="start" fontSize="12" fontWeight="700" fill={RRG_QUAD.leading.label}>Leading</text>
+      <text x="26" y="36" textAnchor="start" fontSize="12" fontWeight="700" fill={RRG_QUAD.improving.label}>Improving</text>
+      <text x="26" y="422" textAnchor="start" fontSize="12" fontWeight="700" fill={RRG_QUAD.lagging.label}>Lagging</text>
+      <text x="574" y="422" textAnchor="end" fontSize="12" fontWeight="700" fill={RRG_QUAD.weakening.label}>Weakening</text>
       <text x="310" y="455" textAnchor="middle" fontSize="10" fill="#7c88a8">{levelLabel.toUpperCase()} LEVEL →</text>
       <text x="12" y="230" textAnchor="middle" fontSize="10" fill="#7c88a8" transform="rotate(-90 12 230)">MOMENTUM ({windowLabel}) →</text>
 
@@ -2740,7 +2757,11 @@ function RRGChart({rolledData,maxAbsMom,levelLabel,windowLabel,onDotClick,dotSiz
         const cx=xFor(s.level), cy=yFor(s.momentum)
         const sx=tx(s.trail[0]), sy=ty(s.trail[0])
         const r=dotSizing?7+Math.min(6,(s.count||1)/3):7
-        const color=rrgIdentityColor(s.id)
+        const leading=(s.level??50)>=50&&(s.momentum||0)>=0
+        const improving=(s.level??50)<50&&(s.momentum||0)>=0
+        const weakening=(s.level??50)>=50&&(s.momentum||0)<0
+        const color=leading?RRG_QUAD.leading.label:improving?RRG_QUAD.improving.label:
+          weakening?RRG_QUAD.weakening.label:RRG_QUAD.lagging.label
         const markerId=`rrg-arrow-${idx}-${Math.random().toString(36).slice(2,7)}`
         return(
           <g key={s.id} style={{cursor:'pointer'}} onClick={()=>onDotClick(s)}>
@@ -2760,6 +2781,36 @@ function RRGChart({rolledData,maxAbsMom,levelLabel,windowLabel,onDotClick,dotSiz
       })}
     </svg>
   )
+}
+
+/**
+ * Plain-language summary of the current RRG quadrant layout — built
+ * directly from the same leading/improving/weakening/lagging split the
+ * chart itself uses (see quadColor in the Rotation tab), so the text
+ * always agrees with what's plotted. No model call: this is a template
+ * over data we already have, which is faster and can't drift from the
+ * chart or invent a sector that isn't there.
+ */
+function generateRotationInsights(rolledData,scopeLabel){
+  const plural=scopeLabel.toLowerCase()+'s'
+  const bucket={leading:[],improving:[],weakening:[],lagging:[]}
+  for(const s of rolledData){
+    if(!s.trail||s.trail.length===0) continue
+    const level=s.level??50, mom=s.momentum||0
+    const key=level>=50?(mom>=0?'leading':'weakening'):(mom>=0?'improving':'lagging')
+    bucket[key].push(s.label)
+  }
+  const names=arr=>arr.slice(0,4).join(', ')+(arr.length>4?` and ${arr.length-4} more`:'')
+  const parts=[]
+  if(bucket.leading.length)
+    parts.push(`Focus on leading ${plural} like ${names(bucket.leading)} for potential outperformance.`)
+  if(bucket.lagging.length)
+    parts.push(`Avoid ${names(bucket.lagging)}, as ${bucket.lagging.length===1?'it is':'they are'} currently lagging.`)
+  if(bucket.weakening.length)
+    parts.push(`Monitor ${names(bucket.weakening)}, as ${bucket.weakening.length===1?'it is':'they are'} weakening.`)
+  if(bucket.improving.length)
+    parts.push(`${names(bucket.improving)} ${bucket.improving.length===1?'is':'are'} improving and might offer future opportunities.`)
+  return { text: parts.join(' '), bucket }
 }
 
 function DesktopRow({s,i,onChart,visibleRsCols}){
@@ -4504,6 +4555,10 @@ export default function App(){
   // just a handful, like a real RRG chart does, instead of always
   // plotting all ~20 sectors at once regardless of how cluttered that is.
   const [rotationSelectedIds,setRotationSelectedIds]=useState(()=>new Set())
+  // Date-range slider on the Rotation chart — null means "latest" (no
+  // trimming). Set to a specific YYYY-MM-DD to rewind the chart to how
+  // it looked as of that day, using the trail dates already in the data.
+  const [rotationAsOfDate,setRotationAsOfDate]=useState(null)
   const [portfolioHoldings,setPortfolioHoldings]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('lm_portfolio')||'[]')}catch{return []}
   })
@@ -4791,11 +4846,22 @@ export default function App(){
   // sector/index/stock on every re-render, not just when the underlying
   // data or selection actually changed. Memoized so it only recomputes
   // when rotationData or the focus selection changes.
+  // All distinct trail dates across the current dataset, sorted — this
+  // is what the slider scrubs across. Recomputed only when the raw
+  // rotation data changes, not on every asOfDate drag.
+  const rotationAvailableDates=useMemo(()=>{
+    const dates=new Set()
+    for(const s of (rotationData||[])) for(const t of (s.trail||[])) if(t.date) dates.add(t.date)
+    return [...dates].sort()
+  },[rotationData])
+  // Reset the slider back to "latest" whenever the scope/window/data
+  // changes underneath it, so it never gets stuck on a stale date.
+  useEffect(()=>{ setRotationAsOfDate(null) },[rotationData])
   const rotationDisplayData=useMemo(()=>{
     const data = rotationData||[]
-    const {displayData,rolledData,maxAbsMom} = computeRolledRotationData(data,rotationSelectedIds)
+    const {displayData,rolledData,maxAbsMom} = computeRolledRotationData(data,rotationSelectedIds,rotationAsOfDate)
     return { data, displayData, rolledData, maxAbsMom }
-  },[rotationData,rotationSelectedIds])
+  },[rotationData,rotationSelectedIds,rotationAsOfDate])
 
   const constituentRolledData=useMemo(()=>{
     if(!constituentRotationData) return null
@@ -6897,7 +6963,8 @@ export default function App(){
             const leading=(s.level??50)>=50&&(s.momentum||0)>=0
             const improving=(s.level??50)<50&&(s.momentum||0)>=0
             const weakening=(s.level??50)>=50&&(s.momentum||0)<0
-            return leading?C.green:improving?C.accent:weakening?C.orange:C.muted
+            return leading?RRG_QUAD.leading.label:improving?RRG_QUAD.improving.label:
+              weakening?RRG_QUAD.weakening.label:RRG_QUAD.lagging.label
           }
           const goTo=s=>{
             if(rotationScope==='sector'){setSectorFilter(s.id);setMainTab('rs')}
@@ -7011,6 +7078,27 @@ export default function App(){
                   })}
                 </div>
               </div>
+
+              {rotationAvailableDates.length>1&&!(rotationScope==='index'&&rotationExpandedId)&&(
+                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
+                  padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12}}>
+                  <span style={{fontSize:11,color:C.muted,fontWeight:600,whiteSpace:'nowrap'}}>
+                    {rotationAvailableDates[0]}
+                  </span>
+                  <input type="range" min={0} max={rotationAvailableDates.length-1}
+                    value={rotationAsOfDate?rotationAvailableDates.indexOf(rotationAsOfDate):rotationAvailableDates.length-1}
+                    onChange={e=>{
+                      const i=Number(e.target.value)
+                      setRotationAsOfDate(i===rotationAvailableDates.length-1?null:rotationAvailableDates[i])
+                    }}
+                    style={{flex:1,accentColor:C.accent}}/>
+                  <span style={{fontSize:11,color:rotationAsOfDate?C.accent:C.muted,fontWeight:700,whiteSpace:'nowrap'}}>
+                    {rotationAsOfDate||rotationAvailableDates[rotationAvailableDates.length-1]}
+                    {!rotationAsOfDate&&' (latest)'}
+                  </span>
+                </div>
+              )}
+
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16,marginBottom:16,position:'relative'}}>
                 <button onClick={()=>setShowRotationGuidance(v=>!v)}
                   title="How to use this chart"
@@ -7087,14 +7175,27 @@ export default function App(){
                   </>
                 )}
                 <div style={{display:'flex',gap:14,flexWrap:'wrap',marginTop:8,paddingTop:10,borderTop:`1px solid ${C.divider}`}}>
-                  {[['Leading — strong & still improving',C.green],['Improving — gaining strength',C.accent],
-                    ['Weakening — losing momentum',C.orange],['Lagging — weak & still falling',C.muted]].map(([label,color])=>(
+                  {[['Leading — strong & still improving',RRG_QUAD.leading.label],['Improving — gaining strength',RRG_QUAD.improving.label],
+                    ['Weakening — losing momentum',RRG_QUAD.weakening.label],['Lagging — weak & still falling',RRG_QUAD.lagging.label]].map(([label,color])=>(
                     <div key={label} style={{display:'flex',alignItems:'center',gap:6,fontSize:10,color:C.muted}}>
                       <span style={{width:8,height:8,borderRadius:'50%',background:color,display:'inline-block'}}/>{label}
                     </div>
                   ))}
                 </div>
               </div>
+
+              {!(rotationScope==='index'&&rotationExpandedId)&&rolledData.some(s=>s.trail?.length>0)&&(()=>{
+                const {text}=generateRotationInsights(rolledData,scopeLabel)
+                return text?(
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
+                    padding:'14px 16px',marginBottom:16}}>
+                    <div style={{fontSize:11,fontWeight:800,color:C.accent,letterSpacing:'0.04em',marginBottom:6}}>
+                      INSIGHTS{rotationAsOfDate?` — as of ${rotationAsOfDate}`:''}
+                    </div>
+                    <div style={{fontSize:12.5,color:C.text,lineHeight:1.6}}>{text}</div>
+                  </div>
+                ):null
+              })()}
 
               <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>RANKED LIST</div>
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
