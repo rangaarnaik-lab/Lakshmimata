@@ -4066,7 +4066,7 @@ export default function App(){
   const [scannerNameInput,setScannerNameInput]=useState('')
   const [search,setSearch]=useState('')
   useEffect(()=>{
-    if(mainTab==='indices' && breadthHistory.length===0){
+    if(mainTab==='market' && breadthHistory.length===0){
       fetchMarketBreadthHistory(500).then(setBreadthHistory)
       fetchEmaBreadthHistory(500).then(setEmaBreadthHistory)
     }
@@ -4311,7 +4311,7 @@ export default function App(){
               // still go to the Squeeze tab.
               n.onclick = ()=>{
                 window.focus()
-                setMainTab(isVolAlert ? 'rs' : 'breadth')
+                setMainTab(isVolAlert ? 'rs' : 'squeeze')
               }
               // Auto-close after 8 seconds
               setTimeout(()=>n.close(), 8000)
@@ -4670,12 +4670,10 @@ export default function App(){
   useEffect(()=>{
     if(!session) return
     let timer = null
-    if(mainTab==='indices'){
+    if(mainTab==='market'){
       const load = () => fetchIndexDashboard().then(setIndexData).catch(e=>console.error('Index fetch:',e))
       load()
       timer = setInterval(load, 60000)
-    }
-    if(mainTab==='breadth'){
       // Fetch market breadth from Supabase
       supabase.from('market_breadth').select('*').order('scan_date',{ascending:false}).limit(30)
         .then(({data})=>setBreadthData(data||[]))
@@ -4843,7 +4841,7 @@ export default function App(){
   const weakBase=stocks.filter(s=>s.weakRS.chg1d>=weakThreshold&&s.rs<50&&s.sym.toLowerCase().includes(weakSearch.toLowerCase())&&(!weakSigOnly||s.weakRS.isSignal)).sort((a,b)=>b.weakRS.chg1d-a.weakRS.chg1d)
   const displayedWeak=applyPP(weakBase,ppFilterWeak)
 
-  const tabs=[['rs','📊','RS'],['indices','🗂','Indices'],['breadth','📈','Breadth'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
+  const tabs=[['rs','📊','RS'],['market','🌐','Market'],['squeeze','🌀','Squeeze'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
 
   if(authLoading)return(
     <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -4887,9 +4885,9 @@ export default function App(){
             alignItems:'center',width:'100%',paddingTop:8,gap:1}}>
             {[
               {id:'rs',       label:'RS Rating', abbr:'RS'},
-              {id:'indices',  label:'Indices',   abbr:'IX'},
+              {id:'market',   label:'Market',     abbr:'MK'},
               {id:'rotation', label:'Sector Rotation', abbr:'RO'},
-              {id:'breadth',  label:'Breadth',   abbr:'BR'},
+              {id:'squeeze',  label:'Squeeze',    abbr:'SQ'},
               {id:'breakout', label:'Breakout',  abbr:'BO'},
               {id:'52wl',     label:'52WL',      abbr:'WL'},
               {id:'weak',     label:'Weak RS',   abbr:'WK'},
@@ -4981,7 +4979,8 @@ export default function App(){
             )}
             <div style={{minWidth:0}}>
               <div style={{fontWeight:600,fontSize:14,color:C.text,lineHeight:1}}>
-                {mainTab==='rs'?'RS Rating':mainTab==='indices'?'Indices':
+                {mainTab==='rs'?'RS Rating':mainTab==='market'?'Market':
+                 mainTab==='squeeze'?'Squeeze & VCP':
                  mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
                  mainTab==='weak'?'Weak RS':mainTab==='rotation'?'Sector Rotation':
                  mainTab==='watchlist'?'Watchlist':mainTab==='announcements'?'Announcements':'Account'}
@@ -5585,8 +5584,8 @@ export default function App(){
         )}
 
 
-        {/* ══ INDICES DASHBOARD ══ */}
-        {mainTab==='indices'&&(
+        {/* ══ INDICES DASHBOARD (part of combined Market tab) ══ */}
+        {mainTab==='market'&&(
           <div>
             <div style={{marginBottom:12}}>
               <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>🗂 Index Performance Dashboard</div>
@@ -6160,8 +6159,8 @@ export default function App(){
         )}
 
 
-        {/* ══ MARKET BREADTH ══ */}
-        {mainTab==='breadth'&&(
+        {/* ══ MARKET BREADTH (part of combined Market tab) ══ */}
+        {mainTab==='market'&&(
           <div style={{padding:'0 0 20px'}}>
             <div style={{marginBottom:14}}>
               <div style={{fontWeight:700,fontSize:16,color:C.text}}>Market Breadth</div>
@@ -6507,7 +6506,7 @@ export default function App(){
         )}
 
         {/* ══ SQUEEZE ══ */}
-        {mainTab==='breadth'&&(
+        {mainTab==='squeeze'&&(
           <div>
             <LastUpdatedBar
               scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
@@ -7375,7 +7374,7 @@ export default function App(){
             borderTop:`1px solid ${C.border}`,display:'flex',zIndex:40,
             paddingBottom:'env(safe-area-inset-bottom)'}}>
             {[
-              ['rs','📊','RS'],['indices','🗂','Indices'],['rotation','🔄','Rotate'],['breakout','💥','Break'],['52wl','🎯','52WL'],
+              ['rs','📊','RS'],['market','🌐','Market'],['rotation','🔄','Rotate'],['breakout','💥','Break'],['52wl','🎯','52WL'],
             ].map(([t,icon,label])=>(
               <button key={t} onClick={()=>setMainTab(t)}
                 style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
@@ -7390,8 +7389,8 @@ export default function App(){
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <span style={{fontSize:15}}>⋯</span>
               <span style={{fontSize:8,fontWeight:600,
-                color:['breadth','weak','portfolio','compare','watchlist','announcements','settings'].includes(mainTab)?C.accent:C.muted}}>More</span>
-              {['breadth','weak','portfolio','compare','watchlist','announcements','settings'].includes(mainTab)&&
+                color:['squeeze','weak','portfolio','compare','watchlist','announcements','settings'].includes(mainTab)?C.accent:C.muted}}>More</span>
+              {['squeeze','weak','portfolio','compare','watchlist','announcements','settings'].includes(mainTab)&&
                 <div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           </div>
@@ -7408,7 +7407,7 @@ export default function App(){
                 <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:'8px auto 16px'}}/>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:4}}>
                   {[
-                    ['breadth','📈','Breadth'],['weak','🚨','Weak'],
+                    ['squeeze','🌀','Squeeze'],['weak','🚨','Weak'],
                     ['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],
                     ['announcements','📢','Announcements'],
                     ['settings','⚙','Account'],
