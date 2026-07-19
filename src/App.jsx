@@ -4487,6 +4487,7 @@ export default function App(){
   // ── DB-powered scan (reads from Supabase, pre-computed by live server) ──
   const [indexData,setIndexData]=useState([])
   const [expandedIndex,setExpandedIndex]=useState(null)
+  const [idxConstituentFilters,setIdxConstituentFilters]=useState({industry:null,rsMin:0})
   const [idxSort,setIdxSort]=useState({key:'rsTv',dir:-1})
   const [secSort,setSecSort]=useState({key:'avgRS',dir:-1})
   const [breadthData,setBreadthData]=useState(null)
@@ -5694,7 +5695,7 @@ export default function App(){
                       const isExpanded = expandedIndex===idx.name
                       return (
                       <div key={idx.name}>
-                        <div onClick={()=>setExpandedIndex(isExpanded?null:idx.name)}
+                        <div onClick={()=>{setExpandedIndex(isExpanded?null:idx.name);setIdxConstituentFilters({industry:null,rsMin:0})}}
                           style={{display:'grid',
                           gridTemplateColumns:'150px 90px 60px 90px 70px 70px 70px 60px 60px',
                           gap:4,padding:'10px 12px',alignItems:'center',cursor:'pointer',
@@ -5768,6 +5769,20 @@ export default function App(){
                         {isExpanded && (() => {
                           const constituents = getIndexConstituents(idx.name, stocks)
                           const rankStreak = idx.rankD<=3 && idx.rankW<=3 && idx.rankM<=3
+                          // Industries actually present among this index's
+                          // constituents — dynamically built, not a fixed
+                          // list, so the dropdown only ever shows options
+                          // that will actually return results.
+                          const industries = constituents
+                            ? [...new Set(constituents.map(s=>s.industry).filter(Boolean))].sort()
+                            : []
+                          const activeIndustry = idxConstituentFilters.industry
+                          const activeRsMin = idxConstituentFilters.rsMin
+                          const filteredConstituents = constituents
+                            ? constituents.filter(s=>
+                                (!activeIndustry || s.industry===activeIndustry) &&
+                                (s.rs??0) >= activeRsMin)
+                            : null
                           return (
                             <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,position:'sticky',left:0,width:'calc(100vw - 60px)',maxWidth:900}}>
                               <div style={{display:'flex',justifyContent:'flex-end',marginBottom:constituents?8:0}}>
@@ -5799,10 +5814,46 @@ export default function App(){
                               ) : (
                                 <>
                                   <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
-                                    {idx.name} constituents ({constituents.length})
+                                    {idx.name} constituents ({filteredConstituents.length}{filteredConstituents.length!==constituents.length?` of ${constituents.length}`:''})
                                   </div>
-                                  <TVCopyPanel stocks={constituents} label={`${idx.name} Constituents`}/>
-                                  <BreakoutTable stocks={constituents} isMobile={isMobile}
+                                  {/* Sector isn't offered as a filter here — every
+                                      constituent in this list already shares the
+                                      same sector (that's how they matched this
+                                      index), so it wouldn't narrow anything down.
+                                      Industry (a real sub-category within that
+                                      sector) and RS actually vary per stock. */}
+                                  <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10,alignItems:'center'}}>
+                                    {industries.length>1&&(
+                                      <select value={activeIndustry||''} onChange={e=>setIdxConstituentFilters(f=>({...f,industry:e.target.value||null}))}
+                                        style={{padding:'5px 8px',background:C.card,border:`1px solid ${activeIndustry?C.accent:C.border}`,
+                                          borderRadius:6,color:activeIndustry?C.accent:C.text,fontSize:11,outline:'none',cursor:'pointer'}}>
+                                        <option value="">All industries ({industries.length})</option>
+                                        {industries.map(ind=>(
+                                          <option key={ind} value={ind}>{ind}</option>
+                                        ))}
+                                      </select>
+                                    )}
+                                    <div style={{display:'flex',gap:4}}>
+                                      {[['RS: All',0],['70+',70],['80+',80],['90+',90]].map(([label,mn])=>(
+                                        <button key={label} onClick={()=>setIdxConstituentFilters(f=>({...f,rsMin:mn}))}
+                                          style={{padding:'5px 10px',borderRadius:14,border:`1px solid ${activeRsMin===mn?C.accent:C.border}`,
+                                            background:activeRsMin===mn?C.accent+'22':'transparent',
+                                            color:activeRsMin===mn?C.accent:C.muted,fontSize:11,fontWeight:600,cursor:'pointer'}}>
+                                          {label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    {(activeIndustry||activeRsMin>0)&&(
+                                      <button onClick={()=>setIdxConstituentFilters({industry:null,rsMin:0})}
+                                        style={{padding:'5px 10px',borderRadius:14,border:`1px solid ${C.border}`,
+                                          background:'transparent',color:C.muted,fontSize:11,cursor:'pointer'}}>
+                                        ✕ Clear
+                                      </button>
+                                    )}
+                                  </div>
+                                  <TVCopyPanel stocks={filteredConstituents} label={`${idx.name} Constituents`}/>
+                                  <BreakoutTable key={`${idx.name}-${activeIndustry}-${activeRsMin}`}
+                                    stocks={filteredConstituents} isMobile={isMobile}
                                     visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
                                 </>
                               )}
