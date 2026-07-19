@@ -3151,7 +3151,7 @@ function SectorPanel({sectorData,allStocks,isMobile,onChart,onViewInRS}){
                           <button onClick={e=>{e.stopPropagation();onViewInRS(sec.sector)}}
                             style={{padding:'5px 12px',borderRadius:8,border:`1px solid ${C.accent}`,
                               background:C.accent+'22',color:C.accent,fontSize:11,fontWeight:700,cursor:'pointer'}}>
-                            View in RS Scanner →
+                            View in RS Rating →
                           </button>
                         )}
                       </div>
@@ -3348,7 +3348,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
               {slide===0 && (
                 <div>
                   <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:16}}>
-                    <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>RS Scanner</h4>
+                    <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>RS Rating</h4>
                     <span style={{fontSize:11,color:C.muted,...mono}}>Relative strength, ranked 1–99</span>
                   </div>
                   <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -4408,7 +4408,7 @@ export default function App(){
   const [ppFilterWeak,setPpFilterWeak]=useState('all')
 
   // Shared market cap check, used everywhere a stock list gets filtered
-  // (RS Scanner's rsBase above, and the Breakout tab's sections below) so
+  // (RS Rating's rsBase above, and the Breakout tab's sections below) so
   // the filter is consistent across tabs, not just the main scanner.
   const passesMcap = s => (mcapMin===''||(s.marketCap??-1)>=+mcapMin) && (mcapMax===''||(s.marketCap??Infinity)<=+mcapMax)
   // Used by the multi-select Signal filter (OR logic — a stock matches
@@ -5214,7 +5214,7 @@ export default function App(){
             )}
 
             {/* TV copy for full RS list */}
-            {displayedRS.length>0&&<TVCopyPanel stocks={displayedRS} label={`RS Scanner — ${scanLabel}`}/>}
+            {displayedRS.length>0&&<TVCopyPanel stocks={displayedRS} label={`RS Rating — ${scanLabel}`}/>}
 
             {stocks.length>0&&<PPFilterBar ppFilter={ppFilterRS} setPpFilter={setPpFilterRS}
               ppCount={rsBase.filter(s=>s.pp.isPP).length} total={displayedRS.length}/>}
@@ -5383,10 +5383,40 @@ export default function App(){
                       <div style={{position:'relative',height:34}}>
                         <div style={{position:'absolute',top:14,left:0,right:0,height:5,background:C.border,borderRadius:99}}/>
                         <div style={{position:'absolute',top:14,left:`${rsMin}%`,width:`${rsMax-rsMin}%`,height:5,background:C.accent,borderRadius:99}}/>
+                        {/* Z-index is dynamic, not fixed — when both handles
+                            are bunched together (e.g. 90-99), a FIXED
+                            z-index means the top layer always wins the
+                            click, making the other handle nearly
+                            impossible to grab. Whichever side the pair is
+                            skewed toward is the side harder to reach, so
+                            that handle gets priority: skewed right (min+max
+                            > 99, both handles crowd the high end) → the min
+                            handle needs priority since there's nothing past
+                            99 for max to reach anyway; skewed left → max
+                            gets priority for the same reason in reverse. */}
                         <input type="range" min={0} max={99} value={rsMin} onChange={e=>{const v=+e.target.value;if(v<rsMax)setRsMin(v)}}
-                          style={{position:'absolute',top:7,left:0,right:0,width:'100%',appearance:'none',background:'transparent',zIndex:2,margin:0,height:20,cursor:'pointer'}}/>
+                          style={{position:'absolute',top:7,left:0,right:0,width:'100%',appearance:'none',background:'transparent',
+                            zIndex:(rsMin+rsMax>99)?3:2,margin:0,height:20,cursor:'pointer'}}/>
                         <input type="range" min={0} max={99} value={rsMax} onChange={e=>{const v=+e.target.value;if(v>rsMin)setRsMax(v)}}
-                          style={{position:'absolute',top:7,left:0,right:0,width:'100%',appearance:'none',background:'transparent',zIndex:3,margin:0,height:20,cursor:'pointer'}}/>
+                          style={{position:'absolute',top:7,left:0,right:0,width:'100%',appearance:'none',background:'transparent',
+                            zIndex:(rsMin+rsMax>99)?2:3,margin:0,height:20,cursor:'pointer'}}/>
+                      </div>
+                      <div style={{display:'flex',gap:8,alignItems:'center',marginTop:10}}>
+                        <input type="number" min={0} max={99} placeholder="Min" value={rsMin}
+                          onChange={e=>{
+                            const v=Math.max(0,Math.min(99,+e.target.value||0))
+                            setRsMin(Math.min(v,rsMax))
+                          }}
+                          style={{flex:1,padding:'7px 10px',borderRadius:6,border:`1px solid ${C.border}`,
+                            background:C.bg,color:C.text,fontSize:12}}/>
+                        <span style={{color:C.muted,fontSize:11}}>to</span>
+                        <input type="number" min={0} max={99} placeholder="Max" value={rsMax}
+                          onChange={e=>{
+                            const v=Math.max(0,Math.min(99,+e.target.value||0))
+                            setRsMax(Math.max(v,rsMin))
+                          }}
+                          style={{flex:1,padding:'7px 10px',borderRadius:6,border:`1px solid ${C.border}`,
+                            background:C.bg,color:C.text,fontSize:12}}/>
                       </div>
                     </div>
                     <div style={{marginBottom:14}}>
