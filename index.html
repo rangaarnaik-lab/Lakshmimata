@@ -25,6 +25,49 @@
         font-size: 12px;
       }
       button { cursor: pointer; }
+      /* Dual-handle range slider fix — with two overlapping full-width
+         range inputs (the standard technique for a two-thumb slider
+         without a library), whichever input has the higher z-index
+         intercepts EVERY click on the track, not just clicks near its
+         own thumb — making the other handle unreachable whenever a
+         click lands somewhere the "wrong" input's z-index wins,
+         regardless of how far apart the two thumbs actually are.
+         Standard fix: make each input's track ignore clicks entirely
+         (pointer-events: none), then re-enable clicks specifically on
+         its own thumb via the pseudo-element. Each handle now only
+         responds to being dragged directly, never intercepts a click
+         meant for the other one. */
+      .dual-range-input {
+        pointer-events: none;
+        -webkit-appearance: none;
+        appearance: none;
+        background: transparent;
+      }
+      .dual-range-input::-webkit-slider-thumb {
+        pointer-events: auto;
+        -webkit-appearance: none;
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #4f8ef7;
+        border: 2px solid #0a0d12;
+        box-shadow: 0 0 0 1px #4f8ef7;
+        cursor: pointer;
+      }
+      .dual-range-input::-moz-range-thumb {
+        pointer-events: auto;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #4f8ef7;
+        border: 2px solid #0a0d12;
+        box-shadow: 0 0 0 1px #4f8ef7;
+        cursor: pointer;
+      }
+      .dual-range-input::-moz-range-track {
+        background: transparent;
+      }
     </style>
   </head>
   <body>
