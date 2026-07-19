@@ -6853,6 +6853,7 @@ export default function App(){
             // other than exactly one (0, or 2+).
             if(rotationScope==='index'){
               setRotationExpandedId(next.size===1?[...next][0]:null)
+              setIdxConstituentFilters({industry:null,rsMin:0})
             }
             return next
           })
@@ -6864,7 +6865,7 @@ export default function App(){
           }
           const goTo=s=>{
             if(rotationScope==='sector'){setSectorFilter(s.id);setMainTab('rs')}
-            else if(rotationScope==='index'){setRotationExpandedId(prev=>prev===s.id?null:s.id)}
+            else if(rotationScope==='index'){setRotationExpandedId(prev=>prev===s.id?null:s.id);setIdxConstituentFilters({industry:null,rsMin:0})}
             else{setChartSym(s.id)}
           }
           const effectiveWlId=rotationWlId??activeWl??watchlists[0]?.id??null
@@ -7091,13 +7092,23 @@ export default function App(){
 
               {rotationScope==='index'&&rotationExpandedId&&(()=>{
                 const constituents=getIndexConstituents(rotationExpandedId,stocks)
+                const rotIndustries = constituents
+                  ? [...new Set(constituents.map(s=>s.industry).filter(Boolean))].sort()
+                  : []
+                const rotActiveIndustry = idxConstituentFilters.industry
+                const rotActiveRsMin = idxConstituentFilters.rsMin
+                const filteredRotConstituents = constituents
+                  ? constituents.filter(s=>
+                      (!rotActiveIndustry || s.industry===rotActiveIndustry) &&
+                      (s.rs??0) >= rotActiveRsMin)
+                  : null
                 return(
                   <div style={{marginTop:14,background:C.card,border:`1px solid ${C.accent}44`,borderRadius:10,padding:'14px'}}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
                       <div style={{fontWeight:800,fontSize:13,color:C.accent}}>
                         📋 {rotationExpandedId} — Constituent Stocks
                       </div>
-                      <button onClick={()=>setRotationExpandedId(null)}
+                      <button onClick={()=>{setRotationExpandedId(null);setIdxConstituentFilters({industry:null,rsMin:0})}}
                         style={{background:'transparent',border:'none',color:C.muted,cursor:'pointer',fontSize:16,padding:0}}>×</button>
                     </div>
                     {constituents===null?(
@@ -7106,8 +7117,38 @@ export default function App(){
                       </div>
                     ):(
                       <>
-                        <TVCopyPanel stocks={constituents} label={`${rotationExpandedId} Constituents`}/>
-                        <BreakoutTable stocks={constituents} isMobile={isMobile}
+                        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10,alignItems:'center'}}>
+                          {rotIndustries.length>1&&(
+                            <select value={rotActiveIndustry||''} onChange={e=>setIdxConstituentFilters(f=>({...f,industry:e.target.value||null}))}
+                              style={{padding:'5px 8px',background:C.bg,border:`1px solid ${rotActiveIndustry?C.accent:C.border}`,
+                                borderRadius:6,color:rotActiveIndustry?C.accent:C.text,fontSize:11,outline:'none',cursor:'pointer'}}>
+                              <option value="">All industries ({rotIndustries.length})</option>
+                              {rotIndustries.map(ind=>(
+                                <option key={ind} value={ind}>{ind}</option>
+                              ))}
+                            </select>
+                          )}
+                          <div style={{display:'flex',gap:4}}>
+                            {[['RS: All',0],['70+',70],['80+',80],['90+',90]].map(([label,mn])=>(
+                              <button key={label} onClick={()=>setIdxConstituentFilters(f=>({...f,rsMin:mn}))}
+                                style={{padding:'5px 10px',borderRadius:14,border:`1px solid ${rotActiveRsMin===mn?C.accent:C.border}`,
+                                  background:rotActiveRsMin===mn?C.accent+'22':'transparent',
+                                  color:rotActiveRsMin===mn?C.accent:C.muted,fontSize:11,fontWeight:600,cursor:'pointer'}}>
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          {(rotActiveIndustry||rotActiveRsMin>0)&&(
+                            <button onClick={()=>setIdxConstituentFilters({industry:null,rsMin:0})}
+                              style={{padding:'5px 10px',borderRadius:14,border:`1px solid ${C.border}`,
+                                background:'transparent',color:C.muted,fontSize:11,cursor:'pointer'}}>
+                              ✕ Clear
+                            </button>
+                          )}
+                        </div>
+                        <TVCopyPanel stocks={filteredRotConstituents} label={`${rotationExpandedId} Constituents`}/>
+                        <BreakoutTable key={`${rotationExpandedId}-${rotActiveIndustry}-${rotActiveRsMin}`}
+                          stocks={filteredRotConstituents} isMobile={isMobile}
                           visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
                       </>
                     )}
