@@ -6231,10 +6231,6 @@ export default function App(){
         {/* ══ MARKET BREADTH (part of combined Market tab) ══ */}
         {mainTab==='market'&&(
           <div style={{padding:'0 0 20px'}}>
-            <div style={{marginBottom:14}}>
-              <div style={{fontWeight:700,fontSize:16,color:C.text}}>Market Breadth</div>
-              <div style={{fontSize:11,color:C.muted}}>Daily market health indicators for NSE</div>
-            </div>
 
             {/* Today's snapshot from stocks already loaded */}
             {stocks.length>0&&(()=>{
@@ -6287,7 +6283,9 @@ export default function App(){
 
               return(
                 <>
-                  {/* Composite market verdict */}
+                  {/* Composite market verdict — pushed to the very top of
+                      the tab, ahead of the header, since this is the
+                      single most useful glance-and-go read on the page */}
                   <div style={{background:verdict.color+'11',border:`1px solid ${verdict.color}44`,
                     borderRadius:10,padding:'14px 16px',marginBottom:14}}>
                     <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
@@ -6309,6 +6307,11 @@ export default function App(){
                       A quick market-condition read, not a signal to act on by itself — always check the individual
                       setup too.
                     </div>
+                  </div>
+
+                  <div style={{marginBottom:14}}>
+                    <div style={{fontWeight:700,fontSize:16,color:C.text}}>Market Breadth</div>
+                    <div style={{fontSize:11,color:C.muted}}>Daily market health indicators for NSE</div>
                   </div>
 
                   {/* Health indicator */}
