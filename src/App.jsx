@@ -5368,35 +5368,31 @@ export default function App(){
                         RS Range: <span style={{color:C.accent,fontWeight:800}}>{rsMin}–{rsMax}</span>
                         <span style={{color:C.muted}}> ({stocks.filter(s=>s.rs>=rsMin&&s.rs<=rsMax).length})</span>
                       </div>
-                      <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
-                        {[['All',0,99],['90+',90,99],['80+',80,99],['70–79',70,79],['50–69',50,69],['<50',0,49]].map(([l,mn,mx])=>(
-                          <button key={l} onClick={()=>{setRsMin(mn);setRsMax(mx)}}
-                            style={{padding:'5px 12px',borderRadius:20,border:`1px solid ${rsMin===mn&&rsMax===mx?C.accent:C.border}`,
-                              cursor:'pointer',fontSize:12,fontWeight:600,
-                              background:rsMin===mn&&rsMax===mx?C.accent+'22':'transparent',
-                              color:rsMin===mn&&rsMax===mx?C.accent:C.muted}}>{l}</button>
-                        ))}
-                      </div>
                       <div style={{position:'relative',height:34}}>
                         <div style={{position:'absolute',top:14,left:0,right:0,height:5,background:C.border,borderRadius:99}}/>
                         <div style={{position:'absolute',top:14,left:`${rsMin}%`,width:`${rsMax-rsMin}%`,height:5,background:C.accent,borderRadius:99}}/>
-                        {/* Z-index is dynamic, not fixed — when both handles
-                            are bunched together (e.g. 90-99), a FIXED
-                            z-index means the top layer always wins the
-                            click, making the other handle nearly
-                            impossible to grab. Whichever side the pair is
-                            skewed toward is the side harder to reach, so
-                            that handle gets priority: skewed right (min+max
-                            > 99, both handles crowd the high end) → the min
-                            handle needs priority since there's nothing past
-                            99 for max to reach anyway; skewed left → max
-                            gets priority for the same reason in reverse. */}
+                        {/* Each handle's track ignores clicks entirely
+                            (pointer-events:none, set via the
+                            dual-range-input class in index.html) — only
+                            its own thumb responds. This is the actual,
+                            complete fix: the earlier dynamic-z-index
+                            attempt only helped when both handles were
+                            bunched together near one edge (e.g. 90-99) —
+                            it didn't help the reported 0-63 case, where
+                            min gets stuck at 0 because ANY click on the
+                            track, including near the min handle, was
+                            being intercepted by whichever input's
+                            z-index happened to be on top at that
+                            moment, regardless of proximity to either
+                            thumb. */}
                         <input type="range" min={0} max={99} value={rsMin} onChange={e=>{const v=+e.target.value;if(v<rsMax)setRsMin(v)}}
-                          style={{position:'absolute',top:7,left:0,right:0,width:'100%',appearance:'none',background:'transparent',
-                            zIndex:(rsMin+rsMax>99)?3:2,margin:0,height:20,cursor:'pointer'}}/>
+                          className="dual-range-input"
+                          style={{position:'absolute',top:7,left:0,right:0,width:'100%',background:'transparent',
+                            margin:0,height:20}}/>
                         <input type="range" min={0} max={99} value={rsMax} onChange={e=>{const v=+e.target.value;if(v>rsMin)setRsMax(v)}}
-                          style={{position:'absolute',top:7,left:0,right:0,width:'100%',appearance:'none',background:'transparent',
-                            zIndex:(rsMin+rsMax>99)?2:3,margin:0,height:20,cursor:'pointer'}}/>
+                          className="dual-range-input"
+                          style={{position:'absolute',top:7,left:0,right:0,width:'100%',background:'transparent',
+                            margin:0,height:20}}/>
                       </div>
                       <div style={{display:'flex',gap:8,alignItems:'center',marginTop:10}}>
                         <input type="number" min={0} max={99} placeholder="Min" value={rsMin}
