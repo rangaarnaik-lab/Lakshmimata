@@ -84,7 +84,7 @@ export async function fetchSectorRotation(days=10) {
       // draws a real curved path through every available day, matching
       // how RRG charts actually look — a handful of sample points reads
       // as a jagged triangle instead of a trajectory.
-      trail:      sorted.map(r => ({ level: r.avg_rs })),
+      trail:      sorted.map(r => ({ level: r.avg_rs, date: r.snapshot_date })),
       momentum:   sorted.length > 1 ? +(last.avg_rs - first.avg_rs).toFixed(1) : 0,
       rankChange: sorted.length > 1 ? (first.rank - last.rank) : 0,
     }
@@ -133,7 +133,7 @@ export async function fetchIndexRotation(days=10) {
       level:      last.rs_tv,
       rank:       last.rank_d,
       windowDays: sorted.length,
-      trail:      sorted.filter(r => r.rs_tv != null).map(r => ({ level: r.rs_tv })),
+      trail:      sorted.filter(r => r.rs_tv != null).map(r => ({ level: r.rs_tv, date: r.snapshot_date })),
       momentum:   sorted.length > 1 ? +(last.rs_tv - first.rs_tv).toFixed(1) : 0,
       rankChange: sorted.length > 1 && first.rank_d!=null && last.rank_d!=null ? (first.rank_d - last.rank_d) : 0,
     }
@@ -181,7 +181,7 @@ export async function fetchWatchlistRotation(syms=[], days=10) {
       meta:       last.sector || '—',
       level:      last.level,
       windowDays: sorted.length,
-      trail:      sorted.map(r => ({ level: r.level })),
+      trail:      sorted.map(r => ({ level: r.level, date: r.snapshot_date })),
       momentum:   sorted.length > 1 ? +(last.level - first.level).toFixed(1) : 0,
     }
   })
