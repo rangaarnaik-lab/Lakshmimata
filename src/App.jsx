@@ -5916,7 +5916,7 @@ export default function App(){
                           )
                           return (
                             <div key={sec.sector}>
-                              <div onClick={()=>setExpandedIndex(isExp?null:'sector:'+sec.sector)}
+                              <div onClick={()=>{setExpandedIndex(isExp?null:'sector:'+sec.sector);setIdxConstituentFilters({industry:null,rsMin:0})}}
                                 style={{display:'grid',
                                 gridTemplateColumns:'170px 70px 60px 60px 70px 70px 90px 90px 90px',
                                 gap:4,padding:'10px 12px',alignItems:'center',cursor:'pointer',
@@ -5957,6 +5957,12 @@ export default function App(){
                               {isExp&&(()=>{
                                 const secStocks = (stocks||[]).filter(s=>s.sector===sec.sector).sort((a,b)=>b.rs-a.rs)
                                 const strong = sec.rank<=3 && sec.count>0 && (sec.improving/sec.count)>=0.5
+                                const secIndustries = [...new Set(secStocks.map(s=>s.industry).filter(Boolean))].sort()
+                                const secActiveIndustry = idxConstituentFilters.industry
+                                const secActiveRsMin = idxConstituentFilters.rsMin
+                                const filteredSecStocks = secStocks.filter(s=>
+                                  (!secActiveIndustry || s.industry===secActiveIndustry) &&
+                                  (s.rs??0) >= secActiveRsMin)
                                 return (
                                   <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,position:'sticky',left:0,width:'calc(100vw - 60px)',maxWidth:900}}>
                                     <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
@@ -5981,10 +5987,40 @@ export default function App(){
                                       </div>
                                     )}
                                     <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
-                                      {sec.sector} stocks ({secStocks.length})
+                                      {sec.sector} stocks ({filteredSecStocks.length}{filteredSecStocks.length!==secStocks.length?` of ${secStocks.length}`:''})
                                     </div>
-                                    <TVCopyPanel stocks={secStocks} label={`${sec.sector} Stocks`}/>
-                                    <BreakoutTable stocks={secStocks} isMobile={isMobile}
+                                    <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10,alignItems:'center'}}>
+                                      {secIndustries.length>1&&(
+                                        <select value={secActiveIndustry||''} onChange={e=>setIdxConstituentFilters(f=>({...f,industry:e.target.value||null}))}
+                                          style={{padding:'5px 8px',background:C.card,border:`1px solid ${secActiveIndustry?C.accent:C.border}`,
+                                            borderRadius:6,color:secActiveIndustry?C.accent:C.text,fontSize:11,outline:'none',cursor:'pointer'}}>
+                                          <option value="">All industries ({secIndustries.length})</option>
+                                          {secIndustries.map(ind=>(
+                                            <option key={ind} value={ind}>{ind}</option>
+                                          ))}
+                                        </select>
+                                      )}
+                                      <div style={{display:'flex',gap:4}}>
+                                        {[['RS: All',0],['70+',70],['80+',80],['90+',90]].map(([label,mn])=>(
+                                          <button key={label} onClick={()=>setIdxConstituentFilters(f=>({...f,rsMin:mn}))}
+                                            style={{padding:'5px 10px',borderRadius:14,border:`1px solid ${secActiveRsMin===mn?C.accent:C.border}`,
+                                              background:secActiveRsMin===mn?C.accent+'22':'transparent',
+                                              color:secActiveRsMin===mn?C.accent:C.muted,fontSize:11,fontWeight:600,cursor:'pointer'}}>
+                                            {label}
+                                          </button>
+                                        ))}
+                                      </div>
+                                      {(secActiveIndustry||secActiveRsMin>0)&&(
+                                        <button onClick={()=>setIdxConstituentFilters({industry:null,rsMin:0})}
+                                          style={{padding:'5px 10px',borderRadius:14,border:`1px solid ${C.border}`,
+                                            background:'transparent',color:C.muted,fontSize:11,cursor:'pointer'}}>
+                                          ✕ Clear
+                                        </button>
+                                      )}
+                                    </div>
+                                    <TVCopyPanel stocks={filteredSecStocks} label={`${sec.sector} Stocks`}/>
+                                    <BreakoutTable key={`${sec.sector}-${secActiveIndustry}-${secActiveRsMin}`}
+                                      stocks={filteredSecStocks} isMobile={isMobile}
                                       visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
                                   </div>
                                 )
@@ -6051,7 +6087,7 @@ export default function App(){
                             )
                             return (
                               <div key={ind.name}>
-                                <div onClick={()=>setExpandedIndex(isExp?null:'industry:'+ind.name)}
+                                <div onClick={()=>{setExpandedIndex(isExp?null:'industry:'+ind.name);setIdxConstituentFilters({industry:null,rsMin:0})}}
                                   style={{display:'grid',
                                   gridTemplateColumns:'220px 60px 60px 60px 70px 70px 90px 90px 90px',
                                   gap:4,padding:'9px 12px',alignItems:'center',cursor:'pointer',
@@ -6078,16 +6114,31 @@ export default function App(){
                                   {advCell(ind.advW)}
                                   {advCell(ind.advM)}
                                 </div>
-                                {isExp&&(
+                                {isExp&&(()=>{
+                                  const indActiveRsMin = idxConstituentFilters.rsMin
+                                  const filteredIndMembers = ind.members.filter(s=>(s.rs??0) >= indActiveRsMin)
+                                  return (
                                   <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,position:'sticky',left:0,width:'calc(100vw - 60px)',maxWidth:900}}>
                                     <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
-                                      {ind.name} stocks ({ind.members.length})
+                                      {ind.name} stocks ({filteredIndMembers.length}{filteredIndMembers.length!==ind.members.length?` of ${ind.members.length}`:''})
                                     </div>
-                                    <TVCopyPanel stocks={ind.members} label={`${ind.name} Stocks`}/>
-                                    <BreakoutTable stocks={ind.members} isMobile={isMobile}
+                                    <div style={{display:'flex',gap:4,marginBottom:10}}>
+                                      {[['RS: All',0],['70+',70],['80+',80],['90+',90]].map(([label,mn])=>(
+                                        <button key={label} onClick={()=>setIdxConstituentFilters(f=>({...f,rsMin:mn}))}
+                                          style={{padding:'5px 10px',borderRadius:14,border:`1px solid ${indActiveRsMin===mn?C.accent:C.border}`,
+                                            background:indActiveRsMin===mn?C.accent+'22':'transparent',
+                                            color:indActiveRsMin===mn?C.accent:C.muted,fontSize:11,fontWeight:600,cursor:'pointer'}}>
+                                          {label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    <TVCopyPanel stocks={filteredIndMembers} label={`${ind.name} Stocks`}/>
+                                    <BreakoutTable key={`${ind.name}-${indActiveRsMin}`}
+                                      stocks={filteredIndMembers} isMobile={isMobile}
                                       visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
                                   </div>
-                                )}
+                                  )
+                                })()}
                               </div>
                             )
                           })}
