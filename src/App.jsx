@@ -2773,6 +2773,9 @@ function RRGChart({rolledData,maxAbsMom,levelLabel,windowLabel,onDotClick,dotSiz
             </defs>
             <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" opacity="0.55"
               markerEnd={`url(#${markerId})`}/>
+            {s.trail.slice(0,-1).map((t,i)=>(
+              <circle key={i} cx={tx(t)} cy={ty(t)} r="3" fill={color} opacity="0.85"/>
+            ))}
             <circle cx={sx} cy={sy} r="4" fill="#0b0f1a" stroke={color} strokeWidth="1.5"/>
             <circle cx={cx} cy={cy} r={r+3} fill="transparent"/>
             <text x={cx+r+4} y={cy+4} fontSize="12" fontWeight="700" fill={color}>{s.label}</text>
