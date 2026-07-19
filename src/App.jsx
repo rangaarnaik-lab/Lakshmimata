@@ -4401,7 +4401,6 @@ export default function App(){
     window.addEventListener('mouseup',onUp)
     return()=>{window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp)}
   },[isDraggingDivider])
-  const [ppFilterRS,setPpFilterRS]=useState('all')
   const [rsPage,setRsPage]=useState(0)
   const RS_PAGE_SIZE=100
   const [ppFilter52WL,setPpFilter52WL]=useState('all')
@@ -4775,7 +4774,7 @@ export default function App(){
     if(bv===-1&&av!==-1) return -1
     return dir===1?(av-bv):(bv-av)
   }),[stocks,search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,sectorFilter,presetFilter,sortBy,sortDir])
-  const displayedRS=useMemo(()=>applyPP(rsBase,ppFilterRS),[rsBase,ppFilterRS])
+  const displayedRS=rsBase
   const rsTotalPages=Math.max(1,Math.ceil(displayedRS.length/RS_PAGE_SIZE))
   const rsPageClamped=Math.min(rsPage,rsTotalPages-1)
   const pagedRS=useMemo(()=>
@@ -4786,7 +4785,7 @@ export default function App(){
   // would otherwise kick you back to page 1 mid-scroll every minute even
   // though nothing you asked for actually changed.
   useEffect(()=>{ setRsPage(0) },
-    [search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,sectorFilter,presetFilter,ppFilterRS,sortBy,sortDir])
+    [search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,sectorFilter,presetFilter,sortBy,sortDir])
 
   // Rotation chart's rolling-momentum trail computation — same issue as
   // the Industries table above: this was an inline IIFE inside JSX,
@@ -5216,9 +5215,6 @@ export default function App(){
 
             {/* TV copy for full RS list */}
             {displayedRS.length>0&&<TVCopyPanel stocks={displayedRS} label={`RS Rating — ${scanLabel}`}/>}
-
-            {stocks.length>0&&<PPFilterBar ppFilter={ppFilterRS} setPpFilter={setPpFilterRS}
-              ppCount={rsBase.filter(s=>s.pp.isPP).length} total={displayedRS.length}/>}
 
             {/* Summary chips */}
             {stocks.length>0&&(
