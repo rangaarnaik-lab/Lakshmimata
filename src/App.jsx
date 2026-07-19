@@ -6178,6 +6178,13 @@ export default function App(){
               const rsd = stocks.filter(s=>s.rsTrend?.trend==='declining').length
               const rvs = stocks.filter(s=>s.rvol>=2).length
               const rln = stocks.filter(s=>s.rsLineNewHigh).length
+              // New — genuinely useful additions using data that's
+              // already computed per-stock elsewhere, not requiring any
+              // new backend work:
+              const stage2 = stocks.filter(s=>calcWeinsteinStage(s).stage===2).length
+              const newHighs = stocks.filter(s=>s.is52whBreakout).length
+              const nearLows = stocks.filter(s=>s.scanner52wl?.near52wLow).length
+              const inSqueeze = stocks.filter(s=>s.squeeze?.inSqueeze).length
 
               const Stat=({label,value,total,color,sub})=>(
                 <div style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:10,padding:'14px'}}>
@@ -6219,6 +6226,10 @@ export default function App(){
                     <Stat label="Vol Surge (RVOL>2)" value={rvs} total={tot} color={C.purple}/>
                     <Stat label="RS Line New High" value={rln} total={tot} color={C.teal}/>
                     <Stat label="RS ≥ 70" value={s2} total={tot} color={C.green}/>
+                    <Stat label="Stage 2 (Uptrend)" value={stage2} total={tot} color={C.green}/>
+                    <Stat label="New 52W Highs" value={newHighs} total={tot} color={C.accent}/>
+                    <Stat label="Near 52W Lows" value={nearLows} total={tot} color={C.red}/>
+                    <Stat label="In Squeeze" value={inSqueeze} total={tot} color={C.blue}/>
                   </div>
 
                   {/* RS Line New Highs — early leaders */}
