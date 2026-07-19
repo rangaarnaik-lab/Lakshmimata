@@ -6196,24 +6196,58 @@ export default function App(){
               )
 
               const adRatio = dec>0?(adv/dec).toFixed(2):adv>0?'∞':'0'
-              const breadthHealthy = adv > dec && s2 > tot*0.3
+              // Composite verdict — synthesizes 5 independent factors
+              // instead of the old 2-factor check, so a single skewed
+              // metric can't flip the whole read. Each factor shown
+              // individually below (not just the final score) so the
+              // verdict is explainable, not a black box — deliberately
+              // framed as "conditions favor/don't favor", not "you
+              // should trade", since this feeds into real trading
+              // decisions and is a heuristic aid, not a guarantee.
+              const factors = [
+                {label:'Advance/Decline', positive:adv>dec, detail:`${adv} advancing vs ${dec} declining`},
+                {label:'RS Momentum', positive:rsi>rsd, detail:`${rsi} improving vs ${rsd} declining`},
+                {label:'Trend Health', positive:stage2>tot*0.2, detail:`${stage2} in confirmed Stage 2 (${((stage2/tot)*100).toFixed(0)}%)`},
+                {label:'Leadership', positive:newHighs>nearLows, detail:`${newHighs} new 52W highs vs ${nearLows} near 52W lows`},
+                {label:'Strength Breadth', positive:s2>tot*0.15, detail:`${s2} stocks RS≥70 (${((s2/tot)*100).toFixed(0)}%)`},
+              ]
+              const posCount = factors.filter(f=>f.positive).length
+              const verdict = posCount>=4 ? {label:'Favorable',color:C.green,sub:'Conditions favor new long setups — most signals aligned'}
+                : posCount>=2 ? {label:'Mixed',color:C.yellow,sub:'Selective — be choosy, quality over quantity right now'}
+                : {label:'Unfavorable',color:C.red,sub:'Most signals negative — a defensive posture makes sense'}
 
               return(
                 <>
+                  {/* Composite market verdict */}
+                  <div style={{background:verdict.color+'11',border:`1px solid ${verdict.color}44`,
+                    borderRadius:10,padding:'14px 16px',marginBottom:14}}>
+                    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+                      <div style={{width:10,height:10,borderRadius:'50%',background:verdict.color,flexShrink:0}}/>
+                      <span style={{fontWeight:800,fontSize:15,color:verdict.color}}>{verdict.label}</span>
+                      <span style={{fontSize:11,color:C.muted,marginLeft:'auto'}}>{posCount}/5 factors positive</span>
+                    </div>
+                    <div style={{fontSize:12,color:C.text,marginBottom:10}}>{verdict.sub}</div>
+                    <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                      {factors.map(f=>(
+                        <div key={f.label} style={{display:'flex',alignItems:'center',gap:8,fontSize:11}}>
+                          <span style={{color:f.positive?C.green:C.red,fontWeight:700,minWidth:14}}>{f.positive?'✓':'✗'}</span>
+                          <span style={{color:C.muted,minWidth:110}}>{f.label}</span>
+                          <span style={{color:C.text}}>{f.detail}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{fontSize:10,color:C.muted,marginTop:10,fontStyle:'italic'}}>
+                      A quick market-condition read, not a signal to act on by itself — always check the individual
+                      setup too.
+                    </div>
+                  </div>
+
                   {/* Health indicator */}
-                  <div style={{background:breadthHealthy?C.green+'11':C.red+'11',
-                    border:`1px solid ${breadthHealthy?C.green:C.red}44`,
-                    borderRadius:10,padding:'12px 16px',marginBottom:14,
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,
+                    borderRadius:10,padding:'10px 16px',marginBottom:14,
                     display:'flex',alignItems:'center',gap:10}}>
-                    <div style={{width:10,height:10,borderRadius:'50%',
-                      background:breadthHealthy?C.green:C.red,flexShrink:0}}/>
-                    <span style={{fontWeight:700,fontSize:13,
-                      color:breadthHealthy?C.green:C.red}}>
-                      Market is {breadthHealthy?'Healthy — Broad participation':'Weak — Limited breadth'}
-                    </span>
-                    <span style={{fontSize:11,color:C.muted,marginLeft:'auto'}}>
-                      A/D Ratio: {adRatio}
-                    </span>
+                    <span style={{fontSize:11,color:C.muted}}>Advance/Decline Ratio</span>
+                    <span style={{fontSize:13,fontWeight:700,color:C.text,marginLeft:'auto'}}>{adRatio}</span>
                   </div>
 
                   {/* Stats grid */}
