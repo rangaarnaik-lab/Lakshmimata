@@ -5685,6 +5685,42 @@ export default function App(){
               const gapUps   = stocks.filter(s=>s.gapPct!=null&&s.gapPct>=GAP_THRESH).sort((a,b)=>b.gapPct-a.gapPct)
               const gapDowns = stocks.filter(s=>s.gapPct!=null&&s.gapPct<=-GAP_THRESH).sort((a,b)=>a.gapPct-b.gapPct)
 
+              // Smart money by sector — rolls up the FII/DII holding
+              // trend (already tracked per-stock, quarterly shareholding
+              // data) into a per-sector average, so instead of reading
+              // one stock at a time you can see which sectors
+              // institutions have been net accumulating vs distributing
+              // over the last quarter. MIN_N guards against a sector
+              // with only 1-2 stocks reporting data swinging wildly.
+              const MIN_N = 3
+              const smartMoneyBySector = (()=>{
+                const bySector = {}
+                for(const s of stocks){
+                  if(s.fiiTrend==null && s.diiTrend==null) continue
+                  const key = s.sector || 'Other'
+                  if(!bySector[key]) bySector[key] = {sector:key, n:0, fiiSum:0, fiiN:0, diiSum:0, diiN:0, accumulating:0, distributing:0}
+                  const b = bySector[key]
+                  b.n++
+                  if(s.fiiTrend!=null){ b.fiiSum+=s.fiiTrend; b.fiiN++ }
+                  if(s.diiTrend!=null){ b.diiSum+=s.diiTrend; b.diiN++ }
+                  const combined = (s.fiiTrend||0)+(s.diiTrend||0)
+                  if(combined>0) b.accumulating++
+                  else if(combined<0) b.distributing++
+                }
+                return Object.values(bySector)
+                  .filter(b=>b.n>=MIN_N)
+                  .map(b=>({
+                    sector: b.sector,
+                    n: b.n,
+                    avgFii: b.fiiN? b.fiiSum/b.fiiN : null,
+                    avgDii: b.diiN? b.diiSum/b.diiN : null,
+                    score: (b.fiiN?b.fiiSum/b.fiiN:0) + (b.diiN?b.diiSum/b.diiN:0),
+                    accumulating: b.accumulating,
+                    distributing: b.distributing,
+                  }))
+                  .sort((a,b)=>b.score-a.score)
+              })()
+
               const Stat=({label,value,total,color,sub})=>(
                 <div style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:10,padding:'14px'}}>
                   <div style={{fontSize:11,color:C.muted,marginBottom:6}}>{label}</div>
@@ -5773,6 +5809,38 @@ export default function App(){
                     <Stat label={`Gap Up ≥${GAP_THRESH}%`} value={gapUps.length} total={tot} color={C.green}/>
                     <Stat label={`Gap Down ≥${GAP_THRESH}%`} value={gapDowns.length} total={tot} color={C.red}/>
                   </div>
+
+                  {/* Smart Money — FII/DII sector flow */}
+                  {smartMoneyBySector.length>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
+                        🏦 Smart Money — Sector Flow (FII/DII)
+                      </div>
+                      <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
+                        Avg. change in FII+DII holding % last quarter, by sector — accumulation vs distribution, not intraday flow
+                      </div>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>FII pp</div>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>DII pp</div>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Stocks ↑/↓</div>
+                        {smartMoneyBySector.map(b=>(
+                          <React.Fragment key={b.sector}>
+                            <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
+                            <div style={{textAlign:'right',fontWeight:700,color:b.avgFii==null?C.muted:b.avgFii>0?C.green:b.avgFii<0?C.red:C.muted}}>
+                              {b.avgFii==null?'—':`${b.avgFii>0?'+':''}${b.avgFii.toFixed(2)}`}
+                            </div>
+                            <div style={{textAlign:'right',fontWeight:700,color:b.avgDii==null?C.muted:b.avgDii>0?C.green:b.avgDii<0?C.red:C.muted}}>
+                              {b.avgDii==null?'—':`${b.avgDii>0?'+':''}${b.avgDii.toFixed(2)}`}
+                            </div>
+                            <div style={{textAlign:'right',color:C.muted,fontSize:10.5}}>
+                              <span style={{color:C.green}}>{b.accumulating}</span>/<span style={{color:C.red}}>{b.distributing}</span>
+                            </div>
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Gap Up / Gap Down — today's opening moves */}
                   {gapUps.length>0&&(
