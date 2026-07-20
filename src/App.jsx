@@ -4956,6 +4956,7 @@ export default function App(){
               {id:'rs',       label:'RS Rating', abbr:'RS'},
               {id:'market',   label:'Market',     abbr:'MK'},
               {id:'rotation', label:'Sector Rotation', abbr:'RO'},
+              {id:'leaders',  label:'Leaders',    abbr:'LD'},
               {id:'squeeze',  label:'Squeeze',    abbr:'SQ'},
               {id:'breakout', label:'Breakout',  abbr:'BO'},
               {id:'52wl',     label:'52WL',      abbr:'WL'},
@@ -5052,6 +5053,7 @@ export default function App(){
                  mainTab==='squeeze'?'Squeeze & VCP':
                  mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
                  mainTab==='weak'?'Weak RS':mainTab==='rotation'?'Sector Rotation':
+                 mainTab==='leaders'?'Leaders':
                  mainTab==='watchlist'?'Watchlist':mainTab==='announcements'?'Announcements':'Account'}
               </div>
               {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1}}>
@@ -6343,9 +6345,16 @@ export default function App(){
           </div>
         )}
 
-        {/* Early leaders / new entries — placed after the Indices table
-            per request, so index-level context comes first */}
-        {mainTab==='market'&&stocks.length>0&&(<>
+        {/* ══ LEADERS — RS Line New Highs + New Stage 2 Entries ══ */}
+        {mainTab==='leaders'&&(
+          <div style={{padding:'0 0 20px'}}>
+            <div style={{marginBottom:14}}>
+              <div style={{fontWeight:700,fontSize:16,color:C.text}}>Leaders</div>
+              <div style={{fontSize:11,color:C.muted}}>Stocks flashing early-leadership and breakout signals today</div>
+            </div>
+            {stocks.length===0?(
+              <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>No data loaded yet.</div>
+            ):(<>
                   {/* RS Line New Highs — early leaders */}
                   {stocks.filter(s=>s.rsLineNewHigh).length>0&&(
                     <div style={{background:C.card,border:`1px solid ${C.teal}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
@@ -6369,8 +6378,14 @@ export default function App(){
                         isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
                     </div>
                   )}
-        </>)}
-
+                  {stocks.filter(s=>s.rsLineNewHigh).length===0&&stocks.filter(s=>s.isS2NewEntry).length===0&&(
+                    <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
+                      No early leaders or new Stage 2 entries today.
+                    </div>
+                  )}
+            </>)}
+          </div>
+        )}
 
         {/* ══ PORTFOLIO TRACKER ══ */}
         {mainTab==='portfolio'&&(
@@ -7546,8 +7561,8 @@ export default function App(){
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <span style={{fontSize:15}}>⋯</span>
               <span style={{fontSize:8,fontWeight:600,
-                color:['squeeze','weak','portfolio','compare','watchlist','announcements','settings'].includes(mainTab)?C.accent:C.muted}}>More</span>
-              {['squeeze','weak','portfolio','compare','watchlist','announcements','settings'].includes(mainTab)&&
+                color:['squeeze','weak','portfolio','compare','watchlist','announcements','settings','leaders'].includes(mainTab)?C.accent:C.muted}}>More</span>
+              {['squeeze','weak','portfolio','compare','watchlist','announcements','settings','leaders'].includes(mainTab)&&
                 <div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           </div>
@@ -7564,7 +7579,7 @@ export default function App(){
                 <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:'8px auto 16px'}}/>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:4}}>
                   {[
-                    ['squeeze','🌀','Squeeze'],['weak','🚨','Weak'],
+                    ['squeeze','🌀','Squeeze'],['weak','🚨','Weak'],['leaders','🚀','Leaders'],
                     ['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],
                     ['announcements','📢','Announcements'],
                     ['settings','⚙','Account'],
