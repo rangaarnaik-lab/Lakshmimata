@@ -4188,7 +4188,7 @@ export default function App(){
   const [showRowGuidance,setShowRowGuidance]=useState(false)
   const [showHelpCenter,setShowHelpCenter]=useState(false)
   const marketSectionRefs=useRef({})
-  const patternsSectionRefs=useRef({})
+  const [patternsSubTab,setPatternsSubTab]=useState('breakouts')
   const [helpCenterSection,setHelpCenterSection]=useState(null)
   const [breadthHistory,setBreadthHistory]=useState([])
   const [emaBreadthHistory,setEmaBreadthHistory]=useState([])
@@ -6734,13 +6734,28 @@ export default function App(){
               <div style={{fontSize:11,color:C.muted}}>Every chart pattern the scanner detects, in one place</div>
             </div>
             {stocks.length>0&&(
-              <SectionNav refs={patternsSectionRefs} items={[
-                {id:'breakouts',  label:'Breakouts'},
-                {id:'coiling',    label:'Coiling'},
-                {id:'classic',    label:'Classic Patterns'},
-                {id:'crossovers', label:'MA Crossovers'},
-                {id:'volume',     label:'Volume'},
-              ]}/>
+              <div style={{position:'sticky',top:0,zIndex:5,background:C.bg,
+                marginLeft:-16,marginRight:-16,padding:'8px 16px',
+                borderBottom:`1px solid ${C.border}`,marginBottom:14}}>
+                <div style={{display:'flex',gap:6,overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
+                  {[
+                    {id:'breakouts',  label:'Breakouts'},
+                    {id:'coiling',    label:'Coiling'},
+                    {id:'classic',    label:'Classic Patterns'},
+                    {id:'crossovers', label:'MA Crossovers'},
+                    {id:'volume',     label:'Volume'},
+                  ].map(({id,label})=>(
+                    <button key={id} onClick={()=>setPatternsSubTab(id)}
+                      style={{flexShrink:0,padding:'6px 12px',borderRadius:20,
+                        border:`1px solid ${patternsSubTab===id?C.accent:C.border}`,
+                        background:patternsSubTab===id?C.accent+'22':C.card,
+                        color:patternsSubTab===id?C.accent:C.text,
+                        fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
             <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,
               padding:'8px 12px',marginBottom:14,fontSize:10.5,color:C.muted,lineHeight:1.5}}>
@@ -6792,8 +6807,8 @@ export default function App(){
                   {key:'rsln', label:'RS Line New High', color:C.accent, filter:s=>s.rsLineNewHigh},
                 ]},
               ]
-              return GROUPS.map(({id,group,items})=>(
-                <div key={group} ref={el=>patternsSectionRefs.current[id]=el} style={{marginBottom:18}}>
+              return GROUPS.filter(({id})=>id===patternsSubTab).map(({id,group,items})=>(
+                <div key={group} style={{marginBottom:18}}>
                   <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,letterSpacing:'0.04em'}}>{group}</div>
                   {items.map(({key,label,color,filter})=>{
                     const matches = stocks.filter(filter)
