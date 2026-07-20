@@ -2992,46 +2992,13 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
           </span>
         </div>
 
-        {/* 10 D Vol — PP, IBV, HY, HT signal history stacked, each in its
-            own established color (matching the dedicated PP/IBV/HY/HT
-            sections elsewhere: PP=green, IBV=blue, HY=pink, HT=orange).
-            Previously only showed PP; now shows all four so this single
-            column carries the same signal-history info the dedicated
-            pages show, without needing to visit each one separately.
-            Each row only renders if that stock actually has history for
-            it, so a stock with no HY/HT/IBV activity doesn't show three
-            empty rows. */}
-        {vis.pp10&&<div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'flex-start',minWidth:0,overflow:'hidden'}}>
-          {(s.pp?.ppHistory?.length>0)&&(
-            <div style={{display:'flex',alignItems:'center',gap:4}}>
-              <span style={{fontSize:8,fontWeight:700,color:C.green,minWidth:16}}>PP</span>
-              <PPDots ppHistory={s.pp.ppHistory} color={C.green}/>
-            </div>
-          )}
-          {(s.ibvHistory?.length>0)&&(
-            <div style={{display:'flex',alignItems:'center',gap:4}}>
-              <span style={{fontSize:8,fontWeight:700,color:C.blue,minWidth:16}}>IBV</span>
-              <PPDots ppHistory={s.ibvHistory} color={C.blue}/>
-            </div>
-          )}
-          {(s.hy?.history?.length>0)&&(
-            <div style={{display:'flex',alignItems:'center',gap:4}}>
-              <span style={{fontSize:8,fontWeight:700,color:C.pink,minWidth:16}}>HY</span>
-              <PPDots ppHistory={s.hy.history} color={C.pink}/>
-            </div>
-          )}
-          {(s.ht?.history?.length>0)&&(
-            <div style={{display:'flex',alignItems:'center',gap:4}}>
-              <span style={{fontSize:8,fontWeight:700,color:C.orange,minWidth:16}}>HT</span>
-              <PPDots ppHistory={s.ht.history} color={C.orange}/>
-            </div>
-          )}
-          {!(s.pp?.ppHistory?.length>0)&&!(s.ibvHistory?.length>0)&&!(s.hy?.history?.length>0)&&!(s.ht?.history?.length>0)&&(
-            <span style={{fontSize:9,color:C.border}}>—</span>
-          )}
-          <span style={{fontSize:9,color:s.pp.ppCount10d>0?C.orange:C.muted,fontWeight:700,whiteSpace:'nowrap'}}>
-            {s.pp.ppCount10d}× PP
-          </span>
+        {/* 10 D Vol — single consolidated row instead of stacking all
+            four signal histories. Shows whichever of HT/HY/IBV/PP is
+            this stock's top-priority signal (same priority order used
+            elsewhere: HT > HY > IBV > PP), with just its color and dots
+            — one row per stock, not four. */}
+        {vis.pp10&&<div style={{display:'flex',alignItems:'center',minWidth:0,overflow:'hidden'}}>
+          <TopSignalDots s={s}/>
         </div>}
 
         {/* RS Last 7d */}
