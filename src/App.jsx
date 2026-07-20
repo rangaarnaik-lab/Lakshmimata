@@ -5763,29 +5763,6 @@ export default function App(){
                     <Stat label="In Squeeze" value={inSqueeze} total={tot} color={C.blue}/>
                   </div>
 
-                  {/* RS Line New Highs — early leaders */}
-                  {rln>0&&(
-                    <div style={{background:C.card,border:`1px solid ${C.teal}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.teal,marginBottom:8}}>
-                        RS Line New Highs — Early Leaders ({rln})
-                      </div>
-                      <TVCopyPanel stocks={stocks.filter(s=>s.rsLineNewHigh)} label="RS Line New Highs"/>
-                      <BreakoutTable stocks={stocks.filter(s=>s.rsLineNewHigh)}
-                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
-                    </div>
-                  )}
-
-                  {/* New Stage 2 entries */}
-                  {stocks.filter(s=>s.isS2NewEntry).length>0&&(
-                    <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
-                        New Stage 2 Entries Today ({stocks.filter(s=>s.isS2NewEntry).length})
-                      </div>
-                      <TVCopyPanel stocks={stocks.filter(s=>s.isS2NewEntry)} label="New Stage 2 Entries"/>
-                      <BreakoutTable stocks={stocks.filter(s=>s.isS2NewEntry)}
-                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
-                    </div>
-                  )}
                 </>
               )
             })()}
@@ -6365,6 +6342,34 @@ export default function App(){
             )}
           </div>
         )}
+
+        {/* Early leaders / new entries — placed after the Indices table
+            per request, so index-level context comes first */}
+        {mainTab==='market'&&stocks.length>0&&(<>
+                  {/* RS Line New Highs — early leaders */}
+                  {stocks.filter(s=>s.rsLineNewHigh).length>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.teal}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.teal,marginBottom:8}}>
+                        RS Line New Highs — Early Leaders ({stocks.filter(s=>s.rsLineNewHigh).length})
+                      </div>
+                      <TVCopyPanel stocks={stocks.filter(s=>s.rsLineNewHigh)} label="RS Line New Highs"/>
+                      <BreakoutTable stocks={stocks.filter(s=>s.rsLineNewHigh)}
+                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                    </div>
+                  )}
+
+                  {/* New Stage 2 entries */}
+                  {stocks.filter(s=>s.isS2NewEntry).length>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
+                        New Stage 2 Entries Today ({stocks.filter(s=>s.isS2NewEntry).length})
+                      </div>
+                      <TVCopyPanel stocks={stocks.filter(s=>s.isS2NewEntry)} label="New Stage 2 Entries"/>
+                      <BreakoutTable stocks={stocks.filter(s=>s.isS2NewEntry)}
+                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                    </div>
+                  )}
+        </>)}
 
 
         {/* ══ PORTFOLIO TRACKER ══ */}
