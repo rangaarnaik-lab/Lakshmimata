@@ -4595,14 +4595,38 @@ export default function App(){
   const [announcements,setAnnouncements]=useState([])
   const [announcementsLoading,setAnnouncementsLoading]=useState(false)
   const [announcementsPage,setAnnouncementsPage]=useState(0)
+  // Sub-tabs on the Announcements tab — filters by NSE's own category
+  // text (e.g. "Financial Results", "Award of Order / Receipt of
+  // Order"), matched with ILIKE server-side so pagination stays
+  // meaningful instead of filtering an already-paginated page down to
+  // almost nothing.
+  const ANNOUNCEMENT_CATEGORIES=[
+    {id:'all',    label:'All',         keyword:null},
+    {id:'results', label:'Results',    keyword:'result'},
+    {id:'orders', label:'Order Book',  keyword:'order'},
+    {id:'board',  label:'Board Meeting', keyword:'board meeting'},
+    {id:'div',    label:'Dividend',    keyword:'dividend'},
+    {id:'other',  label:'Other',       keyword:null},
+  ]
+  const [announcementsCategory,setAnnouncementsCategory]=useState('all')
+  useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory])
   const ANNOUNCEMENTS_PAGE_SIZE=50
   useEffect(()=>{
     if(mainTab!=='announcements') return
     setAnnouncementsLoading(true)
-    fetchAnnouncements(ANNOUNCEMENTS_PAGE_SIZE, announcementsPage*ANNOUNCEMENTS_PAGE_SIZE)
-      .then(setAnnouncements)
+    const cat = ANNOUNCEMENT_CATEGORIES.find(c=>c.id===announcementsCategory)
+    fetchAnnouncements(ANNOUNCEMENTS_PAGE_SIZE, announcementsPage*ANNOUNCEMENTS_PAGE_SIZE, cat?.keyword||null)
+      .then(rows=>{
+        // "Other" can't be expressed as a single ILIKE match — fetch
+        // unfiltered, then exclude anything matching a known category.
+        if(announcementsCategory==='other'){
+          const knownKeywords=ANNOUNCEMENT_CATEGORIES.filter(c=>c.keyword).map(c=>c.keyword.toLowerCase())
+          rows=rows.filter(a=>!knownKeywords.some(k=>(a.category||'').toLowerCase().includes(k)))
+        }
+        setAnnouncements(rows)
+      })
       .finally(()=>setAnnouncementsLoading(false))
-  },[mainTab,announcementsPage])
+  },[mainTab,announcementsPage,announcementsCategory])
   const [visibleRsCols,setVisibleRsCols]=useState(()=>{
     const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,squeeze:false,wl52:false,weakrs:false}
     try{
@@ -7762,6 +7786,19 @@ export default function App(){
               </div>
             </div>
 
+            <div style={{display:'flex',gap:6,overflowX:'auto',marginBottom:14,WebkitOverflowScrolling:'touch'}}>
+              {ANNOUNCEMENT_CATEGORIES.map(({id,label})=>(
+                <button key={id} onClick={()=>setAnnouncementsCategory(id)}
+                  style={{flexShrink:0,padding:'6px 12px',borderRadius:20,
+                    border:`1px solid ${announcementsCategory===id?C.accent:C.border}`,
+                    background:announcementsCategory===id?C.accent+'22':C.card,
+                    color:announcementsCategory===id?C.accent:C.text,
+                    fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
             {announcementsLoading&&announcements.length===0?(
               <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>Loading…</div>
             ):announcements.length===0?(
@@ -7784,6 +7821,12 @@ export default function App(){
                         {a.symbol}
                       </div>
                       <div style={{flex:1,minWidth:0}}>
+                        {a.category&&(
+                          <span style={{display:'inline-block',fontSize:9,fontWeight:700,color:C.accent,
+                            background:C.accent+'18',borderRadius:6,padding:'2px 6px',marginBottom:4}}>
+                            {a.category}
+                          </span>
+                        )}
                         <div style={{fontSize:12.5,color:C.text,lineHeight:1.4}}>{a.subject}</div>
                         <div style={{fontSize:10,color:C.muted,marginTop:3,display:'flex',gap:8,alignItems:'center'}}>
                           <span>{dateStr}</span>

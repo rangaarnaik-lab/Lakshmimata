@@ -809,12 +809,14 @@ export async function fetchUsageStats(days = 14) {
  * (offset-based) since this feed accumulates continuously and showing
  * ALL history at once isn't useful or necessary.
  */
-export async function fetchAnnouncements(limit = 50, offset = 0) {
-  const { data, error } = await supabase
+export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = null) {
+  let q = supabase
     .from('corporate_announcements')
-    .select('symbol,subject,attachment_url,announced_at')
+    .select('symbol,category,subject,attachment_url,announced_at')
     .order('announced_at', { ascending: false })
     .range(offset, offset + limit - 1)
+  if (categoryLike) q = q.ilike('category', `%${categoryLike}%`)
+  const { data, error } = await q
   if (error) { console.error('fetchAnnouncements error:', error.message); return [] }
   return data || []
 }
