@@ -5721,6 +5721,35 @@ export default function App(){
                   .sort((a,b)=>b.score-a.score)
               })()
 
+              // Smart Money Momentum — price & volume, not holdings data.
+              // Uses Pocket Pivots (is_pp: an up-day whose volume beats
+              // the worst down-volume day of the last 10, with price
+              // above its 10/50-day averages — the classic IBD
+              // "institutional footprint" pattern) rolled up with the
+              // existing IBV composite score. This reacts daily, unlike
+              // the FII/DII table above which only updates quarterly.
+              const volumeSmartMoneyBySector = (()=>{
+                const bySector = {}
+                for(const s of stocks){
+                  const key = s.sector || 'Other'
+                  if(!bySector[key]) bySector[key] = {sector:key, n:0, ibvSum:0, ppToday:0, ppRepeat:0}
+                  const b = bySector[key]
+                  b.n++
+                  b.ibvSum += calcIBV(s).ibvScore
+                  if(s.pp?.isPP) b.ppToday++
+                  if((s.pp?.ppCount10d||0)>=3) b.ppRepeat++
+                }
+                return Object.values(bySector)
+                  .filter(b=>b.n>=MIN_N)
+                  .map(b=>({
+                    sector: b.sector, n: b.n,
+                    avgIbv: b.ibvSum/b.n,
+                    ppToday: b.ppToday,
+                    ppRepeat: b.ppRepeat,
+                  }))
+                  .sort((a,b)=>b.avgIbv-a.avgIbv)
+              })()
+
               const Stat=({label,value,total,color,sub})=>(
                 <div style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:10,padding:'14px'}}>
                   <div style={{fontSize:11,color:C.muted,marginBottom:6}}>{label}</div>
@@ -5836,6 +5865,34 @@ export default function App(){
                             <div style={{textAlign:'right',color:C.muted,fontSize:10.5}}>
                               <span style={{color:C.green}}>{b.accumulating}</span>/<span style={{color:C.red}}>{b.distributing}</span>
                             </div>
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Smart Money Momentum — price & volume (Pocket Pivots + IBV) */}
+                  {volumeSmartMoneyBySector.length>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
+                        📊 Smart Money Momentum — Sector (Price & Volume)
+                      </div>
+                      <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
+                        Avg. institutional-footprint score (Pocket Pivots + RS/trend) — reacts daily, unlike the FII/DII table above
+                      </div>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Avg Score</div>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>PP Today</div>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Repeat (≥3/10d)</div>
+                        {volumeSmartMoneyBySector.slice(0,10).map(b=>(
+                          <React.Fragment key={b.sector}>
+                            <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
+                            <div style={{textAlign:'right',fontWeight:700,color:b.avgIbv>=3?C.green:b.avgIbv>=1.5?C.yellow:C.muted}}>
+                              {b.avgIbv.toFixed(2)}
+                            </div>
+                            <div style={{textAlign:'right',color:C.text}}>{b.ppToday}<span style={{color:C.muted}}>/{b.n}</span></div>
+                            <div style={{textAlign:'right',color:C.text}}>{b.ppRepeat}<span style={{color:C.muted}}>/{b.n}</span></div>
                           </React.Fragment>
                         ))}
                       </div>
