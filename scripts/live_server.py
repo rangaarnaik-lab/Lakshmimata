@@ -508,11 +508,18 @@ async def fetch_nse_announcements(session: aiohttp.ClientSession, tracked_syms: 
         symbol = _first(item, 'symbol', 'sym')
         if not symbol or symbol.upper() not in tracked_syms:
             continue
-        subject = _first(item, 'attchmntText', 'desc', 'subject', 'headline') or ''
+        # NSE tags each announcement with a category (e.g. "Financial
+        # Results", "Award of Order / Receipt of Order", "Board Meeting
+        # Intimation") separately from the free-text description — keep
+        # them split so the frontend can filter by type instead of
+        # string-matching inside a paragraph of prose.
+        category = _first(item, 'desc', 'category', 'purpose') or ''
+        subject = _first(item, 'attchmntText', 'subject', 'headline') or category or ''
         attachment_url = _first(item, 'attchmntFile', 'attachmentUrl', 'attachment_url')
         announced_at = _first(item, 'an_dt', 'broadcastdate', 'sort_date', 'announced_at')
         out.append({
             'symbol': symbol.upper(),
+            'category': category,
             'subject': subject,
             'attachment_url': attachment_url,
             'announced_at': announced_at,
