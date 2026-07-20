@@ -751,6 +751,54 @@ function PPDots({ppHistory, color=C.orange}){
 // this stock's top priority (HT > HY > IBV > PP) — instead of always
 // hardcoding "PP 10d" even for a stock whose real signal is HT, which
 // was inconsistent with the badge shown above it.
+// One row of dots covering all four signals at once — each day's dot
+// is colored by whichever signal fired that day (priority HT > HY >
+// IBV > PP if more than one fired the same day, matching the same
+// priority used for the chart's volume-bar coloring), instead of
+// either stacking all four histories or only showing one signal type
+// for the whole stock.
+function MergedSignalDots({s}){
+  const ht  = s.ht?.history || []
+  const hy  = s.hy?.history || []
+  const ibv = s.ibvHistory || []
+  const pp  = s.pp?.ppHistory || []
+  const len = Math.max(ht.length, hy.length, ibv.length, pp.length, 10)
+  const dots = Array.from({length: len}, (_, i) => {
+    if (ht[i])  return {color:C.orange, label:'HT'}
+    if (hy[i])  return {color:C.pink,   label:'HY'}
+    if (ibv[i]) return {color:C.blue,   label:'IBV'}
+    if (pp[i])  return {color:C.green,  label:'PP'}
+    return {color:null, label:null}
+  })
+  const counts = [
+    ['HT', ht.filter(Boolean).length, C.orange],
+    ['HY', hy.filter(Boolean).length, C.pink],
+    ['IBV', ibv.filter(Boolean).length, C.blue],
+    ['PP', pp.filter(Boolean).length, C.green],
+  ].filter(([,n])=>n>0)
+  return(
+    <div style={{display:'flex',flexDirection:'column',gap:3}}>
+      <div style={{display:'flex',gap:2,alignItems:'center'}}>
+        {dots.map((d,i)=>{
+          const dIdx = dots.length-1-i
+          const isToday = dIdx===0
+          return <div key={i} title={`${isToday?'Today':`${dIdx}d ago`}: ${d.label||'No signal'}`}
+            style={{width:isToday?11:8,height:isToday?11:8,flexShrink:0,borderRadius:'50%',
+              background:d.color||C.border,
+              border:isToday?`1.5px solid ${C.text}`:'none',
+              boxShadow:d.color?`0 0 4px ${d.color}`:'none'}}/>
+        })}
+      </div>
+      {counts.length>0&&(
+        <div style={{display:'flex',gap:6,fontSize:8,flexWrap:'wrap'}}>
+          {counts.map(([label,n,color])=>(
+            <span key={label} style={{color,fontWeight:700}}>{n} {label}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 function TopSignalDots({s,withCount=true}){
   const top = topVolumeSignal(s)
   const config = {
@@ -2992,13 +3040,13 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
           </span>
         </div>
 
-        {/* 10 D Vol — single consolidated row instead of stacking all
-            four signal histories. Shows whichever of HT/HY/IBV/PP is
-            this stock's top-priority signal (same priority order used
-            elsewhere: HT > HY > IBV > PP), with just its color and dots
-            — one row per stock, not four. */}
+        {/* 10 D Vol — single row covering all four signals: each day's
+            dot is colored by whichever of HT/HY/IBV/PP fired that day
+            (priority HT > HY > IBV > PP if more than one fired the same
+            day), instead of stacking four separate rows or only
+            showing one signal type for the whole stock. */}
         {vis.pp10&&<div style={{display:'flex',alignItems:'center',minWidth:0,overflow:'hidden'}}>
-          <TopSignalDots s={s}/>
+          <MergedSignalDots s={s}/>
         </div>}
 
         {/* RS Last 7d */}
