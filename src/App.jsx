@@ -3492,7 +3492,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
                   </div>
                   <table style={{width:'100%',borderCollapse:'collapse'}}>
                     <thead><tr>
-                      {['Symbol','Sector','RS','Signal','Chg'].map(h=>(
+                      {['Symbol','Sector','RS Rating','Signal','Chg'].map(h=>(
                         <th key={h} style={{textAlign:'left',padding:'8px 10px',...mono,fontSize:9.5,
                           letterSpacing:'0.06em',textTransform:'uppercase',color:C.muted,...rulesLine,fontWeight:400}}>{h}</th>
                       ))}
@@ -3528,7 +3528,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
                   </div>
                   <table style={{width:'100%',borderCollapse:'collapse'}}>
                     <thead><tr>
-                      {['Symbol','Signal','Level / Detail','RS','Chg'].map(h=>(
+                      {['Symbol','Signal','Level / Detail','RS Rating','Chg'].map(h=>(
                         <th key={h} style={{textAlign:'left',padding:'8px 10px',...mono,fontSize:9.5,
                           letterSpacing:'0.06em',textTransform:'uppercase',color:C.muted,...rulesLine,fontWeight:400}}>{h}</th>
                       ))}
@@ -5001,7 +5001,7 @@ export default function App(){
   const weakBase=stocks.filter(s=>s.weakRS.chg1d>=weakThreshold&&s.rs<50&&s.sym.toLowerCase().includes(weakSearch.toLowerCase())&&(!weakSigOnly||s.weakRS.isSignal)).sort((a,b)=>b.weakRS.chg1d-a.weakRS.chg1d)
   const displayedWeak=applyPP(weakBase,ppFilterWeak)
 
-  const tabs=[['rs','📊','RS'],['market','🌐','Market'],['squeeze','🌀','Squeeze'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
+  const tabs=[['rs','📊','RS Rating'],['market','🌐','Market'],['squeeze','🌀','Squeeze'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
 
   if(authLoading)return(
     <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -7287,7 +7287,7 @@ export default function App(){
                     </div>
                     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
                       {[
-                        ['RS',s.rs,rsColor(s.rs)],
+                        ['RS Rating',s.rs,rsColor(s.rs)],
                         ['Chg',`+${bo.chg}%`,C.green],
                         ['PP 5d',`${bo.recentPPCount}×`,C.orange],
                         ['Trend',trendIcon(s.rsTrend?.trend||'flat'),trendColor(s.rsTrend?.trend||'flat')],
@@ -8000,7 +8000,7 @@ export default function App(){
             borderTop:`1px solid ${C.border}`,display:'flex',zIndex:40,
             paddingBottom:'env(safe-area-inset-bottom)'}}>
             {[
-              ['rs','📊','RS'],['market','🌐','Market'],['rotation','🔄','Rotate'],['breakout','💥','Break'],['52wl','🎯','52WL'],
+              ['rs','📊','RS Rating'],['market','🌐','Market'],['rotation','🔄','Rotate'],['breakout','💥','Break'],['52wl','🎯','52WL'],
             ].map(([t,icon,label])=>(
               <button key={t} onClick={()=>setMainTab(t)}
                 style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
