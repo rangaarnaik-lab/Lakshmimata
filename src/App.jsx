@@ -4603,6 +4603,7 @@ export default function App(){
   const ANNOUNCEMENT_CATEGORIES=[
     {id:'all',    label:'All',         keyword:null},
     {id:'results', label:'Results',    keyword:'result'},
+    {id:'concall', label:'Concall',    keyword:['con call','con-call','concall','conference call','investor','analyst meet']},
     {id:'orders', label:'Order Book',  keyword:'order'},
     {id:'board',  label:'Board Meeting', keyword:'board meeting'},
     {id:'div',    label:'Dividend',    keyword:'dividend'},
@@ -4620,7 +4621,9 @@ export default function App(){
         // "Other" can't be expressed as a single ILIKE match — fetch
         // unfiltered, then exclude anything matching a known category.
         if(announcementsCategory==='other'){
-          const knownKeywords=ANNOUNCEMENT_CATEGORIES.filter(c=>c.keyword).map(c=>c.keyword.toLowerCase())
+          const knownKeywords=ANNOUNCEMENT_CATEGORIES.filter(c=>c.keyword)
+            .flatMap(c=>Array.isArray(c.keyword)?c.keyword:[c.keyword])
+            .map(k=>k.toLowerCase())
           rows=rows.filter(a=>!knownKeywords.some(k=>(a.category||'').toLowerCase().includes(k)))
         }
         setAnnouncements(rows)
