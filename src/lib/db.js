@@ -815,7 +815,15 @@ export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = 
     .select('symbol,category,subject,attachment_url,announced_at')
     .order('announced_at', { ascending: false })
     .range(offset, offset + limit - 1)
-  if (categoryLike) q = q.ilike('category', `%${categoryLike}%`)
+  if (categoryLike) {
+    // categoryLike can be a single keyword or an array of keywords —
+    // NSE's own category text isn't consistent (e.g. concalls show up
+    // as "Con Call", "Conference Call", or "Investor / Analyst Meet"
+    // depending on the filer), so several tabs need an OR match rather
+    // than a single ILIKE.
+    const keywords = Array.isArray(categoryLike) ? categoryLike : [categoryLike]
+    q = q.or(keywords.map(k => `category.ilike.%${k}%`).join(','))
+  }
   const { data, error } = await q
   if (error) { console.error('fetchAnnouncements error:', error.message); return [] }
   return data || []
