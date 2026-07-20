@@ -439,7 +439,87 @@ def get_sector(sym: str) -> str:
             return sector
     return "Other"
 
-# ── Upstox API ────────────────────────────────────────────────────────
+# ── NSE Corporate Announcements (real-time, independent of the ────────
+#    Upstox price polling above) ────────────────────────────────────
+# NSE's public site is the authoritative real-time source for corporate
+# disclosures (board meetings, results, dividends, etc.) — Upstox only
+# carries price data, not filing text. NSE requires a browser-like
+# session: hitting the API cold (no cookies, no browser headers) gets
+# blocked, so we warm up the session against the homepage first.
+#
+# IMPORTANT CAVEAT: this was written from publicly documented NSE API
+# behavior, not tested against the live endpoint (no network access to
+# nseindia.com in the dev sandbox this was built in). NSE's site is
+# known to occasionally change response shape or add stricter bot
+# detection without notice — if this starts silently returning nothing,
+# check the logged status code / response snippet first; the field-name
+# fallbacks below are a defensive guess, not a guarantee.
+NSE_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                   '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://www.nseindia.com/companies-listing/corporate-filings-announcements',
+}
+
+async def nse_warm_up(session: aiohttp.ClientSession) -> bool:
+    """Visits the NSE homepage first to populate session cookies —
+    required before the announcements API will respond. Returns False
+    (and logs) if NSE is blocking/unreachable, so the caller can skip
+    the fetch this cycle rather than hammering a dead endpoint."""
+    try:
+        async with session.get('https://www.nseindia.com/', headers=NSE_HEADERS, timeout=15) as r:
+            return r.status == 200
+    except Exception as e:
+        log.warning(f"NSE warm-up failed: {e}")
+        return False
+
+def _first(d: dict, *keys):
+    for k in keys:
+        if d.get(k):
+            return d[k]
+    return None
+
+async def fetch_nse_announcements(session: aiohttp.ClientSession, tracked_syms: set) -> list:
+    """Fetches recent corporate announcements from NSE's public API and
+    normalizes them to {symbol, subject, attachment_url, announced_at},
+    filtered to just the symbols this app tracks (so the table doesn't
+    fill with SME/untracked-segment noise). Field names are tried with
+    several known fallbacks since NSE doesn't publish a stable schema."""
+    if not await nse_warm_up(session):
+        return []
+    url = 'https://www.nseindia.com/api/corporate-announcements?index=equities'
+    try:
+        async with session.get(url, headers=NSE_HEADERS, timeout=20) as r:
+            if r.status != 200:
+                body = await r.text()
+                log.warning(f"NSE announcements fetch: HTTP {r.status} — {body[:150]}")
+                return []
+            raw = await r.json(content_type=None)
+    except Exception as e:
+        log.warning(f"NSE announcements fetch failed: {e}")
+        return []
+
+    rows = raw if isinstance(raw, list) else (raw.get('data') or raw.get('rows') or [])
+    out = []
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        symbol = _first(item, 'symbol', 'sym')
+        if not symbol or symbol.upper() not in tracked_syms:
+            continue
+        subject = _first(item, 'attchmntText', 'desc', 'subject', 'headline') or ''
+        attachment_url = _first(item, 'attchmntFile', 'attachmentUrl', 'attachment_url')
+        announced_at = _first(item, 'an_dt', 'broadcastdate', 'sort_date', 'announced_at')
+        out.append({
+            'symbol': symbol.upper(),
+            'subject': subject,
+            'attachment_url': attachment_url,
+            'announced_at': announced_at,
+        })
+    return out
+
+
 NIFTY50   = ["RELIANCE","TCS","HDFCBANK","BHARTIARTL","ICICIBANK","INFOSYS","SBIN","HINDUNILVR","ITC","LT","KOTAKBANK","HCLTECH","AXISBANK","BAJFINANCE","MARUTI","ASIANPAINT","SUNPHARMA","TITAN","ULTRACEMCO","NESTLEIND","WIPRO","NTPC","POWERGRID","TECHM","TATAMOTORS","ADANIENT","ADANIPORTS","ONGC","BAJAJFINSV","JSWSTEEL","TATASTEEL","COALINDIA","HINDALCO","M&M","DRREDDY","CIPLA","EICHERMOT","DIVISLAB","BPCL","GRASIM","INDUSINDBK","APOLLOHOSP","BAJAJ-AUTO","HEROMOTOCO","TVSMOTOR","SHREECEM","BRITANNIA","VEDL","BEL","NTPC"]
 MIDCAP    = ["MPHASIS","PERSISTENT","COFORGE","LTTS","TATAELXSI","BANDHANBNK","FEDERALBNK","IDFCFIRSTB","RBLBANK","AUBANK","CHOLAFIN","MUTHOOTFIN","MANAPPURAM","AAVAS","ESCORTS","AUROPHARMA","LUPIN","BIOCON","ALKEM","GLENMARK","IPCALAB","EMAMILTD","GODREJCP","NMDC","MOIL","PRESTIGE","BRIGADE","PHOENIXLTD","SOBHA","LODHA","METROPOLIS","THYROCARE","LALPATHLAB","NARAYANA","ASTER","STARHEALTH","MCX","ANGELONE","EASEMYTRIP","RATEGAIN"]
 SMALLCAP  = ["DELTACORP","GMRINFRA","IDEA","SUZLON","UNITECH","DISHTV","JPASSOCIAT","PVR","INDIABULL","KOLTEPATIL","LEMONTREE","THOMASCOOK","JUSTDIAL","IXIGO","ALOKTEXT","RADICO","HEIDELBERG","BIRLACORPN","JKCEMENT","RAMCOCEM","HFCL","STLTECH","TEJAS","ROUTE","RAILTEL","NSDL","CANFINHOME","APTUS","HOMEFIRST","REPCO","SPANDANA","CREDITACC","SATIN"]
@@ -540,9 +620,14 @@ async def fetch_historical(session: aiohttp.ClientSession, sym: str) -> dict:
         return {}
 
 # ── Supabase client ───────────────────────────────────────────────────
-async def supabase_upsert(session: aiohttp.ClientSession, table: str, rows: list):
-    """Upsert rows into Supabase table."""
+async def supabase_upsert(session: aiohttp.ClientSession, table: str, rows: list, on_conflict: str = None):
+    """Upsert rows into Supabase table. `on_conflict` lets callers specify
+    which column(s) define a duplicate, for tables whose natural key
+    isn't just a single primary key column (defaults to the table's PK
+    if omitted, which is what stocks/sectors already rely on)."""
     url = f"{SUPABASE_URL}/rest/v1/{table}"
+    if on_conflict:
+        url += f"?on_conflict={on_conflict}"
     headers = {
         "apikey":        SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -831,6 +916,13 @@ async def main():
 
         last_scan = time.time()
         scan_count = 0
+        # Announcements run on their own cadence — 15 min, independent
+        # of the price-scan cycle — since NSE filings don't need
+        # 60-second freshness and hammering NSE that often risks getting
+        # the server IP rate-limited/blocked.
+        ANNOUNCEMENTS_INTERVAL = 900
+        last_announcements = 0
+        tracked_syms = set(ALL_STOCKS)
 
         while True:
             try:
@@ -847,6 +939,17 @@ async def main():
                         ist_now = datetime.now(IST)
                         log.info(f"⏸ Market closed ({ist_now.strftime('%H:%M IST')}) — next check in {UPDATE_INTERVAL}s")
                         last_scan = time.time()
+
+                if now - last_announcements >= ANNOUNCEMENTS_INTERVAL:
+                    last_announcements = now
+                    try:
+                        anns = await fetch_nse_announcements(session, tracked_syms)
+                        if anns:
+                            await supabase_upsert(session, 'corporate_announcements', anns,
+                                                   on_conflict='symbol,subject,announced_at')
+                            log.info(f"📢 {len(anns)} announcements upserted")
+                    except Exception as e:
+                        log.warning(f"Announcements cycle error: {e}")
 
                 await asyncio.sleep(5)  # check every 5 seconds
 
