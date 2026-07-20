@@ -2794,6 +2794,49 @@ function RRGChart({rolledData,maxAbsMom,levelLabel,windowLabel,onDotClick,dotSiz
  * over data we already have, which is faster and can't drift from the
  * chart or invent a sector that isn't there.
  */
+// Global Help Center content — one place explaining every tab, instead
+// of a separate info icon scattered on each individual page. Keyed by
+// mainTab id so the center can default-open on whichever page the
+// person is currently viewing.
+const HELP_CONTENT = [
+  {id:'rs', title:'RS Rating', body:`The core scanner — every NSE stock ranked by Relative Strength (RS), 1-99, 
+    against the whole market. Filter by index, sector, RS trend, or signal chips. Tap a row for its chart and full 
+    signal breakdown.`},
+  {id:'market', title:'Market', body:`Market-wide health, top to bottom:
+    • Verdict card (Favorable/Mixed/Unfavorable) — a quick read from 5 factors (advance/decline, RS momentum, trend 
+    health, leadership, strength breadth). Not a signal to trade on its own — use it to gauge how aggressive to be, 
+    then check the individual setup.
+    • Stats grid — today's raw breadth counts feeding that verdict.
+    • Smart Money — Sector Flow (FII/DII) — average institutional shareholding change by sector. Quarterly disclosure 
+    data, so it moves slowly — shows where institutions have been positioning, not today's activity.
+    • Smart Money Momentum (Price & Volume) — the daily-reacting version: sectors ranked by Pocket Pivots (an up day 
+    whose volume beats the worst down-volume day of the last 10, price above its 10/50-day averages) plus RS trend.
+    • Gap Up / Gap Down — stocks whose open is ≥2% from yesterday's close. Only populates on live intraday data.
+    • Index Performance Dashboard — every NSE sectoral/thematic index with its own RS-TV rank and Weinstein stage.`},
+  {id:'rotation', title:'Sector Rotation', body:`A Relative Rotation Graph (RRG) — each dot is a sector, index, or 
+    watchlist stock, trailing from where it was to where it is now: momentum (up/down) against RS-TV strength 
+    (left/right). Leading (top-right) is where money's already flowing; Improving (top-left) is early, before it's 
+    obvious. Tap an index dot to drill into its own constituents. Use the date slider to rewind the chart to a past day.`},
+  {id:'leaders', title:'Leaders', body:`Two event-driven lists: RS Line New Highs (stocks whose relative-strength 
+    line — not just price — just made a new high, often an early leadership tell) and New Stage 2 Entries (stocks 
+    that flipped into a confirmed uptrend today). Both export to TradingView and support alerts.`},
+  {id:'squeeze', title:'Squeeze', body:`Stocks in a volatility squeeze (Bollinger Bands inside Keltner Channels) or 
+    forming a VCP (Volatility Contraction Pattern) — both precede explosive moves. Tight price action + falling 
+    volume is the setup; the breakout direction isn't predicted, only that a big move is coming.`},
+  {id:'breakout', title:'Breakout', body:`Stocks breaking resistance, cup-and-handle patterns, or Guppy MA 
+    crossovers, with volume confirmation. This is the "something's happening right now" tab for price-action triggers.`},
+  {id:'52wl', title:'52WL Crossover', body:`Stocks making new 52-week highs (potential breakouts) or sitting near 
+    52-week lows (potential value or falling knives — check the trend before assuming either).`},
+  {id:'weak', title:'Weak RS', body:`The inverse scanner — stocks with deteriorating relative strength, useful for 
+    avoiding laggards or for short-side/hedge ideas.`},
+  {id:'portfolio', title:'Portfolio', body:`Track your actual holdings against their RS rank and stage over time, so 
+    you can see if a position you're holding is quietly weakening.`},
+  {id:'compare', title:'Compare', body:`Side-by-side comparison of up to a few stocks across all metrics — RS, 
+    fundamentals, stage, signals — to decide between similar candidates.`},
+  {id:'watchlist', title:'Watchlist', body:`Your saved stock lists. Set one as active from the header dropdown on 
+    any scanner tab to filter that tab down to just your watchlist.`},
+]
+
 function generateRotationInsights(rolledData,scopeLabel){
   const plural=scopeLabel.toLowerCase()+'s'
   const bucket={leading:[],improving:[],weakening:[],lagging:[]}
@@ -4101,8 +4144,8 @@ export default function App(){
   const [showSignalGlossary,setShowSignalGlossary]=useState(false)
   const [expandedTileInfo,setExpandedTileInfo]=useState(null)
   const [showRowGuidance,setShowRowGuidance]=useState(false)
-  const [showRotationGuidance,setShowRotationGuidance]=useState(false)
-  const [showMarketGuidance,setShowMarketGuidance]=useState(false)
+  const [showHelpCenter,setShowHelpCenter]=useState(false)
+  const [helpCenterSection,setHelpCenterSection]=useState(null)
   const [breadthHistory,setBreadthHistory]=useState([])
   const [emaBreadthHistory,setEmaBreadthHistory]=useState([])
   const [breadthRange,setBreadthRange]=useState('1M')
@@ -5076,6 +5119,13 @@ export default function App(){
             )}
           </div>
 
+          <button onClick={()=>{setHelpCenterSection(null);setShowHelpCenter(true)}} title="Help — how to use this app"
+            style={{width:26,height:26,borderRadius:'50%',border:`1px solid ${C.border}`,
+              background:C.card,color:C.muted,fontSize:13,fontWeight:700,cursor:'pointer',
+              display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexShrink:0}}>
+            ?
+          </button>
+
           {/* Controls */}
           {mainTab!=='settings'&&mainTab!=='watchlist'&&mainTab!=='rotation'&&(
             <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
@@ -5660,41 +5710,6 @@ export default function App(){
         {mainTab==='market'&&(
           <div style={{padding:'0 0 20px',position:'relative'}}>
 
-            <button onClick={()=>setShowMarketGuidance(v=>!v)}
-              title="How to use this page"
-              style={{position:'absolute',top:0,right:0,zIndex:1,width:22,height:22,borderRadius:'50%',
-                border:`1px solid ${C.muted}`,background:showMarketGuidance?C.accent+'22':C.card,
-                color:showMarketGuidance?C.accent:C.muted,fontSize:12,cursor:'pointer',
-                display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>
-              ℹ
-            </button>
-            {showMarketGuidance&&(
-              <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,
-                padding:'12px 14px',marginBottom:14,fontSize:11.5,color:C.muted,lineHeight:1.7}}>
-                <div style={{fontWeight:800,color:C.text,marginBottom:8,fontSize:12.5}}>How to use this page</div>
-                <div style={{marginBottom:6}}><strong style={{color:C.text}}>Verdict card</strong> (Favorable/Mixed/Unfavorable) — a
-                  quick market-condition read from 5 factors (advance/decline, RS momentum, trend health, leadership,
-                  strength breadth). Not a signal to trade on its own — use it to decide how aggressive to be, then
-                  check the individual setup.</div>
-                <div style={{marginBottom:6}}><strong style={{color:C.text}}>Stats grid</strong> — today's raw breadth
-                  counts (advancing/declining, RS improving/declining, Stage 2 stocks, new highs/lows, squeeze count,
-                  gap counts). These feed the verdict above; scan them if you want the raw numbers instead of the summary.</div>
-                <div style={{marginBottom:6}}><strong style={{color:C.text}}>Smart Money — Sector Flow (FII/DII)</strong> — average
-                  change in institutional shareholding % by sector. This is quarterly disclosure data, so it moves
-                  slowly — it shows where institutions have been positioning over the last quarter, not today's activity.</div>
-                <div style={{marginBottom:6}}><strong style={{color:C.text}}>Smart Money Momentum (Price & Volume)</strong> — the
-                  same idea but reacts daily: sectors ranked by Pocket Pivots (an up day whose volume beats the worst
-                  down-volume day of the last 10, price above its 10/50-day averages — the classic institutional
-                  footprint) plus RS trend. "PP Today" = stocks with that pattern right now; "Repeat" = stocks doing
-                  it repeatedly, a stronger tell than a single day.</div>
-                <div style={{marginBottom:6}}><strong style={{color:C.text}}>Gap Up / Gap Down</strong> — stocks whose
-                  today's open is ≥2% away from yesterday's close, with exportable lists. Only populates on live
-                  intraday data, not on a past historical date.</div>
-                <div><strong style={{color:C.text}}>Index Performance Dashboard</strong> — every NSE sectoral/thematic
-                  index with its own RS-TV rank and Weinstein stage, so you can see which indices are leading before
-                  drilling into individual stocks. Tap a column header to sort, tap an index name for its history.</div>
-              </div>
-            )}
 
             {/* Today's snapshot from stocks already loaded */}
             {stocks.length>0&&(()=>{
@@ -7319,23 +7334,6 @@ export default function App(){
               )}
 
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16,marginBottom:16,position:'relative'}}>
-                <button onClick={()=>setShowRotationGuidance(v=>!v)}
-                  title="How to use this chart"
-                  style={{position:'absolute',top:10,right:10,zIndex:1,width:20,height:20,borderRadius:'50%',
-                    border:`1px solid ${C.muted}`,background:showRotationGuidance?C.accent+'22':C.card,
-                    color:showRotationGuidance?C.accent:C.muted,fontSize:11,cursor:'pointer',
-                    display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>
-                  ℹ
-                </button>
-                {showRotationGuidance&&(
-                  <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,
-                    padding:'10px 12px',marginBottom:12,fontSize:11,color:C.muted,lineHeight:1.6}}>
-                    <strong style={{color:C.text}}>How to read this:</strong> each dot is one {rotationScope==='sector'?'sector':rotationScope==='index'?'index':'watchlist stock'},
-                    trailing from where it was to where it is now — momentum (up/down) against RS-TV strength (left/right).
-                    Leading (top-right) is where money's already flowing; Improving (top-left) is early, before it's
-                    obvious.{rotationScope==='index'&&<> Tap a dot to drill into that index's own stocks, right here in this chart.</>}
-                  </div>
-                )}
 
                 {rotationScope==='index'&&rotationExpandedId?(
                   // Drilled into one index — this chart now shows ITS
@@ -7728,6 +7726,46 @@ export default function App(){
                 background:'transparent',color:C.muted,fontSize:12,fontWeight:600}}>
               Maybe later
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ══ GLOBAL HELP CENTER — one place explaining every page, ══
+          instead of a separate info icon scattered on each individual
+          page. Opens with the current tab's section expanded. */}
+      {showHelpCenter&&(
+        <div onClick={()=>setShowHelpCenter(false)}
+          style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:100,
+            display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,
+              width:'100%',maxWidth:520,maxHeight:'80vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+            <div style={{padding:'16px 18px',borderBottom:`1px solid ${C.border}`,
+              display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{fontWeight:800,fontSize:15,color:C.text}}>Help — how to use this app</div>
+              <button onClick={()=>setShowHelpCenter(false)}
+                style={{background:'transparent',border:'none',color:C.muted,fontSize:18,cursor:'pointer',padding:4}}>✕</button>
+            </div>
+            <div style={{overflowY:'auto',padding:'8px 10px'}}>
+              {HELP_CONTENT.map(({id,title,body})=>{
+                const isOpen = helpCenterSection ? helpCenterSection===id : mainTab===id
+                return(
+                  <div key={id} style={{borderBottom:`1px solid ${C.divider}`}}>
+                    <button onClick={()=>setHelpCenterSection(isOpen?'__none__':id)}
+                      style={{width:'100%',padding:'12px 8px',background:'transparent',border:'none',cursor:'pointer',
+                        display:'flex',alignItems:'center',justifyContent:'space-between',textAlign:'left'}}>
+                      <span style={{fontWeight:700,fontSize:13,color:mainTab===id?C.accent:C.text}}>{title}</span>
+                      <span style={{color:C.muted,fontSize:12,transform:isOpen?'rotate(180deg)':'none',transition:'transform 0.15s'}}>▾</span>
+                    </button>
+                    {isOpen&&(
+                      <div style={{padding:'0 8px 14px',fontSize:11.5,color:C.muted,lineHeight:1.7,whiteSpace:'pre-line'}}>
+                        {body}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </div>
       )}
