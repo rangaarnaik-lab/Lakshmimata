@@ -2820,6 +2820,11 @@ const HELP_CONTENT = [
   {id:'leaders', title:'Leaders', body:`Two event-driven lists: RS Line New Highs (stocks whose relative-strength 
     line — not just price — just made a new high, often an early leadership tell) and New Stage 2 Entries (stocks 
     that flipped into a confirmed uptrend today). Both export to TradingView and support alerts.`},
+  {id:'patterns', title:'Patterns', body:`Every chart pattern the scanner detects, grouped and listed one by one 
+    instead of scattered across tabs: breakouts (resistance, 52-week high, cup & handle, new Stage 2 entries), 
+    base-building/coiling setups (cup forming, Guppy MA compression, volatility squeeze, VCP), moving-average 
+    crossovers (Guppy bullish/bearish), and volume footprints (Pocket Pivot, RS line new high). Each section is its 
+    own exportable list.`},
   {id:'squeeze', title:'Squeeze', body:`Stocks in a volatility squeeze (Bollinger Bands inside Keltner Channels) or 
     forming a VCP (Volatility Contraction Pattern) — both precede explosive moves. Tight price action + falling 
     volume is the setup; the breakout direction isn't predicted, only that a big move is coming.`},
@@ -5001,6 +5006,7 @@ export default function App(){
               {id:'market',   label:'Market',     abbr:'MK'},
               {id:'rotation', label:'Sector Rotation', abbr:'RO'},
               {id:'leaders',  label:'Leaders',    abbr:'LD'},
+              {id:'patterns', label:'Patterns',   abbr:'PT'},
               {id:'squeeze',  label:'Squeeze',    abbr:'SQ'},
               {id:'breakout', label:'Breakout',  abbr:'BO'},
               {id:'52wl',     label:'52WL',      abbr:'WL'},
@@ -5098,6 +5104,7 @@ export default function App(){
                  mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
                  mainTab==='weak'?'Weak RS':mainTab==='rotation'?'Sector Rotation':
                  mainTab==='leaders'?'Leaders':
+                 mainTab==='patterns'?'Patterns':
                  mainTab==='watchlist'?'Watchlist':mainTab==='announcements'?'Announcements':'Account'}
               </div>
               {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1}}>
@@ -6660,6 +6667,69 @@ export default function App(){
           </div>
         )}
 
+        {/* ══ PATTERNS — every detected chart pattern, one by one ══ */}
+        {mainTab==='patterns'&&(
+          <div style={{padding:'0 0 20px'}}>
+            <div style={{marginBottom:14}}>
+              <div style={{fontWeight:700,fontSize:16,color:C.text}}>Patterns</div>
+              <div style={{fontSize:11,color:C.muted}}>Every chart pattern the scanner detects, in one place</div>
+            </div>
+            {stocks.length===0?(
+              <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>No data loaded yet.</div>
+            ):(()=>{
+              // One definition per pattern, grouped for readability.
+              // Reuses signals already computed server-side elsewhere in
+              // the app (Squeeze/Breakout/Leaders tabs) — this tab's job
+              // is just to list all of them together instead of making
+              // you check four different tabs to see what's setting up.
+              const GROUPS = [
+                {group:'📈 Breakouts', items:[
+                  {key:'resBreak', label:'Resistance Breakout', color:C.green, filter:s=>s.isResistanceBreakout},
+                  {key:'h52',      label:'52-Week High Breakout', color:C.green, filter:s=>s.is52whBreakout},
+                  {key:'cupBreak', label:'Cup & Handle Breakout', color:C.green, filter:s=>s.isCupHandleBreakout},
+                  {key:'s2new',    label:'New Stage 2 Entry', color:C.green, filter:s=>s.isS2NewEntry},
+                ]},
+                {group:'🌀 Base-Building / Coiling', items:[
+                  {key:'cupForm',  label:'Cup Pattern Forming', color:C.teal, filter:s=>s.hasCupPattern&&!s.isCupHandleBreakout},
+                  {key:'guppyComp',label:'Guppy MA Compressed', color:C.teal, filter:s=>s.isGuppyCompressed},
+                  {key:'squeeze',  label:'Volatility Squeeze', color:C.teal, filter:s=>s.squeeze?.inSqueeze},
+                  {key:'vcp',      label:'VCP (Volatility Contraction)', color:C.teal, filter:s=>s.vcp?.isVCP},
+                ]},
+                {group:'🔀 Moving Average Crossovers', items:[
+                  {key:'guppyBull',label:'Guppy Bullish Crossover', color:C.green, filter:s=>s.isGuppyBullishCrossover},
+                  {key:'guppyBear',label:'Guppy Bearish Crossover', color:C.red, filter:s=>s.isGuppyBearishCrossover},
+                ]},
+                {group:'🏦 Volume Footprint', items:[
+                  {key:'pp',   label:'Pocket Pivot (Today)', color:C.purple, filter:s=>s.pp?.isPP},
+                  {key:'rsln', label:'RS Line New High', color:C.accent, filter:s=>s.rsLineNewHigh},
+                ]},
+              ]
+              return GROUPS.map(({group,items})=>(
+                <div key={group} style={{marginBottom:18}}>
+                  <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,letterSpacing:'0.04em'}}>{group}</div>
+                  {items.map(({key,label,color,filter})=>{
+                    const matches = stocks.filter(filter)
+                    if(matches.length===0) return null
+                    return(
+                      <div key={key} style={{background:C.card,border:`1px solid ${color}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                        <div style={{fontWeight:700,fontSize:13,color,marginBottom:8}}>
+                          {label} ({matches.length})
+                        </div>
+                        <TVCopyPanel stocks={matches} label={label}/>
+                        <BreakoutTable stocks={matches}
+                          isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                      </div>
+                    )
+                  })}
+                  {items.every(({filter})=>stocks.filter(filter).length===0)&&(
+                    <div style={{fontSize:11,color:C.muted,padding:'4px 0 4px'}}>None right now.</div>
+                  )}
+                </div>
+              ))
+            })()}
+          </div>
+        )}
+
         {/* ══ PORTFOLIO TRACKER ══ */}
         {mainTab==='portfolio'&&(
           <div style={{padding:'0 0 20px'}}>
@@ -7857,8 +7927,8 @@ export default function App(){
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <span style={{fontSize:15}}>⋯</span>
               <span style={{fontSize:8,fontWeight:600,
-                color:['squeeze','weak','portfolio','compare','watchlist','announcements','settings','leaders'].includes(mainTab)?C.accent:C.muted}}>More</span>
-              {['squeeze','weak','portfolio','compare','watchlist','announcements','settings','leaders'].includes(mainTab)&&
+                color:['squeeze','weak','portfolio','compare','watchlist','announcements','settings','leaders','patterns'].includes(mainTab)?C.accent:C.muted}}>More</span>
+              {['squeeze','weak','portfolio','compare','watchlist','announcements','settings','leaders','patterns'].includes(mainTab)&&
                 <div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           </div>
@@ -7875,7 +7945,7 @@ export default function App(){
                 <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:'8px auto 16px'}}/>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:4}}>
                   {[
-                    ['squeeze','🌀','Squeeze'],['weak','🚨','Weak'],['leaders','🚀','Leaders'],
+                    ['squeeze','🌀','Squeeze'],['weak','🚨','Weak'],['leaders','🚀','Leaders'],['patterns','🧩','Patterns'],
                     ['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],
                     ['announcements','📢','Announcements'],
                     ['settings','⚙','Account'],
