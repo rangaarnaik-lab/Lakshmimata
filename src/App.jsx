@@ -4940,6 +4940,9 @@ export default function App(){
   // Reset the slider back to "latest" whenever the scope/window/data
   // changes underneath it, so it never gets stuck on a stale date.
   useEffect(()=>{ setRotationAsOfDate(null) },[rotationData])
+  // Switching tabs should feel like landing on a fresh page, not
+  // resuming wherever the previous tab happened to be scrolled to.
+  useEffect(()=>{ window.scrollTo(0,0) },[mainTab])
   const rotationDisplayData=useMemo(()=>{
     const data = rotationData||[]
     const {displayData,rolledData,maxAbsMom} = computeRolledRotationData(data,rotationSelectedIds,rotationAsOfDate)
