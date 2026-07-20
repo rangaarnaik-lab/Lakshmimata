@@ -5653,6 +5653,145 @@ export default function App(){
         )}
 
 
+        {/* ══ MARKET BREADTH (part of combined Market tab) ══ */}
+        {mainTab==='market'&&(
+          <div style={{padding:'0 0 20px'}}>
+
+            {/* Today's snapshot from stocks already loaded */}
+            {stocks.length>0&&(()=>{
+              const tot = stocks.length
+              const adv = stocks.filter(s=>s.chg>0).length
+              const dec = stocks.filter(s=>s.chg<0).length
+              const s2  = stocks.filter(s=>s.rs>=70&&s.chg>=0).length
+              const pp  = stocks.filter(s=>s.pp?.isPP).length
+              const rsi = stocks.filter(s=>s.rsTrend?.trend==='improving').length
+              const rsd = stocks.filter(s=>s.rsTrend?.trend==='declining').length
+              const rvs = stocks.filter(s=>s.rvol>=2).length
+              const rln = stocks.filter(s=>s.rsLineNewHigh).length
+              // New — genuinely useful additions using data that's
+              // already computed per-stock elsewhere, not requiring any
+              // new backend work:
+              const stage2 = stocks.filter(s=>calcWeinsteinStage(s).stage===2).length
+              const newHighs = stocks.filter(s=>s.is52whBreakout).length
+              const nearLows = stocks.filter(s=>s.scanner52wl?.near52wLow).length
+              const inSqueeze = stocks.filter(s=>s.squeeze?.inSqueeze).length
+
+              const Stat=({label,value,total,color,sub})=>(
+                <div style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:10,padding:'14px'}}>
+                  <div style={{fontSize:11,color:C.muted,marginBottom:6}}>{label}</div>
+                  <div style={{fontWeight:700,fontSize:26,color:color||C.text}}>{value}</div>
+                  {total&&<div style={{fontSize:10,color:C.muted,marginTop:3}}>{((value/total)*100).toFixed(1)}% of {total}</div>}
+                  {sub&&<div style={{fontSize:10,color:C.muted,marginTop:3}}>{sub}</div>}
+                </div>
+              )
+
+              const adRatio = dec>0?(adv/dec).toFixed(2):adv>0?'∞':'0'
+              // Composite verdict — synthesizes 5 independent factors
+              // instead of the old 2-factor check, so a single skewed
+              // metric can't flip the whole read. Each factor shown
+              // individually below (not just the final score) so the
+              // verdict is explainable, not a black box — deliberately
+              // framed as "conditions favor/don't favor", not "you
+              // should trade", since this feeds into real trading
+              // decisions and is a heuristic aid, not a guarantee.
+              const factors = [
+                {label:'Advance/Decline', positive:adv>dec, detail:`${adv} advancing vs ${dec} declining`},
+                {label:'RS Momentum', positive:rsi>rsd, detail:`${rsi} improving vs ${rsd} declining`},
+                {label:'Trend Health', positive:stage2>tot*0.2, detail:`${stage2} in confirmed Stage 2 (${((stage2/tot)*100).toFixed(0)}%)`},
+                {label:'Leadership', positive:newHighs>nearLows, detail:`${newHighs} new 52W highs vs ${nearLows} near 52W lows`},
+                {label:'Strength Breadth', positive:s2>tot*0.15, detail:`${s2} stocks RS≥70 (${((s2/tot)*100).toFixed(0)}%)`},
+              ]
+              const posCount = factors.filter(f=>f.positive).length
+              const verdict = posCount>=4 ? {label:'Favorable',color:C.green,sub:'Conditions favor new long setups — most signals aligned'}
+                : posCount>=2 ? {label:'Mixed',color:C.yellow,sub:'Selective — be choosy, quality over quantity right now'}
+                : {label:'Unfavorable',color:C.red,sub:'Most signals negative — a defensive posture makes sense'}
+
+              return(
+                <>
+                  {/* Composite market verdict — pushed to the very top of
+                      the tab, ahead of the header, since this is the
+                      single most useful glance-and-go read on the page */}
+                  <div style={{background:verdict.color+'11',border:`1px solid ${verdict.color}44`,
+                    borderRadius:10,padding:'14px 16px',marginBottom:14}}>
+                    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+                      <div style={{width:10,height:10,borderRadius:'50%',background:verdict.color,flexShrink:0}}/>
+                      <span style={{fontWeight:800,fontSize:15,color:verdict.color}}>{verdict.label}</span>
+                      <span style={{fontSize:11,color:C.muted,marginLeft:'auto'}}>{posCount}/5 factors positive</span>
+                    </div>
+                    <div style={{fontSize:12,color:C.text,marginBottom:10}}>{verdict.sub}</div>
+                    <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                      {factors.map(f=>(
+                        <div key={f.label} style={{display:'flex',alignItems:'center',gap:8,fontSize:11}}>
+                          <span style={{color:f.positive?C.green:C.red,fontWeight:700,minWidth:14}}>{f.positive?'✓':'✗'}</span>
+                          <span style={{color:C.muted,minWidth:110}}>{f.label}</span>
+                          <span style={{color:C.text}}>{f.detail}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{fontSize:10,color:C.muted,marginTop:10,fontStyle:'italic'}}>
+                      A quick market-condition read, not a signal to act on by itself — always check the individual
+                      setup too.
+                    </div>
+                  </div>
+
+                  <div style={{marginBottom:14}}>
+                    <div style={{fontWeight:700,fontSize:16,color:C.text}}>Market Breadth</div>
+                    <div style={{fontSize:11,color:C.muted}}>Daily market health indicators for NSE</div>
+                  </div>
+
+                  {/* Health indicator */}
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,
+                    borderRadius:10,padding:'10px 16px',marginBottom:14,
+                    display:'flex',alignItems:'center',gap:10}}>
+                    <span style={{fontSize:11,color:C.muted}}>Advance/Decline Ratio</span>
+                    <span style={{fontSize:13,fontWeight:700,color:C.text,marginLeft:'auto'}}>{adRatio}</span>
+                  </div>
+
+                  {/* Stats grid */}
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:14}}>
+                    <Stat label="Advancing" value={adv} total={tot} color={C.green}/>
+                    <Stat label="Declining"  value={dec} total={tot} color={C.red}/>
+                    <Stat label="RS Improving" value={rsi} total={tot} color={C.accent}/>
+                    <Stat label="RS Declining" value={rsd} total={tot} color={C.orange}/>
+                    <Stat label="PP Today" value={pp} total={tot} color={C.yellow}/>
+                    <Stat label="Vol Surge (RVOL>2)" value={rvs} total={tot} color={C.purple}/>
+                    <Stat label="RS Line New High" value={rln} total={tot} color={C.teal}/>
+                    <Stat label="RS ≥ 70" value={s2} total={tot} color={C.green}/>
+                    <Stat label="Stage 2 (Uptrend)" value={stage2} total={tot} color={C.green}/>
+                    <Stat label="New 52W Highs" value={newHighs} total={tot} color={C.accent}/>
+                    <Stat label="Near 52W Lows" value={nearLows} total={tot} color={C.red}/>
+                    <Stat label="In Squeeze" value={inSqueeze} total={tot} color={C.blue}/>
+                  </div>
+
+                  {/* RS Line New Highs — early leaders */}
+                  {rln>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.teal}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.teal,marginBottom:8}}>
+                        RS Line New Highs — Early Leaders ({rln})
+                      </div>
+                      <TVCopyPanel stocks={stocks.filter(s=>s.rsLineNewHigh)} label="RS Line New Highs"/>
+                      <BreakoutTable stocks={stocks.filter(s=>s.rsLineNewHigh)}
+                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                    </div>
+                  )}
+
+                  {/* New Stage 2 entries */}
+                  {stocks.filter(s=>s.isS2NewEntry).length>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
+                        New Stage 2 Entries Today ({stocks.filter(s=>s.isS2NewEntry).length})
+                      </div>
+                      <TVCopyPanel stocks={stocks.filter(s=>s.isS2NewEntry)} label="New Stage 2 Entries"/>
+                      <BreakoutTable stocks={stocks.filter(s=>s.isS2NewEntry)}
+                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
+          </div>
+        )}
+
         {/* ══ INDICES DASHBOARD (part of combined Market tab) ══ */}
         {mainTab==='market'&&(
           <div>
@@ -6227,145 +6366,6 @@ export default function App(){
           </div>
         )}
 
-
-        {/* ══ MARKET BREADTH (part of combined Market tab) ══ */}
-        {mainTab==='market'&&(
-          <div style={{padding:'0 0 20px'}}>
-
-            {/* Today's snapshot from stocks already loaded */}
-            {stocks.length>0&&(()=>{
-              const tot = stocks.length
-              const adv = stocks.filter(s=>s.chg>0).length
-              const dec = stocks.filter(s=>s.chg<0).length
-              const s2  = stocks.filter(s=>s.rs>=70&&s.chg>=0).length
-              const pp  = stocks.filter(s=>s.pp?.isPP).length
-              const rsi = stocks.filter(s=>s.rsTrend?.trend==='improving').length
-              const rsd = stocks.filter(s=>s.rsTrend?.trend==='declining').length
-              const rvs = stocks.filter(s=>s.rvol>=2).length
-              const rln = stocks.filter(s=>s.rsLineNewHigh).length
-              // New — genuinely useful additions using data that's
-              // already computed per-stock elsewhere, not requiring any
-              // new backend work:
-              const stage2 = stocks.filter(s=>calcWeinsteinStage(s).stage===2).length
-              const newHighs = stocks.filter(s=>s.is52whBreakout).length
-              const nearLows = stocks.filter(s=>s.scanner52wl?.near52wLow).length
-              const inSqueeze = stocks.filter(s=>s.squeeze?.inSqueeze).length
-
-              const Stat=({label,value,total,color,sub})=>(
-                <div style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:10,padding:'14px'}}>
-                  <div style={{fontSize:11,color:C.muted,marginBottom:6}}>{label}</div>
-                  <div style={{fontWeight:700,fontSize:26,color:color||C.text}}>{value}</div>
-                  {total&&<div style={{fontSize:10,color:C.muted,marginTop:3}}>{((value/total)*100).toFixed(1)}% of {total}</div>}
-                  {sub&&<div style={{fontSize:10,color:C.muted,marginTop:3}}>{sub}</div>}
-                </div>
-              )
-
-              const adRatio = dec>0?(adv/dec).toFixed(2):adv>0?'∞':'0'
-              // Composite verdict — synthesizes 5 independent factors
-              // instead of the old 2-factor check, so a single skewed
-              // metric can't flip the whole read. Each factor shown
-              // individually below (not just the final score) so the
-              // verdict is explainable, not a black box — deliberately
-              // framed as "conditions favor/don't favor", not "you
-              // should trade", since this feeds into real trading
-              // decisions and is a heuristic aid, not a guarantee.
-              const factors = [
-                {label:'Advance/Decline', positive:adv>dec, detail:`${adv} advancing vs ${dec} declining`},
-                {label:'RS Momentum', positive:rsi>rsd, detail:`${rsi} improving vs ${rsd} declining`},
-                {label:'Trend Health', positive:stage2>tot*0.2, detail:`${stage2} in confirmed Stage 2 (${((stage2/tot)*100).toFixed(0)}%)`},
-                {label:'Leadership', positive:newHighs>nearLows, detail:`${newHighs} new 52W highs vs ${nearLows} near 52W lows`},
-                {label:'Strength Breadth', positive:s2>tot*0.15, detail:`${s2} stocks RS≥70 (${((s2/tot)*100).toFixed(0)}%)`},
-              ]
-              const posCount = factors.filter(f=>f.positive).length
-              const verdict = posCount>=4 ? {label:'Favorable',color:C.green,sub:'Conditions favor new long setups — most signals aligned'}
-                : posCount>=2 ? {label:'Mixed',color:C.yellow,sub:'Selective — be choosy, quality over quantity right now'}
-                : {label:'Unfavorable',color:C.red,sub:'Most signals negative — a defensive posture makes sense'}
-
-              return(
-                <>
-                  {/* Composite market verdict — pushed to the very top of
-                      the tab, ahead of the header, since this is the
-                      single most useful glance-and-go read on the page */}
-                  <div style={{background:verdict.color+'11',border:`1px solid ${verdict.color}44`,
-                    borderRadius:10,padding:'14px 16px',marginBottom:14}}>
-                    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-                      <div style={{width:10,height:10,borderRadius:'50%',background:verdict.color,flexShrink:0}}/>
-                      <span style={{fontWeight:800,fontSize:15,color:verdict.color}}>{verdict.label}</span>
-                      <span style={{fontSize:11,color:C.muted,marginLeft:'auto'}}>{posCount}/5 factors positive</span>
-                    </div>
-                    <div style={{fontSize:12,color:C.text,marginBottom:10}}>{verdict.sub}</div>
-                    <div style={{display:'flex',flexDirection:'column',gap:5}}>
-                      {factors.map(f=>(
-                        <div key={f.label} style={{display:'flex',alignItems:'center',gap:8,fontSize:11}}>
-                          <span style={{color:f.positive?C.green:C.red,fontWeight:700,minWidth:14}}>{f.positive?'✓':'✗'}</span>
-                          <span style={{color:C.muted,minWidth:110}}>{f.label}</span>
-                          <span style={{color:C.text}}>{f.detail}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{fontSize:10,color:C.muted,marginTop:10,fontStyle:'italic'}}>
-                      A quick market-condition read, not a signal to act on by itself — always check the individual
-                      setup too.
-                    </div>
-                  </div>
-
-                  <div style={{marginBottom:14}}>
-                    <div style={{fontWeight:700,fontSize:16,color:C.text}}>Market Breadth</div>
-                    <div style={{fontSize:11,color:C.muted}}>Daily market health indicators for NSE</div>
-                  </div>
-
-                  {/* Health indicator */}
-                  <div style={{background:C.card,border:`1px solid ${C.border}`,
-                    borderRadius:10,padding:'10px 16px',marginBottom:14,
-                    display:'flex',alignItems:'center',gap:10}}>
-                    <span style={{fontSize:11,color:C.muted}}>Advance/Decline Ratio</span>
-                    <span style={{fontSize:13,fontWeight:700,color:C.text,marginLeft:'auto'}}>{adRatio}</span>
-                  </div>
-
-                  {/* Stats grid */}
-                  <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:14}}>
-                    <Stat label="Advancing" value={adv} total={tot} color={C.green}/>
-                    <Stat label="Declining"  value={dec} total={tot} color={C.red}/>
-                    <Stat label="RS Improving" value={rsi} total={tot} color={C.accent}/>
-                    <Stat label="RS Declining" value={rsd} total={tot} color={C.orange}/>
-                    <Stat label="PP Today" value={pp} total={tot} color={C.yellow}/>
-                    <Stat label="Vol Surge (RVOL>2)" value={rvs} total={tot} color={C.purple}/>
-                    <Stat label="RS Line New High" value={rln} total={tot} color={C.teal}/>
-                    <Stat label="RS ≥ 70" value={s2} total={tot} color={C.green}/>
-                    <Stat label="Stage 2 (Uptrend)" value={stage2} total={tot} color={C.green}/>
-                    <Stat label="New 52W Highs" value={newHighs} total={tot} color={C.accent}/>
-                    <Stat label="Near 52W Lows" value={nearLows} total={tot} color={C.red}/>
-                    <Stat label="In Squeeze" value={inSqueeze} total={tot} color={C.blue}/>
-                  </div>
-
-                  {/* RS Line New Highs — early leaders */}
-                  {rln>0&&(
-                    <div style={{background:C.card,border:`1px solid ${C.teal}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.teal,marginBottom:8}}>
-                        RS Line New Highs — Early Leaders ({rln})
-                      </div>
-                      <TVCopyPanel stocks={stocks.filter(s=>s.rsLineNewHigh)} label="RS Line New Highs"/>
-                      <BreakoutTable stocks={stocks.filter(s=>s.rsLineNewHigh)}
-                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
-                    </div>
-                  )}
-
-                  {/* New Stage 2 entries */}
-                  {stocks.filter(s=>s.isS2NewEntry).length>0&&(
-                    <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
-                        New Stage 2 Entries Today ({stocks.filter(s=>s.isS2NewEntry).length})
-                      </div>
-                      <TVCopyPanel stocks={stocks.filter(s=>s.isS2NewEntry)} label="New Stage 2 Entries"/>
-                      <BreakoutTable stocks={stocks.filter(s=>s.isS2NewEntry)}
-                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
-                    </div>
-                  )}
-                </>
-              )
-            })()}
-          </div>
-        )}
 
         {/* ══ PORTFOLIO TRACKER ══ */}
         {mainTab==='portfolio'&&(
