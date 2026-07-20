@@ -2865,6 +2865,34 @@ function generateRotationInsights(rolledData,scopeLabel){
   return { text: parts.join(' '), bucket }
 }
 
+// Sticky quick-jump nav — a row of pills at the top of a long tab that
+// scroll straight to a section instead of making people scroll past
+// everything to find it. `refs` is a useRef({}) object whose keys match
+// each item's id; sections register themselves via a ref callback.
+function SectionNav({items, refs}){
+  const scrollTo = id=>{
+    const el = refs.current[id]
+    if(el) el.scrollIntoView({behavior:'smooth', block:'start'})
+  }
+  return(
+    <div style={{position:'sticky',top:0,zIndex:5,background:C.bg,
+      marginLeft:-16,marginRight:-16,padding:'8px 16px',
+      borderBottom:`1px solid ${C.border}`,marginBottom:14}}>
+      <div style={{display:'flex',gap:6,overflowX:'auto',WebkitOverflowScrolling:'touch',
+        scrollbarWidth:'none'}}>
+        {items.map(({id,label})=>(
+          <button key={id} onClick={()=>scrollTo(id)}
+            style={{flexShrink:0,padding:'6px 12px',borderRadius:20,
+              border:`1px solid ${C.border}`,background:C.card,color:C.text,
+              fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function DesktopRow({s,i,onChart,visibleRsCols}){
   const [open,setOpen]=useState(false)
   const vis=visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true}
@@ -4151,6 +4179,8 @@ export default function App(){
   const [expandedTileInfo,setExpandedTileInfo]=useState(null)
   const [showRowGuidance,setShowRowGuidance]=useState(false)
   const [showHelpCenter,setShowHelpCenter]=useState(false)
+  const marketSectionRefs=useRef({})
+  const patternsSectionRefs=useRef({})
   const [helpCenterSection,setHelpCenterSection]=useState(null)
   const [breadthHistory,setBreadthHistory]=useState([])
   const [emaBreadthHistory,setEmaBreadthHistory]=useState([])
@@ -5718,6 +5748,16 @@ export default function App(){
         {mainTab==='market'&&(
           <div style={{padding:'0 0 20px',position:'relative'}}>
 
+            {stocks.length>0&&(
+              <SectionNav refs={marketSectionRefs} items={[
+                {id:'verdict',    label:'Verdict'},
+                {id:'stats',      label:'Stats'},
+                {id:'industry',   label:'Industry'},
+                {id:'gap',        label:'Gap Up/Down'},
+                {id:'smartmoney', label:'Smart Money'},
+                {id:'momentum',   label:'Momentum'},
+              ]}/>
+            )}
 
             {/* Today's snapshot from stocks already loaded */}
             {stocks.length>0&&(()=>{
@@ -5845,7 +5885,8 @@ export default function App(){
                   {/* Composite market verdict — pushed to the very top of
                       the tab, ahead of the header, since this is the
                       single most useful glance-and-go read on the page */}
-                  <div style={{background:verdict.color+'11',border:`1px solid ${verdict.color}44`,
+                  <div ref={el=>marketSectionRefs.current['verdict']=el}
+                    style={{background:verdict.color+'11',border:`1px solid ${verdict.color}44`,
                     borderRadius:10,padding:'14px 16px',marginBottom:14}}>
                     <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
                       <div style={{width:10,height:10,borderRadius:'50%',background:verdict.color,flexShrink:0}}/>
@@ -5882,7 +5923,8 @@ export default function App(){
                   </div>
 
                   {/* Stats grid */}
-                  <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:14}}>
+                  <div ref={el=>marketSectionRefs.current['stats']=el}
+                    style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:14}}>
                     <Stat label="Advancing" value={adv} total={tot} color={C.green}/>
                     <Stat label="Declining"  value={dec} total={tot} color={C.red}/>
                     <Stat label="RS Improving" value={rsi} total={tot} color={C.accent}/>
@@ -5907,7 +5949,7 @@ export default function App(){
 
         {/* ══ INDICES DASHBOARD (part of combined Market tab) ══ */}
         {mainTab==='market'&&(
-          <div>
+          <div ref={el=>marketSectionRefs.current['industry']=el}>
             <div style={{marginBottom:12}}>
               <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>🗂 Index Performance Dashboard</div>
               <div style={{fontSize:11,color:C.muted}}>
@@ -6542,6 +6584,7 @@ export default function App(){
           return(
             <div style={{padding:'0 0 20px'}}>
               {/* Gap Up / Gap Down — today's opening moves */}
+              <div ref={el=>marketSectionRefs.current['gap']=el}>
               {gapUps.length>0&&(
                 <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
                   <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
@@ -6562,10 +6605,12 @@ export default function App(){
                     isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
                 </div>
               )}
+              </div>
 
               {/* Smart Money — FII/DII sector flow */}
               {smartMoneyBySector.length>0&&(
-                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                <div ref={el=>marketSectionRefs.current['smartmoney']=el}
+                  style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
                   <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
                     🏦 Smart Money — Sector Flow (FII/DII)
                   </div>
@@ -6597,7 +6642,8 @@ export default function App(){
 
               {/* Smart Money Momentum — price & volume (Pocket Pivots + IBV) */}
               {volumeSmartMoneyBySector.length>0&&(
-                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                <div ref={el=>marketSectionRefs.current['momentum']=el}
+                  style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
                   <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
                     📊 Smart Money Momentum — Sector (Price & Volume)
                   </div>
@@ -6675,6 +6721,15 @@ export default function App(){
               <div style={{fontWeight:700,fontSize:16,color:C.text}}>Patterns</div>
               <div style={{fontSize:11,color:C.muted}}>Every chart pattern the scanner detects, in one place</div>
             </div>
+            {stocks.length>0&&(
+              <SectionNav refs={patternsSectionRefs} items={[
+                {id:'breakouts',  label:'Breakouts'},
+                {id:'coiling',    label:'Coiling'},
+                {id:'classic',    label:'Classic Patterns'},
+                {id:'crossovers', label:'MA Crossovers'},
+                {id:'volume',     label:'Volume'},
+              ]}/>
+            )}
             <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,
               padding:'8px 12px',marginBottom:14,fontSize:10.5,color:C.muted,lineHeight:1.5}}>
               ⚠️ Classic Chart Patterns (Head & Shoulders, Double Top/Bottom, Triangles, Wedges, Flags/Pennants) are
@@ -6690,19 +6745,19 @@ export default function App(){
               // is just to list all of them together instead of making
               // you check four different tabs to see what's setting up.
               const GROUPS = [
-                {group:'📈 Breakouts', items:[
+                {id:'breakouts', group:'📈 Breakouts', items:[
                   {key:'resBreak', label:'Resistance Breakout', color:C.green, filter:s=>s.isResistanceBreakout},
                   {key:'h52',      label:'52-Week High Breakout', color:C.green, filter:s=>s.is52whBreakout},
                   {key:'cupBreak', label:'Cup & Handle Breakout', color:C.green, filter:s=>s.isCupHandleBreakout},
                   {key:'s2new',    label:'New Stage 2 Entry', color:C.green, filter:s=>s.isS2NewEntry},
                 ]},
-                {group:'🌀 Base-Building / Coiling', items:[
+                {id:'coiling', group:'🌀 Base-Building / Coiling', items:[
                   {key:'cupForm',  label:'Cup Pattern Forming', color:C.teal, filter:s=>s.hasCupPattern&&!s.isCupHandleBreakout},
                   {key:'guppyComp',label:'Guppy MA Compressed', color:C.teal, filter:s=>s.isGuppyCompressed},
                   {key:'squeeze',  label:'Volatility Squeeze', color:C.teal, filter:s=>s.squeeze?.inSqueeze},
                   {key:'vcp',      label:'VCP (Volatility Contraction)', color:C.teal, filter:s=>s.vcp?.isVCP},
                 ]},
-                {group:'📐 Classic Chart Patterns', items:[
+                {id:'classic', group:'📐 Classic Chart Patterns', items:[
                   {key:'hs',      label:'Head & Shoulders', color:C.red, filter:s=>s.isHeadShoulders},
                   {key:'invhs',   label:'Inverse Head & Shoulders', color:C.green, filter:s=>s.isInvHeadShoulders},
                   {key:'dtop',    label:'Double Top', color:C.red, filter:s=>s.isDoubleTop},
@@ -6716,17 +6771,17 @@ export default function App(){
                   {key:'flagBear',label:'Bearish Flag', color:C.red, filter:s=>s.isFlagBearish},
                   {key:'pennant', label:'Pennant', color:C.teal, filter:s=>s.isPennant},
                 ]},
-                {group:'🔀 Moving Average Crossovers', items:[
+                {id:'crossovers', group:'🔀 Moving Average Crossovers', items:[
                   {key:'guppyBull',label:'Guppy Bullish Crossover', color:C.green, filter:s=>s.isGuppyBullishCrossover},
                   {key:'guppyBear',label:'Guppy Bearish Crossover', color:C.red, filter:s=>s.isGuppyBearishCrossover},
                 ]},
-                {group:'🏦 Volume Footprint', items:[
+                {id:'volume', group:'🏦 Volume Footprint', items:[
                   {key:'pp',   label:'Pocket Pivot (Today)', color:C.purple, filter:s=>s.pp?.isPP},
                   {key:'rsln', label:'RS Line New High', color:C.accent, filter:s=>s.rsLineNewHigh},
                 ]},
               ]
-              return GROUPS.map(({group,items})=>(
-                <div key={group} style={{marginBottom:18}}>
+              return GROUPS.map(({id,group,items})=>(
+                <div key={group} ref={el=>patternsSectionRefs.current[id]=el} style={{marginBottom:18}}>
                   <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,letterSpacing:'0.04em'}}>{group}</div>
                   {items.map(({key,label,color,filter})=>{
                     const matches = stocks.filter(filter)
