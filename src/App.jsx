@@ -770,32 +770,17 @@ function MergedSignalDots({s}){
     if (pp[i])  return {color:C.green,  label:'PP'}
     return {color:null, label:null}
   })
-  const counts = [
-    ['HT', ht.filter(Boolean).length, C.orange],
-    ['HY', hy.filter(Boolean).length, C.pink],
-    ['IBV', ibv.filter(Boolean).length, C.blue],
-    ['PP', pp.filter(Boolean).length, C.green],
-  ].filter(([,n])=>n>0)
   return(
-    <div style={{display:'flex',flexDirection:'column',gap:3}}>
-      <div style={{display:'flex',gap:2,alignItems:'center'}}>
-        {dots.map((d,i)=>{
-          const dIdx = dots.length-1-i
-          const isToday = dIdx===0
-          return <div key={i} title={`${isToday?'Today':`${dIdx}d ago`}: ${d.label||'No signal'}`}
-            style={{width:isToday?11:8,height:isToday?11:8,flexShrink:0,borderRadius:'50%',
-              background:d.color||C.border,
-              border:isToday?`1.5px solid ${C.text}`:'none',
-              boxShadow:d.color?`0 0 4px ${d.color}`:'none'}}/>
-        })}
-      </div>
-      {counts.length>0&&(
-        <div style={{display:'flex',gap:6,fontSize:8,flexWrap:'wrap'}}>
-          {counts.map(([label,n,color])=>(
-            <span key={label} style={{color,fontWeight:700}}>{n} {label}</span>
-          ))}
-        </div>
-      )}
+    <div style={{display:'flex',gap:2,alignItems:'center'}}>
+      {dots.map((d,i)=>{
+        const dIdx = dots.length-1-i
+        const isToday = dIdx===0
+        return <div key={i} title={`${isToday?'Today':`${dIdx}d ago`}: ${d.label||'No signal'}`}
+          style={{width:isToday?11:8,height:isToday?11:8,flexShrink:0,borderRadius:'50%',
+            background:d.color||C.border,
+            border:isToday?`1.5px solid ${C.text}`:'none',
+            boxShadow:d.color?`0 0 4px ${d.color}`:'none'}}/>
+      })}
     </div>
   )
 }
@@ -2567,7 +2552,7 @@ function CandlestickChart({sym, isMobile, isIndex}){
   )
 }
 
-function SortableHeader({label,sortKey,sortBy,sortDir,onSort,align='left'}){
+function SortableHeader({label,sortKey,sortBy,sortDir,onSort,align='left',legend}){
   const active = sortBy===sortKey
   return(
     <span onClick={()=>onSort(sortKey)}
@@ -2575,6 +2560,13 @@ function SortableHeader({label,sortKey,sortBy,sortDir,onSort,align='left'}){
         gap:3,justifyContent:align==='right'?'flex-end':align==='center'?'center':'flex-start',
         color:active?C.accent:C.muted}}>
       {label}
+      {legend&&(
+        <span style={{display:'flex',gap:2,alignItems:'center'}} onClick={e=>e.stopPropagation()}>
+          {legend.map(({label:l,color})=>(
+            <span key={l} title={l} style={{width:6,height:6,borderRadius:'50%',background:color,flexShrink:0}}/>
+          ))}
+        </span>
+      )}
       <span style={{fontSize:8,opacity:active?1:0.3}}>{active&&sortDir==='asc'?'▲':'▼'}</span>
     </span>
   )
@@ -2681,7 +2673,8 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,de
             {visibleRsCols.trend&&<SortableHeader label="Trend" sortKey="slope" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
             <SortableHeader label="Price" sortKey="last" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>
             <SortableHeader label="Chg%" sortKey="chg" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
-            {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
+            {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"
+  legend={[{label:'HT',color:C.orange},{label:'HY',color:C.pink},{label:'IBV',color:C.blue},{label:'PP',color:C.green}]}/>}
             {visibleRsCols.rs7d&&<span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>}
             {visibleRsCols.stage&&<span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>}
                     {visibleRsCols.squeeze&&<span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>}
@@ -5721,7 +5714,8 @@ export default function App(){
                     {visibleRsCols.trend&&<SortableHeader label="Trend" sortKey="slope" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
                     <SortableHeader label="Price" sortKey="last" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>
                     <SortableHeader label="Chg%" sortKey="chg" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
-                    {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
+                    {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"
+  legend={[{label:'HT',color:C.orange},{label:'HY',color:C.pink},{label:'IBV',color:C.blue},{label:'PP',color:C.green}]}/>}
                     {visibleRsCols.rs7d&&<span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>}
                     {visibleRsCols.stage&&<span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>}
                     {visibleRsCols.squeeze&&<span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>}
