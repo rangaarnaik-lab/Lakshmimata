@@ -2821,10 +2821,11 @@ const HELP_CONTENT = [
     line — not just price — just made a new high, often an early leadership tell) and New Stage 2 Entries (stocks 
     that flipped into a confirmed uptrend today). Both export to TradingView and support alerts.`},
   {id:'patterns', title:'Patterns', body:`Every chart pattern the scanner detects, grouped and listed one by one 
-    instead of scattered across tabs: breakouts (resistance, 52-week high, cup & handle, new Stage 2 entries), 
-    base-building/coiling setups (cup forming, Guppy MA compression, volatility squeeze, VCP), moving-average 
-    crossovers (Guppy bullish/bearish), and volume footprints (Pocket Pivot, RS line new high). Each section is its 
-    own exportable list.`},
+    instead of scattered across tabs: classic chart patterns (Head & Shoulders, Double Top/Bottom, Triangles, Rising/
+    Falling Wedges, Flags & Pennants — swing-point heuristics, expect some false positives while tuned), breakouts 
+    (resistance, 52-week high, cup & handle, new Stage 2 entries), base-building/coiling setups (cup forming, Guppy 
+    MA compression, volatility squeeze, VCP), moving-average crossovers (Guppy bullish/bearish), and volume 
+    footprints (Pocket Pivot, RS line new high). Each section is its own exportable list.`},
   {id:'squeeze', title:'Squeeze', body:`Stocks in a volatility squeeze (Bollinger Bands inside Keltner Channels) or 
     forming a VCP (Volatility Contraction Pattern) — both precede explosive moves. Tight price action + falling 
     volume is the setup; the breakout direction isn't predicted, only that a big move is coming.`},
@@ -6674,6 +6675,12 @@ export default function App(){
               <div style={{fontWeight:700,fontSize:16,color:C.text}}>Patterns</div>
               <div style={{fontSize:11,color:C.muted}}>Every chart pattern the scanner detects, in one place</div>
             </div>
+            <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,
+              padding:'8px 12px',marginBottom:14,fontSize:10.5,color:C.muted,lineHeight:1.5}}>
+              ⚠️ Classic Chart Patterns (Head & Shoulders, Double Top/Bottom, Triangles, Wedges, Flags/Pennants) are
+              new — swing-point heuristics, not exact textbook geometry. Expect some false positives while thresholds
+              get tuned against real results.
+            </div>
             {stocks.length===0?(
               <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>No data loaded yet.</div>
             ):(()=>{
@@ -6694,6 +6701,20 @@ export default function App(){
                   {key:'guppyComp',label:'Guppy MA Compressed', color:C.teal, filter:s=>s.isGuppyCompressed},
                   {key:'squeeze',  label:'Volatility Squeeze', color:C.teal, filter:s=>s.squeeze?.inSqueeze},
                   {key:'vcp',      label:'VCP (Volatility Contraction)', color:C.teal, filter:s=>s.vcp?.isVCP},
+                ]},
+                {group:'📐 Classic Chart Patterns', items:[
+                  {key:'hs',      label:'Head & Shoulders', color:C.red, filter:s=>s.isHeadShoulders},
+                  {key:'invhs',   label:'Inverse Head & Shoulders', color:C.green, filter:s=>s.isInvHeadShoulders},
+                  {key:'dtop',    label:'Double Top', color:C.red, filter:s=>s.isDoubleTop},
+                  {key:'dbot',    label:'Double Bottom', color:C.green, filter:s=>s.isDoubleBottom},
+                  {key:'triAsc',  label:'Ascending Triangle', color:C.green, filter:s=>s.triangleType==='ascending'},
+                  {key:'triDesc', label:'Descending Triangle', color:C.red, filter:s=>s.triangleType==='descending'},
+                  {key:'triSym',  label:'Symmetrical Triangle', color:C.teal, filter:s=>s.triangleType==='symmetrical'},
+                  {key:'wedgeRise',label:'Rising Wedge', color:C.orange, filter:s=>s.wedgeType==='rising'},
+                  {key:'wedgeFall',label:'Falling Wedge', color:C.green, filter:s=>s.wedgeType==='falling'},
+                  {key:'flagBull',label:'Bullish Flag', color:C.green, filter:s=>s.isFlagBullish},
+                  {key:'flagBear',label:'Bearish Flag', color:C.red, filter:s=>s.isFlagBearish},
+                  {key:'pennant', label:'Pennant', color:C.teal, filter:s=>s.isPennant},
                 ]},
                 {group:'🔀 Moving Average Crossovers', items:[
                   {key:'guppyBull',label:'Guppy Bullish Crossover', color:C.green, filter:s=>s.isGuppyBullishCrossover},
