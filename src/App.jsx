@@ -7785,7 +7785,7 @@ export default function App(){
             <div style={{marginBottom:14}}>
               <div style={{fontWeight:800,fontSize:15,color:C.accent}}>📢 Corporate Announcements</div>
               <div style={{fontSize:12,color:C.muted,marginTop:2}}>
-                Board meetings, results, and other filings across all tracked stocks — from NSE, updated ~every 15 min
+                Board meetings, results, and other filings across all tracked stocks — from NSE, near real-time
               </div>
             </div>
 
