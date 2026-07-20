@@ -310,6 +310,18 @@ function transformStockRow(row) {
     rsLineTrend:   row.rs_line_trend || 'flat',
     rsLineValue:   row.rs_line_value,
     isS2NewEntry:  row.is_s2_new_entry || false,
+    // Classic chart patterns — swing-point (fractal pivot) heuristics
+    // computed in live_server.py, not exact textbook geometry.
+    isHeadShoulders:     row.is_head_shoulders || false,
+    isInvHeadShoulders:  row.is_inv_head_shoulders || false,
+    isDoubleTop:         row.is_double_top || false,
+    isDoubleBottom:      row.is_double_bottom || false,
+    triangleType:        row.triangle_type || null,   // 'ascending' | 'descending' | 'symmetrical' | null
+    wedgeType:           row.wedge_type || null,       // 'rising' | 'falling' | null
+    isFlagBullish:       row.is_flag_bullish || false,
+    isFlagBearish:       row.is_flag_bearish || false,
+    isPennant:           row.is_pennant || false,
+    chartPatternFired:   row.chart_pattern_fired || false,
     marketCap:  row.market_cap,   // ₹ Cr
     pe:         row.pe,
     roe:        row.roe,          // %
