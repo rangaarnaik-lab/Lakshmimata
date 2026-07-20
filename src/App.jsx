@@ -4102,6 +4102,7 @@ export default function App(){
   const [expandedTileInfo,setExpandedTileInfo]=useState(null)
   const [showRowGuidance,setShowRowGuidance]=useState(false)
   const [showRotationGuidance,setShowRotationGuidance]=useState(false)
+  const [showMarketGuidance,setShowMarketGuidance]=useState(false)
   const [breadthHistory,setBreadthHistory]=useState([])
   const [emaBreadthHistory,setEmaBreadthHistory]=useState([])
   const [breadthRange,setBreadthRange]=useState('1M')
@@ -5657,7 +5658,43 @@ export default function App(){
 
         {/* ══ MARKET BREADTH (part of combined Market tab) ══ */}
         {mainTab==='market'&&(
-          <div style={{padding:'0 0 20px'}}>
+          <div style={{padding:'0 0 20px',position:'relative'}}>
+
+            <button onClick={()=>setShowMarketGuidance(v=>!v)}
+              title="How to use this page"
+              style={{position:'absolute',top:0,right:0,zIndex:1,width:22,height:22,borderRadius:'50%',
+                border:`1px solid ${C.muted}`,background:showMarketGuidance?C.accent+'22':C.card,
+                color:showMarketGuidance?C.accent:C.muted,fontSize:12,cursor:'pointer',
+                display:'flex',alignItems:'center',justifyContent:'center',padding:0}}>
+              ℹ
+            </button>
+            {showMarketGuidance&&(
+              <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,
+                padding:'12px 14px',marginBottom:14,fontSize:11.5,color:C.muted,lineHeight:1.7}}>
+                <div style={{fontWeight:800,color:C.text,marginBottom:8,fontSize:12.5}}>How to use this page</div>
+                <div style={{marginBottom:6}}><strong style={{color:C.text}}>Verdict card</strong> (Favorable/Mixed/Unfavorable) — a
+                  quick market-condition read from 5 factors (advance/decline, RS momentum, trend health, leadership,
+                  strength breadth). Not a signal to trade on its own — use it to decide how aggressive to be, then
+                  check the individual setup.</div>
+                <div style={{marginBottom:6}}><strong style={{color:C.text}}>Stats grid</strong> — today's raw breadth
+                  counts (advancing/declining, RS improving/declining, Stage 2 stocks, new highs/lows, squeeze count,
+                  gap counts). These feed the verdict above; scan them if you want the raw numbers instead of the summary.</div>
+                <div style={{marginBottom:6}}><strong style={{color:C.text}}>Smart Money — Sector Flow (FII/DII)</strong> — average
+                  change in institutional shareholding % by sector. This is quarterly disclosure data, so it moves
+                  slowly — it shows where institutions have been positioning over the last quarter, not today's activity.</div>
+                <div style={{marginBottom:6}}><strong style={{color:C.text}}>Smart Money Momentum (Price & Volume)</strong> — the
+                  same idea but reacts daily: sectors ranked by Pocket Pivots (an up day whose volume beats the worst
+                  down-volume day of the last 10, price above its 10/50-day averages — the classic institutional
+                  footprint) plus RS trend. "PP Today" = stocks with that pattern right now; "Repeat" = stocks doing
+                  it repeatedly, a stronger tell than a single day.</div>
+                <div style={{marginBottom:6}}><strong style={{color:C.text}}>Gap Up / Gap Down</strong> — stocks whose
+                  today's open is ≥2% away from yesterday's close, with exportable lists. Only populates on live
+                  intraday data, not on a past historical date.</div>
+                <div><strong style={{color:C.text}}>Index Performance Dashboard</strong> — every NSE sectoral/thematic
+                  index with its own RS-TV rank and Weinstein stage, so you can see which indices are leading before
+                  drilling into individual stocks. Tap a column header to sort, tap an index name for its history.</div>
+              </div>
+            )}
 
             {/* Today's snapshot from stocks already loaded */}
             {stocks.length>0&&(()=>{
