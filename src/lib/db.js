@@ -278,6 +278,13 @@ function transformStockRow(row) {
     rsSector:   row.rs_sector,
     last:       row.last_price || 0,
     chg:        row.chg_pct || 0,
+    // Gap % — today's open vs prior close. Only present on the live R2
+    // snapshot (open/prev_close aren't backfilled into the historical
+    // Supabase tables), so this will be undefined on historical views —
+    // that's expected, gap-at-open is an intraday/today-only concept.
+    open:       row.open,
+    prevClose:  row.prev_close,
+    gapPct:     (row.open != null && row.prev_close) ? +(((row.open - row.prev_close) / row.prev_close) * 100).toFixed(2) : null,
     pctFromHigh: row.high_52w ? ((row.last_price - row.high_52w) / row.high_52w * 100) : 0,
     sector:      row.sector || 'Other',
     industry:    row.industry || null,

@@ -5677,6 +5677,13 @@ export default function App(){
               const newHighs = stocks.filter(s=>s.is52whBreakout).length
               const nearLows = stocks.filter(s=>s.scanner52wl?.near52wLow).length
               const inSqueeze = stocks.filter(s=>s.squeeze?.inSqueeze).length
+              // Gap up/down — today's open vs prior close. gapPct is
+              // null on historical views (open/prevClose aren't
+              // backfilled there), so these naturally read as empty
+              // rather than wrong when looking at a past day.
+              const GAP_THRESH = 2
+              const gapUps   = stocks.filter(s=>s.gapPct!=null&&s.gapPct>=GAP_THRESH).sort((a,b)=>b.gapPct-a.gapPct)
+              const gapDowns = stocks.filter(s=>s.gapPct!=null&&s.gapPct<=-GAP_THRESH).sort((a,b)=>a.gapPct-b.gapPct)
 
               const Stat=({label,value,total,color,sub})=>(
                 <div style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:10,padding:'14px'}}>
@@ -5763,7 +5770,31 @@ export default function App(){
                     <Stat label="New 52W Highs" value={newHighs} total={tot} color={C.accent}/>
                     <Stat label="Near 52W Lows" value={nearLows} total={tot} color={C.red}/>
                     <Stat label="In Squeeze" value={inSqueeze} total={tot} color={C.blue}/>
+                    <Stat label={`Gap Up ≥${GAP_THRESH}%`} value={gapUps.length} total={tot} color={C.green}/>
+                    <Stat label={`Gap Down ≥${GAP_THRESH}%`} value={gapDowns.length} total={tot} color={C.red}/>
                   </div>
+
+                  {/* Gap Up / Gap Down — today's opening moves */}
+                  {gapUps.length>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
+                        🟢 Gap Up ≥{GAP_THRESH}% ({gapUps.length})
+                      </div>
+                      <TVCopyPanel stocks={gapUps} label="Gap Up"/>
+                      <BreakoutTable stocks={gapUps}
+                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                    </div>
+                  )}
+                  {gapDowns.length>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.red}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.red,marginBottom:8}}>
+                        🔴 Gap Down ≥{GAP_THRESH}% ({gapDowns.length})
+                      </div>
+                      <TVCopyPanel stocks={gapDowns} label="Gap Down"/>
+                      <BreakoutTable stocks={gapDowns}
+                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                    </div>
+                  )}
 
                 </>
               )
