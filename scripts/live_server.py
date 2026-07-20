@@ -923,11 +923,15 @@ async def main():
 
         last_scan = time.time()
         scan_count = 0
-        # Announcements run on their own cadence — 15 min, independent
-        # of the price-scan cycle — since NSE filings don't need
-        # 60-second freshness and hammering NSE that often risks getting
-        # the server IP rate-limited/blocked.
-        ANNOUNCEMENTS_INTERVAL = 900
+        # Announcements — same cadence as the price scan (60s) for
+        # near-real-time updates. NOTE: this is a meaningfully higher
+        # hit-rate against NSE than the original 15-min interval — NSE
+        # is known to rate-limit/block IPs that look bot-like, and
+        # unlike Upstox this isn't a paid API with an SLA. If you start
+        # seeing "NSE warm-up failed" or HTTP 403/429s in the logs after
+        # this change, that's NSE pushing back — dial ANNOUNCEMENTS_INTERVAL
+        # back up if so.
+        ANNOUNCEMENTS_INTERVAL = UPDATE_INTERVAL
         last_announcements = 0
         tracked_syms = set(ALL_STOCKS)
 
