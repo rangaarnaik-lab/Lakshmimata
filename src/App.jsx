@@ -5891,88 +5891,6 @@ export default function App(){
                     <Stat label={`Gap Down ≥${GAP_THRESH}%`} value={gapDowns.length} total={tot} color={C.red}/>
                   </div>
 
-                  {/* Smart Money — FII/DII sector flow */}
-                  {smartMoneyBySector.length>0&&(
-                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
-                        🏦 Smart Money — Sector Flow (FII/DII)
-                      </div>
-                      <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
-                        Avg. change in FII+DII holding % last quarter, by sector — accumulation vs distribution, not intraday flow
-                      </div>
-                      <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>FII pp</div>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>DII pp</div>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Stocks ↑/↓</div>
-                        {smartMoneyBySector.map(b=>(
-                          <React.Fragment key={b.sector}>
-                            <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
-                            <div style={{textAlign:'right',fontWeight:700,color:b.avgFii==null?C.muted:b.avgFii>0?C.green:b.avgFii<0?C.red:C.muted}}>
-                              {b.avgFii==null?'—':`${b.avgFii>0?'+':''}${b.avgFii.toFixed(2)}`}
-                            </div>
-                            <div style={{textAlign:'right',fontWeight:700,color:b.avgDii==null?C.muted:b.avgDii>0?C.green:b.avgDii<0?C.red:C.muted}}>
-                              {b.avgDii==null?'—':`${b.avgDii>0?'+':''}${b.avgDii.toFixed(2)}`}
-                            </div>
-                            <div style={{textAlign:'right',color:C.muted,fontSize:10.5}}>
-                              <span style={{color:C.green}}>{b.accumulating}</span>/<span style={{color:C.red}}>{b.distributing}</span>
-                            </div>
-                          </React.Fragment>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Smart Money Momentum — price & volume (Pocket Pivots + IBV) */}
-                  {volumeSmartMoneyBySector.length>0&&(
-                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
-                        📊 Smart Money Momentum — Sector (Price & Volume)
-                      </div>
-                      <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
-                        Avg. institutional-footprint score (Pocket Pivots + RS/trend) — reacts daily, unlike the FII/DII table above
-                      </div>
-                      <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Avg Score</div>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>PP Today</div>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Repeat (≥3/10d)</div>
-                        {volumeSmartMoneyBySector.slice(0,10).map(b=>(
-                          <React.Fragment key={b.sector}>
-                            <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
-                            <div style={{textAlign:'right',fontWeight:700,color:b.avgIbv>=3?C.green:b.avgIbv>=1.5?C.yellow:C.muted}}>
-                              {b.avgIbv.toFixed(2)}
-                            </div>
-                            <div style={{textAlign:'right',color:C.text}}>{b.ppToday}<span style={{color:C.muted}}>/{b.n}</span></div>
-                            <div style={{textAlign:'right',color:C.text}}>{b.ppRepeat}<span style={{color:C.muted}}>/{b.n}</span></div>
-                          </React.Fragment>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Gap Up / Gap Down — today's opening moves */}
-                  {gapUps.length>0&&(
-                    <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
-                        🟢 Gap Up ≥{GAP_THRESH}% ({gapUps.length})
-                      </div>
-                      <TVCopyPanel stocks={gapUps} label="Gap Up"/>
-                      <BreakoutTable stocks={gapUps}
-                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
-                    </div>
-                  )}
-                  {gapDowns.length>0&&(
-                    <div style={{background:C.card,border:`1px solid ${C.red}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.red,marginBottom:8}}>
-                        🔴 Gap Down ≥{GAP_THRESH}% ({gapDowns.length})
-                      </div>
-                      <TVCopyPanel stocks={gapDowns} label="Gap Down"/>
-                      <BreakoutTable stocks={gapDowns}
-                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
-                    </div>
-                  )}
-
                 </>
               )
             })()}
@@ -6552,6 +6470,153 @@ export default function App(){
             )}
           </div>
         )}
+
+        {/* ══ GAP UP/DOWN + SMART MONEY — placed after the Indices ══
+            dashboard per request, so index-level context comes first.
+            Self-contained: recomputes its own inputs from `stocks`
+            rather than reaching into the stats-grid IIFE above, since
+            that block's local consts aren't in scope this far down. */}
+        {mainTab==='market'&&stocks.length>0&&(()=>{
+          const GAP_THRESH = 2
+          const gapUps   = stocks.filter(s=>s.gapPct!=null&&s.gapPct>=GAP_THRESH).sort((a,b)=>b.gapPct-a.gapPct)
+          const gapDowns = stocks.filter(s=>s.gapPct!=null&&s.gapPct<=-GAP_THRESH).sort((a,b)=>a.gapPct-b.gapPct)
+
+          const MIN_N = 3
+          const smartMoneyBySector = (()=>{
+            const bySector = {}
+            for(const s of stocks){
+              if(s.fiiTrend==null && s.diiTrend==null) continue
+              const key = s.sector || 'Other'
+              if(!bySector[key]) bySector[key] = {sector:key, n:0, fiiSum:0, fiiN:0, diiSum:0, diiN:0, accumulating:0, distributing:0}
+              const b = bySector[key]
+              b.n++
+              if(s.fiiTrend!=null){ b.fiiSum+=s.fiiTrend; b.fiiN++ }
+              if(s.diiTrend!=null){ b.diiSum+=s.diiTrend; b.diiN++ }
+              const combined = (s.fiiTrend||0)+(s.diiTrend||0)
+              if(combined>0) b.accumulating++
+              else if(combined<0) b.distributing++
+            }
+            return Object.values(bySector)
+              .filter(b=>b.n>=MIN_N)
+              .map(b=>({
+                sector: b.sector, n: b.n,
+                avgFii: b.fiiN? b.fiiSum/b.fiiN : null,
+                avgDii: b.diiN? b.diiSum/b.diiN : null,
+                score: (b.fiiN?b.fiiSum/b.fiiN:0) + (b.diiN?b.diiSum/b.diiN:0),
+                accumulating: b.accumulating,
+                distributing: b.distributing,
+              }))
+              .sort((a,b)=>b.score-a.score)
+          })()
+
+          const volumeSmartMoneyBySector = (()=>{
+            const bySector = {}
+            for(const s of stocks){
+              const key = s.sector || 'Other'
+              if(!bySector[key]) bySector[key] = {sector:key, n:0, ibvSum:0, ppToday:0, ppRepeat:0}
+              const b = bySector[key]
+              b.n++
+              b.ibvSum += calcIBV(s).ibvScore
+              if(s.pp?.isPP) b.ppToday++
+              if((s.pp?.ppCount10d||0)>=3) b.ppRepeat++
+            }
+            return Object.values(bySector)
+              .filter(b=>b.n>=MIN_N)
+              .map(b=>({
+                sector: b.sector, n: b.n,
+                avgIbv: b.ibvSum/b.n,
+                ppToday: b.ppToday,
+                ppRepeat: b.ppRepeat,
+              }))
+              .sort((a,b)=>b.avgIbv-a.avgIbv)
+          })()
+
+          return(
+            <div style={{padding:'0 0 20px'}}>
+              {/* Gap Up / Gap Down — today's opening moves */}
+              {gapUps.length>0&&(
+                <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                  <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
+                    🟢 Gap Up ≥{GAP_THRESH}% ({gapUps.length})
+                  </div>
+                  <TVCopyPanel stocks={gapUps} label="Gap Up"/>
+                  <BreakoutTable stocks={gapUps}
+                    isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                </div>
+              )}
+              {gapDowns.length>0&&(
+                <div style={{background:C.card,border:`1px solid ${C.red}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                  <div style={{fontWeight:700,fontSize:13,color:C.red,marginBottom:8}}>
+                    🔴 Gap Down ≥{GAP_THRESH}% ({gapDowns.length})
+                  </div>
+                  <TVCopyPanel stocks={gapDowns} label="Gap Down"/>
+                  <BreakoutTable stocks={gapDowns}
+                    isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                </div>
+              )}
+
+              {/* Smart Money — FII/DII sector flow */}
+              {smartMoneyBySector.length>0&&(
+                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                  <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
+                    🏦 Smart Money — Sector Flow (FII/DII)
+                  </div>
+                  <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
+                    Avg. change in FII+DII holding % last quarter, by sector — accumulation vs distribution, not intraday flow
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>FII pp</div>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>DII pp</div>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Stocks ↑/↓</div>
+                    {smartMoneyBySector.map(b=>(
+                      <React.Fragment key={b.sector}>
+                        <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
+                        <div style={{textAlign:'right',fontWeight:700,color:b.avgFii==null?C.muted:b.avgFii>0?C.green:b.avgFii<0?C.red:C.muted}}>
+                          {b.avgFii==null?'—':`${b.avgFii>0?'+':''}${b.avgFii.toFixed(2)}`}
+                        </div>
+                        <div style={{textAlign:'right',fontWeight:700,color:b.avgDii==null?C.muted:b.avgDii>0?C.green:b.avgDii<0?C.red:C.muted}}>
+                          {b.avgDii==null?'—':`${b.avgDii>0?'+':''}${b.avgDii.toFixed(2)}`}
+                        </div>
+                        <div style={{textAlign:'right',color:C.muted,fontSize:10.5}}>
+                          <span style={{color:C.green}}>{b.accumulating}</span>/<span style={{color:C.red}}>{b.distributing}</span>
+                        </div>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Smart Money Momentum — price & volume (Pocket Pivots + IBV) */}
+              {volumeSmartMoneyBySector.length>0&&(
+                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                  <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
+                    📊 Smart Money Momentum — Sector (Price & Volume)
+                  </div>
+                  <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
+                    Avg. institutional-footprint score (Pocket Pivots + RS/trend) — reacts daily, unlike the FII/DII table above
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Avg Score</div>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>PP Today</div>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Repeat (≥3/10d)</div>
+                    {volumeSmartMoneyBySector.slice(0,10).map(b=>(
+                      <React.Fragment key={b.sector}>
+                        <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
+                        <div style={{textAlign:'right',fontWeight:700,color:b.avgIbv>=3?C.green:b.avgIbv>=1.5?C.yellow:C.muted}}>
+                          {b.avgIbv.toFixed(2)}
+                        </div>
+                        <div style={{textAlign:'right',color:C.text}}>{b.ppToday}<span style={{color:C.muted}}>/{b.n}</span></div>
+                        <div style={{textAlign:'right',color:C.text}}>{b.ppRepeat}<span style={{color:C.muted}}>/{b.n}</span></div>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {/* ══ LEADERS — RS Line New Highs + New Stage 2 Entries ══ */}
         {mainTab==='leaders'&&(
