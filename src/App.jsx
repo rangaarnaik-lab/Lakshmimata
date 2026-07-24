@@ -3309,6 +3309,37 @@ function SectorPanel({sectorData,allStocks,isMobile,onChart,onViewInRS}){
 
 // ── Auth Screen ────────────────────────────────────────────────────────
 // ── Landing Page ─────────────────────────────────────────────────────
+// Reusable scrolling ticker of top-moving stocks — used on the landing
+// page and, per request, at the top of every tab in the main app too.
+// Pure presentational: caller supplies the data, so it can be fed from
+// whichever source is already loaded in that context instead of firing
+// a duplicate fetch.
+function TickerBanner({stocks}){
+  if(!stocks || stocks.length===0) return null
+  return(
+    <div style={{background:C.card,borderBottom:`1px solid ${C.divider}`,overflow:'hidden',
+      whiteSpace:'nowrap',padding:'7px 0'}}>
+      <style>{`
+        @keyframes lakshmimata-ticker-scroll {
+          from { transform: translateX(0); }
+          to { transform: translateX(-50%); }
+        }
+      `}</style>
+      <div style={{display:'inline-block',animation:'lakshmimata-ticker-scroll 32s linear infinite'}}>
+        {[...stocks,...stocks].map((s,i)=>(
+          <span key={i} style={{fontFamily:"monospace",fontSize:12,letterSpacing:'0.02em',color:C.muted,marginRight:32}}>
+            <b style={{color:C.text,fontWeight:600}}>{s.sym}</b>{' '}
+            ₹{(s.last_price??s.last)?.toLocaleString('en-IN',{maximumFractionDigits:2})}{' '}
+            <span style={{color:(s.chg_pct??s.chg)>=0?C.green:C.red}}>
+              {(s.chg_pct??s.chg)>=0?'▲':'▼'} {Math.abs(s.chg_pct??s.chg??0).toFixed(2)}%
+            </span>
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function LandingPage({onEnroll,onSignIn,onDemo}){
   const [slide,setSlide]=useState(0)
   const [paused,setPaused]=useState(false)
@@ -3355,28 +3386,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
       {/* Live ticker — today's real top gainers, not sample data. Public
           read on the stocks table (no auth needed), so this works for
           logged-out visitors too. */}
-      {topGainers.length>0 && (
-        <div style={{background:C.card,borderBottom:`1px solid ${C.divider}`,overflow:'hidden',
-          whiteSpace:'nowrap',padding:'9px 0'}}>
-          <style>{`
-            @keyframes lakshmimata-ticker-scroll {
-              from { transform: translateX(0); }
-              to { transform: translateX(-50%); }
-            }
-          `}</style>
-          <div style={{display:'inline-block',animation:'lakshmimata-ticker-scroll 32s linear infinite'}}>
-            {[...topGainers,...topGainers].map((s,i)=>(
-              <span key={i} style={{...mono,fontSize:12.5,letterSpacing:'0.02em',color:'#aab0c0',marginRight:36}}>
-                <b style={{color:'#fff',fontWeight:500}}>{s.sym}</b>{' '}
-                ₹{s.last_price?.toLocaleString('en-IN',{maximumFractionDigits:2})}{' '}
-                <span style={{color:s.chg_pct>=0?'#5C8A6C':'#B4544A'}}>
-                  {s.chg_pct>=0?'▲':'▼'} {Math.abs(s.chg_pct||0).toFixed(2)}%
-                </span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
+      <TickerBanner stocks={topGainers}/>
 
       <div style={{maxWidth:1080,margin:'0 auto',padding:'0 24px'}}>
         {/* Nav */}
@@ -4967,6 +4977,14 @@ export default function App(){
   // All distinct trail dates across the current dataset, sorted — this
   // is what the slider scrubs across. Recomputed only when the raw
   // rotation data changes, not on every asOfDate drag.
+  // Top movers for the app-wide scrolling ticker — derived from stocks
+  // already loaded for whichever tab is active, not a separate fetch.
+  // Recomputes only when the underlying stocks list changes.
+  const topMovers=useMemo(()=>{
+    if(!stocks||stocks.length===0) return []
+    return [...stocks].sort((a,b)=>(b.chg||0)-(a.chg||0)).slice(0,15)
+  },[stocks])
+
   const rotationAvailableDates=useMemo(()=>{
     const dates=new Set()
     for(const s of (rotationData||[])) for(const t of (s.trail||[])) if(t.date) dates.add(t.date)
@@ -5297,6 +5315,8 @@ export default function App(){
             </div>
           )}
         </div>
+
+        <TickerBanner stocks={topMovers}/>
 
         {/* ── Page content ── */}
         <div style={{padding:isMobile?'10px':'12px 16px',flex:1,overflowY:'auto'}}>
