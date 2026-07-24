@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
 import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
@@ -784,6 +785,83 @@ function MergedSignalDots({s}){
     </div>
   )
 }
+// Parses a brokerage holdings export (Zerodha, Groww, Upstox, ICICI
+// Direct, Angel One, etc.) into {sym, qty, entryPrice} rows. Every
+// brokerage names its columns differently, so instead of requiring one
+// fixed template, this scores each column header against a keyword set
+// per field and picks whichever header matches best — works across
+// exports without the person needing to reformat anything first.
+const SYMBOL_COL_HINTS = ['symbol','instrument','trading symbol','stock symbol','scrip','stock name','company','tradingsymbol']
+const QTY_COL_HINTS = ['qty', 'quantity', 'net qty', 'shares', 'holding qty']
+const PRICE_COL_HINTS = ['avg. cost', 'avg cost', 'average price', 'avg price', 'average buy price',
+  'buy avg', 'avg. cost price', 'average cost', 'purchase price', 'buy price']
+
+function bestColumnMatch(headers, hints){
+  let best=null, bestScore=-1
+  for(const h of headers){
+    const hl = String(h).toLowerCase().trim()
+    for(const hint of hints){
+      if(hl===hint){ return h } // exact match wins immediately
+      if(hl.includes(hint) && hint.length>bestScore){ best=h; bestScore=hint.length }
+    }
+  }
+  return best
+}
+
+// Cleans a brokerage's raw symbol text into the plain NSE ticker this
+// app uses — strips exchange prefixes ("NSE:", "BSE:"), "-EQ"/"-BE"
+// series suffixes some brokers append, and surrounding whitespace.
+function normalizeSymbol(raw){
+  if(!raw) return null
+  let s = String(raw).trim().toUpperCase()
+  s = s.replace(/^(NSE|BSE)[:\-]\s*/,'')
+  s = s.replace(/-(EQ|BE|BZ|BL)$/,'')
+  return s || null
+}
+
+function parseBrokerageHoldingsFile(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader()
+    reader.onerror = ()=>reject(new Error('Could not read the file'))
+    reader.onload = (e)=>{
+      try{
+        const wb = XLSX.read(e.target.result, {type:'binary'})
+        const sheet = wb.Sheets[wb.SheetNames[0]]
+        const rows = XLSX.utils.sheet_to_json(sheet, {defval:null})
+        if(!rows.length){ resolve({holdings:[], skipped:[]}); return }
+
+        const headers = Object.keys(rows[0])
+        const symCol   = bestColumnMatch(headers, SYMBOL_COL_HINTS)
+        const qtyCol   = bestColumnMatch(headers, QTY_COL_HINTS)
+        const priceCol = bestColumnMatch(headers, PRICE_COL_HINTS)
+
+        if(!symCol){
+          reject(new Error(`Couldn't find a symbol/instrument column. Columns found: ${headers.join(', ')}`))
+          return
+        }
+
+        const holdings = [], skipped = []
+        for(const row of rows){
+          const sym = normalizeSymbol(row[symCol])
+          if(!sym){ continue }
+          const qty = qtyCol ? Number(row[qtyCol]) : null
+          const entryPrice = priceCol ? Number(row[priceCol]) : null
+          if(qtyCol && (qty==null || isNaN(qty))){ skipped.push(sym); continue }
+          holdings.push({
+            sym,
+            qty: (qty!=null && !isNaN(qty)) ? qty : null,
+            entryPrice: (entryPrice!=null && !isNaN(entryPrice)) ? entryPrice : null,
+          })
+        }
+        resolve({holdings, skipped, matchedCols:{symCol, qtyCol, priceCol}})
+      }catch(err){
+        reject(err)
+      }
+    }
+    reader.readAsBinaryString(file)
+  })
+}
+
 function TopSignalDots({s,withCount=true}){
   const top = topVolumeSignal(s)
   const config = {
@@ -4690,6 +4768,7 @@ export default function App(){
   const [portfolioHoldings,setPortfolioHoldings]=useState(()=>{
     try{return JSON.parse(localStorage.getItem('lm_portfolio')||'[]')}catch{return []}
   })
+  const [portfolioUploadStatus,setPortfolioUploadStatus]=useState(null) // {type:'loading'|'success'|'error', message}
   const [journalOpenSym,setJournalOpenSym]=useState(null)
   const [compareSyms,setCompareSyms]=useState([])
   const [compareInput,setCompareInput]=useState('')
@@ -6888,7 +6967,46 @@ export default function App(){
                 <div style={{fontWeight:700,fontSize:16}}>Portfolio Tracker</div>
                 <div style={{fontSize:11,color:C.muted}}>Track your holdings — RS, Stage, exit signals &amp; trade journal</div>
               </div>
-              <button onClick={()=>{
+              <div style={{display:'flex',gap:8}}>
+                <label style={{padding:'7px 14px',borderRadius:7,border:`1px solid ${C.accent}`,
+                  background:C.accent+'18',color:C.accent,fontWeight:700,fontSize:12,cursor:'pointer'}}>
+                  📤 Upload Holdings
+                  <input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
+                    onChange={async e=>{
+                      const file=e.target.files?.[0]
+                      e.target.value='' // allow re-selecting the same file later
+                      if(!file) return
+                      setPortfolioUploadStatus({type:'loading',message:'Reading file…'})
+                      try{
+                        const {holdings,skipped}=await parseBrokerageHoldingsFile(file)
+                        if(holdings.length===0){
+                          setPortfolioUploadStatus({type:'error',
+                            message:'No valid holdings found in that file — check it has a symbol column with recognizable data.'})
+                          return
+                        }
+                        setPortfolioHoldings(prev=>{
+                          const bySym=new Map(prev.map(h=>[h.sym,h]))
+                          for(const row of holdings){
+                            const existing=bySym.get(row.sym)
+                            bySym.set(row.sym,{
+                              sym:row.sym,
+                              addedAt:existing?.addedAt||new Date().toISOString(),
+                              entryPrice: row.entryPrice ?? existing?.entryPrice ?? null,
+                              qty: row.qty ?? existing?.qty ?? null,
+                              journal: existing?.journal||[],
+                            })
+                          }
+                          return [...bySym.values()]
+                        })
+                        setPortfolioUploadStatus({type:'success',
+                          message:`Imported ${holdings.length} holding${holdings.length===1?'':'s'}`
+                            + (skipped.length?` — ${skipped.length} row(s) skipped (missing quantity): ${skipped.slice(0,5).join(', ')}${skipped.length>5?'…':''}`:'')})
+                      }catch(err){
+                        setPortfolioUploadStatus({type:'error',message:err.message||'Could not parse that file'})
+                      }
+                    }}/>
+                </label>
+                <button onClick={()=>{
                 const sym=prompt('Enter stock symbol (e.g. RELIANCE):')?.toUpperCase().trim()
                 if(!sym) return
                 const entryPriceRaw=prompt('Entry price (optional — leave blank to skip):')
@@ -6905,7 +7023,85 @@ export default function App(){
                   background:C.accent,color:'#000',fontWeight:700,fontSize:12,cursor:'pointer'}}>
                 + Add Stock
               </button>
+              </div>
             </div>
+
+            {portfolioUploadStatus&&(
+              <div style={{marginBottom:14,padding:'10px 14px',borderRadius:8,fontSize:11.5,
+                background:(portfolioUploadStatus.type==='error'?C.red:portfolioUploadStatus.type==='success'?C.green:C.muted)+'18',
+                border:`1px solid ${(portfolioUploadStatus.type==='error'?C.red:portfolioUploadStatus.type==='success'?C.green:C.muted)}44`,
+                color:portfolioUploadStatus.type==='error'?C.red:portfolioUploadStatus.type==='success'?C.green:C.text,
+                display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
+                <span>{portfolioUploadStatus.message}</span>
+                <button onClick={()=>setPortfolioUploadStatus(null)}
+                  style={{background:'transparent',border:'none',color:'inherit',cursor:'pointer',fontSize:13,flexShrink:0}}>✕</button>
+              </div>
+            )}
+
+            {portfolioHoldings.length>0&&(()=>{
+              // Portfolio-level rollup. Brokerage exports don't include
+              // per-lot purchase dates, so a precise "your return since
+              // buy vs Nifty's return over the same window" isn't
+              // possible from this data alone — instead, RS-TV (already
+              // a relative-to-Nifty metric) on each holding is the
+              // apples-to-apples comparison, and the average RS-TV
+              // across the whole portfolio (weighted by position value
+              // where available) is the portfolio-level version of that.
+              let invested=0, current=0, haveValueFor=0
+              let rsWeightedSum=0, rsWeight=0, rsCount=0, rsSum=0
+              for(const h of portfolioHoldings){
+                const s=stocks.find(x=>x.sym===h.sym)
+                if(!s) continue
+                const rsv=s.rsTv||s.rs
+                if(rsv!=null){ rsSum+=rsv; rsCount++ }
+                if(h.qty && h.entryPrice){
+                  invested += h.qty*h.entryPrice
+                  current  += h.qty*s.last
+                  haveValueFor++
+                  if(rsv!=null){ rsWeightedSum += rsv*(h.qty*s.last); rsWeight += (h.qty*s.last) }
+                }
+              }
+              const pnlPct = invested>0 ? ((current-invested)/invested*100) : null
+              const avgRs = rsWeight>0 ? (rsWeightedSum/rsWeight) : (rsCount>0 ? rsSum/rsCount : null)
+              return(
+                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
+                  padding:'14px 16px',marginBottom:14,display:'grid',
+                  gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:14}}>
+                  {haveValueFor>0?(<>
+                    <div>
+                      <div style={{fontSize:10,color:C.muted,marginBottom:3}}>Invested</div>
+                      <div style={{fontWeight:700,fontSize:15}}>{fmtP(invested)}</div>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,color:C.muted,marginBottom:3}}>Current Value</div>
+                      <div style={{fontWeight:700,fontSize:15}}>{fmtP(current)}</div>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,color:C.muted,marginBottom:3}}>Overall P&amp;L</div>
+                      <div style={{fontWeight:700,fontSize:15,color:pnlPct>=0?C.green:C.red}}>
+                        {pnlPct>=0?'+':''}{pnlPct.toFixed(1)}%
+                      </div>
+                    </div>
+                  </>):(
+                    <div style={{gridColumn:'1 / -1',fontSize:11,color:C.muted}}>
+                      Add quantity + entry price (via upload or "+ Add Stock") to see invested value and P&amp;L.
+                    </div>
+                  )}
+                  {avgRs!=null&&(
+                    <div>
+                      <div style={{fontSize:10,color:C.muted,marginBottom:3}}>Portfolio RS-TV{haveValueFor>0?' (wtd)':''}</div>
+                      <div style={{fontWeight:700,fontSize:15,color:rsColor(avgRs)}}>{avgRs.toFixed(0)}</div>
+                    </div>
+                  )}
+                  <div style={{gridColumn:'1 / -1',fontSize:10,color:C.muted,fontStyle:'italic',marginTop:2}}>
+                    RS-TV is each stock's strength directly relative to Nifty (1-99) — the portfolio figure above is
+                    the value-weighted average across your holdings. Above 50 means your portfolio is, on balance,
+                    outperforming Nifty right now; below 50 means it's lagging. This isn't the same as "your % return
+                    vs Nifty's % return since you bought," since brokerage exports don't include purchase dates.
+                  </div>
+                </div>
+              )
+            })()}
 
             {portfolioHoldings.length===0?(
               <div style={{textAlign:'center',padding:'60px 20px',color:C.muted}}>
