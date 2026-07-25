@@ -879,3 +879,26 @@ export async function fetchWatchlistAnnouncementsSince(syms, sinceISO) {
   if (error) { console.error('fetchWatchlistAnnouncementsSince error:', error.message); return [] }
   return data || []
 }
+
+/**
+ * Recent structured quarterly results (Sales/PAT/EPS as filed to NSE),
+ * keyed by symbol — the Results tab overlays these numbers on matching
+ * announcements. Last 45 days covers a full results season window.
+ */
+export async function fetchRecentFinancialResults() {
+  const since = new Date(Date.now() - 45 * 864e5).toISOString()
+  const { data, error } = await supabase
+    .from('financial_results')
+    .select('symbol,period_ended,result_type,sales,pat,eps,filed_at')
+    .gt('filed_at', since)
+    .order('filed_at', { ascending: false })
+    .limit(1000)
+  if (error) { console.error('fetchRecentFinancialResults error:', error.message); return {} }
+  const bySymbol = {}
+  for (const r of data || []) {
+    // first (most recent) row per symbol wins; prefer consolidated when
+    // both arrive at the same recency
+    if (!bySymbol[r.symbol]) bySymbol[r.symbol] = r
+  }
+  return bySymbol
+}
