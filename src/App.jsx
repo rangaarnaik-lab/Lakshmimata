@@ -4715,7 +4715,7 @@ export default function App(){
     {id:'all',    label:'All',         keyword:null},
     {id:'results', label:'Results',    keyword:['result','financial results']},
     {id:'concall', label:'Concall',    keyword:['con call','con-call','concall','conference call','investor','analyst meet']},
-    {id:'orders', label:'Order Book',  keyword:'order'},
+    {id:'orders', label:'Order Book',  keyword:['award of order','work order','purchase order','order received from','bagged','secures order','wins order','letter of intent','order worth','order valued']},
     {id:'board',  label:'Board Meeting', keyword:'board meeting'},
     {id:'div',    label:'Dividend',    keyword:'dividend'},
     {id:'other',  label:'Other',       keyword:null},
@@ -8177,6 +8177,11 @@ export default function App(){
                             background:(a.ai_rating==='positive'?C.green:a.ai_rating==='negative'?C.red:C.muted)+'18'}}>
                             {a.ai_rating==='positive'?'▲ Positive':a.ai_rating==='negative'?'▼ Negative':'– Neutral'}
                           </span>
+                        )}
+                        {a.ai_summary&&(
+                          <div style={{fontSize:11,fontWeight:600,color:C.accent,marginBottom:3,lineHeight:1.4}}>
+                            🤖 {a.ai_summary}
+                          </div>
                         )}
                         <div style={{fontSize:12.5,color:C.text,lineHeight:1.4}}>{a.subject}</div>
                         <div style={{fontSize:10,color:C.muted,marginTop:3,display:'flex',gap:8,alignItems:'center'}}>
