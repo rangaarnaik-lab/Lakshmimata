@@ -4733,7 +4733,9 @@ export default function App(){
     if(mainTab!=='announcements') return
     fetchAnnouncementFilterOptions().then(setAnnouncementFilterOptions)
   },[mainTab])
-  useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn])
+  const [orderSizeFilter,setOrderSizeFilter]=useState('all')
+  useEffect(()=>{ if(announcementsCategory!=='orders')setOrderSizeFilter('all') },[announcementsCategory])
+  useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter])
   const ANNOUNCEMENTS_PAGE_SIZE=50
   useEffect(()=>{
     if(mainTab!=='announcements') return
@@ -4743,6 +4745,7 @@ export default function App(){
       sector: sectorFilterAnn!=='all' ? sectorFilterAnn : null,
       industry: industryFilterAnn!=='all' ? industryFilterAnn : null,
       mcapMin: mcapMinAnn, mcapMax: mcapMaxAnn,
+      orderSize: (announcementsCategory==='orders'&&orderSizeFilter!=='all') ? orderSizeFilter : null,
     }
     fetchAnnouncements(ANNOUNCEMENTS_PAGE_SIZE, announcementsPage*ANNOUNCEMENTS_PAGE_SIZE, cat?.keyword||null, filters)
       .then(rows=>{
@@ -4757,7 +4760,7 @@ export default function App(){
         setAnnouncements(rows)
       })
       .finally(()=>setAnnouncementsLoading(false))
-  },[mainTab,announcementsPage,announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn])
+  },[mainTab,announcementsPage,announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter])
   // ── Watchlist announcement alerts (sound + browser notification) ──
   // Polls every 3 min while enabled — works while the app is open (even
   // in a background tab), since watchlists live only in this browser's
@@ -8141,6 +8144,25 @@ export default function App(){
                 </button>
               )}
             </div>
+
+            {announcementsCategory==='orders'&&(
+              <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
+                {[
+                  {id:'all',label:'All Sizes'},
+                  {id:'big',label:'🐘 Big (≥10% mcap)'},
+                  {id:'medium',label:'🐎 Medium (2–10%)'},
+                  {id:'small',label:'🐜 Small (<2%)'},
+                ].map(o=>(
+                  <button key={o.id} onClick={()=>setOrderSizeFilter(o.id)}
+                    style={{padding:'5px 10px',borderRadius:14,fontSize:10.5,fontWeight:700,cursor:'pointer',
+                      border:`1px solid ${orderSizeFilter===o.id?C.accent:C.border}`,
+                      background:orderSizeFilter===o.id?C.accent+'22':'transparent',
+                      color:orderSizeFilter===o.id?C.accent:C.muted}}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {announcementsLoading&&announcements.length===0?(
               <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>Loading…</div>
