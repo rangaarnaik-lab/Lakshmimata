@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -4734,6 +4734,11 @@ export default function App(){
     fetchAnnouncementFilterOptions().then(setAnnouncementFilterOptions)
   },[mainTab])
   const [orderSizeFilter,setOrderSizeFilter]=useState('all')
+  const [resultsMap,setResultsMap]=useState({})
+  useEffect(()=>{
+    if(mainTab==='announcements'&&announcementsCategory==='results')
+      fetchRecentFinancialResults().then(setResultsMap)
+  },[mainTab,announcementsCategory])
   useEffect(()=>{ if(announcementsCategory!=='orders')setOrderSizeFilter('all') },[announcementsCategory])
   useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter])
   const ANNOUNCEMENTS_PAGE_SIZE=50
@@ -8205,6 +8210,20 @@ export default function App(){
                             🤖 {a.ai_summary}
                           </div>
                         )}
+                        {announcementsCategory==='results'&&resultsMap[a.symbol]&&(()=>{
+                          const fr=resultsMap[a.symbol]
+                          const fmt=v=>v==null?'—':(Math.abs(v)>=1000?(v/1).toLocaleString('en-IN',{maximumFractionDigits:0}):v.toLocaleString('en-IN',{maximumFractionDigits:2}))
+                          return (
+                            <div style={{display:'flex',gap:10,flexWrap:'wrap',fontSize:11,fontWeight:700,
+                              background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
+                              padding:'6px 10px',marginBottom:4}}>
+                              <span style={{color:C.muted,fontWeight:600}}>📊 {fr.period_ended}</span>
+                              <span>Sales: <span style={{color:C.text}}>₹{fmt(fr.sales)} Cr</span></span>
+                              <span>PAT: <span style={{color:(fr.pat??0)>=0?C.green:C.red}}>₹{fmt(fr.pat)} Cr</span></span>
+                              <span>EPS: <span style={{color:C.text}}>₹{fmt(fr.eps)}</span></span>
+                            </div>
+                          )
+                        })()}
                         <div style={{fontSize:12.5,color:C.text,lineHeight:1.4}}>{a.subject}</div>
                         <div style={{fontSize:10,color:C.muted,marginTop:3,display:'flex',gap:8,alignItems:'center'}}>
                           <span>{dateStr}</span>
