@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -4734,38 +4734,62 @@ export default function App(){
     fetchAnnouncementFilterOptions().then(setAnnouncementFilterOptions)
   },[mainTab])
   const [orderSizeFilter,setOrderSizeFilter]=useState('all')
+  // Scope for the Announcements tab: 'idx:all' | 'idx:nifty50' | ... |
+  // 'wl:<id>' — same prefixed-value scheme as the RS table's dropdown.
+  const [announcementsScope,setAnnouncementsScope]=useState('idx:all')
+  // Silent auto-refresh: while the Announcements tab is open, tick every
+  // 2 min; the fetch effect below depends on this tick, so page 1
+  // re-fetches and new filings surface on their own. Only page 1 — a
+  // deeper page shouldn't shift under the reader as new rows arrive. No
+  // spinner flash: the loading UI only shows when the list is empty.
+  const [annRefreshTick,setAnnRefreshTick]=useState(0)
+  useEffect(()=>{
+    if(mainTab!=='announcements') return
+    const t=setInterval(()=>setAnnRefreshTick(x=>x+1),2*60*1000)
+    return()=>clearInterval(t)
+  },[mainTab])
   const [resultsMap,setResultsMap]=useState({})
   useEffect(()=>{
     if(mainTab==='announcements'&&announcementsCategory==='results')
       fetchRecentFinancialResults().then(setResultsMap)
   },[mainTab,announcementsCategory])
   useEffect(()=>{ if(announcementsCategory!=='orders')setOrderSizeFilter('all') },[announcementsCategory])
-  useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter])
+  useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter,announcementsScope])
   const ANNOUNCEMENTS_PAGE_SIZE=50
   useEffect(()=>{
     if(mainTab!=='announcements') return
     setAnnouncementsLoading(true)
     const cat = ANNOUNCEMENT_CATEGORIES.find(c=>c.id===announcementsCategory)
-    const filters = {
-      sector: sectorFilterAnn!=='all' ? sectorFilterAnn : null,
-      industry: industryFilterAnn!=='all' ? industryFilterAnn : null,
-      mcapMin: mcapMinAnn, mcapMax: mcapMaxAnn,
-      orderSize: (announcementsCategory==='orders'&&orderSizeFilter!=='all') ? orderSizeFilter : null,
-    }
-    fetchAnnouncements(ANNOUNCEMENTS_PAGE_SIZE, announcementsPage*ANNOUNCEMENTS_PAGE_SIZE, cat?.keyword||null, filters)
-      .then(rows=>{
-        // "Other" can't be expressed as a single ILIKE match — fetch
-        // unfiltered, then exclude anything matching a known category.
-        if(announcementsCategory==='other'){
-          const knownKeywords=ANNOUNCEMENT_CATEGORIES.filter(c=>c.keyword)
-            .flatMap(c=>Array.isArray(c.keyword)?c.keyword:[c.keyword])
-            .map(k=>k.toLowerCase())
-          rows=rows.filter(a=>!knownKeywords.some(k=>((a.category||'')+' '+(a.subject||'')).toLowerCase().includes(k)))
-        }
-        setAnnouncements(rows)
-      })
-      .finally(()=>setAnnouncementsLoading(false))
-  },[mainTab,announcementsPage,announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter])
+    ;(async()=>{
+      // Resolve the scope dropdown to a symbol list: watchlists from
+      // localStorage state, index membership from the stocks table.
+      let scopeSyms=null
+      const [kind,val]=announcementsScope.split(':')
+      if(kind==='wl'){
+        const wl=watchlists.find(w=>w.id===val)
+        scopeSyms=wl?.stocks?.length?wl.stocks:null
+      }else if(val&&val!=='all'){
+        scopeSyms=await fetchIndexSymbols(val)
+      }
+      const filters = {
+        sector: sectorFilterAnn!=='all' ? sectorFilterAnn : null,
+        industry: industryFilterAnn!=='all' ? industryFilterAnn : null,
+        mcapMin: mcapMinAnn, mcapMax: mcapMaxAnn,
+        orderSize: (announcementsCategory==='orders'&&orderSizeFilter!=='all') ? orderSizeFilter : null,
+        syms: scopeSyms,
+      }
+      let rows=await fetchAnnouncements(ANNOUNCEMENTS_PAGE_SIZE, announcementsPage*ANNOUNCEMENTS_PAGE_SIZE, cat?.keyword||null, filters)
+      // "Other" can't be expressed as a single ILIKE match — fetch
+      // unfiltered, then exclude anything matching a known category.
+      if(announcementsCategory==='other'){
+        const knownKeywords=ANNOUNCEMENT_CATEGORIES.filter(c=>c.keyword)
+          .flatMap(c=>Array.isArray(c.keyword)?c.keyword:[c.keyword])
+          .map(k=>k.toLowerCase())
+        rows=rows.filter(a=>!knownKeywords.some(k=>((a.category||'')+' '+(a.subject||'')).toLowerCase().includes(k)))
+      }
+      setAnnouncements(rows)
+    })().finally(()=>setAnnouncementsLoading(false))
+  },[mainTab,announcementsPage,announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter,announcementsScope,announcementsPage===0?annRefreshTick:0])
   // ── Watchlist announcement alerts (sound + browser notification) ──
   // Polls every 3 min while enabled — works while the app is open (even
   // in a background tab), since watchlists live only in this browser's
@@ -8128,6 +8152,22 @@ export default function App(){
             </div>
 
             <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14,alignItems:'center'}}>
+              <select value={announcementsScope} onChange={e=>setAnnouncementsScope(e.target.value)}
+                style={{padding:'6px 8px',borderRadius:8,border:`1px solid ${announcementsScope!=='idx:all'?C.accent+'44':C.border}`,
+                  background:C.card,color:announcementsScope!=='idx:all'?C.accent:C.text,fontSize:11}}>
+                <option value="idx:all">🌐 All Stocks</option>
+                <option value="idx:nifty50">⭐ Nifty 50</option>
+                <option value="idx:midcap">📊 Midcap 150</option>
+                <option value="idx:smallcap">📈 Smallcap 250</option>
+                <option value="idx:microcap">🔬 Microcap 250</option>
+                {watchlists.length>0&&(
+                  <optgroup label="📋 Watchlists">
+                    {watchlists.map(wl=>(
+                      <option key={wl.id} value={`wl:${wl.id}`}>{wl.name} ({wl.stocks.length})</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
               <select value={sectorFilterAnn} onChange={e=>setSectorFilterAnn(e.target.value)}
                 style={{padding:'6px 8px',borderRadius:8,border:`1px solid ${C.border}`,background:C.card,color:C.text,fontSize:11}}>
                 <option value="all">All Sectors</option>
@@ -8203,6 +8243,12 @@ export default function App(){
                             color:a.ai_rating==='positive'?C.green:a.ai_rating==='negative'?C.red:C.muted,
                             background:(a.ai_rating==='positive'?C.green:a.ai_rating==='negative'?C.red:C.muted)+'18'}}>
                             {a.ai_rating==='positive'?'▲ Positive':a.ai_rating==='negative'?'▼ Negative':'– Neutral'}
+                          </span>
+                        )}
+                        {a.order_size&&(
+                          <span style={{display:'inline-block',fontSize:9,fontWeight:700,marginLeft:5,marginBottom:4,
+                            borderRadius:6,padding:'2px 6px',color:C.yellow,background:C.yellow+'18'}}>
+                            {a.order_size==='big'?'🐘 Big Order':a.order_size==='medium'?'🐎 Medium Order':'🐜 Small Order'}
                           </span>
                         )}
                         {a.ai_summary&&(
