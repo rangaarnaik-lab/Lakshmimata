@@ -4713,7 +4713,7 @@ export default function App(){
   // almost nothing.
   const ANNOUNCEMENT_CATEGORIES=[
     {id:'all',    label:'All',         keyword:null},
-    {id:'results', label:'Results',    keyword:['financial result','quarterly result','results for the quarter','unaudited results','audited results']},
+    {id:'results', label:'Results',    keyword:['financial result','quarterly result','results for the quarter','unaudited results','audited results'], exclude:['newspaper publication','newspaper advertisement']},
     {id:'concall', label:'Concall',    keyword:['con call','con-call','concall','conference call','investor','analyst meet']},
     {id:'orders', label:'Order Book',  keyword:['award of order','work order','purchase order','order received from','bagged','secures order','wins order','letter of intent','order worth','order valued']},
     {id:'board',  label:'Board Meeting', keyword:'board meeting'},
@@ -4778,7 +4778,7 @@ export default function App(){
         orderSize: (announcementsCategory==='orders'&&orderSizeFilter!=='all') ? orderSizeFilter : null,
         syms: scopeSyms,
       }
-      let rows=await fetchAnnouncements(ANNOUNCEMENTS_PAGE_SIZE, announcementsPage*ANNOUNCEMENTS_PAGE_SIZE, cat?.keyword||null, filters)
+      let rows=await fetchAnnouncements(ANNOUNCEMENTS_PAGE_SIZE, announcementsPage*ANNOUNCEMENTS_PAGE_SIZE, cat?.keyword||null, filters, cat?.exclude||null)
       // "Other" can't be expressed as a single ILIKE match — fetch
       // unfiltered, then exclude anything matching a known category.
       if(announcementsCategory==='other'){
