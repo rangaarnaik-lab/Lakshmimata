@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -4163,6 +4163,29 @@ const WL_KEY='pocketrs_watchlists'
 function loadWatchlists(){try{return JSON.parse(localStorage.getItem(WL_KEY)||'[]')}catch{return[]}}
 function saveWatchlists(wls){localStorage.setItem(WL_KEY,JSON.stringify(wls))}
 
+// ── Watchlist announcement alert beep ────────────────────────────────
+// Two quick rising tones via Web Audio — no audio file needed, works
+// offline, and unlike an <audio> asset can't 404. Created lazily on
+// first use because AudioContext must start from a user gesture anyway
+// (the alerts toggle click counts as one).
+let _alertAudioCtx=null
+function playAnnouncementBeep(){
+  try{
+    _alertAudioCtx=_alertAudioCtx||new (window.AudioContext||window.webkitAudioContext)()
+    const ctx=_alertAudioCtx
+    if(ctx.state==='suspended')ctx.resume()
+    ;[[880,0],[1320,0.18]].forEach(([freq,delay])=>{
+      const osc=ctx.createOscillator(),gain=ctx.createGain()
+      osc.type='sine';osc.frequency.value=freq
+      gain.gain.setValueAtTime(0.0001,ctx.currentTime+delay)
+      gain.gain.exponentialRampToValueAtTime(0.28,ctx.currentTime+delay+0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+delay+0.28)
+      osc.connect(gain);gain.connect(ctx.destination)
+      osc.start(ctx.currentTime+delay);osc.stop(ctx.currentTime+delay+0.3)
+    })
+  }catch(e){/* audio blocked — notification still shows */}
+}
+
 
 // ── Market open check for sidebar dot ────────────────────────────────
 function isMarketOpen(){
@@ -4690,7 +4713,7 @@ export default function App(){
   // almost nothing.
   const ANNOUNCEMENT_CATEGORIES=[
     {id:'all',    label:'All',         keyword:null},
-    {id:'results', label:'Results',    keyword:'result'},
+    {id:'results', label:'Results',    keyword:['result','financial results']},
     {id:'concall', label:'Concall',    keyword:['con call','con-call','concall','conference call','investor','analyst meet']},
     {id:'orders', label:'Order Book',  keyword:'order'},
     {id:'board',  label:'Board Meeting', keyword:'board meeting'},
@@ -4698,13 +4721,30 @@ export default function App(){
     {id:'other',  label:'Other',       keyword:null},
   ]
   const [announcementsCategory,setAnnouncementsCategory]=useState('all')
-  useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory])
+  // Sector/Industry/Market-Cap filters for the Announcements tab — named
+  // distinctly (Ann suffix) so they don't collide with the scanner's own
+  // sectorFilter/mcapMin/mcapMax state elsewhere in this component.
+  const [sectorFilterAnn,setSectorFilterAnn]=useState('all')
+  const [industryFilterAnn,setIndustryFilterAnn]=useState('all')
+  const [mcapMinAnn,setMcapMinAnn]=useState('')
+  const [mcapMaxAnn,setMcapMaxAnn]=useState('')
+  const [announcementFilterOptions,setAnnouncementFilterOptions]=useState({sectors:[],industries:[]})
+  useEffect(()=>{
+    if(mainTab!=='announcements') return
+    fetchAnnouncementFilterOptions().then(setAnnouncementFilterOptions)
+  },[mainTab])
+  useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn])
   const ANNOUNCEMENTS_PAGE_SIZE=50
   useEffect(()=>{
     if(mainTab!=='announcements') return
     setAnnouncementsLoading(true)
     const cat = ANNOUNCEMENT_CATEGORIES.find(c=>c.id===announcementsCategory)
-    fetchAnnouncements(ANNOUNCEMENTS_PAGE_SIZE, announcementsPage*ANNOUNCEMENTS_PAGE_SIZE, cat?.keyword||null)
+    const filters = {
+      sector: sectorFilterAnn!=='all' ? sectorFilterAnn : null,
+      industry: industryFilterAnn!=='all' ? industryFilterAnn : null,
+      mcapMin: mcapMinAnn, mcapMax: mcapMaxAnn,
+    }
+    fetchAnnouncements(ANNOUNCEMENTS_PAGE_SIZE, announcementsPage*ANNOUNCEMENTS_PAGE_SIZE, cat?.keyword||null, filters)
       .then(rows=>{
         // "Other" can't be expressed as a single ILIKE match — fetch
         // unfiltered, then exclude anything matching a known category.
@@ -4712,12 +4752,58 @@ export default function App(){
           const knownKeywords=ANNOUNCEMENT_CATEGORIES.filter(c=>c.keyword)
             .flatMap(c=>Array.isArray(c.keyword)?c.keyword:[c.keyword])
             .map(k=>k.toLowerCase())
-          rows=rows.filter(a=>!knownKeywords.some(k=>(a.category||'').toLowerCase().includes(k)))
+          rows=rows.filter(a=>!knownKeywords.some(k=>((a.category||'')+' '+(a.subject||'')).toLowerCase().includes(k)))
         }
         setAnnouncements(rows)
       })
       .finally(()=>setAnnouncementsLoading(false))
-  },[mainTab,announcementsPage,announcementsCategory])
+  },[mainTab,announcementsPage,announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn])
+  // ── Watchlist announcement alerts (sound + browser notification) ──
+  // Polls every 3 min while enabled — works while the app is open (even
+  // in a background tab), since watchlists live only in this browser's
+  // localStorage and there's no server-side push. Enabled state persists
+  // across visits; the toggle click doubles as the user gesture that
+  // unlocks audio + requests notification permission.
+  const [annAlertsOn,setAnnAlertsOn]=useState(()=>{
+    try{ return localStorage.getItem('lm-ann-alerts')==='on' }catch{ return false }
+  })
+  const toggleAnnAlerts=()=>{
+    const next=!annAlertsOn
+    setAnnAlertsOn(next)
+    try{ localStorage.setItem('lm-ann-alerts',next?'on':'off') }catch(e){}
+    if(next){
+      playAnnouncementBeep() // audible confirmation + unlocks AudioContext
+      if(typeof Notification!=='undefined'&&Notification.permission==='default')
+        Notification.requestPermission()
+    }
+  }
+  useEffect(()=>{
+    if(!annAlertsOn) return
+    const syms=[...new Set(watchlists.flatMap(w=>w.stocks||[]))]
+    if(syms.length===0) return
+    let cancelled=false
+    const check=async()=>{
+      let since
+      try{ since=localStorage.getItem('lm-ann-last-seen') }catch(e){}
+      if(!since) since=new Date(Date.now()-60*60*1000).toISOString() // first run: last hour only
+      const rows=await fetchWatchlistAnnouncementsSince(syms,since)
+      if(cancelled) return
+      try{ localStorage.setItem('lm-ann-last-seen',new Date().toISOString()) }catch(e){}
+      if(rows.length===0) return
+      playAnnouncementBeep()
+      if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
+        rows.slice(0,3).forEach(a=>{
+          try{
+            new Notification(`📢 ${a.symbol}${a.ai_rating?` · ${a.ai_rating}`:''}`,
+              {body:(a.subject||a.category||'New announcement').slice(0,140),tag:`ann-${a.symbol}-${a.announced_at}`})
+          }catch(e){}
+        })
+      }
+    }
+    check()
+    const t=setInterval(check,3*60*1000)
+    return()=>{cancelled=true;clearInterval(t)}
+  },[annAlertsOn,watchlists])
   const [visibleRsCols,setVisibleRsCols]=useState(()=>{
     const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,squeeze:false,wl52:false,weakrs:false}
     try{
@@ -4920,10 +5006,14 @@ export default function App(){
     }
   },[stocks,chartSym])
 
-  // Load from DB on mount, and whenever the selected history date changes
+  // Load from DB on mount, whenever the selected history date changes,
+  // and whenever the scope dropdown (index / watchlist) changes — the
+  // dropdown auto-filters with no separate scan button press needed.
+  // Depending on runDBScan (a useCallback) covers indexFilter, activeWl,
+  // watchlists, and historyDate in one place.
   useEffect(()=>{
     if(session||demoMode)runDBScan()
-  },[session,demoMode,historyDate])
+  },[session,demoMode,runDBScan])
 
   // Load index dashboard and breadth data on tab switch. The Indices tab
   // also auto-refreshes every 60s while active — the backend writes live
@@ -5375,13 +5465,14 @@ export default function App(){
                 </span>
               )}
 
-              {/* Scan button */}
-              <button onClick={()=>demoMode?setShowRealtimeUpsell(true):runDBScan()} disabled={loading}
-                style={{padding:'6px 14px',borderRadius:6,border:'none',cursor:'pointer',
-                  background:loading?C.border:C.accent,color:loading?C.muted:'#000',
-                  fontWeight:700,fontSize:12,whiteSpace:'nowrap'}}>
-                {loading?`${progress}%…`:'🚀 Scan'}
-              </button>
+              {/* Scan button removed — the scope dropdown auto-filters on
+                  change now. A small progress chip stands in while loading
+                  so the user still gets feedback that a reload is running. */}
+              {loading&&(
+                <span style={{fontSize:11,color:C.muted,padding:'6px 10px',whiteSpace:'nowrap'}}>
+                  ⏳ {progress}%
+                </span>
+              )}
 
               {/* Demo */}
               {!isMobile&&(
@@ -5485,11 +5576,11 @@ export default function App(){
                 </select>
                 <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
                   availableDates={availableDates} isMobile={true}/>
-                <button onClick={()=>demoMode?setShowRealtimeUpsell(true):runDBScan()} disabled={loading}
-                  style={{flex:1,padding:'12px',borderRadius:8,border:'none',cursor:'pointer',
-                    background:loading?C.border:C.accent,color:loading?C.muted:'#000',fontWeight:700,fontSize:13}}>
-                  {loading?`${progress}%…`:'🚀 Scan'}
-                </button>
+                {loading&&(
+                  <span style={{flex:1,padding:'12px',textAlign:'center',fontSize:12,color:C.muted}}>
+                    ⏳ {progress}%
+                  </span>
+                )}
                 <button onClick={()=>runScan(true)} disabled={loading}
                   style={{padding:'12px 14px',borderRadius:8,border:`1px solid ${C.border}`,
                     background:'transparent',color:C.muted,fontWeight:600,fontSize:12,cursor:'pointer'}}>👁</button>
@@ -7998,11 +8089,21 @@ export default function App(){
         {/* ══ CORPORATE ANNOUNCEMENTS ══ */}
         {mainTab==='announcements'&&(
           <div>
-            <div style={{marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:15,color:C.accent}}>📢 Corporate Announcements</div>
-              <div style={{fontSize:12,color:C.muted,marginTop:2}}>
-                Board meetings, results, and other filings across all tracked stocks — from NSE, near real-time
+            <div style={{marginBottom:14,display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:15,color:C.accent}}>📢 Corporate Announcements</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:2}}>
+                  Board meetings, results, and other filings across all tracked stocks — from NSE, near real-time
+                </div>
               </div>
+              <button onClick={toggleAnnAlerts}
+                title="Sound + notification when a watchlist stock files a new announcement (while the app is open)"
+                style={{flexShrink:0,padding:'6px 10px',borderRadius:8,fontSize:11,fontWeight:700,cursor:'pointer',
+                  border:`1px solid ${annAlertsOn?C.green:C.border}`,
+                  background:annAlertsOn?C.green+'22':C.card,
+                  color:annAlertsOn?C.green:C.muted}}>
+                {annAlertsOn?'🔔 Alerts On':'🔕 Alerts Off'}
+              </button>
             </div>
 
             <div style={{display:'flex',gap:6,overflowX:'auto',marginBottom:14,WebkitOverflowScrolling:'touch'}}>
@@ -8016,6 +8117,29 @@ export default function App(){
                   {label}
                 </button>
               ))}
+            </div>
+
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14,alignItems:'center'}}>
+              <select value={sectorFilterAnn} onChange={e=>setSectorFilterAnn(e.target.value)}
+                style={{padding:'6px 8px',borderRadius:8,border:`1px solid ${C.border}`,background:C.card,color:C.text,fontSize:11}}>
+                <option value="all">All Sectors</option>
+                {announcementFilterOptions.sectors.map(s=><option key={s} value={s}>{s}</option>)}
+              </select>
+              <select value={industryFilterAnn} onChange={e=>setIndustryFilterAnn(e.target.value)}
+                style={{padding:'6px 8px',borderRadius:8,border:`1px solid ${C.border}`,background:C.card,color:C.text,fontSize:11}}>
+                <option value="all">All Industries</option>
+                {announcementFilterOptions.industries.map(i=><option key={i} value={i}>{i}</option>)}
+              </select>
+              <input type="number" placeholder="Min Mcap (Cr)" value={mcapMinAnn} onChange={e=>setMcapMinAnn(e.target.value)}
+                style={{width:110,padding:'6px 8px',borderRadius:8,border:`1px solid ${C.border}`,background:C.card,color:C.text,fontSize:11}} />
+              <input type="number" placeholder="Max Mcap (Cr)" value={mcapMaxAnn} onChange={e=>setMcapMaxAnn(e.target.value)}
+                style={{width:110,padding:'6px 8px',borderRadius:8,border:`1px solid ${C.border}`,background:C.card,color:C.text,fontSize:11}} />
+              {(sectorFilterAnn!=='all'||industryFilterAnn!=='all'||mcapMinAnn!==''||mcapMaxAnn!=='')&&(
+                <button onClick={()=>{setSectorFilterAnn('all');setIndustryFilterAnn('all');setMcapMinAnn('');setMcapMaxAnn('')}}
+                  style={{padding:'6px 10px',borderRadius:8,border:`1px solid ${C.border}`,background:'transparent',color:C.muted,fontSize:11,cursor:'pointer'}}>
+                  Clear
+                </button>
+              )}
             </div>
 
             {announcementsLoading&&announcements.length===0?(
@@ -8044,6 +8168,14 @@ export default function App(){
                           <span style={{display:'inline-block',fontSize:9,fontWeight:700,color:C.accent,
                             background:C.accent+'18',borderRadius:6,padding:'2px 6px',marginBottom:4}}>
                             {a.category}
+                          </span>
+                        )}
+                        {a.ai_rating&&(
+                          <span style={{display:'inline-block',fontSize:9,fontWeight:700,marginLeft:a.category?5:0,marginBottom:4,
+                            borderRadius:6,padding:'2px 6px',
+                            color:a.ai_rating==='positive'?C.green:a.ai_rating==='negative'?C.red:C.muted,
+                            background:(a.ai_rating==='positive'?C.green:a.ai_rating==='negative'?C.red:C.muted)+'18'}}>
+                            {a.ai_rating==='positive'?'▲ Positive':a.ai_rating==='negative'?'▼ Negative':'– Neutral'}
                           </span>
                         )}
                         <div style={{fontSize:12.5,color:C.text,lineHeight:1.4}}>{a.subject}</div>
