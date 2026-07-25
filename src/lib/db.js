@@ -809,10 +809,15 @@ export async function fetchUsageStats(days = 14) {
  * (offset-based) since this feed accumulates continuously and showing
  * ALL history at once isn't useful or necessary.
  */
-export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = null) {
+export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = null, filters = {}) {
+  // filters: { sector, industry, mcapMin, mcapMax } — all optional.
+  // Applied server-side (not client-side after fetch) so the offset-based
+  // pagination above stays accurate against the filtered set, same as
+  // the scanner's own sector/mcap filters elsewhere in the app.
+  const { sector, industry, mcapMin, mcapMax, orderSize } = filters
   let q = supabase
     .from('corporate_announcements')
-    .select('symbol,category,subject,attachment_url,announced_at')
+    .select('symbol,category,subject,attachment_url,announced_at,sector,industry,market_cap,ai_rating,ai_summary,order_size')
     .order('announced_at', { ascending: false })
     .range(offset, offset + limit - 1)
   if (categoryLike) {
@@ -822,9 +827,55 @@ export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = 
     // depending on the filer), so several tabs need an OR match rather
     // than a single ILIKE.
     const keywords = Array.isArray(categoryLike) ? categoryLike : [categoryLike]
-    q = q.or(keywords.map(k => `category.ilike.%${k}%`).join(','))
+    // Match against BOTH category and subject — NSE frequently files
+    // results under category "Outcome of Board Meeting" with "financial
+    // results" only in the subject text, so category-only matching makes
+    // the Results/Order Book/Dividend tabs look empty even when the
+    // announcements exist.
+    q = q.or(keywords.flatMap(k => [`category.ilike.%${k}%`, `subject.ilike.%${k}%`]).join(','))
   }
+  if (sector) q = q.eq('sector', sector)
+  if (industry) q = q.eq('industry', industry)
+  if (orderSize) q = q.eq('order_size', orderSize)
+  if (mcapMin !== undefined && mcapMin !== '' && mcapMin != null) q = q.gte('market_cap', +mcapMin)
+  if (mcapMax !== undefined && mcapMax !== '' && mcapMax != null) q = q.lte('market_cap', +mcapMax)
   const { data, error } = await q
   if (error) { console.error('fetchAnnouncements error:', error.message); return [] }
+  return data || []
+}
+
+/**
+ * Distinct sector/industry values seen across saved announcements, for
+ * populating the Announcements tab's filter dropdowns. Small, cheap
+ * query (no announcement text/attachments pulled) — fine to call on tab
+ * mount without its own loading state.
+ */
+export async function fetchAnnouncementFilterOptions() {
+  const { data, error } = await supabase
+    .from('corporate_announcements')
+    .select('sector,industry')
+    .not('sector', 'is', null)
+  if (error) { console.error('fetchAnnouncementFilterOptions error:', error.message); return { sectors: [], industries: [] } }
+  const sectors = [...new Set((data || []).map(r => r.sector).filter(Boolean))].sort()
+  const industries = [...new Set((data || []).map(r => r.industry).filter(Boolean))].sort()
+  return { sectors, industries }
+}
+
+/**
+ * New announcements for a set of watchlist symbols since a given ISO
+ * timestamp — polled by the in-app watchlist alert (sound + browser
+ * notification). Kept intentionally tiny: only the fields the toast/
+ * notification needs, capped at 20 rows per poll.
+ */
+export async function fetchWatchlistAnnouncementsSince(syms, sinceISO) {
+  if (!syms || syms.length === 0) return []
+  const { data, error } = await supabase
+    .from('corporate_announcements')
+    .select('symbol,category,subject,announced_at,ai_rating')
+    .in('symbol', syms)
+    .gt('announced_at', sinceISO)
+    .order('announced_at', { ascending: false })
+    .limit(20)
+  if (error) { console.error('fetchWatchlistAnnouncementsSince error:', error.message); return [] }
   return data || []
 }
