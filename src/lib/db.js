@@ -809,7 +809,7 @@ export async function fetchUsageStats(days = 14) {
  * (offset-based) since this feed accumulates continuously and showing
  * ALL history at once isn't useful or necessary.
  */
-export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = null, filters = {}) {
+export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = null, filters = {}, excludeCategoryLike = null) {
   // filters: { sector, industry, mcapMin, mcapMax } — all optional.
   // Applied server-side (not client-side after fetch) so the offset-based
   // pagination above stays accurate against the filtered set, same as
@@ -833,6 +833,14 @@ export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = 
     // the Results/Order Book/Dividend tabs look empty even when the
     // announcements exist.
     q = q.or(keywords.flatMap(k => [`category.ilike.%${k}%`, `subject.ilike.%${k}%`]).join(','))
+  }
+  if (excludeCategoryLike) {
+    // Noise control per tab: e.g. the Results tab excludes 'Copy of
+    // Newspaper Publication' — reprints that mention "financial results"
+    // and would otherwise drown out the actual filings.
+    for (const k of (Array.isArray(excludeCategoryLike) ? excludeCategoryLike : [excludeCategoryLike])) {
+      q = q.not('category', 'ilike', `%${k}%`)
+    }
   }
   if (sector) q = q.eq('sector', sector)
   if (industry) q = q.eq('industry', industry)
