@@ -814,7 +814,7 @@ export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = 
   // Applied server-side (not client-side after fetch) so the offset-based
   // pagination above stays accurate against the filtered set, same as
   // the scanner's own sector/mcap filters elsewhere in the app.
-  const { sector, industry, mcapMin, mcapMax, orderSize } = filters
+  const { sector, industry, mcapMin, mcapMax, orderSize, syms } = filters
   let q = supabase
     .from('corporate_announcements')
     .select('symbol,category,subject,attachment_url,announced_at,sector,industry,market_cap,ai_rating,ai_summary,order_size')
@@ -837,6 +837,7 @@ export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = 
   if (sector) q = q.eq('sector', sector)
   if (industry) q = q.eq('industry', industry)
   if (orderSize) q = q.eq('order_size', orderSize)
+  if (syms && syms.length > 0) q = q.in('symbol', syms)
   if (mcapMin !== undefined && mcapMin !== '' && mcapMin != null) q = q.gte('market_cap', +mcapMin)
   if (mcapMax !== undefined && mcapMax !== '' && mcapMax != null) q = q.lte('market_cap', +mcapMax)
   const { data, error } = await q
@@ -901,4 +902,23 @@ export async function fetchRecentFinancialResults() {
     if (!bySymbol[r.symbol]) bySymbol[r.symbol] = r
   }
   return bySymbol
+}
+
+/**
+ * Symbol list for an index scope (nifty50/midcap/smallcap/microcap) —
+ * lets tabs whose tables lack index-membership columns (like
+ * announcements) filter by index via .in('symbol', ...). Cached per
+ * session: membership only changes at rebalances.
+ */
+const _indexSymCache = {}
+export async function fetchIndexSymbols(indexFilter) {
+  if (!indexFilter || indexFilter === 'all') return null
+  if (_indexSymCache[indexFilter]) return _indexSymCache[indexFilter]
+  const col = { nifty50: 'in_nifty50', midcap: 'in_midcap', smallcap: 'in_smallcap', microcap: 'in_microcap' }[indexFilter]
+  if (!col) return null
+  const { data, error } = await supabase.from('stocks').select('sym').eq(col, true).limit(1000)
+  if (error) { console.error('fetchIndexSymbols error:', error.message); return null }
+  const syms = (data || []).map(r => r.sym)
+  _indexSymCache[indexFilter] = syms
+  return syms
 }
