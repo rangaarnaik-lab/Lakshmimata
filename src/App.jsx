@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -4779,6 +4779,19 @@ export default function App(){
     return()=>clearInterval(t)
   },[mainTab])
   const [resultsMap,setResultsMap]=useState({})
+  // Screener-style Sales/PAT/EPS YoY comparison — collapsed by default,
+  // fetched lazily per symbol only when the user taps to expand (no
+  // point fetching 8-quarter history for every row on every page load).
+  const [resultsHistoryCache,setResultsHistoryCache]=useState({})
+  useEffect(()=>{
+    if(mainTab!=='announcements'||announcementsCategory!=='results') return
+    const missing=[...new Set(announcements.map(a=>a.symbol).filter(sym=>sym&&!resultsHistoryCache[sym]))]
+    missing.forEach(sym=>{
+      fetchFinancialResultsHistory(sym).then(rows=>{
+        setResultsHistoryCache(p=>p[sym]?p:{...p,[sym]:rows})
+      })
+    })
+  },[mainTab,announcementsCategory,announcements,resultsHistoryCache])
   useEffect(()=>{
     if(mainTab==='announcements'&&announcementsCategory==='results')
       fetchRecentFinancialResults().then(setResultsMap)
@@ -8475,13 +8488,83 @@ export default function App(){
                           const fr=resultsMap[a.symbol]
                           const fmt=v=>v==null?'—':(Math.abs(v)>=1000?(v/1).toLocaleString('en-IN',{maximumFractionDigits:0}):v.toLocaleString('en-IN',{maximumFractionDigits:2}))
                           return (
-                            <div style={{display:'flex',gap:10,flexWrap:'wrap',fontSize:11,fontWeight:700,
-                              background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
-                              padding:'6px 10px',marginBottom:4}}>
-                              <span style={{color:C.muted,fontWeight:600}}>📊 {fr.period_ended}</span>
-                              <span>Sales: <span style={{color:C.text}}>₹{fmt(fr.sales)} Cr</span></span>
-                              <span>PAT: <span style={{color:(fr.pat??0)>=0?C.green:C.red}}>₹{fmt(fr.pat)} Cr</span></span>
-                              <span>EPS: <span style={{color:C.text}}>₹{fmt(fr.eps)}</span></span>
+                            <div style={{marginBottom:4}}>
+                              <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',fontSize:11,fontWeight:700,
+                                background:C.card,border:`1px solid ${C.border}`,borderRadius:'8px 8px 0 0',
+                                padding:'6px 10px'}}>
+                                <span style={{color:C.muted,fontWeight:600}}>📊 {fr.period_ended}</span>
+                                <span>Sales: <span style={{color:C.text}}>₹{fmt(fr.sales)} Cr</span></span>
+                                <span>PAT: <span style={{color:(fr.pat??0)>=0?C.green:C.red}}>₹{fmt(fr.pat)} Cr</span></span>
+                                <span>EPS: <span style={{color:C.text}}>₹{fmt(fr.eps)}</span></span>
+                              </div>
+                              {(()=>{
+                                const hist = resultsHistoryCache[a.symbol]
+                                if(hist===undefined){
+                                  return <div style={{padding:'10px',fontSize:11,color:C.muted,textAlign:'center',
+                                    background:C.card,border:`1px solid ${C.border}`,borderTop:'none',borderRadius:'0 0 8px 8px'}}>Loading…</div>
+                                }
+                                if(hist.length===0){
+                                  return <div style={{padding:'10px',fontSize:11,color:C.muted,textAlign:'center',
+                                    background:C.card,border:`1px solid ${C.border}`,borderTop:'none',borderRadius:'0 0 8px 8px'}}>No history yet.</div>
+                                }
+                                const current = hist[0]
+                                const prevQtr = hist[1]||null
+                                // Same-quarter-last-year: look for a period_ended roughly
+                                // 12 months before `current`'s (month/day match within a
+                                // couple weeks' tolerance for slightly different filing
+                                // calendars), rather than assuming a fixed 4-quarters-back
+                                // index — a skipped/delayed filing would throw that off.
+                                const curDate = new Date(current.period_ended)
+                                const yoyRow = hist.slice(1).find(h=>{
+                                  const d = new Date(h.period_ended)
+                                  const yearsBack = curDate.getFullYear()-d.getFullYear()
+                                  const dayDiff = Math.abs((d.getMonth()*30+d.getDate())-(curDate.getMonth()*30+curDate.getDate()))
+                                  return yearsBack===1 && dayDiff<=20
+                                }) || null
+                                const cols = [
+                                  {label:current.period_ended, row:current},
+                                  {label:prevQtr?prevQtr.period_ended:'—', row:prevQtr},
+                                  {label:yoyRow?yoyRow.period_ended:'—', row:yoyRow},
+                                ]
+                                const pct=(now,then)=>(now==null||then==null||then===0)?null:((now-then)/Math.abs(then)*100)
+                                const metrics = [
+                                  {label:'Sales (₹Cr)', get:r=>r?.sales, yoyPct:pct(current.sales, yoyRow?.sales)},
+                                  {label:'PAT (₹Cr)',   get:r=>r?.pat,   yoyPct:pct(current.pat,   yoyRow?.pat)},
+                                  {label:'EPS (₹)',     get:r=>r?.eps,   yoyPct:pct(current.eps,   yoyRow?.eps)},
+                                ]
+                                return (
+                                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderTop:'none',
+                                    borderRadius:'0 0 8px 8px',padding:'8px 10px',overflowX:'auto'}}>
+                                    <table style={{width:'100%',fontSize:10.5,borderCollapse:'collapse',minWidth:280}}>
+                                      <thead>
+                                        <tr>
+                                          <td></td>
+                                          <td style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px'}}>YoY</td>
+                                          {cols.map((c,i)=>(
+                                            <td key={i} style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px',whiteSpace:'nowrap'}}>{c.label}</td>
+                                          ))}
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {metrics.map(m=>(
+                                          <tr key={m.label}>
+                                            <td style={{color:C.text,fontWeight:600,padding:'4px 6px'}}>{m.label}</td>
+                                            <td style={{textAlign:'right',padding:'4px 6px',fontWeight:700,
+                                              color:m.yoyPct==null?C.muted:m.yoyPct>=0?C.green:C.red}}>
+                                              {m.yoyPct==null?'—':`${m.yoyPct>=0?'▲':'▼'} ${Math.abs(m.yoyPct).toFixed(0)}%`}
+                                            </td>
+                                            {cols.map((c,i)=>(
+                                              <td key={i} style={{textAlign:'right',padding:'4px 6px',color:C.text}}>
+                                                {m.get(c.row)==null?'—':m.get(c.row).toLocaleString('en-IN',{maximumFractionDigits:2})}
+                                              </td>
+                                            ))}
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )
+                              })()}
                             </div>
                           )
                         })()}
