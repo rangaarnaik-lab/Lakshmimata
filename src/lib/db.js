@@ -881,7 +881,7 @@ export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = 
   // Applied server-side (not client-side after fetch) so the offset-based
   // pagination above stays accurate against the filtered set, same as
   // the scanner's own sector/mcap filters elsewhere in the app.
-  const { sector, industry, mcapMin, mcapMax, orderSize, syms } = filters
+  const { sector, industry, mcapMin, mcapMax, orderSize, syms, dateFilter } = filters
   let q = supabase
     .from('corporate_announcements')
     .select('symbol,category,subject,attachment_url,announced_at,sector,industry,market_cap,ai_rating,ai_summary,order_size')
@@ -922,6 +922,17 @@ export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = 
   if (syms && syms.length > 0) q = q.in('symbol', syms)
   if (mcapMin !== undefined && mcapMin !== '' && mcapMin != null) q = q.gte('market_cap', +mcapMin)
   if (mcapMax !== undefined && mcapMax !== '' && mcapMax != null) q = q.lte('market_cap', +mcapMax)
+  if (dateFilter) {
+    // announced_at is stored as a proper timezone-aware instant (fixed
+    // to correctly represent IST, not misread as UTC — see backend
+    // _nse_local_to_utc_iso). Passing an explicit +05:30 offset here
+    // means "the IST calendar day", regardless of what timezone the
+    // browser or Postgres session default to.
+    const next = new Date(dateFilter + 'T00:00:00+05:30')
+    next.setUTCDate(next.getUTCDate() + 1)
+    q = q.gte('announced_at', `${dateFilter}T00:00:00+05:30`)
+         .lt('announced_at', next.toISOString())
+  }
   const { data, error } = await q
   if (error) { console.error('fetchAnnouncements error:', error.message); return [] }
   return data || []
