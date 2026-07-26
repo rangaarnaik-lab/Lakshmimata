@@ -840,6 +840,36 @@ export async function fetchBestPicks() {
 }
 
 /**
+ * Fetches a single symbol's recent quarterly results history (Sales/PAT/
+ * EPS only — no EBITDA, that field isn't captured from NSE's feed yet)
+ * for a Screener-style comparison card: current quarter vs previous
+ * quarter vs same quarter last year. Pulls the last 8 filed quarters so
+ * the caller has enough to find a same-quarter-last-year match even if
+ * a quarter was skipped/delayed, and prefers Consolidated over
+ * Standalone when both exist for the same period (same dedup priority
+ * used elsewhere in the app).
+ */
+export async function fetchFinancialResultsHistory(symbol) {
+  const { data, error } = await supabase
+    .from('financial_results')
+    .select('period_ended,result_type,sales,pat,eps,filed_at')
+    .eq('symbol', symbol)
+    .order('period_ended', { ascending: false })
+    .limit(16)
+  if (error) { console.error('fetchFinancialResultsHistory error:', error.message); return [] }
+  // Dedupe to one row per period_ended, preferring Consolidated.
+  const byPeriod = {}
+  for (const row of (data || [])) {
+    const existing = byPeriod[row.period_ended]
+    const isConsolidated = (row.result_type || '').toLowerCase().includes('consolidated')
+    if (!existing || (isConsolidated && !(existing.result_type||'').toLowerCase().includes('consolidated'))) {
+      byPeriod[row.period_ended] = row
+    }
+  }
+  return Object.values(byPeriod).sort((a,b)=>b.period_ended.localeCompare(a.period_ended)).slice(0, 8)
+}
+
+/**
  * Fetches recent corporate announcements across all tracked stocks —
  * populated by the backend's separate fundamentals+announcements worker
  * service, polling NSE's announcements feed every ~15 minutes. Paginated
@@ -873,10 +903,17 @@ export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = 
   }
   if (excludeCategoryLike) {
     // Noise control per tab: e.g. the Results tab excludes 'Copy of
-    // Newspaper Publication' — reprints that mention "financial results"
-    // and would otherwise drown out the actual filings.
+    // Newspaper Publication' reprints, and Transcript filings. Must
+    // check BOTH category and subject — same reason the include filter
+    // above does — otherwise a keyword that only appears in the subject
+    // (like "Transcript" in a concall-transcript filing whose category
+    // is just "Analysts/Institutional Investor Meet") never actually
+    // gets excluded. NOT(category ILIKE x OR subject ILIKE x) is
+    // equivalent to NOT(category ILIKE x) AND NOT(subject ILIKE x) by
+    // De Morgan's law, so chaining two .not() calls per keyword (they
+    // combine with AND by default) gives the correct exclusion.
     for (const k of (Array.isArray(excludeCategoryLike) ? excludeCategoryLike : [excludeCategoryLike])) {
-      q = q.not('category', 'ilike', `%${k}%`)
+      q = q.not('category', 'ilike', `%${k}%`).not('subject', 'ilike', `%${k}%`)
     }
   }
   if (sector) q = q.eq('sector', sector)
