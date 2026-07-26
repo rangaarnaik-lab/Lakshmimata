@@ -2690,6 +2690,7 @@ function sortStocksForTable(stocks,sortBy,sortDir){
     if(key==='chg') return s.chg??0
     if(key==='chgW') return s.chgW??-999
     if(key==='last') return s.last??0
+    if(key==='marketCap') return s.marketCap??-1
     if(key==='sym') return s.sym
     return 0
   }
@@ -2762,7 +2763,7 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,de
                     {visibleRsCols.squeeze&&<span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>}
                     {visibleRsCols.wl52&&<span style={{textAlign:'center',color:C.muted}}>52WL Signal</span>}
                     {visibleRsCols.weakrs&&<span style={{textAlign:'center',color:C.muted}}>Weak RS</span>}
-            {visibleRsCols.mcap&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>MCap</span>}
+            {visibleRsCols.mcap&&<SortableHeader label="MCap" sortKey="marketCap" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>}
             {visibleRsCols.pe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>}
             {visibleRsCols.roe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>}
             {visibleRsCols.de&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>}
@@ -4758,6 +4759,13 @@ export default function App(){
   const [industryFilterAnn,setIndustryFilterAnn]=useState('all')
   const [mcapMinAnn,setMcapMinAnn]=useState('')
   const [mcapMaxAnn,setMcapMaxAnn]=useState('')
+  // Browse a specific calendar day's announcements (IST) — null means
+  // "most recent first, no date restriction" (the existing default
+  // behavior). Distinct from historyDate above, which replays the
+  // SCANNER's stock data as of a past date; this only filters which
+  // announcements show up, using the same day in IST both ends since
+  // announced_at is now stored as a correct IST-aware instant.
+  const [announcementsDateFilter,setAnnouncementsDateFilter]=useState(null)
   const [announcementFilterOptions,setAnnouncementFilterOptions]=useState({sectors:[],industries:[]})
   useEffect(()=>{
     if(mainTab!=='announcements') return
@@ -4797,7 +4805,7 @@ export default function App(){
       fetchRecentFinancialResults().then(setResultsMap)
   },[mainTab,announcementsCategory])
   useEffect(()=>{ if(announcementsCategory!=='orders')setOrderSizeFilter('all') },[announcementsCategory])
-  useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter,announcementsScope])
+  useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter,announcementsScope,announcementsDateFilter])
   const ANNOUNCEMENTS_PAGE_SIZE=50
   useEffect(()=>{
     if(mainTab!=='announcements') return
@@ -4820,6 +4828,7 @@ export default function App(){
         mcapMin: mcapMinAnn, mcapMax: mcapMaxAnn,
         orderSize: (announcementsCategory==='orders'&&orderSizeFilter!=='all') ? orderSizeFilter : null,
         syms: scopeSyms,
+        dateFilter: announcementsDateFilter,
       }
       let rows=await fetchAnnouncements(ANNOUNCEMENTS_PAGE_SIZE, announcementsPage*ANNOUNCEMENTS_PAGE_SIZE, cat?.keyword||null, filters, cat?.exclude||null)
       // "Other" can't be expressed as a single ILIKE match — fetch
@@ -4832,7 +4841,7 @@ export default function App(){
       }
       setAnnouncements(rows)
     })().finally(()=>setAnnouncementsLoading(false))
-  },[mainTab,announcementsPage,announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter,announcementsScope,announcementsPage===0?annRefreshTick:0])
+  },[mainTab,announcementsPage,announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter,announcementsScope,announcementsDateFilter,announcementsPage===0?annRefreshTick:0])
   // ── Watchlist announcement alerts (sound + browser notification) ──
   // Polls every 3 min while enabled — works while the app is open (even
   // in a background tab), since watchlists live only in this browser's
@@ -6015,7 +6024,7 @@ export default function App(){
                     {visibleRsCols.squeeze&&<span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>}
                     {visibleRsCols.wl52&&<span style={{textAlign:'center',color:C.muted}}>52WL Signal</span>}
                     {visibleRsCols.weakrs&&<span style={{textAlign:'center',color:C.muted}}>Weak RS</span>}
-                    {visibleRsCols.mcap&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>MCap</span>}
+                    {visibleRsCols.mcap&&<SortableHeader label="MCap" sortKey="marketCap" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>}
                     {visibleRsCols.pe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>}
                     {visibleRsCols.roe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>}
                     {visibleRsCols.de&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>}
@@ -8410,8 +8419,16 @@ export default function App(){
                 style={{width:110,padding:'6px 8px',borderRadius:8,border:`1px solid ${C.border}`,background:C.card,color:C.text,fontSize:11}} />
               <input type="number" placeholder="Max Mcap (Cr)" value={mcapMaxAnn} onChange={e=>setMcapMaxAnn(e.target.value)}
                 style={{width:110,padding:'6px 8px',borderRadius:8,border:`1px solid ${C.border}`,background:C.card,color:C.text,fontSize:11}} />
-              {(sectorFilterAnn!=='all'||industryFilterAnn!=='all'||mcapMinAnn!==''||mcapMaxAnn!=='')&&(
-                <button onClick={()=>{setSectorFilterAnn('all');setIndustryFilterAnn('all');setMcapMinAnn('');setMcapMaxAnn('')}}
+              <input type="date" value={announcementsDateFilter||''}
+                onChange={e=>setAnnouncementsDateFilter(e.target.value||null)}
+                max={new Date().toISOString().slice(0,10)}
+                title="Show announcements from a specific day"
+                style={{padding:'6px 8px',borderRadius:8,
+                  border:`1px solid ${announcementsDateFilter?C.accent:C.border}`,
+                  background:announcementsDateFilter?C.accent+'18':C.card,
+                  color:announcementsDateFilter?C.accent:C.text,fontSize:11,colorScheme:'dark'}} />
+              {(sectorFilterAnn!=='all'||industryFilterAnn!=='all'||mcapMinAnn!==''||mcapMaxAnn!==''||announcementsDateFilter)&&(
+                <button onClick={()=>{setSectorFilterAnn('all');setIndustryFilterAnn('all');setMcapMinAnn('');setMcapMaxAnn('');setAnnouncementsDateFilter(null)}}
                   style={{padding:'6px 10px',borderRadius:8,border:`1px solid ${C.border}`,background:'transparent',color:C.muted,fontSize:11,cursor:'pointer'}}>
                   Clear
                 </button>
