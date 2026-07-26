@@ -5577,8 +5577,13 @@ export default function App(){
         {/* ── Page content ── */}
         <div style={{padding:isMobile?'10px':'12px 16px',flex:1,overflowY:'auto'}}>
 
-        {/* History mode banner — unmistakable when not viewing live data */}
-        {historyDate&&(
+        {/* History mode banner — unmistakable when not viewing live data.
+            Scoped to scanner tabs only: historyDate replays the STOCK
+            SCANNER's data as of a past date, and has no bearing on
+            Announcements/AI Picks/Watchlist/Settings, which read from
+            entirely different tables — showing it there was confusing
+            (looked like it might be filtering those too, when it isn't). */}
+        {historyDate&&!['announcements','bestpicks','watchlist','settings'].includes(mainTab)&&(
           <div style={{background:C.purple+'18',border:`1px solid ${C.purple}55`,borderRadius:10,
             padding:'10px 14px',marginBottom:14,display:'flex',alignItems:'center',
             justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
