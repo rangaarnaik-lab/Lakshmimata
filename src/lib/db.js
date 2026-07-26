@@ -803,6 +803,26 @@ export async function fetchUsageStats(days = 14) {
 }
 
 /**
+ * Fetches the AI Best Picks track record — one row per (symbol, date)
+ * that stock was ever in the top 30, going back `days` days. price_at_pick
+ * is locked in the first time a symbol is picked on a given day (never
+ * overwritten by later same-day refreshes), so the caller can compare it
+ * against a stock's current live price to show whether the pick actually
+ * moved in the right direction afterward.
+ */
+export async function fetchBestPicksHistory(days = 30) {
+  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
+  const { data, error } = await supabase
+    .from('best_picks_history')
+    .select('symbol,picked_date,rank,score,reasoning,price_at_pick,sector,market_cap')
+    .gte('picked_date', since)
+    .order('picked_date', { ascending: false })
+    .order('rank', { ascending: true })
+  if (error) { console.error('fetchBestPicksHistory error:', error.message); return [] }
+  return data || []
+}
+
+/**
  * Fetches the AI Best Picks list — a composite technical+fundamental
  * score computed every scan cycle by the live-scan service, refreshed
  * at most hourly, with an AI-generated (or free templated, if
