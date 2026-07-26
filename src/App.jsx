@@ -115,14 +115,18 @@ function calcWeinsteinStage(s){
 }
 
 // ── Volume vs Average ─────────────────────────────────────────────────
+// pctOfMax = today's volume as a % of the recent peak-volume day (NOT a
+// price high/low, even though the labels below read that way at a
+// glance — kept short for table width, see VolBadge for the fuller
+// "X% of peak" wording shown next to it).
 function calcVolAnalysis(s){
   const vol = s.hy?.todayVol || 0
   const pctOfMax = s.hy?.pctOfMax || 0
   // Classify volume
-  if(pctOfMax >= 95) return {label:'🔥 Surge', color:C.orange, pct:pctOfMax}
-  if(pctOfMax >= 70) return {label:'↑ High', color:C.green, pct:pctOfMax}
-  if(pctOfMax >= 40) return {label:'→ Avg', color:C.muted, pct:pctOfMax}
-  return {label:'↓ Low', color:C.red, pct:pctOfMax}
+  if(pctOfMax >= 95) return {label:'🔥 Vol Surge', color:C.orange, pct:pctOfMax}
+  if(pctOfMax >= 70) return {label:'Vol: High', color:C.green, pct:pctOfMax}
+  if(pctOfMax >= 40) return {label:'Vol: Avg', color:C.muted, pct:pctOfMax}
+  return {label:'Vol: Low', color:C.red, pct:pctOfMax}
 }
 
 // ── IBV Detection (Institutional Buying Volume) ──────────────────────
@@ -1129,7 +1133,7 @@ function VolBadge({vol}){
     <div style={{display:'inline-flex',alignItems:'center',gap:3,
       padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
       background:vol.color+'18',color:vol.color,whiteSpace:'nowrap'}}>
-      {vol.label} <span style={{fontSize:8,opacity:0.7}}>{vol.pct}%</span>
+      {vol.label} <span style={{fontSize:8,opacity:0.7}}>{vol.pct}% of peak</span>
     </div>
   )
 }
@@ -1738,7 +1742,7 @@ function SimpleStockTable({stocks, isMobile, onChart}){
         <span style={{textAlign:'center',color:C.muted}}>Chg%</span>
         <span style={{textAlign:'center',color:C.muted}}>10 D Vol</span>
         <span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>
-        <span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>
+        <span title="Stage: Weinstein trend stage (S1 Base/S2 Up/S3 Top/S4 Down). Vol: today's volume as % of its recent peak day, not a price." style={{textAlign:'center',color:C.muted,cursor:'help'}}>Stage/Vol</span>
         <span style={{textAlign:'right',color:C.muted,fontSize:9}}>MCap</span>
         <span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>
         <span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>
@@ -2754,7 +2758,7 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,de
             {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"
   legend={[{label:'HT',color:C.orange},{label:'HY',color:C.pink},{label:'IBV',color:C.blue},{label:'PP',color:C.green}]}/>}
             {visibleRsCols.rs7d&&<span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>}
-            {visibleRsCols.stage&&<span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>}
+            {visibleRsCols.stage&&<span title="Stage: Weinstein trend stage (S1 Base/S2 Up/S3 Top/S4 Down). Vol: today's volume as % of its recent peak day, not a price." style={{textAlign:'center',color:C.muted,cursor:'help'}}>Stage/Vol</span>}
                     {visibleRsCols.squeeze&&<span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>}
                     {visibleRsCols.wl52&&<span style={{textAlign:'center',color:C.muted}}>52WL Signal</span>}
                     {visibleRsCols.weakrs&&<span style={{textAlign:'center',color:C.muted}}>Weak RS</span>}
@@ -5994,7 +5998,7 @@ export default function App(){
                     {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"
   legend={[{label:'HT',color:C.orange},{label:'HY',color:C.pink},{label:'IBV',color:C.blue},{label:'PP',color:C.green}]}/>}
                     {visibleRsCols.rs7d&&<span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>}
-                    {visibleRsCols.stage&&<span style={{textAlign:'center',color:C.muted}}>Stage/Vol</span>}
+                    {visibleRsCols.stage&&<span title="Stage: Weinstein trend stage (S1 Base/S2 Up/S3 Top/S4 Down). Vol: today's volume as % of its recent peak day, not a price." style={{textAlign:'center',color:C.muted,cursor:'help'}}>Stage/Vol</span>}
                     {visibleRsCols.squeeze&&<span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>}
                     {visibleRsCols.wl52&&<span style={{textAlign:'center',color:C.muted}}>52WL Signal</span>}
                     {visibleRsCols.weakrs&&<span style={{textAlign:'center',color:C.muted}}>Weak RS</span>}
