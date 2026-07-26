@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -4711,14 +4711,25 @@ export default function App(){
   // underlying data itself only changes hourly).
   const [bestPicks,setBestPicks]=useState([])
   const [bestPicksLoading,setBestPicksLoading]=useState(false)
+  const [bestPicksView,setBestPicksView]=useState('today') // 'today' | 'history'
+  const [bestPicksHistory,setBestPicksHistory]=useState([])
+  const [bestPicksHistoryLoading,setBestPicksHistoryLoading]=useState(false)
   const loadBestPicks=useCallback(()=>{
     setBestPicksLoading(true)
     fetchBestPicks().then(rows=>{setBestPicks(rows);setBestPicksLoading(false)})
+  },[])
+  const loadBestPicksHistory=useCallback(()=>{
+    setBestPicksHistoryLoading(true)
+    fetchBestPicksHistory(30).then(rows=>{setBestPicksHistory(rows);setBestPicksHistoryLoading(false)})
   },[])
   useEffect(()=>{
     if(mainTab!=='bestpicks') return
     loadBestPicks()
   },[mainTab,loadBestPicks])
+  useEffect(()=>{
+    if(mainTab!=='bestpicks'||bestPicksView!=='history') return
+    loadBestPicksHistory()
+  },[mainTab,bestPicksView,loadBestPicksHistory])
   const [announcementsPage,setAnnouncementsPage]=useState(0)
   // Sub-tabs on the Announcements tab — filters by NSE's own category
   // text (e.g. "Financial Results", "Award of Order / Receipt of
@@ -4727,8 +4738,9 @@ export default function App(){
   // almost nothing.
   const ANNOUNCEMENT_CATEGORIES=[
     {id:'all',    label:'All',         keyword:null},
-    {id:'results', label:'Results',    keyword:['financial result','quarterly result','results for the quarter','unaudited results','audited results'], exclude:['newspaper publication','newspaper advertisement']},
-    {id:'concall', label:'Concall',    keyword:['con call','con-call','concall','conference call','investor','analyst meet']},
+    {id:'results', label:'Results',    keyword:['financial result','quarterly result','results for the quarter','unaudited results','audited results'], exclude:['newspaper publication','newspaper advertisement','transcript']},
+    {id:'concall', label:'Concall',    keyword:['con call','con-call','concall','conference call','investor','analyst meet'], exclude:['transcript']},
+    {id:'transcript', label:'Transcript', keyword:['transcript']},
     {id:'orders', label:'Order Book',  keyword:['award of order','work order','purchase order','order received from','bagged','secures order','wins order','letter of intent','order worth','order valued'], exclude:['cancellation of order','cancellation of work order','cancellation of purchase order','order cancelled','work order cancelled','purchase order cancelled','cancellation of contract','contract cancelled','termination of contract','contract terminated','termination of work order','work order terminated','rescission of','order rescinded','contract rescinded','order withdrawn','withdrawal of order','loss of order','order lost']},
     {id:'board',  label:'Board Meeting', keyword:'board meeting'},
     {id:'div',    label:'Dividend',    keyword:'dividend'},
@@ -5336,6 +5348,7 @@ export default function App(){
               {id:'compare',   label:'Compare',   abbr:'CMP'},
               {id:'watchlist', label:'Watchlist', abbr:'WL'},
               {id:'announcements', label:'Announcements', abbr:'AN'},
+              {id:'bestpicks', label:'AI Best Picks', abbr:'AI'},
             ].map(({id,label,abbr})=>(
               <div key={id} onClick={()=>setMainTab(id)}
                 title={label}
@@ -8150,6 +8163,19 @@ export default function App(){
               </button>
             </div>
 
+            <div style={{display:'flex',gap:6,marginBottom:14}}>
+              {[{id:'today',label:"Today's Picks"},{id:'history',label:'📜 Track Record'}].map(v=>(
+                <button key={v.id} onClick={()=>setBestPicksView(v.id)}
+                  style={{padding:'6px 12px',borderRadius:20,fontSize:11,fontWeight:700,cursor:'pointer',
+                    border:`1px solid ${bestPicksView===v.id?C.accent:C.border}`,
+                    background:bestPicksView===v.id?C.accent+'22':C.card,
+                    color:bestPicksView===v.id?C.accent:C.text}}>
+                  {v.label}
+                </button>
+              ))}
+            </div>
+
+            {bestPicksView==='today'&&(<>
             {bestPicksLoading&&bestPicks.length===0?(
               <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>Loading…</div>
             ):bestPicks.length===0?(
@@ -8227,6 +8253,80 @@ export default function App(){
                 ))}
               </div>
             )}
+            </>)}
+
+            {bestPicksView==='history'&&(()=>{
+              // Group history rows by date, and for each pick, look up the
+              // symbol's CURRENT live price from the already-loaded main
+              // `stocks` array (no extra fetch needed) to compute % moved
+              // since it was picked. A symbol not found there (delisted,
+              // renamed, or simply outside today's loaded universe) shows
+              // '—' instead of a wrong number.
+              const bySym = {}
+              for (const s of stocks) bySym[s.sym] = s
+              const byDate = {}
+              for (const h of bestPicksHistory) {
+                (byDate[h.picked_date] = byDate[h.picked_date] || []).push(h)
+              }
+              const dates = Object.keys(byDate).sort((a,b)=>b.localeCompare(a))
+              if (bestPicksHistoryLoading && bestPicksHistory.length===0) {
+                return <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>Loading…</div>
+              }
+              if (dates.length===0) {
+                return <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
+                  No track record yet — history builds up day by day starting from when this feature went live.
+                </div>
+              }
+              return (
+                <div style={{display:'flex',flexDirection:'column',gap:18}}>
+                  {dates.map(date=>{
+                    const picks = byDate[date]
+                    const withPct = picks.map(h=>{
+                      const live = bySym[h.symbol]
+                      const pct = (live && h.price_at_pick) ? ((live.last - h.price_at_pick)/h.price_at_pick*100) : null
+                      return {...h, currentPrice: live?.last, pct}
+                    })
+                    const validPct = withPct.filter(h=>h.pct!=null)
+                    const winRate = validPct.length ? Math.round(validPct.filter(h=>h.pct>0).length/validPct.length*100) : null
+                    const avgPct = validPct.length ? validPct.reduce((s,h)=>s+h.pct,0)/validPct.length : null
+                    return (
+                      <div key={date}>
+                        <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:8,flexWrap:'wrap'}}>
+                          <div style={{fontWeight:800,fontSize:13,color:C.text}}>
+                            {new Date(date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
+                          </div>
+                          {winRate!=null&&(
+                            <div style={{fontSize:11,color:C.muted}}>
+                              {winRate}% up so far · avg {avgPct>=0?'+':''}{avgPct.toFixed(1)}%
+                            </div>
+                          )}
+                        </div>
+                        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                          {withPct.map(h=>(
+                            <div key={h.symbol} style={{background:C.card,border:`1px solid ${C.border}`,
+                              borderRadius:8,padding:'8px 12px',display:'flex',alignItems:'center',gap:10}}>
+                              <div style={{minWidth:26,fontSize:11,fontWeight:700,color:C.muted}}>#{h.rank}</div>
+                              <span onClick={()=>setChartSym(h.symbol)}
+                                style={{fontWeight:800,fontSize:12,color:C.accent,cursor:'pointer',
+                                  minWidth:76,textDecoration:'underline',textDecorationColor:C.accent+'55'}}>
+                                {h.symbol}
+                              </span>
+                              <div style={{fontSize:10,color:C.muted}}>
+                                ₹{h.price_at_pick} → {h.currentPrice!=null?`₹${h.currentPrice}`:'—'}
+                              </div>
+                              <div style={{marginLeft:'auto',fontSize:12,fontWeight:800,
+                                color:h.pct==null?C.muted:h.pct>=0?C.green:C.red}}>
+                                {h.pct==null?'—':`${h.pct>=0?'▲ +':'▼ '}${h.pct.toFixed(1)}%`}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </div>
         )}
 
