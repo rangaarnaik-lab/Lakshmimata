@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -4705,6 +4705,20 @@ export default function App(){
   const [breakoutType,setBreakoutType]=useState('r1')
   const [announcements,setAnnouncements]=useState([])
   const [announcementsLoading,setAnnouncementsLoading]=useState(false)
+  // AI Best Picks — composite technical+fundamental score computed
+  // server-side, refreshed at most hourly. Fetched on tab-open and via
+  // a manual refresh button (no need for constant polling — the
+  // underlying data itself only changes hourly).
+  const [bestPicks,setBestPicks]=useState([])
+  const [bestPicksLoading,setBestPicksLoading]=useState(false)
+  const loadBestPicks=useCallback(()=>{
+    setBestPicksLoading(true)
+    fetchBestPicks().then(rows=>{setBestPicks(rows);setBestPicksLoading(false)})
+  },[])
+  useEffect(()=>{
+    if(mainTab!=='bestpicks') return
+    loadBestPicks()
+  },[mainTab,loadBestPicks])
   const [announcementsPage,setAnnouncementsPage]=useState(0)
   // Sub-tabs on the Announcements tab — filters by NSE's own category
   // text (e.g. "Financial Results", "Award of Order / Receipt of
@@ -4715,7 +4729,7 @@ export default function App(){
     {id:'all',    label:'All',         keyword:null},
     {id:'results', label:'Results',    keyword:['financial result','quarterly result','results for the quarter','unaudited results','audited results'], exclude:['newspaper publication','newspaper advertisement']},
     {id:'concall', label:'Concall',    keyword:['con call','con-call','concall','conference call','investor','analyst meet']},
-    {id:'orders', label:'Order Book',  keyword:['award of order','work order','purchase order','order received from','bagged','secures order','wins order','letter of intent','order worth','order valued']},
+    {id:'orders', label:'Order Book',  keyword:['award of order','work order','purchase order','order received from','bagged','secures order','wins order','letter of intent','order worth','order valued'], exclude:['cancellation of order','cancellation of work order','cancellation of purchase order','order cancelled','work order cancelled','purchase order cancelled','cancellation of contract','contract cancelled','termination of contract','contract terminated','termination of work order','work order terminated','rescission of','order rescinded','contract rescinded','order withdrawn','withdrawal of order','loss of order','order lost']},
     {id:'board',  label:'Board Meeting', keyword:'board meeting'},
     {id:'div',    label:'Dividend',    keyword:'dividend'},
     {id:'other',  label:'Other',       keyword:null},
@@ -5393,7 +5407,8 @@ export default function App(){
                  mainTab==='weak'?'Weak RS':mainTab==='rotation'?'Sector Rotation':
                  mainTab==='leaders'?'Leaders':
                  mainTab==='patterns'?'Patterns':
-                 mainTab==='watchlist'?'Watchlist':mainTab==='announcements'?'Announcements':'Account'}
+                 mainTab==='watchlist'?'Watchlist':mainTab==='announcements'?'Announcements':
+                 mainTab==='bestpicks'?'AI Best Picks':'Account'}
               </div>
               {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1}}>
                 {demoMode?(historyDate?`Real data from ${historyDate} — not live`:'Loading real data…'):`${session?.user?.email} · ${scanLabel}`}
@@ -8119,6 +8134,102 @@ export default function App(){
         })()}
 
         {/* ══ CORPORATE ANNOUNCEMENTS ══ */}
+        {mainTab==='bestpicks'&&(
+          <div>
+            <div style={{marginBottom:14,display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:15,color:C.accent}}>🎯 AI Best Picks</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:2}}>
+                  Top {bestPicks.length||30} stocks by technical + fundamental confluence, across all ~2382 NSE stocks. Not a buy recommendation — refreshed hourly.
+                </div>
+              </div>
+              <button onClick={loadBestPicks} disabled={bestPicksLoading}
+                style={{flexShrink:0,padding:'6px 10px',borderRadius:8,fontSize:11,fontWeight:700,cursor:'pointer',
+                  border:`1px solid ${C.border}`,background:C.card,color:C.muted}}>
+                {bestPicksLoading?'…':'🔄 Refresh'}
+              </button>
+            </div>
+
+            {bestPicksLoading&&bestPicks.length===0?(
+              <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>Loading…</div>
+            ):bestPicks.length===0?(
+              <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
+                No picks yet — the scanner refreshes this list hourly during market hours. Check back soon.
+              </div>
+            ):(
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {bestPicks.map((p)=>(
+                  <div key={p.symbol} style={{background:C.card,border:`1px solid ${C.border}`,
+                    borderRadius:10,padding:'12px 14px',display:'flex',gap:12,alignItems:'flex-start'}}>
+                    <div style={{minWidth:30,textAlign:'center'}}>
+                      <div style={{fontWeight:900,fontSize:15,color:C.accent}}>#{p.rank}</div>
+                      <div style={{fontSize:9,color:C.muted,fontWeight:700}}>{p.score}/100</div>
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
+                        <span onClick={()=>setChartSym(p.symbol)}
+                          style={{fontWeight:800,fontSize:13,color:C.accent,cursor:'pointer',
+                            textDecoration:'underline',textDecorationColor:C.accent+'55'}}>
+                          {p.symbol}
+                        </span>
+                        {p.last_price!=null&&<span style={{fontSize:11,color:C.text}}>₹{p.last_price}</span>}
+                        {p.chg_pct!=null&&(
+                          <span style={{fontSize:11,fontWeight:700,color:p.chg_pct>=0?C.green:C.red}}>
+                            {p.chg_pct>=0?'▲':'▼'} {Math.abs(p.chg_pct).toFixed(2)}%
+                          </span>
+                        )}
+                        {p.sector&&<span style={{fontSize:10,color:C.muted}}>{p.sector}</span>}
+                      </div>
+                      {p.reasoning&&(
+                        <div style={{fontSize:11,fontWeight:600,color:C.accent,marginTop:4,lineHeight:1.4}}>
+                          🤖 {p.reasoning}
+                        </div>
+                      )}
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:6}}>
+                        {p.rs_tv!=null&&(
+                          <span style={{fontSize:9,fontWeight:700,color:C.text,background:C.border+'55',borderRadius:6,padding:'2px 6px'}}>
+                            RS {p.rs_tv}
+                          </span>
+                        )}
+                        {p.weinstein_stage!=null&&(
+                          <span style={{fontSize:9,fontWeight:700,color:C.text,background:C.border+'55',borderRadius:6,padding:'2px 6px'}}>
+                            Stage {p.weinstein_stage}
+                          </span>
+                        )}
+                        {p.vcp_fired&&(
+                          <span style={{fontSize:9,fontWeight:700,color:C.green,background:C.green+'18',borderRadius:6,padding:'2px 6px'}}>
+                            VCP
+                          </span>
+                        )}
+                        {(p.is_resistance_breakout||p.is_cup_handle_breakout)&&(
+                          <span style={{fontSize:9,fontWeight:700,color:C.green,background:C.green+'18',borderRadius:6,padding:'2px 6px'}}>
+                            Breakout
+                          </span>
+                        )}
+                        {p.eps_yoy!=null&&(
+                          <span style={{fontSize:9,fontWeight:700,color:p.eps_yoy>=0?C.green:C.red,background:(p.eps_yoy>=0?C.green:C.red)+'18',borderRadius:6,padding:'2px 6px'}}>
+                            EPS YoY {p.eps_yoy>=0?'+':''}{p.eps_yoy}%
+                          </span>
+                        )}
+                        {p.promoter_trend&&(
+                          <span style={{fontSize:9,fontWeight:700,color:C.muted,background:C.border+'55',borderRadius:6,padding:'2px 6px'}}>
+                            Promoter {p.promoter_trend}
+                          </span>
+                        )}
+                        {p.market_cap!=null&&(
+                          <span style={{fontSize:9,fontWeight:700,color:C.muted,background:C.border+'55',borderRadius:6,padding:'2px 6px'}}>
+                            ₹{Math.round(p.market_cap).toLocaleString('en-IN')} Cr
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {mainTab==='announcements'&&(
           <div>
             <div style={{marginBottom:14,display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10}}>
@@ -8516,8 +8627,8 @@ export default function App(){
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <span style={{fontSize:15}}>⋯</span>
               <span style={{fontSize:8,fontWeight:600,
-                color:['squeeze','weak','portfolio','compare','watchlist','announcements','settings','leaders','patterns'].includes(mainTab)?C.accent:C.muted}}>More</span>
-              {['squeeze','weak','portfolio','compare','watchlist','announcements','settings','leaders','patterns'].includes(mainTab)&&
+                color:['squeeze','weak','portfolio','compare','watchlist','announcements','bestpicks','settings','leaders','patterns'].includes(mainTab)?C.accent:C.muted}}>More</span>
+              {['squeeze','weak','portfolio','compare','watchlist','announcements','bestpicks','settings','leaders','patterns'].includes(mainTab)&&
                 <div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           </div>
@@ -8536,7 +8647,7 @@ export default function App(){
                   {[
                     ['squeeze','🌀','Squeeze'],['weak','🚨','Weak'],['leaders','🚀','Leaders'],['patterns','🧩','Patterns'],
                     ['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],
-                    ['announcements','📢','Announcements'],
+                    ['announcements','📢','Announcements'],['bestpicks','🎯','AI Picks'],
                     ['settings','⚙','Account'],
                   ].map(([t,icon,label])=>(
                     <button key={t} onClick={()=>{setMainTab(t);setShowMoreMenu(false)}}
