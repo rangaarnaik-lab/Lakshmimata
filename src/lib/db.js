@@ -803,6 +803,23 @@ export async function fetchUsageStats(days = 14) {
 }
 
 /**
+ * Fetches the AI Best Picks list — a composite technical+fundamental
+ * score computed every scan cycle by the live-scan service, refreshed
+ * at most hourly, with an AI-generated (or free templated, if
+ * ANTHROPIC_API_KEY isn't set) one-line rationale per pick. Full-replace
+ * table (today's top N only), so a plain unordered select is enough —
+ * `rank` already reflects the current ordering.
+ */
+export async function fetchBestPicks() {
+  const { data, error } = await supabase
+    .from('best_picks')
+    .select('symbol,rank,score,reasoning,last_price,chg_pct,sector,industry,market_cap,rs_tv,weinstein_stage,vcp_fired,is_resistance_breakout,is_cup_handle_breakout,eps_yoy,sales_yoy,roe,promoter_trend,generated_at')
+    .order('rank', { ascending: true })
+  if (error) { console.error('fetchBestPicks error:', error.message); return [] }
+  return data || []
+}
+
+/**
  * Fetches recent corporate announcements across all tracked stocks —
  * populated by the backend's separate fundamentals+announcements worker
  * service, polling NSE's announcements feed every ~15 minutes. Paginated
