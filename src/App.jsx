@@ -3019,7 +3019,7 @@ function SectionNav({items, refs}){
 
 function DesktopRow({s,i,onChart,visibleRsCols}){
   const [open,setOpen]=useState(false)
-  const vis=visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true}
+  const vis=visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,fundRating:true}
   // Grid: # | Symbol+Sector+Badges | RS | [MID] | [SML] | [SEC] | [Trend] | Price | Chg% | [PP 10d] | [RS 7d] | [Stage] | [MCap] | [P/E] | [ROE] | [D/E] | [Prom] | expand | TV | Scr
   const COLS=computeRsGridCols(vis)
   return(
@@ -3246,7 +3246,7 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
         </div>}
 
         {/* P/E */}
-        {vis.pe&&<div style={{textAlign:'right',fontSize:10}}>
+        {vis.pe&&<div title="Price-to-Earnings — years of current profit to earn back the share price. Green <20 (cheap-ish), Yellow 20-40, Red >40 or loss-making. Compare within the same sector, not across sectors." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
           {s.pe!=null?(
             <span style={{color:s.pe<20?C.green:s.pe<40?C.yellow:C.red}}>{s.pe.toFixed(1)}</span>
           ):<span style={{color:C.muted}}>—</span>}
@@ -3254,7 +3254,7 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
         </div>}
 
         {/* ROE */}
-        {vis.roe&&<div style={{textAlign:'right',fontSize:10}}>
+        {vis.roe&&<div title="Return on Equity — how efficiently the company turns shareholder capital into profit. Green >20% (strong), Yellow 10-20%, Red <10% or negative." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
           {s.roe!=null?(
             <span style={{color:s.roe>20?C.green:s.roe>10?C.yellow:C.red}}>{s.roe.toFixed(1)}%</span>
           ):<span style={{color:C.muted}}>—</span>}
@@ -3262,7 +3262,7 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
         </div>}
 
         {/* Debt/Equity */}
-        {vis.de&&<div style={{textAlign:'right',fontSize:10}}>
+        {vis.de&&<div title="Debt-to-Equity — how leveraged the company is. Green <0.5 (low debt), Yellow 0.5-1.5, Red >1.5 (highly leveraged — capital-intensive sectors like banks/infra run higher naturally)." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
           {s.debtEq!=null?(
             <span style={{color:s.debtEq<0.5?C.green:s.debtEq<1.5?C.yellow:C.red}}>{s.debtEq.toFixed(2)}</span>
           ):<span style={{color:C.muted}}>—</span>}
@@ -3270,11 +3270,27 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
         </div>}
 
         {/* Promoter % */}
-        {vis.prom&&<div style={{textAlign:'right',fontSize:10}}>
+        {vis.prom&&<div title="Promoter shareholding — founders/promoters' stake in the company. Green >55% (high skin in the game), Yellow 35-55%, Red <35%. Watch the TREND more than the level — a falling % or pledged shares matter more than the raw number." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
           {s.promoter!=null?(
             <span style={{color:s.promoter>55?C.green:s.promoter>35?C.yellow:C.red}}>{s.promoter.toFixed(1)}%</span>
           ):<span style={{color:C.muted}}>—</span>}
           <div style={{fontSize:8,color:C.muted}}>Prom</div>
+        </div>}
+
+        {/* Fundamental Rating — quality-only assessment (ROE, growth,
+            leverage, ownership trends). Deliberately NOT a price target
+            or buy/sell call — a real fair-value estimate needs proper
+            DCF/comparable-multiple modeling this doesn't attempt. */}
+        {vis.fundRating&&<div title="Fundamental quality rating from ROE, EPS/Sales growth, debt levels, margin trend, and promoter/FII/DII activity. This is a QUALITY assessment, not a price target — it says nothing about whether the current price is cheap or expensive." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
+          {s.fundamentalLabel?(
+            <span style={{fontWeight:700,color:
+              s.fundamentalLabel==='Excellent'?C.green:
+              s.fundamentalLabel==='Good'?'#7dd3a8':
+              s.fundamentalLabel==='Fair'?C.yellow:C.red}}>
+              {s.fundamentalLabel}
+            </span>
+          ):<span style={{color:C.muted}}>—</span>}
+          <div style={{fontSize:8,color:C.muted}}>Rating</div>
         </div>}
 
         {/* Expand — separate click target from the row (which now opens
@@ -4889,7 +4905,7 @@ export default function App(){
     return()=>{cancelled=true;clearInterval(t)}
   },[annAlertsOn,watchlists])
   const [visibleRsCols,setVisibleRsCols]=useState(()=>{
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,squeeze:false,wl52:false,weakrs:false}
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,fundRating:true,squeeze:false,wl52:false,weakrs:false}
     try{
       const saved=JSON.parse(localStorage.getItem('lakshmimata-rs-columns')||'null')
       return saved?{...defaults,...saved}:defaults
@@ -4903,7 +4919,7 @@ export default function App(){
     })
   }
   const resetRsCols=()=>{
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,squeeze:false,wl52:false,weakrs:false}
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,fundRating:true,squeeze:false,wl52:false,weakrs:false}
     setVisibleRsCols(defaults)
     try{localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(defaults))}catch(e){}
   }
@@ -5750,7 +5766,7 @@ export default function App(){
                         ['trend','Trend'],['pp10','10 D Vol'],['rs7d','RS Last 7d'],['stage','Stage/Vol'],
                         ['squeeze','Squeeze/VCP'],
                         ['wl52','52WL Signal'],['weakrs','Weak RS'],
-                        ['mcap','MCap'],['pe','P/E'],['roe','ROE'],['de','D/E'],['prom','Prom%']].map(([key,label])=>(
+                        ['mcap','MCap'],['pe','P/E'],['roe','ROE'],['de','D/E'],['prom','Prom%'],['fundRating','Rating']].map(([key,label])=>(
                         <button key={key} onClick={()=>toggleRsCol(key)}
                           style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,
                             border:`1px solid ${visibleRsCols[key]?C.accent:C.border}`,cursor:'pointer',

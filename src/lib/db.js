@@ -342,6 +342,8 @@ function transformStockRow(row) {
     diiTrend:       row.dii_trend,         // percentage points vs prior period
     promoterTrend:  row.promoter_trend,    // percentage points vs prior period
     pegRatio:       row.peg_ratio,
+    fundamentalScore: row.fundamental_score,  // 0-100, quality-only (not a price target)
+    fundamentalLabel: row.fundamental_label,  // 'Excellent' | 'Good' | 'Fair' | 'Poor'
     hist:       row.rs_hist || [],
     rsTrend: {
       trend: row.rs_trend || 'flat',
