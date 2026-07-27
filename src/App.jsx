@@ -8570,9 +8570,42 @@ export default function App(){
                                   {label:'PAT (₹Cr)',   get:r=>r?.pat,   yoyPct:pct(current.pat,   yoyRow?.pat)},
                                   {label:'EPS (₹)',     get:r=>r?.eps,   yoyPct:pct(current.eps,   yoyRow?.eps)},
                                 ]
+                                // Result quality rating — Excellent/Good/Neutral/Weak,
+                                // from the same Sales/PAT YoY figures shown in the table
+                                // right below it, not a separate computation or data
+                                // source. Deliberately a QUALITY label, not a buy/sell
+                                // call — mirrors the Fundamental Rating's wording choice
+                                // for the same reason.
+                                const salesYoy = metrics[0].yoyPct
+                                const patYoy = metrics[1].yoyPct
+                                let resultRating = null
+                                if (patYoy!=null && salesYoy!=null) {
+                                  if (patYoy>=20 && salesYoy>=10) resultRating='Excellent'
+                                  else if (patYoy>0 && salesYoy>0) resultRating='Good'
+                                  else if (patYoy<0 && salesYoy<0) resultRating='Weak'
+                                  else resultRating='Neutral'
+                                } else if (patYoy!=null) {
+                                  // Sales YoY unavailable (e.g. same-quarter-last-year
+                                  // sales missing) — fall back to PAT alone, slightly
+                                  // more conservative thresholds since it's one signal
+                                  // instead of two agreeing.
+                                  resultRating = patYoy>=25?'Excellent':patYoy>0?'Good':patYoy<-10?'Weak':'Neutral'
+                                }
                                 return (
                                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderTop:'none',
                                     borderRadius:'0 0 8px 8px',padding:'8px 10px',overflowX:'auto'}}>
+                                    {resultRating&&(
+                                      <div title="Quality rating from this quarter's Sales/PAT YoY growth vs. the same quarter last year — not a buy/sell call, just how the numbers moved."
+                                        style={{display:'inline-block',marginBottom:6,padding:'2px 9px',borderRadius:12,
+                                          fontSize:10,fontWeight:800,cursor:'help',
+                                          background:(resultRating==='Excellent'?C.green:resultRating==='Good'?'#7dd3a8':
+                                            resultRating==='Weak'?C.red:C.yellow)+'22',
+                                          color:resultRating==='Excellent'?C.green:resultRating==='Good'?'#7dd3a8':
+                                            resultRating==='Weak'?C.red:C.yellow}}>
+                                        {resultRating==='Excellent'?'⭐ Excellent':resultRating==='Good'?'✓ Good':
+                                          resultRating==='Weak'?'⚠ Weak':'– Neutral'} Result
+                                      </div>
+                                    )}
                                     <table style={{width:'100%',fontSize:10.5,borderCollapse:'collapse',minWidth:280}}>
                                       <thead>
                                         <tr>
