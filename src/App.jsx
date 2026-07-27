@@ -8581,6 +8581,14 @@ export default function App(){
                                 let resultRating = null
                                 if (patYoy!=null && salesYoy!=null) {
                                   if (patYoy>=20 && salesYoy>=10) resultRating='Excellent'
+                                  else if (patYoy<=-15) resultRating='Weak'
+                                  // ^ A sharp profit decline is the dominant red flag even
+                                  // when sales grew — margin compression, not neutral.
+                                  // Verified against real numbers: Dodla Dairy Q1 FY27 had
+                                  // Sales +19% YoY but PAT -35% YoY (OPM fell ~279bps) and
+                                  // was correctly rated 'Weak' by reference, not 'Neutral'
+                                  // — the original patYoy<0&&salesYoy<0-only rule missed
+                                  // this exact real-world pattern entirely.
                                   else if (patYoy>0 && salesYoy>0) resultRating='Good'
                                   else if (patYoy<0 && salesYoy<0) resultRating='Weak'
                                   else resultRating='Neutral'
@@ -8591,11 +8599,32 @@ export default function App(){
                                   // instead of two agreeing.
                                   resultRating = patYoy>=25?'Excellent':patYoy>0?'Good':patYoy<-10?'Weak':'Neutral'
                                 }
+                                // QoQ tier-shift: a YoY-based verdict alone can miss a
+                                // business that's decelerating fast (decent YoY comp
+                                // flattering a recent slide) or recovering fast (weak YoY
+                                // comp hiding real recent improvement). Shift ONE tier
+                                // when the sequential trend meaningfully contradicts the
+                                // YoY story — not overriding it outright, since a single
+                                // quarter's QoQ swing is noisier than YoY and shouldn't
+                                // fully override the more stable year-on-year read.
+                                if (resultRating && prevQtr) {
+                                  const patQoq = pct(current.pat, prevQtr.pat)
+                                  const salesQoq = pct(current.sales, prevQtr.sales)
+                                  const tiers = ['Weak','Neutral','Good','Excellent']
+                                  let idx = tiers.indexOf(resultRating)
+                                  if (patQoq!=null) {
+                                    const decelerating = patQoq <= -15 && (salesQoq==null || salesQoq <= 0)
+                                    const recovering = patQoq >= 15 && (salesQoq==null || salesQoq >= 0)
+                                    if (decelerating && idx > 0) idx -= 1
+                                    else if (recovering && idx < tiers.length-1) idx += 1
+                                  }
+                                  resultRating = tiers[idx]
+                                }
                                 return (
                                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderTop:'none',
                                     borderRadius:'0 0 8px 8px',padding:'8px 10px',overflowX:'auto'}}>
                                     {resultRating&&(
-                                      <div title="Quality rating from this quarter's Sales/PAT YoY growth vs. the same quarter last year — not a buy/sell call, just how the numbers moved."
+                                      <div title="Quality rating from Sales/PAT YoY growth vs. the same quarter last year, adjusted one tier if the sequential (QoQ) trend meaningfully contradicts it — not a buy/sell call, just how the numbers moved."
                                         style={{display:'inline-block',marginBottom:6,padding:'2px 9px',borderRadius:12,
                                           fontSize:10,fontWeight:800,cursor:'help',
                                           background:(resultRating==='Excellent'?C.green:resultRating==='Good'?'#7dd3a8':
