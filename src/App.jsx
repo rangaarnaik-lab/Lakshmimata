@@ -6084,6 +6084,16 @@ export default function App(){
         {mainTab==='market'&&(
           <div style={{padding:'0 0 20px',position:'relative'}}>
 
+            {/* History date picker — same shared historyDate state the
+                RS Rating tab uses; Market Breadth stats below are
+                computed from `stocks`, which already refetches for
+                whatever date this is set to, so no backend change
+                needed to make this tab historical-aware too. */}
+            <div style={{display:'flex',justifyContent:'flex-end',marginBottom:10}}>
+              <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
+                availableDates={availableDates} isMobile={isMobile}/>
+            </div>
+
             {stocks.length>0&&(
               <SectionNav refs={marketSectionRefs} items={[
                 {id:'verdict',    label:'Verdict'},
