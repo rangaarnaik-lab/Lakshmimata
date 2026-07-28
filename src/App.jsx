@@ -2699,7 +2699,11 @@ function sortStocksForTable(stocks,sortBy,sortDir){
     if(sortBy==='sym') return dir===1?av.localeCompare(bv):bv.localeCompare(av)
     if(av===-1&&bv!==-1) return 1 // nulls always sort to bottom regardless of direction
     if(bv===-1&&av!==-1) return -1
-    return dir===1?(av-bv):(bv-av)
+    if(av!==bv) return dir===1?(av-bv):(bv-av)
+    // Same RS-tie chg% tiebreaker as the main table, see its comment
+    // for why — dozens of stocks commonly share the RS=99 ceiling.
+    if(sortBy==='rs'||sortBy==='rsTv') return (b.chg??0)-(a.chg??0)
+    return 0
   })
 }
 
@@ -5214,6 +5218,7 @@ export default function App(){
       if(key==='pp10') return s.pp?.ppCount10d??0
       if(key==='chg') return s.chg??0
       if(key==='last') return s.last??0
+      if(key==='marketCap') return s.marketCap??-1
       if(key==='sym') return s.sym
       return 0
     }
@@ -5222,7 +5227,15 @@ export default function App(){
     // nulls always sort to bottom regardless of direction
     if(av===-1&&bv!==-1) return 1
     if(bv===-1&&av!==-1) return -1
-    return dir===1?(av-bv):(bv-av)
+    if(av!==bv) return dir===1?(av-bv):(bv-av)
+    // Tie-break on % change (always descending, regardless of the
+    // primary column's direction) — most useful for the default RS
+    // sort, where dozens of stocks commonly share the same RS=99
+    // ceiling value with no inherent order otherwise. Only applies
+    // when sorting BY rs/rsTv itself; a tie on some other column
+    // (e.g. P/E) sorting by chg% wouldn't make as much sense.
+    if(sortBy==='rs'||sortBy==='rsTv') return (b.chg??0)-(a.chg??0)
+    return 0
   }),[stocks,search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,sectorFilter,presetFilter,sortBy,sortDir])
   const displayedRS=rsBase
   const rsTotalPages=Math.max(1,Math.ceil(displayedRS.length/RS_PAGE_SIZE))
