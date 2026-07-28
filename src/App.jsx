@@ -7034,6 +7034,10 @@ export default function App(){
         {/* ══ LEADERS — RS Line New Highs + New Stage 2 Entries ══ */}
         {mainTab==='leaders'&&(
           <div style={{padding:'0 0 20px'}}>
+            <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
+              <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
+                availableDates={availableDates} isMobile={isMobile}/>
+            </div>
             <div style={{marginBottom:14}}>
               <div style={{fontWeight:700,fontSize:16,color:C.text}}>Leaders</div>
               <div style={{fontSize:11,color:C.muted}}>Stocks flashing early-leadership and breakout signals today</div>
@@ -7076,6 +7080,10 @@ export default function App(){
         {/* ══ PATTERNS — every detected chart pattern, one by one ══ */}
         {mainTab==='patterns'&&(
           <div style={{padding:'0 0 20px'}}>
+            <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
+              <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
+                availableDates={availableDates} isMobile={isMobile}/>
+            </div>
             <div style={{marginBottom:14}}>
               <div style={{fontWeight:700,fontSize:16,color:C.text}}>Patterns</div>
               <div style={{fontSize:11,color:C.muted}}>Every chart pattern the scanner detects, in one place</div>
@@ -7454,6 +7462,10 @@ export default function App(){
         {/* ══ STOCK COMPARE ══ */}
         {mainTab==='compare'&&(
           <div style={{padding:'0 0 20px'}}>
+            <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
+              <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
+                availableDates={availableDates} isMobile={isMobile}/>
+            </div>
             <div style={{marginBottom:14}}>
               <div style={{fontWeight:700,fontSize:16}}>Stock Comparison</div>
               <div style={{fontSize:11,color:C.muted}}>Compare up to 4 stocks side by side</div>
@@ -7561,6 +7573,10 @@ export default function App(){
               refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
               onRefresh={runDBScan}
             />
+            <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
+              <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
+                availableDates={availableDates} isMobile={isMobile}/>
+            </div>
             <div style={{background:C.card,border:`1px solid ${C.teal}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
               <div style={{fontWeight:800,fontSize:15,color:C.teal,marginBottom:6}}>🌀 Squeeze Scanner</div>
               <div style={{fontSize:12,color:C.muted,marginBottom:12}}>
@@ -7644,6 +7660,10 @@ export default function App(){
               refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
               onRefresh={runDBScan}
             />
+            <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
+              <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
+                availableDates={availableDates} isMobile={isMobile}/>
+            </div>
             {/* Stats */}
             <div style={{background:C.card,border:`1px solid ${C.accent}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
               <div style={{fontWeight:800,fontSize:15,color:C.accent,marginBottom:6}}>💥 HY/HT Breakout Scanner</div>
@@ -7796,6 +7816,10 @@ export default function App(){
               refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
               onRefresh={runDBScan}
             />
+            <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
+              <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
+                availableDates={availableDates} isMobile={isMobile}/>
+            </div>
 
             {displayed52WL.length>0&&<TVCopyPanel stocks={displayed52WL} label="52WL Crossover"/>}
             <div style={{background:C.card,border:`1px solid ${C.pink}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
