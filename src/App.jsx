@@ -5,7 +5,7 @@ import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHis
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
-  detectPP, calcHY, calcHT, calcNearEMA9,
+  detectPP, calcHY, calcHT, calcNearEMA9, emaArr,
   detect52WLCrossover, detectWeakRSBigMove, buildSectorRS
 } from './scanners/math'
 import { SECTOR_MAP, NIFTY50, MIDCAP, SMALLCAP, getSector } from './data/sectors'
@@ -2049,6 +2049,7 @@ function CandlestickChart({sym, isMobile, isIndex}){
       ma20: calcSMASeries(closes, 20),
       ma50: calcSMASeries(closes, 50),
       ma200: calcSMASeries(closes, 200),
+      ema9: emaArr(closes, 9),
       swings: _swings,
       sr: computeSupportResistance(_swings, closes[closes.length-1]),
       insideBars: detectInsideBars(highs, lows),
@@ -2142,7 +2143,7 @@ function CandlestickChart({sym, isMobile, isIndex}){
     )
   }
 
-  const { ma20, ma50, ma200, swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, nearEma9Days, vcp, cup } = analysis
+  const { ma20, ma50, ma200, ema9, swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, nearEma9Days, vcp, cup } = analysis
 
   let { dates, prices: closes, opens, highs, lows, volumes } = data
   // Merge the live overlay into local copies for RENDERING only — never
@@ -2252,6 +2253,7 @@ function CandlestickChart({sym, isMobile, isIndex}){
   const vMA20   = ma20.slice(start)
   const vMA50   = ma50.slice(start)
   const vMA200  = ma200.slice(start)
+  const vEma9line = ema9.slice(start)
   const vInsideBars = insideBars.slice(start)
   const vAccDist = accDist.slice(start)
   const vPP  = ppDays.slice(start)
@@ -2266,7 +2268,7 @@ function CandlestickChart({sym, isMobile, isIndex}){
 
   const visibleHighs = vHighs.filter(v=>v!=null)
   const visibleLows  = vLows.filter(v=>v!=null)
-  const maVals = [...vMA20, ...vMA50, ...vMA200].filter(v=>v!=null)
+  const maVals = [...vMA20, ...vMA50, ...vMA200, ...vEma9line].filter(v=>v!=null)
   let maxP = Math.max(...visibleHighs, ...maVals, sr.r1||0, sr.r2||0)
   let minP = Math.min(...visibleLows, ...(maVals.length?maVals:[Infinity]), sr.s1||Infinity, sr.s2||Infinity)
   if(!isFinite(minP)) minP = Math.min(...visibleLows)
@@ -2511,7 +2513,7 @@ function CandlestickChart({sym, isMobile, isIndex}){
         )}
 
         {/* MA lines */}
-        {showMA && [[vMA20,C.blue],[vMA50,C.yellow],[vMA200,C.purple]].map(([series,color],k)=>{
+        {showMA && [[vMA20,C.blue],[vMA50,C.yellow],[vMA200,C.purple],[vEma9line,C.teal]].map(([series,color],k)=>{
           const pts = series.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
           return pts.length>1 ? <polyline key={k} points={pts.join(' ')} fill="none" stroke={color} strokeWidth={1.3} opacity={0.9}/> : null
         })}
@@ -2610,6 +2612,7 @@ function CandlestickChart({sym, isMobile, isIndex}){
       {/* Legend */}
       <div style={{display:'flex',flexWrap:'wrap',gap:10,marginTop:6,fontSize:9,color:C.muted}}>
         {showMA && <>
+          <span><span style={{color:C.teal}}>■</span> EMA9</span>
           <span><span style={{color:C.blue}}>■</span> MA20</span>
           <span><span style={{color:C.yellow}}>■</span> MA50</span>
           <span><span style={{color:C.purple}}>■</span> MA200</span>
