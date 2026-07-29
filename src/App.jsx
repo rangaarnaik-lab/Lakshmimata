@@ -4289,6 +4289,29 @@ export class ErrorBoundary extends React.Component {
 export default function App(){
   const isMobile=useIsMobile()
   const [session,setSession]=useState(null)
+  // Temporary diagnostic: catches any uncaught JS error or unhandled
+  // promise rejection and shows it as a visible on-screen banner,
+  // instead of it only appearing in a browser console the user has no
+  // way to reach on mobile. Specifically added to debug the AI Picks
+  // blank-page issue (confirmed NOT a database/permissions problem via
+  // direct Supabase checks) without needing a desktop browser. Safe to
+  // remove once that's resolved — this doesn't affect normal operation
+  // either way, it only ever shows something if an error actually fires.
+  const [jsError,setJsError]=useState(null)
+  useEffect(()=>{
+    const onError=(e)=>{
+      setJsError(`${e.message} @ ${e.filename?.split('/').pop()}:${e.lineno}`)
+    }
+    const onRejection=(e)=>{
+      setJsError(`Unhandled promise rejection: ${e.reason?.message || e.reason}`)
+    }
+    window.addEventListener('error', onError)
+    window.addEventListener('unhandledrejection', onRejection)
+    return ()=>{
+      window.removeEventListener('error', onError)
+      window.removeEventListener('unhandledrejection', onRejection)
+    }
+  },[])
   // Demo mode: lets a logged-out visitor see the RS Rating scanner
   // populated with sample data (the existing DEMO dataset, previously
   // only reachable via the 👁 button INSIDE the already-authenticated
@@ -5351,6 +5374,19 @@ export default function App(){
   return(
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:"'Inter','SF Pro Display',sans-serif",
       color:C.text,fontSize:13,display:'flex',flexDirection:'row',zoom:zoomLevel}}>
+
+      {/* Temporary diagnostic banner — see jsError state declaration
+          near the top of this component for why. Shows above
+          everything else, tap to dismiss. */}
+      {jsError&&(
+        <div onClick={()=>setJsError(null)}
+          style={{position:'fixed',top:0,left:0,right:0,zIndex:9999,
+            background:'#dc2626',color:'#fff',padding:'10px 14px',fontSize:11,
+            fontFamily:'monospace',wordBreak:'break-word',cursor:'pointer',
+            boxShadow:'0 2px 8px rgba(0,0,0,0.3)'}}>
+          ⚠️ JS Error (tap to dismiss): {jsError}
+        </div>
+      )}
 
       {/* ── WealthLab-style Icon sidebar ── */}
       {!isMobile&&(
