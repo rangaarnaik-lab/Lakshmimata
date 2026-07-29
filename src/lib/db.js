@@ -837,7 +837,16 @@ export async function fetchBestPicks() {
     .from('best_picks')
     .select('symbol,rank,score,reasoning,last_price,chg_pct,sector,industry,market_cap,rs_tv,weinstein_stage,vcp_fired,is_resistance_breakout,is_cup_handle_breakout,eps_yoy,sales_yoy,roe,promoter_trend,generated_at')
     .order('rank', { ascending: true })
-  if (error) { console.error('fetchBestPicks error:', error.message); return [] }
+  if (error) {
+    console.error('fetchBestPicks error:', error.message)
+    // Also surface this to the app-level error banner (see App.jsx's
+    // jsError state) — this function's own try/catch normally swallows
+    // Supabase errors quietly into console.error, which is invisible on
+    // mobile with no devtools access. Temporary diagnostic for the AI
+    // Picks blank-page investigation.
+    if (typeof window !== 'undefined') window.__lastSupabaseError = `fetchBestPicks: ${error.message}`
+    return []
+  }
   return data || []
 }
 
