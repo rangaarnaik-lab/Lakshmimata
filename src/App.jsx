@@ -4767,7 +4767,14 @@ export default function App(){
   const [bestPicksHistoryLoading,setBestPicksHistoryLoading]=useState(false)
   const loadBestPicks=useCallback(()=>{
     setBestPicksLoading(true)
-    fetchBestPicks().then(rows=>{setBestPicks(rows);setBestPicksLoading(false)})
+    fetchBestPicks().then(rows=>{
+      setBestPicks(rows)
+      setBestPicksLoading(false)
+      if(window.__lastSupabaseError){
+        setJsError(window.__lastSupabaseError)
+        window.__lastSupabaseError=null
+      }
+    })
   },[])
   const loadBestPicksHistory=useCallback(()=>{
     setBestPicksHistoryLoading(true)
