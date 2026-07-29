@@ -2009,13 +2009,13 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
 // alongside the TradingView embed as a second tab, not a replacement —
 // useful for stocks TradingView's free embed can't resolve, and for
 // seeing our own scanner's signals drawn directly on the chart.
-const RANGE_BARS = {'5D':5,'1M':21,'3M':63,'6M':126,'YTD':null,'1Y':252,'5Y':1260,'All':100000}
+const RANGE_BARS = {'1D':1,'1M':21,'3M':63,'6M':126,'YTD':null,'1Y':252,'5Y':1260,'All':100000}
 
 function CandlestickChart({sym, isMobile, isIndex}){
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [range, setRange] = useState('3M')
-  const [zoomBars, setZoomBars] = useState(RANGE_BARS['3M'])
+  const [range, setRange] = useState('1M')
+  const [zoomBars, setZoomBars] = useState(RANGE_BARS['1M'])
   const [panOffset, setPanOffset] = useState(0) // bars back from the most recent
   const [showMA, setShowMA] = useState(true)
   const [chartStyle, setChartStyle] = useState('candle') // 'candle' | 'line'
@@ -2067,7 +2067,7 @@ function CandlestickChart({sym, isMobile, isIndex}){
   useEffect(() => {
     let cancelled = false
     setLoading(true); setData(null)
-    setZoomBars(RANGE_BARS['3M']); setPanOffset(0) // reset zoom/pan for the new symbol
+    setZoomBars(RANGE_BARS['1M']); setPanOffset(0) // reset zoom/pan for the new symbol
     setPinnedIdx(null)
     if (isIndex) setChartStyle('line') // no real OHLC exists for indices, only a close-price series
     const fetcher = isIndex ? fetchIndexPriceHistory(sym) : fetchStockFullHistory(sym)
