@@ -8436,6 +8436,13 @@ export default function App(){
                           🤖 {p.reasoning}
                         </div>
                       )}
+                      {(p.stop_loss!=null||p.target!=null)&&(
+                        <div title="ATR-based reference levels (2x/4x average true range) — a quality-of-life guide, not a guaranteed exit point or a recommendation."
+                          style={{display:'flex',gap:12,marginTop:5,fontSize:10,cursor:'help'}}>
+                          {p.stop_loss!=null&&<span style={{color:C.red}}>🛑 SL ₹{p.stop_loss}</span>}
+                          {p.target!=null&&<span style={{color:C.green}}>🎯 Target ₹{p.target}</span>}
+                        </div>
+                      )}
                       <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:6}}>
                         {p.rs_tv!=null&&(
                           <span style={{fontSize:9,fontWeight:700,color:C.text,background:C.border+'55',borderRadius:6,padding:'2px 6px'}}>
@@ -8534,20 +8541,28 @@ export default function App(){
                         <div style={{display:'flex',flexDirection:'column',gap:6}}>
                           {withPct.map(h=>(
                             <div key={h.symbol} style={{background:C.card,border:`1px solid ${C.border}`,
-                              borderRadius:8,padding:'8px 12px',display:'flex',alignItems:'center',gap:10}}>
-                              <div style={{minWidth:26,fontSize:11,fontWeight:700,color:C.muted}}>#{h.rank}</div>
-                              <span onClick={()=>setChartSym(h.symbol)}
-                                style={{fontWeight:800,fontSize:12,color:C.accent,cursor:'pointer',
-                                  minWidth:76,textDecoration:'underline',textDecorationColor:C.accent+'55'}}>
-                                {h.symbol}
-                              </span>
-                              <div style={{fontSize:10,color:C.muted}}>
-                                ₹{h.price_at_pick} → {h.currentPrice!=null?`₹${h.currentPrice}`:'—'}
+                              borderRadius:8,padding:'8px 12px',display:'flex',flexDirection:'column',gap:4}}>
+                              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                                <div style={{minWidth:26,fontSize:11,fontWeight:700,color:C.muted}}>#{h.rank}</div>
+                                <span onClick={()=>setChartSym(h.symbol)}
+                                  style={{fontWeight:800,fontSize:12,color:C.accent,cursor:'pointer',
+                                    minWidth:76,textDecoration:'underline',textDecorationColor:C.accent+'55'}}>
+                                  {h.symbol}
+                                </span>
+                                <div style={{fontSize:10,color:C.muted}}>
+                                  ₹{h.price_at_pick} → {h.currentPrice!=null?`₹${h.currentPrice}`:'—'}
+                                </div>
+                                <div style={{marginLeft:'auto',fontSize:12,fontWeight:800,
+                                  color:h.pct==null?C.muted:h.pct>=0?C.green:C.red}}>
+                                  {h.pct==null?'—':`${h.pct>=0?'▲ +':'▼ '}${h.pct.toFixed(1)}%`}
+                                </div>
                               </div>
-                              <div style={{marginLeft:'auto',fontSize:12,fontWeight:800,
-                                color:h.pct==null?C.muted:h.pct>=0?C.green:C.red}}>
-                                {h.pct==null?'—':`${h.pct>=0?'▲ +':'▼ '}${h.pct.toFixed(1)}%`}
-                              </div>
+                              {(h.stop_loss!=null||h.target!=null)&&(
+                                <div style={{display:'flex',gap:12,fontSize:9,paddingLeft:36}}>
+                                  {h.stop_loss!=null&&<span style={{color:C.red}}>🛑 SL ₹{h.stop_loss}</span>}
+                                  {h.target!=null&&<span style={{color:C.green}}>🎯 Target ₹{h.target}</span>}
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
