@@ -4289,6 +4289,73 @@ export class ErrorBoundary extends React.Component {
   }
 }
 
+// Mirrors the backend's _RESULTS_ANN_KEYWORDS (main.py) — kept in sync
+// deliberately so "is this a results filing" agrees on both ends.
+const _RESULTS_ANN_KEYWORDS_JS = ['financial result', 'quarterly result',
+  'results for the quarter', 'unaudited results', 'audited results']
+
+/**
+ * Excellent/Good/Neutral/Weak quality rating from a symbol's results
+ * history (current quarter vs previous quarter vs same-quarter-last-
+ * year) — shared between the main per-announcement badge chip and the
+ * detailed YoY table, so both always agree instead of the top-level
+ * chip showing generic keyword-based sentiment (which is inherently
+ * "Neutral" for routine filing-notice text like "Company X has
+ * submitted results for the period ended Y" regardless of whether the
+ * actual numbers were good or bad) while a smarter numbers-based
+ * rating sits unused further down the same card.
+ *
+ * Deliberately a QUALITY label, not a buy/sell call. Returns null if
+ * there isn't enough data (e.g. only one quarter on file) to say
+ * anything meaningful yet.
+ */
+function computeResultRating(hist){
+  if(!hist || hist.length===0) return null
+  const current = hist[0]
+  const prevQtr = hist[1]||null
+  const curDate = new Date(current.period_ended)
+  const yoyRow = hist.slice(1).find(h=>{
+    const d = new Date(h.period_ended)
+    const yearsBack = curDate.getFullYear()-d.getFullYear()
+    const dayDiff = Math.abs((d.getMonth()*30+d.getDate())-(curDate.getMonth()*30+curDate.getDate()))
+    return yearsBack===1 && dayDiff<=20
+  }) || null
+  const pct=(now,then)=>(now==null||then==null||then===0)?null:((now-then)/Math.abs(then)*100)
+  const salesYoy = pct(current.sales, yoyRow?.sales)
+  const patYoy = pct(current.pat, yoyRow?.pat)
+  let resultRating = null
+  if (patYoy!=null && salesYoy!=null) {
+    if (patYoy>=20 && salesYoy>=10) resultRating='Excellent'
+    else if (patYoy<=-15) resultRating='Weak'
+    // A sharp profit decline is the dominant red flag even when sales
+    // grew — margin compression, not neutral. Verified against real
+    // numbers: Dodla Dairy Q1 FY27 had Sales +19% YoY but PAT -35% YoY
+    // and was correctly rated 'Weak', not 'Neutral'.
+    else if (patYoy>0 && salesYoy>0) resultRating='Good'
+    else if (patYoy<0 && salesYoy<0) resultRating='Weak'
+    else resultRating='Neutral'
+  } else if (patYoy!=null) {
+    resultRating = patYoy>=25?'Excellent':patYoy>0?'Good':patYoy<-10?'Weak':'Neutral'
+  }
+  // QoQ tier-shift: a YoY-only verdict can miss fast deceleration or
+  // recovery. Shift one tier when the sequential trend meaningfully
+  // contradicts the YoY story, without fully overriding it.
+  if (resultRating && prevQtr) {
+    const patQoq = pct(current.pat, prevQtr.pat)
+    const salesQoq = pct(current.sales, prevQtr.sales)
+    const tiers = ['Weak','Neutral','Good','Excellent']
+    let idx = tiers.indexOf(resultRating)
+    if (patQoq!=null) {
+      const decelerating = patQoq <= -15 && (salesQoq==null || salesQoq <= 0)
+      const recovering = patQoq >= 15 && (salesQoq==null || salesQoq >= 0)
+      if (decelerating && idx > 0) idx -= 1
+      else if (recovering && idx < tiers.length-1) idx += 1
+    }
+    resultRating = tiers[idx]
+  }
+  return resultRating
+}
+
 export default function App(){
   const isMobile=useIsMobile()
   const [session,setSession]=useState(null)
@@ -8596,14 +8663,35 @@ export default function App(){
                             {a.category}
                           </span>
                         )}
-                        {a.ai_rating&&(
-                          <span style={{display:'inline-block',fontSize:9,fontWeight:700,marginLeft:a.category?5:0,marginBottom:4,
-                            borderRadius:6,padding:'2px 6px',
-                            color:a.ai_rating==='positive'?C.green:a.ai_rating==='negative'?C.red:C.muted,
-                            background:(a.ai_rating==='positive'?C.green:a.ai_rating==='negative'?C.red:C.muted)+'18'}}>
-                            {a.ai_rating==='positive'?'▲ Positive':a.ai_rating==='negative'?'▼ Negative':'– Neutral'}
-                          </span>
-                        )}
+                        {a.ai_rating&&(()=>{
+                          // For Results-type filings specifically, prefer the
+                          // numbers-based rating (Excellent/Good/Neutral/Weak,
+                          // from actual Sales/PAT YoY) over the generic keyword-
+                          // matched sentiment — routine filing-notice text like
+                          // "Company X has submitted results for the period
+                          // ended Y" has no sentiment-bearing language at all,
+                          // so the keyword rating is ALWAYS "Neutral" for these
+                          // regardless of whether the numbers were actually good
+                          // or bad. Falls back to the keyword rating when we
+                          // don't have enough results history yet (e.g. only
+                          // one quarter on file).
+                          const isResultsFiling = _RESULTS_ANN_KEYWORDS_JS.some(k=>
+                            ((a.category||'')+' '+(a.subject||'')).toLowerCase().includes(k))
+                          const numbersRating = isResultsFiling ? computeResultRating(resultsHistoryCache[a.symbol]) : null
+                          const label = numbersRating
+                            ? {Excellent:'⭐ Excellent',Good:'✓ Good',Weak:'⚠ Weak',Neutral:'– Neutral'}[numbersRating]
+                            : (a.ai_rating==='positive'?'▲ Positive':a.ai_rating==='negative'?'▼ Negative':'– Neutral')
+                          const color = numbersRating
+                            ? {Excellent:C.green,Good:'#7dd3a8',Weak:C.red,Neutral:C.muted}[numbersRating]
+                            : (a.ai_rating==='positive'?C.green:a.ai_rating==='negative'?C.red:C.muted)
+                          return (
+                            <span title={numbersRating?"Based on actual Sales/PAT YoY numbers, not just filing-notice text":"Based on the filing's own wording"}
+                              style={{display:'inline-block',fontSize:9,fontWeight:700,marginLeft:a.category?5:0,marginBottom:4,
+                              borderRadius:6,padding:'2px 6px',color,background:color+'18'}}>
+                              {label}
+                            </span>
+                          )
+                        })()}
                         {a.order_size&&(
                           <span style={{display:'inline-block',fontSize:9,fontWeight:700,marginLeft:5,marginBottom:4,
                             borderRadius:6,padding:'2px 6px',color:C.yellow,background:C.yellow+'18'}}>
@@ -8663,56 +8751,10 @@ export default function App(){
                                   {label:'PAT (₹Cr)',   get:r=>r?.pat,   yoyPct:pct(current.pat,   yoyRow?.pat)},
                                   {label:'EPS (₹)',     get:r=>r?.eps,   yoyPct:pct(current.eps,   yoyRow?.eps)},
                                 ]
-                                // Result quality rating — Excellent/Good/Neutral/Weak,
-                                // from the same Sales/PAT YoY figures shown in the table
-                                // right below it, not a separate computation or data
-                                // source. Deliberately a QUALITY label, not a buy/sell
-                                // call — mirrors the Fundamental Rating's wording choice
-                                // for the same reason.
-                                const salesYoy = metrics[0].yoyPct
-                                const patYoy = metrics[1].yoyPct
-                                let resultRating = null
-                                if (patYoy!=null && salesYoy!=null) {
-                                  if (patYoy>=20 && salesYoy>=10) resultRating='Excellent'
-                                  else if (patYoy<=-15) resultRating='Weak'
-                                  // ^ A sharp profit decline is the dominant red flag even
-                                  // when sales grew — margin compression, not neutral.
-                                  // Verified against real numbers: Dodla Dairy Q1 FY27 had
-                                  // Sales +19% YoY but PAT -35% YoY (OPM fell ~279bps) and
-                                  // was correctly rated 'Weak' by reference, not 'Neutral'
-                                  // — the original patYoy<0&&salesYoy<0-only rule missed
-                                  // this exact real-world pattern entirely.
-                                  else if (patYoy>0 && salesYoy>0) resultRating='Good'
-                                  else if (patYoy<0 && salesYoy<0) resultRating='Weak'
-                                  else resultRating='Neutral'
-                                } else if (patYoy!=null) {
-                                  // Sales YoY unavailable (e.g. same-quarter-last-year
-                                  // sales missing) — fall back to PAT alone, slightly
-                                  // more conservative thresholds since it's one signal
-                                  // instead of two agreeing.
-                                  resultRating = patYoy>=25?'Excellent':patYoy>0?'Good':patYoy<-10?'Weak':'Neutral'
-                                }
-                                // QoQ tier-shift: a YoY-based verdict alone can miss a
-                                // business that's decelerating fast (decent YoY comp
-                                // flattering a recent slide) or recovering fast (weak YoY
-                                // comp hiding real recent improvement). Shift ONE tier
-                                // when the sequential trend meaningfully contradicts the
-                                // YoY story — not overriding it outright, since a single
-                                // quarter's QoQ swing is noisier than YoY and shouldn't
-                                // fully override the more stable year-on-year read.
-                                if (resultRating && prevQtr) {
-                                  const patQoq = pct(current.pat, prevQtr.pat)
-                                  const salesQoq = pct(current.sales, prevQtr.sales)
-                                  const tiers = ['Weak','Neutral','Good','Excellent']
-                                  let idx = tiers.indexOf(resultRating)
-                                  if (patQoq!=null) {
-                                    const decelerating = patQoq <= -15 && (salesQoq==null || salesQoq <= 0)
-                                    const recovering = patQoq >= 15 && (salesQoq==null || salesQoq >= 0)
-                                    if (decelerating && idx > 0) idx -= 1
-                                    else if (recovering && idx < tiers.length-1) idx += 1
-                                  }
-                                  resultRating = tiers[idx]
-                                }
+                                // Result quality rating — same shared computeResultRating()
+                                // function the main badge chip above uses, so both always
+                                // agree instead of drifting apart from duplicated logic.
+                                const resultRating = computeResultRating(hist)
                                 return (
                                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderTop:'none',
                                     borderRadius:'0 0 8px 8px',padding:'8px 10px',overflowX:'auto'}}>
