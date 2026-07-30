@@ -8513,11 +8513,16 @@ export default function App(){
                     const validPct = withPct.filter(h=>h.pct!=null)
                     const winRate = validPct.length ? Math.round(validPct.filter(h=>h.pct>0).length/validPct.length*100) : null
                     const avgPct = validPct.length ? validPct.reduce((s,h)=>s+h.pct,0)/validPct.length : null
+                    const daysHeld = Math.floor((Date.now() - new Date(date+'T00:00:00').getTime()) / 86400000)
                     return (
                       <div key={date}>
                         <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:8,flexWrap:'wrap'}}>
                           <div style={{fontWeight:800,fontSize:13,color:C.text}}>
                             {new Date(date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
+                          </div>
+                          <div style={{fontSize:10,fontWeight:700,color:C.accent,background:C.accent+'18',
+                            borderRadius:10,padding:'2px 8px'}}>
+                            {daysHeld===0?'Today':daysHeld===1?'1 day held':`${daysHeld} days held`}
                           </div>
                           {winRate!=null&&(
                             <div style={{fontSize:11,color:C.muted}}>
