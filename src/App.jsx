@@ -4855,6 +4855,23 @@ export default function App(){
     if(mainTab!=='bestpicks'||bestPicksView!=='history') return
     loadBestPicksHistory()
   },[mainTab,bestPicksView,loadBestPicksHistory])
+  // Track Record needs genuinely LIVE current prices to compare against
+  // pick-time prices — must NOT inherit historyDate from wherever else
+  // in the app happens to have it set. Confirmed real bug: a history-
+  // mode date left selected on an unrelated tab silently fed stale
+  // historical prices into "current price" here, showing real picks as
+  // down double digits when they'd barely moved. Fetches independently
+  // of the shared `stocks` state, always live (fetchStocksFromDB with
+  // no historyDate arg defaults to live).
+  const [trackRecordLive,setTrackRecordLive]=useState({})
+  useEffect(()=>{
+    if(mainTab!=='bestpicks'||bestPicksView!=='history') return
+    fetchStocksFromDB({}).then(rows=>{
+      const bySym={}
+      for(const s of rows) bySym[s.sym]=s
+      setTrackRecordLive(bySym)
+    })
+  },[mainTab,bestPicksView])
   const [announcementsPage,setAnnouncementsPage]=useState(0)
   // Sub-tabs on the Announcements tab — filters by NSE's own category
   // text (e.g. "Financial Results", "Award of Order / Receipt of
@@ -8464,13 +8481,13 @@ export default function App(){
 
             {bestPicksView==='history'&&(()=>{
               // Group history rows by date, and for each pick, look up the
-              // symbol's CURRENT live price from the already-loaded main
-              // `stocks` array (no extra fetch needed) to compute % moved
-              // since it was picked. A symbol not found there (delisted,
-              // renamed, or simply outside today's loaded universe) shows
-              // '—' instead of a wrong number.
-              const bySym = {}
-              for (const s of stocks) bySym[s.sym] = s
+              // symbol's CURRENT live price from trackRecordLive (fetched
+              // independently above, always live regardless of
+              // historyDate elsewhere) to compute % moved since it was
+              // picked. A symbol not found there (delisted, renamed, or
+              // simply outside the loaded universe) shows '—' instead of
+              // a wrong number.
+              const bySym = trackRecordLive
               const byDate = {}
               for (const h of bestPicksHistory) {
                 (byDate[h.picked_date] = byDate[h.picked_date] || []).push(h)
