@@ -8408,6 +8408,7 @@ export default function App(){
               </div>
             ):(
               <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                <TVCopyPanel stocks={bestPicks.map(p=>({sym:p.symbol}))} label="AI Best Picks"/>
                 {bestPicks.map((p)=>(
                   <div key={p.symbol} style={{background:C.card,border:`1px solid ${C.border}`,
                     borderRadius:10,padding:'12px 14px',display:'flex',gap:12,alignItems:'flex-start'}}>
