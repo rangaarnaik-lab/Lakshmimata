@@ -816,7 +816,7 @@ export async function fetchBestPicksHistory(days = 30) {
   const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
   const { data, error } = await supabase
     .from('best_picks_history')
-    .select('symbol,picked_date,rank,score,reasoning,price_at_pick,sector,market_cap')
+    .select('symbol,picked_date,rank,score,reasoning,price_at_pick,stop_loss,target,sector,market_cap')
     .gte('picked_date', since)
     .order('picked_date', { ascending: false })
     .order('rank', { ascending: true })
@@ -835,7 +835,7 @@ export async function fetchBestPicksHistory(days = 30) {
 export async function fetchBestPicks() {
   const { data, error } = await supabase
     .from('best_picks')
-    .select('symbol,rank,score,reasoning,last_price,chg_pct,sector,industry,market_cap,rs_tv,weinstein_stage,vcp_fired,is_resistance_breakout,is_cup_handle_breakout,eps_yoy,sales_yoy,roe,promoter_trend,generated_at')
+    .select('symbol,rank,score,reasoning,last_price,stop_loss,target,chg_pct,sector,industry,market_cap,rs_tv,weinstein_stage,vcp_fired,is_resistance_breakout,is_cup_handle_breakout,eps_yoy,sales_yoy,roe,promoter_trend,generated_at')
     .order('rank', { ascending: true })
   if (error) {
     console.error('fetchBestPicks error:', error.message)
