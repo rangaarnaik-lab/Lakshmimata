@@ -3862,6 +3862,16 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
         if(data.user&&upstoxToken){
           await supabase.rpc('save_upstox_token',{token:upstoxToken})
         }
+        if(data.user){
+          // Start the 30-day free trial. ignoreDuplicates so this is
+          // safe to call even if it somehow runs twice for the same
+          // user (won't reset an already-started trial's clock).
+          const trialEnd=new Date(Date.now()+30*24*60*60*1000).toISOString()
+          await supabase.from('subscriptions').upsert(
+            {user_id:data.user.id,status:'trialing',trial_end:trialEnd},
+            {onConflict:'user_id',ignoreDuplicates:true}
+          )
+        }
         setInfo('Account created! Check your email to confirm, then sign in.')
         setMode('login')
       }
@@ -4049,6 +4059,39 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Paywall Screen — shown once a user's trial expires or their
+// subscription becomes inactive/past-due. Payment integration itself
+// isn't wired up yet (pending Razorpay account approval), so this is
+// honest about that rather than showing a broken "Subscribe" button
+// that can't actually charge anyone yet.
+function PaywallScreen({reason,onLogout}){
+  const messages={
+    trial_expired:{title:'Your free trial has ended',
+      body:'Your 30-day trial of Lakshmimata has ended. Paid subscriptions are launching soon — reach out to us to keep your access active in the meantime.'},
+    cancelled:{title:'Subscription cancelled',
+      body:'Your subscription was cancelled. Reach out to us if you\'d like to resubscribe.'},
+    past_due:{title:'Payment issue',
+      body:'We couldn\'t process your last payment. Please reach out to us to sort this out and restore your access.'},
+  }
+  const msg=messages[reason]||messages.trial_expired
+  return(
+    <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',
+      justifyContent:'center',padding:24,color:C.text,fontFamily:"'Inter','SF Pro Display',sans-serif"}}>
+      <div style={{width:'100%',maxWidth:420,textAlign:'center'}}>
+        <div style={{width:60,height:60,background:`linear-gradient(135deg,${C.accent},${C.purple})`,
+          borderRadius:18,display:'inline-flex',alignItems:'center',justifyContent:'center',
+          fontWeight:900,color:'#000',fontSize:30,marginBottom:20}}>P</div>
+        <div style={{fontWeight:800,fontSize:22,marginBottom:12}}>{msg.title}</div>
+        <div style={{fontSize:14,color:C.muted,lineHeight:1.6,marginBottom:28}}>{msg.body}</div>
+        <button onClick={onLogout} style={{background:'none',border:`1px solid ${C.border}`,
+          color:C.muted,borderRadius:10,padding:'10px 20px',fontSize:13,cursor:'pointer'}}>
+          Sign out
+        </button>
       </div>
     </div>
   )
@@ -4501,6 +4544,8 @@ export default function App(){
     setSavedScanners(prev=>prev.filter(s=>s.id!==id))
   }
   const [authLoading,setAuthLoading]=useState(true)
+  const [userSubscription,setUserSubscription]=useState(null) // {status, trial_end, current_period_end} or null (not yet loaded)
+  const [subscriptionLoading,setSubscriptionLoading]=useState(true)
 
   useEffect(()=>{
     // Load owner token from Supabase at runtime (refreshed daily by cron)
@@ -4529,6 +4574,14 @@ export default function App(){
     })
     return()=>subscription.unsubscribe()
   },[])
+
+  useEffect(()=>{
+    if(!session){ setSubscriptionLoading(false); return }
+    setSubscriptionLoading(true)
+    supabase.from('subscriptions').select('status,trial_end,current_period_end')
+      .eq('user_id',session.user.id).single()
+      .then(({data})=>{ setUserSubscription(data||null); setSubscriptionLoading(false) })
+  },[session?.user?.id])
 
   // Scanner state
   const [stocks,setStocks]=useState([])
@@ -5459,6 +5512,21 @@ export default function App(){
       onDemo={()=>setDemoMode(true)}
     />
     return <AuthScreen onLogin={s=>setSession(s)} initialMode={authMode} onBack={()=>setShowAuth(false)}/>
+  }
+
+  if(session && !demoMode && subscriptionLoading)return(
+    <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <div style={{width:32,height:32,border:`3px solid ${C.accent}`,borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
+    </div>
+  )
+
+  if(session && !demoMode && userSubscription){
+    const trialExpired = userSubscription.status==='trialing' && new Date(userSubscription.trial_end) < new Date()
+    const inactive = ['cancelled','past_due'].includes(userSubscription.status)
+    if(trialExpired || inactive){
+      return <PaywallScreen reason={trialExpired?'trial_expired':userSubscription.status}
+        onLogout={async()=>{await supabase.auth.signOut();setSession(null)}}/>
+    }
   }
 
   // Active watchlist label
