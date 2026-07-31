@@ -196,22 +196,17 @@ export async function fetchWatchlistRotation(syms=[], days=10) {
 }
 
 export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = null, historyDate = null } = {}) {
-  // R2 fast-path DISABLED (2026-07-30) — was meant to be a speed
-  // optimization (one cached JSON file instead of a full Supabase
-  // query), but became a repeated, confusing source of staleness bugs:
-  // the default/live view (historyDate=null, using this path) kept
-  // showing stale data while manually picking any date (which skips
-  // this path entirely, querying stock_history directly) showed
-  // correct data — confirmed the R2 snapshot upload had its own
-  // separate crash bug on the backend for a while, and even after
-  // fixing that, trusting a second cached copy of the data on top of
-  // the database itself just isn't worth the risk right now. Querying
-  // 'stocks' directly below is the same reliable path already verified
-  // correct via direct SQL checks earlier — a little slower, much less
-  // confusing. Left the function below intact (unused) rather than
-  // deleted, in case R2 is worth revisiting later once it's had a long
-  // stretch of proven-reliable uploads.
-  /*
+  // R2 fast-path — re-enabled after being disabled earlier today. The
+  // actual root cause of the staleness confusion wasn't the timing
+  // check below (which was already reasonable) — it was that R2 could
+  // successfully upload a snapshot that was fresh-TIMESTAMP but wrong-
+  // CONTENT (e.g. today's separate ALL_STOCKS bug meant a real upload
+  // succeeded with only 298 stocks instead of ~2400, which a pure
+  // freshness check can't catch since the timestamp genuinely was
+  // recent). Now that root cause is fixed, re-enabling this with an
+  // ADDED content sanity check (minimum row count) alongside the
+  // existing timestamp check, so a fresh-but-broken snapshot like that
+  // one gets rejected too, not just a stale one.
   if (!historyDate) {
     const r2Rows = await fetchStocksFromR2()
     if (r2Rows) {
@@ -231,7 +226,6 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
       return [...filtered].sort((a, b) => (b.rs || 0) - (a.rs || 0))
     }
   }
-  */
 
   const table = historyDate ? 'stock_history' : 'stocks'
 
@@ -455,6 +449,16 @@ export async function fetchStocksFromR2() {
     if (!res.ok) return null
     const rows = await res.json()
     if (!Array.isArray(rows) || rows.length === 0) return null
+    // Content sanity check — confirmed necessary via a real production
+    // bug: R2 can successfully upload a fresh-TIMESTAMP snapshot that's
+    // still wrong-CONTENT (a backend bug once caused the scan to only
+    // cover ~298 of ~2400 stocks; the upload itself succeeded with a
+    // genuinely recent timestamp, so the freshness check below alone
+    // wouldn't have caught it). The real universe is ~2400 stocks — if
+    // a snapshot has suspiciously few, treat it as broken and fall
+    // back to Supabase, same as a stale one.
+    const MIN_EXPECTED_STOCKS = 1500
+    if (rows.length < MIN_EXPECTED_STOCKS) return null
     const transformed = rows.map(transformStockRow)
     const newest = transformed.reduce((max, s) => {
       const t = s.lastUpdated ? new Date(s.lastUpdated).getTime() : 0
