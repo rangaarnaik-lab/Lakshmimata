@@ -196,12 +196,22 @@ export async function fetchWatchlistRotation(syms=[], days=10) {
 }
 
 export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = null, historyDate = null } = {}) {
-  // R2 fast-path: only serves today's live snapshot (one file, refreshed
-  // ~60s during market hours) — can't help with historyDate (a specific
-  // past day, only in the stock_history table). When it can help, try it
-  // first and apply the same index/watchlist filtering client-side on
-  // its result; any failure (not configured, network error, stale file)
-  // falls straight through to the unchanged Supabase path below.
+  // R2 fast-path DISABLED (2026-07-30) — was meant to be a speed
+  // optimization (one cached JSON file instead of a full Supabase
+  // query), but became a repeated, confusing source of staleness bugs:
+  // the default/live view (historyDate=null, using this path) kept
+  // showing stale data while manually picking any date (which skips
+  // this path entirely, querying stock_history directly) showed
+  // correct data — confirmed the R2 snapshot upload had its own
+  // separate crash bug on the backend for a while, and even after
+  // fixing that, trusting a second cached copy of the data on top of
+  // the database itself just isn't worth the risk right now. Querying
+  // 'stocks' directly below is the same reliable path already verified
+  // correct via direct SQL checks earlier — a little slower, much less
+  // confusing. Left the function below intact (unused) rather than
+  // deleted, in case R2 is worth revisiting later once it's had a long
+  // stretch of proven-reliable uploads.
+  /*
   if (!historyDate) {
     const r2Rows = await fetchStocksFromR2()
     if (r2Rows) {
@@ -221,6 +231,7 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
       return [...filtered].sort((a, b) => (b.rs || 0) - (a.rs || 0))
     }
   }
+  */
 
   const table = historyDate ? 'stock_history' : 'stocks'
 
