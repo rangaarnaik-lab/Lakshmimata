@@ -876,10 +876,16 @@ export async function fetchBestPicks() {
  * used elsewhere in the app).
  */
 export async function fetchFinancialResultsHistory(symbol) {
+  // 90-day filed_at window - by design this view won't show a proper
+  // YoY comparison (that row is typically filed ~365 days ago), a
+  // deliberate tradeoff to keep this query bounded/cheap rather than
+  // scanning unbounded history per symbol.
+  const since = new Date(Date.now() - 90 * 864e5).toISOString()
   const { data, error } = await supabase
     .from('financial_results')
     .select('period_ended,result_type,sales,pat,eps,filed_at')
     .eq('symbol', symbol)
+    .gt('filed_at', since)
     .order('period_ended', { ascending: false })
     .limit(16)
   if (error) { console.error('fetchFinancialResultsHistory error:', error.message); return [] }
@@ -892,7 +898,16 @@ export async function fetchFinancialResultsHistory(symbol) {
       byPeriod[row.period_ended] = row
     }
   }
-  return Object.values(byPeriod).sort((a,b)=>b.period_ended.localeCompare(a.period_ended)).slice(0, 8)
+  // period_ended is stored as 'DD-Mon-YYYY' (e.g. '30-Jun-2024'), not
+  // ISO - string comparison (localeCompare) would sort incorrectly
+  // (e.g. '01-Jan-2025' would sort before '31-Dec-2024' alphabetically,
+  // backwards chronologically). Parse to real Date objects to sort
+  // correctly regardless of the underlying string format.
+  const toDate = (s) => {
+    const d = new Date(s)
+    return isNaN(d.getTime()) ? new Date(0) : d
+  }
+  return Object.values(byPeriod).sort((a,b)=>toDate(b.period_ended)-toDate(a.period_ended)).slice(0, 8)
 }
 
 /**
