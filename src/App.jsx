@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap, ArrowUpRight,
-  TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award
+  TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
@@ -5681,7 +5681,8 @@ export default function App(){
 
           {/* Nav items */}
           <div style={{flex:1,display:'flex',flexDirection:'column',
-            alignItems:'center',width:'100%',paddingTop:8,gap:1,position:'relative'}}>
+            alignItems:'center',width:'100%',paddingTop:8,gap:1,position:'relative',
+            overflowY:'auto',overflowX:'hidden',scrollbarWidth:'thin'}}>
 
             {/* Single sliding active-indicator — genuinely animates
                 between positions (CSS transition on `top`) instead of
@@ -9221,12 +9222,12 @@ export default function App(){
             borderTop:`1px solid ${C.border}`,display:'flex',zIndex:40,
             paddingBottom:'env(safe-area-inset-bottom)'}}>
             {[
-              ['rs','📊','RS Rating'],['market','🌐','Market'],['rotation','🔄','Rotate'],['breakout','💥','Break'],['52wl','🎯','52WL'],
-            ].map(([t,icon,label])=>(
+              ['rs',TrendingUp,'RS Rating'],['market',BarChart3,'Market'],['rotation',RefreshCw,'Rotate'],['breakout',ArrowUpRight,'Break'],['52wl',Award,'52WL'],
+            ].map(([t,Icon,label])=>(
               <button key={t} onClick={()=>setMainTab(t)}
                 style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
                   cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-                <span style={{fontSize:15}}>{icon}</span>
+                <Icon size={17} strokeWidth={mainTab===t?2.4:1.8} color={mainTab===t?C.accent:C.muted}/>
                 <span style={{fontSize:8,fontWeight:600,color:mainTab===t?C.accent:C.muted}}>{label}</span>
                 {mainTab===t&&<div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
               </button>
@@ -9234,7 +9235,8 @@ export default function App(){
             <button onClick={()=>setShowMoreMenu(true)}
               style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-              <span style={{fontSize:15}}>⋯</span>
+              <MoreHorizontal size={17} strokeWidth={1.8}
+                color={['squeeze','weak','portfolio','compare','watchlist','announcements','bestpicks','settings','leaders','patterns'].includes(mainTab)?C.accent:C.muted}/>
               <span style={{fontSize:8,fontWeight:600,
                 color:['squeeze','weak','portfolio','compare','watchlist','announcements','bestpicks','settings','leaders','patterns'].includes(mainTab)?C.accent:C.muted}}>More</span>
               {['squeeze','weak','portfolio','compare','watchlist','announcements','bestpicks','settings','leaders','patterns'].includes(mainTab)&&
@@ -9254,16 +9256,16 @@ export default function App(){
                 <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:'8px auto 16px'}}/>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:4}}>
                   {[
-                    ['squeeze','🌀','Squeeze'],['weak','🚨','Weak'],['leaders','🚀','Leaders'],['patterns','🧩','Patterns'],
-                    ['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],
-                    ['announcements','📢','Announcements'],['bestpicks','🎯','AI Picks'],
-                    ['settings','⚙','Account'],
-                  ].map(([t,icon,label])=>(
+                    ['squeeze',Zap,'Squeeze'],['weak',TrendingDown,'Weak'],['leaders',Flag,'Leaders'],['patterns',LineChartIcon,'Patterns'],
+                    ['portfolio',Briefcase,'Portfolio'],['compare',GitCompare,'Compare'],['watchlist',Star,'Watchlist'],
+                    ['announcements',Megaphone,'Announcements'],['bestpicks',Target,'AI Picks'],
+                    ['settings',Settings,'Account'],
+                  ].map(([t,Icon,label])=>(
                     <button key={t} onClick={()=>{setMainTab(t);setShowMoreMenu(false)}}
                       style={{padding:'16px 8px',background:mainTab===t?C.accent+'18':'transparent',
                         border:`1px solid ${mainTab===t?C.accent:C.border}`,borderRadius:10,cursor:'pointer',
                         display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
-                      <span style={{fontSize:22}}>{icon}</span>
+                      <Icon size={22} strokeWidth={mainTab===t?2.2:1.8} color={mainTab===t?C.accent:C.text}/>
                       <span style={{fontSize:11,fontWeight:600,color:mainTab===t?C.accent:C.text}}>{label}</span>
                     </button>
                   ))}
