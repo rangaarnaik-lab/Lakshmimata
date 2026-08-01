@@ -5031,7 +5031,7 @@ export default function App(){
   // almost nothing.
   const ANNOUNCEMENT_CATEGORIES=[
     {id:'all',    label:'All',         keyword:null},
-    {id:'results', label:'Results',    keyword:['financial result','quarterly result','results for the quarter','unaudited results','audited results'], exclude:['newspaper publication','newspaper advertisement','transcript']},
+    {id:'results', label:'Results',    keyword:['financial result','quarterly result','results for the quarter','unaudited results','audited results'], exclude:['newspaper publication','newspaper advertisement','transcript','press release']},
     {id:'concall', label:'Concall',    keyword:['con call','con-call','concall','conference call','investor','analyst meet'], exclude:['transcript']},
     {id:'transcript', label:'Transcript', keyword:['transcript']},
     {id:'orders', label:'Order Book',  keyword:['award of order','work order','purchase order','order received from','bagged','bagging','receiving of order','receipt of order','receiving of contract','receipt of contract','secures order','wins order','letter of intent','order worth','order valued'], exclude:['cancellation of order','cancellation of work order','cancellation of purchase order','order cancelled','work order cancelled','purchase order cancelled','cancellation of contract','contract cancelled','termination of contract','contract terminated','termination of work order','work order terminated','rescission of','order rescinded','contract rescinded','order withdrawn','withdrawal of order','loss of order','order lost']},
