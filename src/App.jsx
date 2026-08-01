@@ -4133,7 +4133,7 @@ function PaywallScreen({reason,onLogout}){
 }
 
 // ── Settings Panel ────────────────────────────────────────────────────
-function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchTheme,ambient}){
+function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchTheme,ambient,userSubscription}){
   const [newToken,setNewToken]=useState('')
   const [msg,setMsg]=useState('')
   const [loading,setLoading]=useState(false)
@@ -4188,6 +4188,39 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
           border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px'}}>
           🎨 Theme and ambient sound moved — look for the palette icon in the top-right corner, on any tab.
         </div>
+
+        {/* My Subscription — status only for now (payment integration
+            is separate, still pending Razorpay approval). Shows
+            nothing if userSubscription is null (still loading, or a
+            pre-existing account from before this feature existed —
+            deliberately fails silent/open here rather than showing a
+            confusing blank or error state). */}
+        {userSubscription&&(()=>{
+          const isTrialing=userSubscription.status==='trialing'
+          const daysLeft=isTrialing?Math.max(0,Math.ceil((new Date(userSubscription.trial_end)-new Date())/86400000)):null
+          const statusLabel={trialing:'Free Trial',active:'Active',past_due:'Payment Issue',cancelled:'Cancelled'}[userSubscription.status]||userSubscription.status
+          const statusColor={trialing:C.yellow,active:C.green,past_due:C.red,cancelled:C.muted}[userSubscription.status]||C.muted
+          return (
+            <div style={{marginBottom:20,background:C.bg,border:`1px solid ${C.border}`,borderRadius:10,padding:14}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:isTrialing?6:0}}>
+                <div style={{fontWeight:700,fontSize:13}}>My Subscription</div>
+                <div style={{fontSize:11,fontWeight:700,color:statusColor,background:statusColor+'18',
+                  borderRadius:8,padding:'2px 9px'}}>{statusLabel}</div>
+              </div>
+              {isTrialing&&(
+                <div style={{fontSize:12,color:C.muted}}>
+                  {daysLeft>0?`${daysLeft} day${daysLeft===1?'':'s'} left in your free trial`:'Your trial ends today'}
+                </div>
+              )}
+              {userSubscription.status==='active'&&userSubscription.plan_cycle&&(
+                <div style={{fontSize:12,color:C.muted}}>
+                  {userSubscription.plan_cycle.charAt(0).toUpperCase()+userSubscription.plan_cycle.slice(1)} plan
+                  {userSubscription.current_period_end&&` · renews ${new Date(userSubscription.current_period_end).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`}
+                </div>
+              )}
+            </div>
+          )
+        })()}
         {ownerMode&&(
           <div style={{background:C.green+'18',border:`1px solid ${C.green}33`,borderRadius:8,
             padding:'10px 12px',marginBottom:16,fontSize:12,color:C.green}}>
@@ -8980,7 +9013,8 @@ export default function App(){
         {mainTab==='settings'&&(
           <SettingsPanel session={session} onUpdate={s=>setSession(s)} onLogout={()=>{setSession(null);setShowAuth(false)}}
             onExitDemo={()=>{setDemoMode(false);setStocks([]);setAuthMode('register');setShowAuth(true)}}
-            themeKey={themeKey} switchTheme={switchTheme} ambient={ambient}/>
+            themeKey={themeKey} switchTheme={switchTheme} ambient={ambient}
+            userSubscription={userSubscription}/>
         )}
 
       </div>
