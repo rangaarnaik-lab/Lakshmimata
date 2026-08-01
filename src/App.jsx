@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import {
+  TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap, ArrowUpRight,
+  TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award
+} from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
 import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory } from './lib/db'
@@ -5201,6 +5205,7 @@ export default function App(){
   const [compareSyms,setCompareSyms]=useState([])
   const [compareInput,setCompareInput]=useState('')
   const [historyDate,setHistoryDate]=useState(null) // null = live today, else 'YYYY-MM-DD'
+  const [hoveredNavId,setHoveredNavId]=useState(null) // sidebar hover polish
   const [availableDates,setAvailableDates]=useState([])
 
   useEffect(()=>{
@@ -5619,7 +5624,48 @@ export default function App(){
       )}
 
       {/* ── WealthLab-style Icon sidebar ── */}
-      {!isMobile&&(
+      {!isMobile&&(()=>{
+        const navTop=[
+          {id:'rs',       label:'RS Rating',        Icon:TrendingUp},
+          {id:'market',   label:'Market',            Icon:BarChart3},
+          {id:'rotation', label:'Sector Rotation',   Icon:RefreshCw},
+          {id:'leaders',  label:'Leaders',           Icon:Flag},
+          {id:'patterns', label:'Patterns',          Icon:LineChartIcon},
+          {id:'squeeze',  label:'Squeeze',           Icon:Zap},
+          {id:'breakout', label:'Breakout',          Icon:ArrowUpRight},
+          {id:'52wl',     label:'52WL',              Icon:Award},
+          {id:'weak',     label:'Weak RS',           Icon:TrendingDown},
+        ]
+        const navBottom=[
+          {id:'portfolio', label:'Portfolio',        Icon:Briefcase},
+          {id:'compare',   label:'Compare',          Icon:GitCompare},
+          {id:'watchlist', label:'Watchlist',        Icon:Star},
+          {id:'announcements', label:'Announcements',Icon:Megaphone},
+          {id:'bestpicks', label:'AI Best Picks',    Icon:Target},
+        ]
+        const ITEM_H=44, DIVIDER_H=9 // 1px line + 4px margin top/bottom
+        const navAll=[...navTop,...navBottom]
+        const activeIdx=navAll.findIndex(n=>n.id===mainTab)
+        const indicatorTop=activeIdx<0?-100:(
+          activeIdx<navTop.length
+            ? activeIdx*ITEM_H
+            : navTop.length*ITEM_H+DIVIDER_H+(activeIdx-navTop.length)*ITEM_H
+        )
+        const NavRow=({id,label,Icon})=>(
+          <div key={id} onClick={()=>setMainTab(id)}
+            onMouseEnter={()=>setHoveredNavId(id)} onMouseLeave={()=>setHoveredNavId(null)}
+            title={label}
+            style={{width:'100%',height:ITEM_H,display:'flex',alignItems:'center',
+              justifyContent:'center',cursor:'pointer',position:'relative',
+              background:mainTab===id?C.active:hoveredNavId===id?C.active+'55':'transparent',
+              transition:'background 0.15s'}}>
+            <Icon size={18} strokeWidth={mainTab===id?2.4:1.8}
+              color={mainTab===id?C.accent:hoveredNavId===id?C.text:C.muted}
+              style={{transition:'color 0.15s, transform 0.15s',
+                transform:hoveredNavId===id&&mainTab!==id?'scale(1.1)':'scale(1)'}}/>
+          </div>
+        )
+        return (
         <div style={{width:52,minWidth:52,background:C.sidebar,
           borderRight:`1px solid ${C.divider}`,
           display:'flex',flexDirection:'column',alignItems:'center',
@@ -5633,56 +5679,21 @@ export default function App(){
               fontWeight:900,color:'#fff',fontSize:13,letterSpacing:'-0.5px'}}>L</div>
           </div>
 
-          {/* Nav items — top group */}
+          {/* Nav items */}
           <div style={{flex:1,display:'flex',flexDirection:'column',
-            alignItems:'center',width:'100%',paddingTop:8,gap:1}}>
-            {[
-              {id:'rs',       label:'RS Rating', abbr:'RS'},
-              {id:'market',   label:'Market',     abbr:'MK'},
-              {id:'rotation', label:'Sector Rotation', abbr:'RO'},
-              {id:'leaders',  label:'Leaders',    abbr:'LD'},
-              {id:'patterns', label:'Patterns',   abbr:'PT'},
-              {id:'squeeze',  label:'Squeeze',    abbr:'SQ'},
-              {id:'breakout', label:'Breakout',  abbr:'BO'},
-              {id:'52wl',     label:'52WL',      abbr:'WL'},
-              {id:'weak',     label:'Weak RS',   abbr:'WK'},
-            ].map(({id,label,abbr})=>(
-              <div key={id} onClick={()=>setMainTab(id)}
-                title={label}
-                style={{width:'100%',height:44,display:'flex',alignItems:'center',
-                  justifyContent:'center',cursor:'pointer',position:'relative',
-                  background:mainTab===id?C.active:'transparent',
-                  transition:'background 0.1s'}}>
-                {/* Active indicator — left edge bar like WealthLab */}
-                {mainTab===id&&<div style={{position:'absolute',left:0,top:'20%',
-                  width:3,height:'60%',background:C.accent,borderRadius:'0 2px 2px 0'}}/>}
-                <span style={{fontSize:11,fontWeight:mainTab===id?700:500,
-                  color:mainTab===id?C.accent:C.muted,
-                  letterSpacing:'0.02em'}}>{abbr}</span>
-              </div>
-            ))}
+            alignItems:'center',width:'100%',paddingTop:8,gap:1,position:'relative'}}>
 
+            {/* Single sliding active-indicator — genuinely animates
+                between positions (CSS transition on `top`) instead of
+                separate bars appearing/disappearing per row. */}
+            {activeIdx>=0&&<div style={{position:'absolute',left:0,
+              top:8+indicatorTop+ITEM_H*0.2,width:3,height:ITEM_H*0.6,
+              background:C.accent,borderRadius:'0 2px 2px 0',
+              transition:'top 0.25s cubic-bezier(0.4,0,0.2,1)'}}/>}
+
+            {navTop.map(NavRow)}
             <div style={{width:28,height:1,background:C.divider,margin:'4px 0'}}/>
-
-            {[
-              {id:'portfolio', label:'Portfolio', abbr:'PF'},
-              {id:'compare',   label:'Compare',   abbr:'CMP'},
-              {id:'watchlist', label:'Watchlist', abbr:'WL'},
-              {id:'announcements', label:'Announcements', abbr:'AN'},
-              {id:'bestpicks', label:'AI Best Picks', abbr:'AI'},
-            ].map(({id,label,abbr})=>(
-              <div key={id} onClick={()=>setMainTab(id)}
-                title={label}
-                style={{width:'100%',height:44,display:'flex',alignItems:'center',
-                  justifyContent:'center',cursor:'pointer',position:'relative',
-                  background:mainTab===id?C.active:'transparent',
-                  transition:'background 0.1s'}}>
-                {mainTab===id&&<div style={{position:'absolute',left:0,top:'20%',
-                  width:3,height:'60%',background:C.accent,borderRadius:'0 2px 2px 0'}}/>}
-                <span style={{fontSize:11,fontWeight:mainTab===id?700:500,
-                  color:mainTab===id?C.accent:C.muted,letterSpacing:'0.02em'}}>{abbr}</span>
-              </div>
-            ))}
+            {navBottom.map(NavRow)}
           </div>
 
           {/* Bottom: market status + account */}
@@ -5703,7 +5714,8 @@ export default function App(){
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* Inner row for Main area + Chart panel — sized to whatever's left
           after the sidebar (flex:1, not a fixed % of the outer container).
