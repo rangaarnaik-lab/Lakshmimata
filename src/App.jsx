@@ -4064,17 +4064,28 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
   )
 }
 
+// Plan pricing — shared between the paywall screen and (once Razorpay
+// is wired up) the actual checkout flow, so there's one source of
+// truth for prices rather than duplicating them.
+const SUBSCRIPTION_PLANS = [
+  {cycle:'monthly',   label:'Monthly',   price:699,  perMonth:699,    badge:null},
+  {cycle:'quarterly', label:'Quarterly', price:1500, perMonth:500,    badge:'Save 28%'},
+  {cycle:'yearly',    label:'Yearly',    price:5000, perMonth:417,    badge:'Save 40%'},
+]
+
 // ── Paywall Screen — shown once a user's trial expires or their
 // subscription becomes inactive/past-due. Payment integration itself
-// isn't wired up yet (pending Razorpay account approval), so this is
-// honest about that rather than showing a broken "Subscribe" button
-// that can't actually charge anyone yet.
+// isn't wired up yet (pending Razorpay account approval), so the plan
+// cards are real (real prices, real selection) but the actual "Pay"
+// button honestly says payments are launching soon rather than
+// pretending to charge anyone.
 function PaywallScreen({reason,onLogout}){
+  const [selectedCycle,setSelectedCycle]=useState('yearly')
   const messages={
     trial_expired:{title:'Your free trial has ended',
-      body:'Your 30-day trial of Lakshmimata has ended. Paid subscriptions are launching soon — reach out to us to keep your access active in the meantime.'},
+      body:'Your 30-day trial of Lakshmimata has ended. Choose a plan below to continue — payments are launching soon, reach out to us in the meantime to keep your access active.'},
     cancelled:{title:'Subscription cancelled',
-      body:'Your subscription was cancelled. Reach out to us if you\'d like to resubscribe.'},
+      body:'Your subscription was cancelled. Choose a plan below to resubscribe once payments are live, or reach out to us directly.'},
     past_due:{title:'Payment issue',
       body:'We couldn\'t process your last payment. Please reach out to us to sort this out and restore your access.'},
   }
@@ -4082,12 +4093,36 @@ function PaywallScreen({reason,onLogout}){
   return(
     <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',
       justifyContent:'center',padding:24,color:C.text,fontFamily:"'Inter','SF Pro Display',sans-serif"}}>
-      <div style={{width:'100%',maxWidth:420,textAlign:'center'}}>
+      <div style={{width:'100%',maxWidth:460,textAlign:'center'}}>
         <div style={{width:60,height:60,background:`linear-gradient(135deg,${C.accent},${C.purple})`,
           borderRadius:18,display:'inline-flex',alignItems:'center',justifyContent:'center',
           fontWeight:900,color:'#000',fontSize:30,marginBottom:20}}>P</div>
         <div style={{fontWeight:800,fontSize:22,marginBottom:12}}>{msg.title}</div>
-        <div style={{fontSize:14,color:C.muted,lineHeight:1.6,marginBottom:28}}>{msg.body}</div>
+        <div style={{fontSize:14,color:C.muted,lineHeight:1.6,marginBottom:24}}>{msg.body}</div>
+
+        <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:20}}>
+          {SUBSCRIPTION_PLANS.map(p=>(
+            <div key={p.cycle} onClick={()=>setSelectedCycle(p.cycle)}
+              style={{border:`2px solid ${selectedCycle===p.cycle?C.accent:C.border}`,
+                borderRadius:12,padding:'14px 18px',cursor:'pointer',textAlign:'left',
+                background:selectedCycle===p.cycle?C.accent+'11':C.card,
+                display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:14}}>{p.label}</div>
+                <div style={{fontSize:11,color:C.muted}}>₹{p.perMonth}/month equivalent</div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontWeight:800,fontSize:16}}>₹{p.price}</div>
+                {p.badge&&<div style={{fontSize:10,fontWeight:700,color:C.green}}>{p.badge}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button disabled style={{width:'100%',background:C.border,border:'none',color:C.muted,
+          borderRadius:10,padding:'12px 20px',fontSize:14,fontWeight:700,cursor:'not-allowed',marginBottom:12}}>
+          Payments launching soon
+        </button>
         <button onClick={onLogout} style={{background:'none',border:`1px solid ${C.border}`,
           color:C.muted,borderRadius:10,padding:'10px 20px',fontSize:13,cursor:'pointer'}}>
           Sign out
