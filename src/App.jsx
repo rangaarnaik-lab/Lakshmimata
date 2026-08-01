@@ -3450,6 +3450,15 @@ function TickerBanner({stocks}){
   )
 }
 
+// Plan pricing — shared between the landing page, the paywall screen,
+// and (once Razorpay is wired up) the actual checkout flow, so there's
+// one source of truth for prices rather than duplicating them.
+const SUBSCRIPTION_PLANS = [
+  {cycle:'monthly',   label:'Monthly',   price:699,  perMonth:699,    badge:null},
+  {cycle:'quarterly', label:'Quarterly', price:1500, perMonth:500,    badge:'Save 28%'},
+  {cycle:'yearly',    label:'Yearly',    price:5000, perMonth:417,    badge:'Save 40%'},
+]
+
 function LandingPage({onEnroll,onSignIn,onDemo}){
   const [slide,setSlide]=useState(0)
   const [paused,setPaused]=useState(false)
@@ -3781,6 +3790,32 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
           </div>
         </section>
 
+        {/* Pricing */}
+        <section style={{padding:'0 0 88px',textAlign:'center'}}>
+          {smallcaps('Pricing',true)}
+          <h2 style={{...serif,fontWeight:600,fontSize:'clamp(24px,3vw,32px)',maxWidth:520,
+            margin:'0 auto 12px',color:'#fff'}}>
+            30 days free. Stay if it's useful.
+          </h2>
+          <p style={{color:'#9aa0b0',maxWidth:440,margin:'0 auto 40px',fontSize:14}}>
+            No card required to start. Cancel anytime during your trial, no questions asked.
+          </p>
+          <div style={{display:'flex',gap:16,justifyContent:'center',flexWrap:'wrap',maxWidth:820,margin:'0 auto'}}>
+            {SUBSCRIPTION_PLANS.map(p=>(
+              <div key={p.cycle} style={{border:`1px solid ${p.cycle==='yearly'?gold:C.border}`,
+                borderRadius:8,padding:'26px 28px',minWidth:180,background:C.card,position:'relative'}}>
+                {p.badge&&<div style={{position:'absolute',top:-11,left:'50%',transform:'translateX(-50%)',
+                  background:gold,color:'#0a0d12',fontSize:10,fontWeight:700,padding:'3px 10px',
+                  borderRadius:99,whiteSpace:'nowrap'}}>{p.badge}</div>}
+                <div style={{fontSize:12,color:'#9aa0b0',fontWeight:600,marginBottom:10,
+                  textTransform:'uppercase',letterSpacing:'0.06em'}}>{p.label}</div>
+                <div style={{...serif,fontSize:32,fontWeight:700,color:'#fff',marginBottom:2}}>₹{p.price}</div>
+                <div style={{fontSize:12,color:'#9aa0b0'}}>₹{p.perMonth}/month equivalent</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
         {/* Enroll */}
         <section style={{textAlign:'center',padding:'96px 0 84px'}}>
           {smallcaps('Get Started',true)}
@@ -4067,15 +4102,6 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
     </div>
   )
 }
-
-// Plan pricing — shared between the paywall screen and (once Razorpay
-// is wired up) the actual checkout flow, so there's one source of
-// truth for prices rather than duplicating them.
-const SUBSCRIPTION_PLANS = [
-  {cycle:'monthly',   label:'Monthly',   price:699,  perMonth:699,    badge:null},
-  {cycle:'quarterly', label:'Quarterly', price:1500, perMonth:500,    badge:'Save 28%'},
-  {cycle:'yearly',    label:'Yearly',    price:5000, perMonth:417,    badge:'Save 40%'},
-]
 
 // ── Paywall Screen — shown once a user's trial expires or their
 // subscription becomes inactive/past-due. Payment integration itself
