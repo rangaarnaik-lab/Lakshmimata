@@ -8951,12 +8951,29 @@ export default function App(){
                                   {label:yoyRow?yoyRow.period_ended:'—', row:yoyRow},
                                 ]
                                 const pct=(now,then)=>(now==null||then==null||then===0)?null:((now-then)/Math.abs(then)*100)
+                                // OPM% = (PBT - Other Income) / Sales * 100 - strips out
+                                // non-operating gains (interest income, one-time items,
+                                // etc.) to show the margin the CORE business actually
+                                // earned, not profit propped up by other income.
+                                const opm = r => (r?.sales && r?.pbt!=null && r?.other_income!=null && r.sales!==0)
+                                  ? (r.pbt - r.other_income) / r.sales * 100 : null
                                 const metrics = [
                                   {label:'Sales (₹Cr)', get:r=>r?.sales, yoyPct:pct(current.sales, yoyRow?.sales)},
+                                  {label:'Other Income (₹Cr)', get:r=>r?.other_income, yoyPct:pct(current.other_income, yoyRow?.other_income)},
+                                  {label:'OPM %', get:opm, yoyPct:pct(opm(current), opm(yoyRow)), isPct:true},
                                   {label:'PBT (₹Cr)',   get:r=>r?.pbt,   yoyPct:pct(current.pbt,   yoyRow?.pbt)},
                                   {label:'PAT (₹Cr)',   get:r=>r?.pat,   yoyPct:pct(current.pat,   yoyRow?.pat)},
                                   {label:'EPS (₹)',     get:r=>r?.eps,   yoyPct:pct(current.eps,   yoyRow?.eps)},
                                 ]
+                                // Flag when other income has spiked vs the previous
+                                // quarter (>50% jump) - a common red flag where profit
+                                // growth is coming from non-operating gains (interest,
+                                // one-time items) rather than the actual business.
+                                // Needs both quarters' values to be meaningfully
+                                // present (not near-zero) to avoid a flag on a
+                                // meaningless jump like ₹0.1Cr -> ₹0.2Cr.
+                                const otherIncomeSpike = (current.other_income!=null && prevQtr?.other_income!=null &&
+                                  prevQtr.other_income>0.5 && current.other_income > prevQtr.other_income*1.5)
                                 // Result quality rating — same shared computeResultRating()
                                 // function the main badge chip above uses, so both always
                                 // agree instead of drifting apart from duplicated logic.
@@ -8976,6 +8993,14 @@ export default function App(){
                                           resultRating==='Weak'?'⚠ Weak':'– Neutral'} Result
                                       </div>
                                     )}
+                                    {otherIncomeSpike&&(
+                                      <div title="Other income more than 50% higher than the previous quarter - worth checking whether this quarter's profit growth is coming from the core business or a one-time/non-operating gain."
+                                        style={{display:'flex',alignItems:'center',gap:5,marginBottom:6,padding:'4px 9px',
+                                          borderRadius:8,fontSize:10,fontWeight:700,cursor:'help',
+                                          background:C.yellow+'18',color:C.yellow,border:`1px solid ${C.yellow}44`}}>
+                                        ⚠ Other income jumped vs last quarter — check OPM% for the real operating trend
+                                      </div>
+                                    )}
                                     <table style={{width:'100%',fontSize:10.5,borderCollapse:'collapse',minWidth:280}}>
                                       <thead>
                                         <tr>
@@ -8988,17 +9013,24 @@ export default function App(){
                                       </thead>
                                       <tbody>
                                         {metrics.map(m=>(
-                                          <tr key={m.label}>
-                                            <td style={{color:C.text,fontWeight:600,padding:'4px 6px'}}>{m.label}</td>
+                                          <tr key={m.label} style={m.label==='Other Income (₹Cr)'&&otherIncomeSpike?
+                                            {background:C.yellow+'0d'}:undefined}>
+                                            <td style={{color:m.label==='Other Income (₹Cr)'&&otherIncomeSpike?C.yellow:C.text,
+                                              fontWeight:600,padding:'4px 6px'}}>
+                                              {m.label==='Other Income (₹Cr)'&&otherIncomeSpike?'⚠ ':''}{m.label}
+                                            </td>
                                             <td style={{textAlign:'right',padding:'4px 6px',fontWeight:700,
                                               color:m.yoyPct==null?C.muted:m.yoyPct>=0?C.green:C.red}}>
                                               {m.yoyPct==null?'—':`${m.yoyPct>=0?'▲':'▼'} ${Math.abs(m.yoyPct).toFixed(0)}%`}
                                             </td>
-                                            {cols.map((c,i)=>(
-                                              <td key={i} style={{textAlign:'right',padding:'4px 6px',color:C.text}}>
-                                                {m.get(c.row)==null?'—':m.get(c.row).toLocaleString('en-IN',{maximumFractionDigits:2})}
-                                              </td>
-                                            ))}
+                                            {cols.map((c,i)=>{
+                                              const v = m.get(c.row)
+                                              return (
+                                                <td key={i} style={{textAlign:'right',padding:'4px 6px',color:C.text}}>
+                                                  {v==null?'—':m.isPct?`${v.toFixed(1)}%`:v.toLocaleString('en-IN',{maximumFractionDigits:2})}
+                                                </td>
+                                              )
+                                            })}
                                           </tr>
                                         ))}
                                       </tbody>
