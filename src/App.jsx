@@ -9023,7 +9023,9 @@ export default function App(){
                             </div>
                           )
                         })()}
-                        <div style={{fontSize:12.5,color:C.text,lineHeight:1.4}}>{a.subject}</div>
+                        {!(announcementsCategory==='results'&&resultsMap[a.symbol])&&(
+                          <div style={{fontSize:12.5,color:C.text,lineHeight:1.4}}>{a.subject}</div>
+                        )}
                         <div style={{fontSize:10,color:C.muted,marginTop:3,display:'flex',gap:8,alignItems:'center'}}>
                           <span>{dateStr}</span>
                           {a.attachment_url&&(
