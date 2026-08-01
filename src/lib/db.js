@@ -883,7 +883,7 @@ export async function fetchFinancialResultsHistory(symbol) {
   const since = new Date(Date.now() - 90 * 864e5).toISOString()
   const { data, error } = await supabase
     .from('financial_results')
-    .select('period_ended,result_type,sales,pat,eps,filed_at')
+    .select('period_ended,result_type,sales,pbt,pat,eps,filed_at')
     .eq('symbol', symbol)
     .gt('filed_at', since)
     .order('period_ended', { ascending: false })
@@ -1052,7 +1052,7 @@ export async function fetchRecentFinancialResults() {
   const since = new Date(Date.now() - 45 * 864e5).toISOString()
   const { data, error } = await supabase
     .from('financial_results')
-    .select('symbol,period_ended,result_type,sales,pat,eps,filed_at')
+    .select('symbol,period_ended,result_type,sales,pbt,pat,eps,filed_at')
     .gt('filed_at', since)
     .order('filed_at', { ascending: false })
     .limit(1000)

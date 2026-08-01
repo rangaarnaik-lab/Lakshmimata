@@ -8910,6 +8910,7 @@ export default function App(){
                                 padding:'6px 10px'}}>
                                 <span style={{color:C.muted,fontWeight:600}}>📊 {fr.period_ended}</span>
                                 <span>Sales: <span style={{color:C.text}}>₹{fmt(fr.sales)} Cr</span></span>
+                                <span>PBT: <span style={{color:(fr.pbt??0)>=0?C.green:C.red}}>₹{fmt(fr.pbt)} Cr</span></span>
                                 <span>PAT: <span style={{color:(fr.pat??0)>=0?C.green:C.red}}>₹{fmt(fr.pat)} Cr</span></span>
                                 <span>EPS: <span style={{color:C.text}}>₹{fmt(fr.eps)}</span></span>
                               </div>
@@ -8952,6 +8953,7 @@ export default function App(){
                                 const pct=(now,then)=>(now==null||then==null||then===0)?null:((now-then)/Math.abs(then)*100)
                                 const metrics = [
                                   {label:'Sales (₹Cr)', get:r=>r?.sales, yoyPct:pct(current.sales, yoyRow?.sales)},
+                                  {label:'PBT (₹Cr)',   get:r=>r?.pbt,   yoyPct:pct(current.pbt,   yoyRow?.pbt)},
                                   {label:'PAT (₹Cr)',   get:r=>r?.pat,   yoyPct:pct(current.pat,   yoyRow?.pat)},
                                   {label:'EPS (₹)',     get:r=>r?.eps,   yoyPct:pct(current.eps,   yoyRow?.eps)},
                                 ]
