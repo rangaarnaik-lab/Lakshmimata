@@ -917,7 +917,35 @@ export async function fetchFinancialResultsHistory(symbol) {
  * (offset-based) since this feed accumulates continuously and showing
  * ALL history at once isn't useful or necessary.
  */
+export async function fetchAnnouncementsFromR2() {
+  const url = import.meta.env.VITE_R2_ANNOUNCEMENTS_SNAPSHOT_URL
+  if (!url) return null // not configured yet — not an error, just not set up
+  try {
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) return null
+    const rows = await res.json()
+    if (!Array.isArray(rows) || rows.length === 0) return null
+    return rows
+  } catch (e) {
+    return null // network error, malformed JSON, etc. — fall back silently
+  }
+}
+
 export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = null, filters = {}, excludeCategoryLike = null) {
+  // R2 fast-path — only for the single default/unfiltered case (first
+  // page, no category/sector/mcap/order-size/symbol/date filters,
+  // limit within what the cached snapshot covers). Same tradeoff as
+  // the stocks R2 cache: covers the single most common case cheaply,
+  // everything filtered/paginated still queries Supabase directly
+  // below rather than trying to cache every filter combination.
+  const isDefaultView = offset === 0 && !categoryLike && !excludeCategoryLike && limit <= 100 &&
+    !filters.sector && !filters.industry && !filters.mcapMin && !filters.mcapMax &&
+    !filters.orderSize && !(filters.syms && filters.syms.length > 0) && !filters.dateFilter
+  if (isDefaultView) {
+    const r2Rows = await fetchAnnouncementsFromR2()
+    if (r2Rows) return r2Rows.slice(0, limit)
+  }
+
   // filters: { sector, industry, mcapMin, mcapMax } — all optional.
   // Applied server-side (not client-side after fetch) so the offset-based
   // pagination above stays accurate against the filtered set, same as
