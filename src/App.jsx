@@ -8959,10 +8959,20 @@ export default function App(){
                                   {label:yoyRow?yoyRow.period_ended:'—', row:yoyRow},
                                 ]
                                 const pct=(now,then)=>(now==null||then==null||then===0)?null:((now-then)/Math.abs(then)*100)
+                                // Prefer the backend-computed value (stored directly on
+                                // the row at save time) - falls back to computing it
+                                // client-side only for older rows saved before that
+                                // existed and not yet touched by the backfill.
                                 const metrics = [
-                                  {label:'Sales (₹Cr)', get:r=>r?.sales, yoyPct:pct(current.sales, yoyRow?.sales)},
-                                  {label:'PAT (₹Cr)',   get:r=>r?.pat,   yoyPct:pct(current.pat,   yoyRow?.pat)},
-                                  {label:'EPS (₹)',     get:r=>r?.eps,   yoyPct:pct(current.eps,   yoyRow?.eps)},
+                                  {label:'Sales (₹Cr)', get:r=>r?.sales,
+                                    yoyPct:current.sales_yoy_pct ?? pct(current.sales, yoyRow?.sales),
+                                    qoqPct:current.sales_qoq_pct ?? pct(current.sales, prevQtr?.sales)},
+                                  {label:'PAT (₹Cr)',   get:r=>r?.pat,
+                                    yoyPct:current.pat_yoy_pct ?? pct(current.pat, yoyRow?.pat),
+                                    qoqPct:current.pat_qoq_pct ?? pct(current.pat, prevQtr?.pat)},
+                                  {label:'EPS (₹)',     get:r=>r?.eps,
+                                    yoyPct:current.eps_yoy_pct ?? pct(current.eps, yoyRow?.eps),
+                                    qoqPct:pct(current.eps, prevQtr?.eps)},
                                 ]
                                 // Result quality rating — same shared computeResultRating()
                                 // function the main badge chip above uses, so both always
@@ -8988,6 +8998,7 @@ export default function App(){
                                         <tr>
                                           <td></td>
                                           <td style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px'}}>YoY</td>
+                                          <td style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px'}}>QoQ</td>
                                           {cols.map((c,i)=>(
                                             <td key={i} style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px',whiteSpace:'nowrap'}}>{c.label}</td>
                                           ))}
@@ -9000,6 +9011,10 @@ export default function App(){
                                             <td style={{textAlign:'right',padding:'4px 6px',fontWeight:700,
                                               color:m.yoyPct==null?C.muted:m.yoyPct>=0?C.green:C.red}}>
                                               {m.yoyPct==null?'—':`${m.yoyPct>=0?'▲':'▼'} ${Math.abs(m.yoyPct).toFixed(0)}%`}
+                                            </td>
+                                            <td style={{textAlign:'right',padding:'4px 6px',fontWeight:700,
+                                              color:m.qoqPct==null?C.muted:m.qoqPct>=0?C.green:C.red}}>
+                                              {m.qoqPct==null?'—':`${m.qoqPct>=0?'▲':'▼'} ${Math.abs(m.qoqPct).toFixed(0)}%`}
                                             </td>
                                             {cols.map((c,i)=>(
                                               <td key={i} style={{textAlign:'right',padding:'4px 6px',color:C.text}}>

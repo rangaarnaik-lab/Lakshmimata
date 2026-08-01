@@ -878,7 +878,7 @@ export async function fetchBestPicks() {
 export async function fetchFinancialResultsHistory(symbol) {
   const { data, error } = await supabase
     .from('financial_results')
-    .select('period_ended,result_type,sales,pat,eps,filed_at')
+    .select('period_ended,result_type,sales,pat,eps,filed_at,sales_yoy_pct,pat_yoy_pct,eps_yoy_pct,sales_qoq_pct,pat_qoq_pct')
     .eq('symbol', symbol)
     .order('period_ended', { ascending: false })
     .limit(16)
