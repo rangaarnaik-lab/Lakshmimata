@@ -8876,35 +8876,6 @@ export default function App(){
                             {a.category}
                           </span>
                         )}
-                        {a.ai_rating&&(()=>{
-                          // For Results-type filings specifically, prefer the
-                          // numbers-based rating (Excellent/Good/Neutral/Weak,
-                          // from actual Sales/PAT YoY) over the generic keyword-
-                          // matched sentiment — routine filing-notice text like
-                          // "Company X has submitted results for the period
-                          // ended Y" has no sentiment-bearing language at all,
-                          // so the keyword rating is ALWAYS "Neutral" for these
-                          // regardless of whether the numbers were actually good
-                          // or bad. Falls back to the keyword rating when we
-                          // don't have enough results history yet (e.g. only
-                          // one quarter on file).
-                          const isResultsFiling = _RESULTS_ANN_KEYWORDS_JS.some(k=>
-                            ((a.category||'')+' '+(a.subject||'')).toLowerCase().includes(k))
-                          const numbersRating = isResultsFiling ? computeResultRating(resultsHistoryCache[a.symbol]) : null
-                          const label = numbersRating
-                            ? {Excellent:'⭐ Excellent',Good:'✓ Good',Weak:'⚠ Weak',Neutral:'– Neutral'}[numbersRating]
-                            : (a.ai_rating==='positive'?'▲ Positive':a.ai_rating==='negative'?'▼ Negative':'– Neutral')
-                          const color = numbersRating
-                            ? {Excellent:C.green,Good:'#7dd3a8',Weak:C.red,Neutral:C.muted}[numbersRating]
-                            : (a.ai_rating==='positive'?C.green:a.ai_rating==='negative'?C.red:C.muted)
-                          return (
-                            <span title={numbersRating?"Based on actual Sales/PAT YoY numbers, not just filing-notice text":"Based on the filing's own wording"}
-                              style={{display:'inline-block',fontSize:9,fontWeight:700,marginLeft:a.category?5:0,marginBottom:4,
-                              borderRadius:6,padding:'2px 6px',color,background:color+'18'}}>
-                              {label}
-                            </span>
-                          )
-                        })()}
                         {a.order_size&&(
                           <span style={{display:'inline-block',fontSize:9,fontWeight:700,marginLeft:5,marginBottom:4,
                             borderRadius:6,padding:'2px 6px',color:C.yellow,background:C.yellow+'18'}}>
@@ -8926,6 +8897,12 @@ export default function App(){
                         {announcementsCategory==='results'&&resultsMap[a.symbol]&&(()=>{
                           const fr=resultsMap[a.symbol]
                           const fmt=v=>v==null?'—':(Math.abs(v)>=1000?(v/1).toLocaleString('en-IN',{maximumFractionDigits:0}):v.toLocaleString('en-IN',{maximumFractionDigits:2}))
+                          // PE isn't stored on the announcement row itself -
+                          // looked up from the already-loaded live stocks
+                          // state instead of a separate fetch. Market cap
+                          // and sector ARE already on the announcement row
+                          // (captured at announcement time), used directly.
+                          const liveStock = stocks.find(s=>s.sym===a.symbol)
                           return (
                             <div style={{marginBottom:4}}>
                               <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',fontSize:11,fontWeight:700,
@@ -8935,6 +8912,13 @@ export default function App(){
                                 <span>Sales: <span style={{color:C.text}}>₹{fmt(fr.sales)} Cr</span></span>
                                 <span>PAT: <span style={{color:(fr.pat??0)>=0?C.green:C.red}}>₹{fmt(fr.pat)} Cr</span></span>
                                 <span>EPS: <span style={{color:C.text}}>₹{fmt(fr.eps)}</span></span>
+                              </div>
+                              <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',fontSize:10,
+                                color:C.muted,background:C.card,border:`1px solid ${C.border}`,borderTop:'none',
+                                padding:'4px 10px'}}>
+                                {a.market_cap!=null&&<span>MCap: <span style={{color:C.text}}>₹{fmt(a.market_cap)} Cr</span></span>}
+                                {liveStock?.pe!=null&&<span>P/E: <span style={{color:C.text}}>{fmt(liveStock.pe)}</span></span>}
+                                {a.sector&&<span>Sector: <span style={{color:C.text}}>{a.sector}</span></span>}
                               </div>
                               {(()=>{
                                 const hist = resultsHistoryCache[a.symbol]
