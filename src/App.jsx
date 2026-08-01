@@ -8974,9 +8974,25 @@ export default function App(){
                                 // meaningless jump like ₹0.1Cr -> ₹0.2Cr.
                                 const otherIncomeSpike = (current.other_income!=null && prevQtr?.other_income!=null &&
                                   prevQtr.other_income>0.5 && current.other_income > prevQtr.other_income*1.5)
+                                // Result quality rating — same shared computeResultRating()
+                                // function the main badge chip above uses, so both always
+                                // agree instead of drifting apart from duplicated logic.
+                                const resultRating = computeResultRating(hist)
                                 return (
                                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderTop:'none',
                                     borderRadius:'0 0 8px 8px',padding:'8px 10px',overflowX:'auto'}}>
+                                    {resultRating&&(
+                                      <div title="Quality rating from Sales/PAT YoY growth vs. the same quarter last year, adjusted one tier if the sequential (QoQ) trend meaningfully contradicts it — not a buy/sell call, just how the numbers moved."
+                                        style={{display:'inline-block',marginBottom:6,padding:'2px 9px',borderRadius:12,
+                                          fontSize:10,fontWeight:800,cursor:'help',
+                                          background:(resultRating==='Excellent'?C.green:resultRating==='Good'?'#7dd3a8':
+                                            resultRating==='Weak'?C.red:C.yellow)+'22',
+                                          color:resultRating==='Excellent'?C.green:resultRating==='Good'?'#7dd3a8':
+                                            resultRating==='Weak'?C.red:C.yellow}}>
+                                        {resultRating==='Excellent'?'⭐ Excellent':resultRating==='Good'?'✓ Good':
+                                          resultRating==='Weak'?'⚠ Weak':'– Neutral'} Result
+                                      </div>
+                                    )}
                                     {otherIncomeSpike&&(
                                       <div title="Other income more than 50% higher than the previous quarter - worth checking whether this quarter's profit growth is coming from the core business or a one-time/non-operating gain."
                                         style={{display:'flex',alignItems:'center',gap:5,marginBottom:6,padding:'4px 9px',
