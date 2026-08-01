@@ -8916,6 +8916,13 @@ export default function App(){
                             🤖 {a.ai_summary}
                           </div>
                         )}
+                        {announcementsCategory==='results'&&!resultsMap[a.symbol]&&(
+                          <div style={{fontSize:9,color:C.yellow,background:C.yellow+'18',
+                            border:`1px solid ${C.yellow}44`,borderRadius:6,padding:'4px 8px',marginBottom:4}}>
+                            🔧 DEBUG: no resultsMap entry for "{a.symbol}". resultsMap has {Object.keys(resultsMap).length} symbols.
+                            {Object.keys(resultsMap).length>0&&` Sample: ${Object.keys(resultsMap).slice(0,5).join(', ')}`}
+                          </div>
+                        )}
                         {announcementsCategory==='results'&&resultsMap[a.symbol]&&(()=>{
                           const fr=resultsMap[a.symbol]
                           const fmt=v=>v==null?'—':(Math.abs(v)>=1000?(v/1).toLocaleString('en-IN',{maximumFractionDigits:0}):v.toLocaleString('en-IN',{maximumFractionDigits:2}))
