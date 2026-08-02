@@ -1692,13 +1692,13 @@ function StockCard({s,i,onChart}){
           <div style={{textAlign:'center'}}>
             <div style={{fontSize:32,fontWeight:900,color:rsColor(s.rs),lineHeight:1}}>{s.rs}</div>
             <div style={{fontSize:10,color:C.muted}}>{rsLabel(s.rs)}</div>
-            <div style={{fontSize:11,fontWeight:700,color:trendColor(s.rsTrend.trend)}}>{trendIcon(s.rsTrend.trend)}</div>
           </div>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-          <div>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <span style={{fontSize:13,fontWeight:700,color:trendColor(s.rsTrend.trend)}} title={`RS trend: ${s.rsTrend.trend}`}>{trendIcon(s.rsTrend.trend)}</span>
             <span style={{fontWeight:700,fontSize:15}}>{fmtP(s.last)}</span>
-            <span style={{marginLeft:8,fontWeight:700,fontSize:13,color:s.chg>=0?C.green:C.red}}>
+            <span style={{fontWeight:700,fontSize:13,color:s.chg>=0?C.green:C.red}}>
               {s.chg>=0?'+':''}{s.chg.toFixed(2)}%</span>
           </div>
           <div style={{display:'flex',gap:10,alignItems:'center'}}>
