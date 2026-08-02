@@ -5786,24 +5786,24 @@ export default function App(){
       {/* ── WealthLab-style Icon sidebar ── */}
       {!isMobile&&(()=>{
         const navTop=[
-          {id:'rs',       label:'RS Rating',        Icon:TrendingUp},
-          {id:'market',   label:'Market',            Icon:BarChart3},
-          {id:'rotation', label:'Sector Rotation',   Icon:RefreshCw},
-          {id:'leaders',  label:'Leaders',           Icon:Flag},
-          {id:'patterns', label:'Patterns',          Icon:LineChartIcon},
-          {id:'squeeze',  label:'Squeeze',           Icon:Zap},
-          {id:'breakout', label:'Breakout',          Icon:ArrowUpRight},
-          {id:'52wl',     label:'52WL',              Icon:Award},
-          {id:'weak',     label:'Weak RS',           Icon:TrendingDown},
+          {id:'rs',       label:'RS Rating',        short:'RS',       Icon:TrendingUp},
+          {id:'market',   label:'Market',            short:'Market',   Icon:BarChart3},
+          {id:'rotation', label:'Sector Rotation',   short:'Rotate',   Icon:RefreshCw},
+          {id:'leaders',  label:'Leaders',           short:'Leaders',  Icon:Flag},
+          {id:'patterns', label:'Patterns',          short:'Patterns', Icon:LineChartIcon},
+          {id:'squeeze',  label:'Squeeze',           short:'Squeeze',  Icon:Zap},
+          {id:'breakout', label:'Breakout',          short:'Breakout', Icon:ArrowUpRight},
+          {id:'52wl',     label:'52WL',              short:'52WL',     Icon:Award},
+          {id:'weak',     label:'Weak RS',           short:'Weak',     Icon:TrendingDown},
         ]
         const navBottom=[
-          {id:'portfolio', label:'Portfolio',        Icon:Briefcase},
-          {id:'compare',   label:'Compare',          Icon:GitCompare},
-          {id:'watchlist', label:'Watchlist',        Icon:Star},
-          {id:'announcements', label:'Announcements',Icon:Megaphone},
-          {id:'bestpicks', label:'AI Best Picks',    Icon:Target},
+          {id:'portfolio', label:'Portfolio',        short:'Portfolio',Icon:Briefcase},
+          {id:'compare',   label:'Compare',          short:'Compare',  Icon:GitCompare},
+          {id:'watchlist', label:'Watchlist',        short:'Watch',    Icon:Star},
+          {id:'announcements', label:'Announcements',short:'News',     Icon:Megaphone},
+          {id:'bestpicks', label:'AI Best Picks',    short:'AI Picks', Icon:Target},
         ]
-        const ITEM_H=44, DIVIDER_H=9 // 1px line + 4px margin top/bottom
+        const ITEM_H=52, DIVIDER_H=9 // 1px line + 4px margin top/bottom
         const navAll=[...navTop,...navBottom]
         const activeIdx=navAll.findIndex(n=>n.id===mainTab)
         const indicatorTop=activeIdx<0?-100:(
@@ -5811,18 +5811,21 @@ export default function App(){
             ? activeIdx*ITEM_H
             : navTop.length*ITEM_H+DIVIDER_H+(activeIdx-navTop.length)*ITEM_H
         )
-        const NavRow=({id,label,Icon})=>(
+        const NavRow=({id,label,short,Icon})=>(
           <div key={id} onClick={()=>setMainTab(id)}
             onMouseEnter={()=>setHoveredNavId(id)} onMouseLeave={()=>setHoveredNavId(null)}
             title={label}
-            style={{width:'100%',height:ITEM_H,display:'flex',alignItems:'center',
-              justifyContent:'center',cursor:'pointer',position:'relative',
+            style={{width:'100%',height:ITEM_H,display:'flex',flexDirection:'column',alignItems:'center',
+              justifyContent:'center',gap:2,cursor:'pointer',position:'relative',
               background:mainTab===id?C.active:hoveredNavId===id?C.active+'55':'transparent',
               transition:'background 0.15s'}}>
-            <Icon size={18} strokeWidth={mainTab===id?2.4:1.8}
+            <Icon size={17} strokeWidth={mainTab===id?2.4:1.8}
               color={mainTab===id?C.accent:hoveredNavId===id?C.text:C.muted}
               style={{transition:'color 0.15s, transform 0.15s',
                 transform:hoveredNavId===id&&mainTab!==id?'scale(1.1)':'scale(1)'}}/>
+            <span style={{fontSize:7.5,fontWeight:mainTab===id?700:500,lineHeight:1.1,textAlign:'center',
+              color:mainTab===id?C.accent:hoveredNavId===id?C.text:C.muted,
+              padding:'0 2px',wordBreak:'break-word'}}>{short}</span>
           </div>
         )
         return (
