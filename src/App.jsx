@@ -8685,7 +8685,7 @@ export default function App(){
               <div>
                 <div style={{fontWeight:800,fontSize:15,color:C.accent}}>🎯 AI Best Picks</div>
                 <div style={{fontSize:12,color:C.muted,marginTop:2}}>
-                  Top {bestPicks.length||30} stocks by technical + fundamental confluence, across all ~2382 NSE stocks. Not a buy recommendation — refreshed hourly.
+                  Top 5 stocks by technical + fundamental confluence, across all ~2382 NSE stocks. Refreshed hourly.
                 </div>
               </div>
               <button onClick={loadBestPicks} disabled={bestPicksLoading}
@@ -8693,6 +8693,15 @@ export default function App(){
                   border:`1px solid ${C.border}`,background:C.card,color:C.muted}}>
                 {bestPicksLoading?'…':'🔄 Refresh'}
               </button>
+            </div>
+
+            {/* SEBI disclaimer — kept prominent and legible (not small/
+                grey/de-emphasized text) per SEBI's guidance that
+                disclaimers must be clearly visible, not buried. */}
+            <div style={{background:C.yellow+'14',border:`1px solid ${C.yellow}55`,borderRadius:10,
+              padding:'10px 12px',marginBottom:14,fontSize:11.5,lineHeight:1.5,color:C.text}}>
+              <strong style={{color:C.yellow}}>⚠️ Not investment advice.</strong> This is an algorithmic output based on public technical and fundamental data — it is not a recommendation from a SEBI-registered Investment Adviser or Research Analyst, and Lakshmimata is not registered with SEBI in either capacity.
+              Stop-loss/target levels shown are ATR-based reference calculations, not guaranteed exit points. Please do your own research and consult a SEBI-registered advisor before making any investment decision.
             </div>
 
             <div style={{display:'flex',gap:6,marginBottom:14}}>
@@ -8716,8 +8725,8 @@ export default function App(){
               </div>
             ):(
               <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                <TVCopyPanel stocks={bestPicks.map(p=>({sym:p.symbol}))} label="AI Best Picks"/>
-                {bestPicks.map((p)=>(
+                <TVCopyPanel stocks={bestPicks.slice(0,5).map(p=>({sym:p.symbol}))} label="AI Best Picks"/>
+                {bestPicks.slice(0,5).map((p)=>(
                   <div key={p.symbol} style={{background:C.card,border:`1px solid ${C.border}`,
                     borderRadius:10,padding:'12px 14px',display:'flex',gap:12,alignItems:'flex-start'}}>
                     <div style={{minWidth:30,textAlign:'center'}}>
