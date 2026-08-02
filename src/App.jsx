@@ -2802,9 +2802,9 @@ function SortableHeader({label,sortKey,sortBy,sortDir,onSort,align='left',legend
 // (#, Symbol, RS-TV, Price, Chg%, Expand, TV, Scr link) — vis.X entries
 // are the customizable ones.
 function computeRsGridCols(vis){
+  const rsCount = 1 + (vis.mid?1:0) + (vis.sml?1:0) + (vis.sec?1:0) // Nifty always shown, others toggleable
   const cols=[
-    ['32px',true],['130px',true],['52px',true],
-    ['48px',vis.mid],['48px',vis.sml],['52px',vis.sec],['52px',vis.trend],
+    ['32px',true],['130px',true],[`${rsCount*40}px`,true],['52px',vis.trend],
     ['64px',true],['90px',true],
     ['150px',vis.pp10],['182px',vis.rs7d],['140px',vis.stage],['170px',vis.squeeze],
     ['160px',vis.wl52],['150px',vis.weakrs],
@@ -2888,16 +2888,16 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,de
             fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
             <span style={{textAlign:'center',color:C.muted}}>#</span>
             <SortableHeader label="Symbol" sortKey="sym" sortBy={sortBy} sortDir={sortDir} onSort={handleSort}/>
-            <SortableHeader label="RS-TV" sortKey="rsTv" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
-            {visibleRsCols.mid&&<div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsMidcap')}>
-              <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsMidcap'?C.accent:C.muted}}>MID ↕</div>
-            </div>}
-            {visibleRsCols.sml&&<div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsSmallcap')}>
-              <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsSmallcap'?C.accent:C.muted}}>SML ↕</div>
-            </div>}
-            {visibleRsCols.sec&&<div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsSector')}>
-              <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsSector'?C.accent:C.muted}}>SEC ↕</div>
-            </div>}
+            <div style={{display:'flex'}}>
+              <span onClick={()=>handleSort('rsTv')} style={{flex:1,textAlign:'center',cursor:'pointer',
+                color:sortBy==='rsTv'?C.accent:C.muted,fontSize:9}}>NIFTY{sortBy==='rsTv'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
+              {visibleRsCols.mid&&<span onClick={()=>handleSort('rsMidcap')} style={{flex:1,textAlign:'center',cursor:'pointer',
+                color:sortBy==='rsMidcap'?C.accent:C.muted,fontSize:9}}>MID{sortBy==='rsMidcap'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
+              {visibleRsCols.sml&&<span onClick={()=>handleSort('rsSmallcap')} style={{flex:1,textAlign:'center',cursor:'pointer',
+                color:sortBy==='rsSmallcap'?C.accent:C.muted,fontSize:9}}>SML{sortBy==='rsSmallcap'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
+              {visibleRsCols.sec&&<span onClick={()=>handleSort('rsSector')} style={{flex:1,textAlign:'center',cursor:'pointer',
+                color:sortBy==='rsSector'?C.accent:C.muted,fontSize:9}}>SEC{sortBy==='rsSector'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
+            </div>
             {visibleRsCols.trend&&<SortableHeader label="Trend" sortKey="slope" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
             <SortableHeader label="Price" sortKey="last" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>
             <SortableHeader label="Chg%" sortKey="chg" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
@@ -3198,47 +3198,47 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
           </div>
         </div>
 
-        {/* RS-TV (TradingView / Lakshmi Mata formula — primary) */}
-        <div style={{textAlign:'center'}}>
-          {s.rsTv!=null?(
-            <>
-              <div style={{fontWeight:700,fontSize:15,color:rsColor(s.rsTv),lineHeight:1}}>{s.rsTv}</div>
-              <div style={{fontSize:7,color:C.teal,marginTop:1,fontWeight:700}}>TV</div>
-            </>
-          ):<span style={{color:C.muted,fontSize:9}} title="RS-TV needs 504+ days of price history">N/A</span>}
+        {/* RS Rating vs each benchmark, combined into one compact cell
+            instead of 4 separate grid columns - saves horizontal table
+            width. Nifty always shown; Mid/Small/Sector toggle with
+            visibleRsCols same as before. */}
+        <div style={{display:'flex',background:C.bg,borderRadius:6,overflow:'hidden'}}>
+          <div style={{flex:1,textAlign:'center',padding:'2px 1px'}} title={`RS-TV: ${s.rsTv??'N/A'}`}>
+            {s.rsTv!=null?(
+              <>
+                <div style={{fontWeight:700,fontSize:13,color:rsColor(s.rsTv),lineHeight:1.1}}>{s.rsTv}</div>
+                <div style={{fontSize:6.5,color:C.teal,fontWeight:700}}>NIFTY</div>
+              </>
+            ):<span style={{color:C.muted,fontSize:9}}>—</span>}
+          </div>
+          {vis.mid&&<div style={{flex:1,textAlign:'center',padding:'2px 1px',borderLeft:`1px solid ${C.border}`}}
+            title={`RS vs Midcap 150 index: ${s.rsMidcap??'N/A'}`}>
+            {s.rsMidcap!=null?(
+              <>
+                <div style={{fontWeight:700,fontSize:13,color:rsColor(s.rsMidcap),lineHeight:1.1}}>{s.rsMidcap}</div>
+                <div style={{fontSize:6.5,color:C.blue,fontWeight:700}}>MID</div>
+              </>
+            ):<span style={{color:C.border,fontSize:9}}>—</span>}
+          </div>}
+          {vis.sml&&<div style={{flex:1,textAlign:'center',padding:'2px 1px',borderLeft:`1px solid ${C.border}`}}
+            title={`RS vs Smallcap 250 index: ${s.rsSmallcap??'N/A'}`}>
+            {s.rsSmallcap!=null?(
+              <>
+                <div style={{fontWeight:700,fontSize:13,color:rsColor(s.rsSmallcap),lineHeight:1.1}}>{s.rsSmallcap}</div>
+                <div style={{fontSize:6.5,color:C.yellow,fontWeight:700}}>SML</div>
+              </>
+            ):<span style={{color:C.border,fontSize:9}}>—</span>}
+          </div>}
+          {vis.sec&&<div style={{flex:1,textAlign:'center',padding:'2px 1px',borderLeft:`1px solid ${C.border}`}}
+            title={`RS rank vs ${s.sector} sector peers: ${s.rsSector??'N/A'}`}>
+            {s.rsSector!=null?(
+              <>
+                <div style={{fontWeight:700,fontSize:13,color:rsColor(s.rsSector),lineHeight:1.1}}>{s.rsSector}</div>
+                <div style={{fontSize:6.5,color:C.orange,fontWeight:700}}>SEC</div>
+              </>
+            ):<span style={{color:C.border,fontSize:9}}>—</span>}
+          </div>}
         </div>
-
-        {/* RS within Midcap */}
-        {vis.mid&&<div style={{textAlign:'center'}} title={`RS vs Midcap 150 index as benchmark (same TV formula, Midcap index price used instead of Nifty): ${s.rsMidcap??'N/A'}`}>
-          {s.rsMidcap!=null?(
-            <>
-              <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsMidcap)}}>{s.rsMidcap}</div>
-              <div style={{fontSize:7,color:C.blue,marginTop:1,fontWeight:600}}>vs MID</div>
-            </>
-          ):<span style={{color:C.border,fontSize:9}}>—</span>}
-        </div>}
-
-        {/* RS within Smallcap */}
-        {vis.sml&&<div style={{textAlign:'center'}} title={`RS vs Smallcap 250 index as benchmark (same TV formula, Smallcap index price used instead of Nifty): ${s.rsSmallcap??'N/A'}`}>
-          {s.rsSmallcap!=null?(
-            <>
-              <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsSmallcap)}}>{s.rsSmallcap}</div>
-              <div style={{fontSize:7,color:C.yellow,marginTop:1,fontWeight:600}}>vs SML</div>
-            </>
-          ):<span style={{color:C.border,fontSize:9}}>—</span>}
-        </div>}
-
-
-
-        {/* RS within Sector */}
-        {vis.sec&&<div style={{textAlign:'center'}} title={`RS rank vs ${s.sector} sector peers: ${s.rsSector??'N/A'}`}>
-          {s.rsSector!=null?(
-            <>
-              <div style={{fontWeight:800,fontSize:13,color:rsColor(s.rsSector)}}>{s.rsSector}</div>
-              <div style={{fontSize:7,color:C.orange,marginTop:1,fontWeight:600}}>SEC</div>
-            </>
-          ):<span style={{color:C.border,fontSize:9}}>—</span>}
-        </div>}
 
         {/* Slope/Trend */}
         {vis.trend&&<div style={{textAlign:'center'}}>
@@ -6476,20 +6476,16 @@ export default function App(){
                     fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
                     <span style={{textAlign:'center',color:C.muted}}>#</span>
                     <SortableHeader label="Symbol" sortKey="sym" sortBy={sortBy} sortDir={sortDir} onSort={handleSort}/>
-                    <SortableHeader label="RS-TV" sortKey="rsTv" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
-                    {visibleRsCols.mid&&<div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsMidcap')}>
-                      <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsMidcap'?C.accent:C.muted}}>MID ↕</div>
-                      <div style={{fontSize:7,color:C.blue,fontWeight:600}}>Midcap</div>
-                    </div>}
-                    {visibleRsCols.sml&&<div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsSmallcap')}>
-                      <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsSmallcap'?C.accent:C.muted}}>SML ↕</div>
-                      <div style={{fontSize:7,color:C.yellow,fontWeight:600}}>Small</div>
-                    </div>}
-
-                    {visibleRsCols.sec&&<div style={{textAlign:'center',cursor:'pointer'}} onClick={()=>handleSort('rsSector')}>
-                      <div style={{fontSize:9,fontWeight:700,color:sortBy==='rsSector'?C.accent:C.muted}}>SEC ↕</div>
-                      <div style={{fontSize:7,color:C.orange,fontWeight:600}}>Sector</div>
-                    </div>}
+                    <div style={{display:'flex'}}>
+                      <span onClick={()=>handleSort('rsTv')} style={{flex:1,textAlign:'center',cursor:'pointer',
+                        color:sortBy==='rsTv'?C.accent:C.muted,fontSize:9}}>NIFTY{sortBy==='rsTv'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
+                      {visibleRsCols.mid&&<span onClick={()=>handleSort('rsMidcap')} style={{flex:1,textAlign:'center',cursor:'pointer',
+                        color:sortBy==='rsMidcap'?C.accent:C.muted,fontSize:9}}>MID{sortBy==='rsMidcap'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
+                      {visibleRsCols.sml&&<span onClick={()=>handleSort('rsSmallcap')} style={{flex:1,textAlign:'center',cursor:'pointer',
+                        color:sortBy==='rsSmallcap'?C.accent:C.muted,fontSize:9}}>SML{sortBy==='rsSmallcap'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
+                      {visibleRsCols.sec&&<span onClick={()=>handleSort('rsSector')} style={{flex:1,textAlign:'center',cursor:'pointer',
+                        color:sortBy==='rsSector'?C.accent:C.muted,fontSize:9}}>SEC{sortBy==='rsSector'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
+                    </div>
                     {visibleRsCols.trend&&<SortableHeader label="Trend" sortKey="slope" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
                     <SortableHeader label="Price" sortKey="last" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>
                     <SortableHeader label="Chg%" sortKey="chg" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
