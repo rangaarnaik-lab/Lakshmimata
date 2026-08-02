@@ -1573,13 +1573,29 @@ function StockDetail({s}){
         </div>
       </div>
 
+      {/* RS Rating vs each benchmark, in one compact row instead of
+          4 separate grid cells - same values, less vertical space. */}
+      <div style={{marginBottom:8}}>
+        <div style={{fontSize:9,color:C.muted,marginBottom:2,textTransform:'uppercase',letterSpacing:'0.06em'}}>RS Rating</div>
+        <div style={{display:'flex',background:C.bg,borderRadius:8,overflow:'hidden'}}>
+          {[
+            ['NIFTY',s.rsTv],
+            ['SECTOR',s.rsSector],
+            ['MID',s.rsMidcap],
+            ['SMALL',s.rsSmallcap],
+          ].map(([label,v],i)=>(
+            <div key={label} style={{flex:1,textAlign:'center',padding:'7px 4px',
+              borderLeft:i>0?`1px solid ${C.border}`:'none'}}>
+              <div style={{fontSize:8,color:C.muted,marginBottom:1}}>{label}</div>
+              <div style={{fontWeight:800,fontSize:13,color:v!=null?rsColor(v):C.muted}}>{v??'—'}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Stats */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
         {[
-          ['RS-TV',s.rsTv??'—',s.rsTv!=null?rsColor(s.rsTv):C.muted],
-          ['RS in Sector',s.rsSector??'—',s.rsSector!=null?rsColor(s.rsSector):C.muted],
-          ['RS in Midcap',s.rsMidcap??'—',s.rsMidcap!=null?rsColor(s.rsMidcap):C.muted],
-          ['RS in Smallcap',s.rsSmallcap??'—',s.rsSmallcap!=null?rsColor(s.rsSmallcap):C.muted],
           ['RS in Microcap',s.rsMicrocap??'—',s.rsMicrocap!=null?rsColor(s.rsMicrocap):C.muted],
           ['15D High RS',Math.max(...s.hist.filter(Boolean)),C.green],
           ['15D Low RS',Math.min(...s.hist.filter(Boolean)),C.red],
