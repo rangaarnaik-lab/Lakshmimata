@@ -8955,8 +8955,15 @@ export default function App(){
                                 // non-operating gains (interest income, one-time items,
                                 // etc.) to show the margin the CORE business actually
                                 // earned, not profit propped up by other income.
-                                const opm = r => (r?.sales && r?.pbt!=null && r?.other_income!=null && r.sales!==0)
-                                  ? (r.pbt - r.other_income) / r.sales * 100 : null
+                                // Prefer the saved opm_pct (e.g. from BSE, which supplies
+                                // OPM% directly but not pbt/other_income) - fall back to
+                                // deriving it from pbt/other_income only when opm_pct
+                                // itself wasn't saved for that row.
+                                const opm = r => {
+                                  if (r?.opm_pct != null) return r.opm_pct
+                                  return (r?.sales && r?.pbt != null && r?.other_income != null && r.sales !== 0)
+                                    ? (r.pbt - r.other_income) / r.sales * 100 : null
+                                }
                                 const metrics = [
                                   {label:'Sales (₹Cr)', get:r=>r?.sales, yoyPct:pct(current.sales, yoyRow?.sales)},
                                   {label:'Other Income (₹Cr)', get:r=>r?.other_income, yoyPct:pct(current.other_income, yoyRow?.other_income)},
