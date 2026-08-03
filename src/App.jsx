@@ -2805,7 +2805,7 @@ function computeRsGridCols(vis){
   const rsCount = 1 + (vis.mid?1:0) + (vis.sml?1:0) + (vis.sec?1:0) // Nifty always shown, others toggleable
   const cols=[
     ['32px',true],['130px',true],[`${rsCount*40}px`,true],['52px',vis.trend],
-    ['64px',true],['90px',true],
+    ['64px',true],
     ['150px',vis.pp10],['182px',vis.rs7d],['140px',vis.stage],['170px',vis.squeeze],
     ['160px',vis.wl52],['150px',vis.weakrs],
     ['55px',vis.mcap],['55px',vis.pe],['48px',vis.roe],['48px',vis.de],['48px',vis.prom],
@@ -2899,8 +2899,12 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,de
                 color:sortBy==='rsSector'?C.accent:C.muted,fontSize:9}}>SEC{sortBy==='rsSector'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
             </div>
             {visibleRsCols.trend&&<SortableHeader label="Trend" sortKey="slope" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
-            <SortableHeader label="Price" sortKey="last" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>
-            <SortableHeader label="Chg%" sortKey="chg" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+            <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end'}}>
+              <span onClick={()=>handleSort('last')} style={{cursor:'pointer',fontSize:9,fontWeight:700,
+                color:sortBy==='last'?C.accent:C.muted}}>Price{sortBy==='last'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
+              <span onClick={()=>handleSort('chg')} style={{cursor:'pointer',fontSize:9,fontWeight:700,
+                color:sortBy==='chg'?C.accent:C.muted}}>Chg%{sortBy==='chg'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
+            </div>
             {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"
   legend={[{label:'HT',color:C.orange},{label:'HY',color:C.pink},{label:'IBV',color:C.blue},{label:'PP',color:C.green}]}/>}
             {visibleRsCols.rs7d&&<span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>}
@@ -3246,19 +3250,12 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
           <div style={{fontSize:9,color:C.muted}}>{s.rsTrend.slope>0?'+':''}{s.rsTrend.slope}/d</div>
         </div>}
 
-        {/* Price */}
+        {/* Price + Chg% combined in one column (was 2 separate columns
+            showing the same %change twice) */}
         <div style={{textAlign:'right'}}>
           <div style={{fontWeight:700,fontSize:13}}>{fmtP(s.last)}</div>
           <div style={{fontSize:10,fontWeight:700,color:s.chg>=0?C.green:C.red}}>
             {s.chg>=0?'+':''}{s.chg.toFixed(2)}%</div>
-        </div>
-
-        {/* Chg% badge */}
-        <div style={{textAlign:'center'}}>
-          <span style={{padding:'3px 7px',borderRadius:6,fontSize:11,fontWeight:700,
-            background:(s.chg>=0?C.green:C.red)+'22',color:s.chg>=0?C.green:C.red}}>
-            {s.chg>=0?'+':''}{s.chg.toFixed(1)}%
-          </span>
         </div>
 
         {/* 10 D Vol — single row covering all four signals: each day's
@@ -3987,6 +3984,8 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
   const [info,setInfo]=useState('')
   const [loading,setLoading]=useState(false)
   const [googleLoading,setGoogleLoading]=useState(false)
+  const [agreedToTerms,setAgreedToTerms]=useState(false)
+  const [showFullTerms,setShowFullTerms]=useState(false)
   const ownerMode=!!OWNER_TOKEN
 
   // Google OAuth — Supabase handles everything
@@ -6487,8 +6486,12 @@ export default function App(){
                         color:sortBy==='rsSector'?C.accent:C.muted,fontSize:9}}>SEC{sortBy==='rsSector'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
                     </div>
                     {visibleRsCols.trend&&<SortableHeader label="Trend" sortKey="slope" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
-                    <SortableHeader label="Price" sortKey="last" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>
-                    <SortableHeader label="Chg%" sortKey="chg" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+                    <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end'}}>
+                      <span onClick={()=>handleSort('last')} style={{cursor:'pointer',fontSize:9,fontWeight:700,
+                        color:sortBy==='last'?C.accent:C.muted}}>Price{sortBy==='last'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
+                      <span onClick={()=>handleSort('chg')} style={{cursor:'pointer',fontSize:9,fontWeight:700,
+                        color:sortBy==='chg'?C.accent:C.muted}}>Chg%{sortBy==='chg'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
+                    </div>
                     {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"
   legend={[{label:'HT',color:C.orange},{label:'HY',color:C.pink},{label:'IBV',color:C.blue},{label:'PP',color:C.green}]}/>}
                     {visibleRsCols.rs7d&&<span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>}
