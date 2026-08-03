@@ -2069,13 +2069,20 @@ function ResultsHistoryTable({symbol}){
     return (r?.sales && r?.pbt != null && r?.other_income != null && r.sales !== 0)
       ? (r.pbt - r.other_income) / r.sales * 100 : null
   }
+  const qoqFor = (metric, backendVal) => backendVal != null ? backendVal : pct(metric(current), metric(prevQtr))
   const metrics = [
-    {label:'Sales (₹Cr)', get:r=>r?.sales, yoyPct:pct(current.sales, yoyRow?.sales)},
-    {label:'Other Income (₹Cr)', get:r=>r?.other_income, yoyPct:pct(current.other_income, yoyRow?.other_income)},
-    {label:'OPM %', get:opm, yoyPct:pct(opm(current), opm(yoyRow)), isPct:true},
-    {label:'PBT (₹Cr)',   get:r=>r?.pbt,   yoyPct:pct(current.pbt,   yoyRow?.pbt)},
-    {label:'PAT (₹Cr)',   get:r=>r?.pat,   yoyPct:pct(current.pat,   yoyRow?.pat)},
-    {label:'EPS (₹)',     get:r=>r?.eps,   yoyPct:pct(current.eps,   yoyRow?.eps)},
+    {label:'Sales (₹Cr)', get:r=>r?.sales, yoyPct:pct(current.sales, yoyRow?.sales),
+      qoqPct:qoqFor(r=>r?.sales, current.sales_qoq_pct)},
+    {label:'Other Income (₹Cr)', get:r=>r?.other_income, yoyPct:pct(current.other_income, yoyRow?.other_income),
+      qoqPct:pct(current.other_income, prevQtr?.other_income)},
+    {label:'OPM %', get:opm, yoyPct:pct(opm(current), opm(yoyRow)), isPct:true,
+      qoqPct:pct(opm(current), opm(prevQtr))},
+    {label:'PBT (₹Cr)',   get:r=>r?.pbt,   yoyPct:pct(current.pbt,   yoyRow?.pbt),
+      qoqPct:pct(current.pbt, prevQtr?.pbt)},
+    {label:'PAT (₹Cr)',   get:r=>r?.pat,   yoyPct:pct(current.pat,   yoyRow?.pat),
+      qoqPct:qoqFor(r=>r?.pat, current.pat_qoq_pct)},
+    {label:'EPS (₹)',     get:r=>r?.eps,   yoyPct:pct(current.eps,   yoyRow?.eps),
+      qoqPct:pct(current.eps, prevQtr?.eps)},
   ]
   const otherIncomeSpike = (current.other_income!=null && prevQtr?.other_income!=null &&
     prevQtr.other_income>0.5 && current.other_income > prevQtr.other_income*1.5)
@@ -2107,6 +2114,7 @@ function ResultsHistoryTable({symbol}){
           <tr>
             <td></td>
             <td style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px'}}>YoY</td>
+            <td style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px'}}>QoQ</td>
             {cols.map((c,i)=>(
               <td key={i} style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px',whiteSpace:'nowrap'}}>{c.label}</td>
             ))}
@@ -2123,6 +2131,10 @@ function ResultsHistoryTable({symbol}){
               <td style={{textAlign:'right',padding:'4px 6px',fontWeight:700,
                 color:m.yoyPct==null?C.muted:m.yoyPct>=0?C.green:C.red}}>
                 {m.yoyPct==null?'—':`${m.yoyPct>=0?'▲':'▼'} ${Math.abs(m.yoyPct).toFixed(0)}%`}
+              </td>
+              <td style={{textAlign:'right',padding:'4px 6px',fontWeight:700,
+                color:m.qoqPct==null?C.muted:m.qoqPct>=0?C.green:C.red}}>
+                {m.qoqPct==null?'—':`${m.qoqPct>=0?'▲':'▼'} ${Math.abs(m.qoqPct).toFixed(0)}%`}
               </td>
               {cols.map((c,i)=>{
                 const v = m.get(c.row)
