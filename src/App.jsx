@@ -2884,7 +2884,7 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,de
         <div style={{overflowX:'auto'}}>
         <div style={{minWidth:900}}>
           <div style={{display:'grid',gridTemplateColumns:computeRsGridCols(visibleRsCols),
-            padding:'7px 10px',borderBottom:`1px solid ${C.border}`,gap:4,
+            padding:'7px 10px',borderBottom:`1px solid ${C.border}`,gap:10,
             fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
             <span style={{textAlign:'center',color:C.muted}}>#</span>
             <SortableHeader label="Symbol" sortKey="sym" sortBy={sortBy} sortDir={sortDir} onSort={handleSort}/>
@@ -3177,7 +3177,7 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
     <div style={{borderBottom:`1px solid ${C.border}22`}}>
       <div onClick={()=>onChart&&onChart(s.sym)}
         style={{display:'grid',gridTemplateColumns:COLS,
-          padding:'5px 12px',alignItems:'center',cursor:'pointer',gap:4,
+          padding:'5px 12px',alignItems:'center',cursor:'pointer',gap:10,
           borderBottom:`1px solid ${C.divider}`,
           background:open?C.active:'transparent'}}
         onMouseEnter={e=>{if(!open)e.currentTarget.style.background=C.rowHover}}
@@ -6470,7 +6470,7 @@ export default function App(){
                 <div ref={rsTableDrag.ref} {...rsTableDrag.handlers}
                   style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflowX:'auto',...rsTableDrag.style}}>
                   <div style={{display:'grid',gridTemplateColumns:computeRsGridCols(visibleRsCols),
-                    padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
+                    padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:10,
                     fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
                     <span style={{textAlign:'center',color:C.muted}}>#</span>
                     <SortableHeader label="Symbol" sortKey="sym" sortBy={sortBy} sortDir={sortDir} onSort={handleSort}/>
