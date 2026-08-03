@@ -2806,7 +2806,7 @@ function computeRsGridCols(vis){
   const cols=[
     ['32px',true],['130px',true],[`${rsCount*40}px`,true],['52px',vis.trend],
     ['64px',true],
-    ['150px',vis.pp10],['182px',vis.rs7d],['140px',vis.stage],['170px',vis.squeeze],
+    ['182px',vis.pp10||vis.rs7d],['140px',vis.stage],['170px',vis.squeeze],
     ['160px',vis.wl52],['150px',vis.weakrs],
     ['55px',vis.mcap],['55px',vis.pe],['48px',vis.roe],['48px',vis.de],['48px',vis.prom],
     ['55px',true],['32px',true],['32px',true],
@@ -2905,9 +2905,11 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,de
               <span onClick={()=>handleSort('chg')} style={{cursor:'pointer',fontSize:9,fontWeight:700,
                 color:sortBy==='chg'?C.accent:C.muted}}>Chg%{sortBy==='chg'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
             </div>
-            {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"
-  legend={[{label:'HT',color:C.orange},{label:'HY',color:C.pink},{label:'IBV',color:C.blue},{label:'PP',color:C.green}]}/>}
-            {visibleRsCols.rs7d&&<span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>}
+            {(visibleRsCols.pp10||visibleRsCols.rs7d)&&<div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'center'}}>
+              {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"
+                legend={[{label:'HT',color:C.orange},{label:'HY',color:C.pink},{label:'IBV',color:C.blue},{label:'PP',color:C.green}]}/>}
+              {visibleRsCols.rs7d&&<span style={{color:C.muted,fontSize:9}}>RS Last 7d</span>}
+            </div>}
             {visibleRsCols.stage&&<span title="Stage: Weinstein trend stage (S1 Base/S2 Up/S3 Top/S4 Down). Vol: today's volume as % of its recent peak day, not a price." style={{textAlign:'center',color:C.muted,cursor:'help'}}>Stage/Vol</span>}
                     {visibleRsCols.squeeze&&<span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>}
                     {visibleRsCols.wl52&&<span style={{textAlign:'center',color:C.muted}}>52WL Signal</span>}
@@ -3258,23 +3260,20 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
             {s.chg>=0?'+':''}{s.chg.toFixed(2)}%</div>
         </div>
 
-        {/* 10 D Vol — single row covering all four signals: each day's
-            dot is colored by whichever of HT/HY/IBV/PP fired that day
-            (priority HT > HY > IBV > PP if more than one fired the same
-            day), instead of stacking four separate rows or only
-            showing one signal type for the whole stock. */}
-        {vis.pp10&&<div style={{display:'flex',alignItems:'center',minWidth:0,overflow:'hidden'}}>
-          <MergedSignalDots s={s}/>
-        </div>}
-
-        {/* RS Last 7d */}
-        {vis.rs7d&&<div style={{display:'flex',gap:2,alignItems:'center',minWidth:0,overflow:'hidden'}}>
-          {s.hist.slice(-7).map((v,idx)=>{
-            const color=v===null?C.border:v>=90?C.green:v>=70?C.accent:v>=50?C.yellow:C.red
-            return<div key={idx} style={{flex:'1 1 0',minWidth:0,height:24,borderRadius:4,background:color+'28',
-              border:`1px solid ${color}55`,display:'flex',alignItems:'center',justifyContent:'center',
-              fontSize:9,fontWeight:800,color}}>{v??'—'}</div>
-          })}
+        {/* 10 D Vol + RS Last 7d combined into one column, stacked
+            (was 2 separate columns) */}
+        {(vis.pp10||vis.rs7d)&&<div style={{display:'flex',flexDirection:'column',gap:3,minWidth:0}}>
+          {vis.pp10&&<div style={{display:'flex',alignItems:'center',minWidth:0,overflow:'hidden'}}>
+            <MergedSignalDots s={s}/>
+          </div>}
+          {vis.rs7d&&<div style={{display:'flex',gap:2,alignItems:'center',minWidth:0,overflow:'hidden'}}>
+            {s.hist.slice(-7).map((v,idx)=>{
+              const color=v===null?C.border:v>=90?C.green:v>=70?C.accent:v>=50?C.yellow:C.red
+              return<div key={idx} style={{flex:'1 1 0',minWidth:0,height:24,borderRadius:4,background:color+'28',
+                border:`1px solid ${color}55`,display:'flex',alignItems:'center',justifyContent:'center',
+                fontSize:9,fontWeight:800,color}}>{v??'—'}</div>
+            })}
+          </div>}
         </div>}
 
         {/* Stage compact */}
@@ -6492,9 +6491,11 @@ export default function App(){
                       <span onClick={()=>handleSort('chg')} style={{cursor:'pointer',fontSize:9,fontWeight:700,
                         color:sortBy==='chg'?C.accent:C.muted}}>Chg%{sortBy==='chg'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
                     </div>
-                    {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"
-  legend={[{label:'HT',color:C.orange},{label:'HY',color:C.pink},{label:'IBV',color:C.blue},{label:'PP',color:C.green}]}/>}
-                    {visibleRsCols.rs7d&&<span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>}
+                    {(visibleRsCols.pp10||visibleRsCols.rs7d)&&<div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'center'}}>
+                      {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"
+                        legend={[{label:'HT',color:C.orange},{label:'HY',color:C.pink},{label:'IBV',color:C.blue},{label:'PP',color:C.green}]}/>}
+                      {visibleRsCols.rs7d&&<span style={{color:C.muted,fontSize:9}}>RS Last 7d</span>}
+                    </div>}
                     {visibleRsCols.stage&&<span title="Stage: Weinstein trend stage (S1 Base/S2 Up/S3 Top/S4 Down). Vol: today's volume as % of its recent peak day, not a price." style={{textAlign:'center',color:C.muted,cursor:'help'}}>Stage/Vol</span>}
                     {visibleRsCols.squeeze&&<span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>}
                     {visibleRsCols.wl52&&<span style={{textAlign:'center',color:C.muted}}>52WL Signal</span>}
