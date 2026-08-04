@@ -931,6 +931,23 @@ export async function fetchAnnouncementsFromR2() {
   }
 }
 
+export async function fetchConcallSummaries(symbol) {
+  // Returns all AI-generated concall summaries for a symbol, most
+  // recent first. status='done' rows have real content; 'skipped'
+  // (schedule-only notice, no actual discussion) and 'failed' rows are
+  // filtered out here since they have nothing worth showing.
+  const { data, error } = await supabase
+    .from('concall_summaries')
+    .select('announced_at,attachment_url,summary,status')
+    .eq('symbol', symbol)
+    .eq('status', 'done')
+    .not('summary', 'is', null)
+    .order('announced_at', { ascending: false })
+    .limit(5)
+  if (error) { console.error('fetchConcallSummaries error:', error.message); return [] }
+  return data || []
+}
+
 export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = null, filters = {}, excludeCategoryLike = null) {
   // R2 fast-path — only for the single default/unfiltered case (first
   // page, no category/sector/mcap/order-size/symbol/date filters,

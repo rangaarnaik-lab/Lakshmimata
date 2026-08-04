@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -2021,6 +2021,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
       {!isIndex&&(
         <div style={{flexShrink:0,padding:'8px 14px 14px'}}>
           <ResultsHistoryTable symbol={sym}/>
+          <div style={{marginTop:8}}><ConcallSummary symbol={sym}/></div>
         </div>
       )}
     </div>
@@ -2148,6 +2149,52 @@ function ResultsHistoryTable({symbol}){
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// AI-generated summary of a company's most recent earnings concall
+// transcript (Gemini-summarized from the official PDF filing on NSE/BSE,
+// backend-side). Renders nothing at all - not even a placeholder - when
+// there's no summary available, since this depends on the transcript
+// actually having been filed and processed, which won't be true for
+// most stocks most of the time.
+function ConcallSummary({symbol}){
+  const [rows, setRows] = useState(null) // null=loading, []=none, array=loaded
+  const [expanded, setExpanded] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    setRows(null)
+    if (!symbol) return
+    fetchConcallSummaries(symbol).then(r => { if (!cancelled) setRows(r) })
+    return () => { cancelled = true }
+  }, [symbol])
+  if (!rows || rows.length === 0) return null
+  const latest = rows[0]
+  const dateLabel = new Date(latest.announced_at).toLocaleDateString('en-IN',
+    {day:'numeric', month:'short', year:'numeric'})
+  return (
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+        <div style={{fontSize:11,fontWeight:800,color:C.accent}}>🎙️ AI Concall Summary</div>
+        <div style={{fontSize:10,color:C.muted}}>{dateLabel}</div>
+      </div>
+      <div style={{fontSize:12,lineHeight:1.5,color:C.text,
+        display:'-webkit-box',WebkitLineClamp:expanded?'unset':4,WebkitBoxOrient:'vertical',overflow:'hidden'}}>
+        {latest.summary}
+      </div>
+      <div style={{display:'flex',gap:12,marginTop:6}}>
+        <span onClick={()=>setExpanded(e=>!e)} style={{fontSize:10,fontWeight:700,color:C.accent,cursor:'pointer'}}>
+          {expanded?'Show less':'Show more'}
+        </span>
+        {latest.attachment_url&&(
+          <a href={latest.attachment_url} target="_blank" rel="noopener noreferrer"
+            style={{fontSize:10,fontWeight:700,color:C.muted}}>View original PDF ↗</a>
+        )}
+      </div>
+      <div style={{fontSize:9,color:C.muted,marginTop:8,fontStyle:'italic'}}>
+        AI-generated summary of the official transcript filing — may miss nuance. Not investment advice.
+      </div>
     </div>
   )
 }
@@ -5232,6 +5279,25 @@ export default function App(){
       })
     })
   },[mainTab,announcementsCategory,announcements,resultsHistoryCache])
+  // AI concall summaries — fetched lazily per symbol, only for
+  // announcement rows whose own category/subject text looks like a
+  // concall/transcript filing (same keyword set the backend uses to
+  // exclude these from Results and to find them for summarization).
+  const [concallCache,setConcallCache]=useState({})
+  useEffect(()=>{
+    if(mainTab!=='announcements') return
+    const concallKeywords=['transcript','con. call','con call','conference call','investor meet','earnings call']
+    const isConcall=a=>{
+      const t=((a.category||'')+' '+(a.subject||'')).toLowerCase()
+      return concallKeywords.some(k=>t.includes(k))
+    }
+    const missing=[...new Set(announcements.filter(isConcall).map(a=>a.symbol).filter(sym=>sym&&!concallCache[sym]))]
+    missing.forEach(sym=>{
+      fetchConcallSummaries(sym).then(rows=>{
+        setConcallCache(p=>p[sym]?p:{...p,[sym]:rows})
+      })
+    })
+  },[mainTab,announcements,concallCache])
   useEffect(()=>{
     if(mainTab==='announcements'&&announcementsCategory==='results')
       fetchRecentFinancialResults().then(setResultsMap)
@@ -9045,6 +9111,16 @@ export default function App(){
                             🤖 {a.ai_summary}
                           </div>
                         )}
+                        {concallCache[a.symbol]&&concallCache[a.symbol].length>0&&(()=>{
+                          const cs=concallCache[a.symbol][0]
+                          return (
+                            <div style={{fontSize:11,color:C.text,marginBottom:4,marginTop:2,lineHeight:1.5,
+                              background:C.card,border:`1px solid ${C.border}`,borderRadius:6,padding:'6px 8px'}}>
+                              <div style={{fontSize:10,fontWeight:800,color:C.accent,marginBottom:3}}>🎙️ AI Concall Summary</div>
+                              {cs.summary}
+                            </div>
+                          )
+                        })()}
                         {announcementsCategory==='results'&&!resultsMap[a.symbol]&&(
                           <div style={{fontSize:9,color:C.yellow,background:C.yellow+'18',
                             border:`1px solid ${C.yellow}44`,borderRadius:6,padding:'4px 8px',marginBottom:4}}>
