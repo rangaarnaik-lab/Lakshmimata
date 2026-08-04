@@ -2153,12 +2153,16 @@ function ResultsHistoryTable({symbol}){
   )
 }
 
-// AI-generated summary of a company's most recent earnings concall
-// transcript (Gemini-summarized from the official PDF filing on NSE/BSE,
-// backend-side). Renders nothing at all - not even a placeholder - when
-// there's no summary available, since this depends on the transcript
-// actually having been filed and processed, which won't be true for
-// most stocks most of the time.
+// AI-generated summary of a company's most recent results filing PDF
+// (Gemini-summarized from the official NSE/BSE filing, backend-side) -
+// focused on qualitative content the raw numbers alone don't capture
+// (management commentary, segment breakdown, one-off items, guidance).
+// Was concall-focused, switched to target results filings per user
+// request on 2026-08-04 (results are filed every quarter by every
+// company; concalls are comparatively rare) - component name kept as
+// ConcallSummary since the underlying concall_summaries table/pipeline
+// may summarize concalls again later. Renders nothing at all - not even
+// a placeholder - when there's no summary available.
 function ConcallSummary({symbol}){
   const [rows, setRows] = useState(null) // null=loading, []=none, array=loaded
   const [expanded, setExpanded] = useState(false)
@@ -2176,7 +2180,7 @@ function ConcallSummary({symbol}){
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px'}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
-        <div style={{fontSize:11,fontWeight:800,color:C.accent}}>🎙️ AI Concall Summary</div>
+        <div style={{fontSize:11,fontWeight:800,color:C.accent}}>🤖 AI Results Summary</div>
         <div style={{fontSize:10,color:C.muted}}>{dateLabel}</div>
       </div>
       <div style={{fontSize:12,lineHeight:1.5,color:C.text,
@@ -2193,7 +2197,7 @@ function ConcallSummary({symbol}){
         )}
       </div>
       <div style={{fontSize:9,color:C.muted,marginTop:8,fontStyle:'italic'}}>
-        AI-generated summary of the official transcript filing — may miss nuance. Not investment advice.
+        AI-generated summary of the official results filing — may miss nuance. Not investment advice.
       </div>
     </div>
   )
@@ -5222,7 +5226,7 @@ export default function App(){
   // almost nothing.
   const ANNOUNCEMENT_CATEGORIES=[
     {id:'all',    label:'All',         keyword:null},
-    {id:'results', label:'Results',    keyword:['financial result','quarterly result','results for the quarter','unaudited results','audited results'], exclude:['newspaper publication','newspaper advertisement','transcript','press release','investor meet','con. call','con call','conference call']},
+    {id:'results', label:'Results',    keyword:['financial result','quarterly result','results for the quarter','unaudited results','audited results'], exclude:['newspaper publication','newspaper advertisement','transcript','press release','investor meet','con. call','con call','conference call','clarification']},
     {id:'concall', label:'Concall',    keyword:['con call','con-call','concall','conference call','investor','analyst meet'], exclude:['transcript']},
     {id:'transcript', label:'Transcript', keyword:['transcript']},
     {id:'orders', label:'Order Book',  keyword:['award of order','work order','purchase order','order received from','bagged','bagging','receiving of order','receipt of order','receiving of contract','receipt of contract','secures order','wins order','letter of intent','order worth','order valued'], exclude:['cancellation of order','cancellation of work order','cancellation of purchase order','order cancelled','work order cancelled','purchase order cancelled','cancellation of contract','contract cancelled','termination of contract','contract terminated','termination of work order','work order terminated','rescission of','order rescinded','contract rescinded','order withdrawn','withdrawal of order','loss of order','order lost']},
@@ -5279,19 +5283,24 @@ export default function App(){
       })
     })
   },[mainTab,announcementsCategory,announcements,resultsHistoryCache])
-  // AI concall summaries — fetched lazily per symbol, only for
-  // announcement rows whose own category/subject text looks like a
-  // concall/transcript filing (same keyword set the backend uses to
-  // exclude these from Results and to find them for summarization).
+  // AI results-filing summaries — fetched lazily per symbol, only for
+  // announcement rows whose own category/subject text looks like an
+  // actual results filing (same keyword/exclude set the Results tab
+  // itself uses, and what the backend's summarization loop now
+  // targets - was concall-focused, switched to results per user
+  // request on 2026-08-04 since results are filed by every company
+  // every quarter, concalls are comparatively rare).
   const [concallCache,setConcallCache]=useState({})
   useEffect(()=>{
     if(mainTab!=='announcements') return
-    const concallKeywords=['transcript','con. call','con call','conference call','investor meet','earnings call']
-    const isConcall=a=>{
+    const resultsKeywords=['financial result','quarterly result','results for the quarter','unaudited results','audited results']
+    const resultsExclude=['newspaper publication','newspaper advertisement','transcript','press release','investor meet','con. call','con call','conference call','clarification']
+    const isResultsFiling=a=>{
       const t=((a.category||'')+' '+(a.subject||'')).toLowerCase()
-      return concallKeywords.some(k=>t.includes(k))
+      if(resultsExclude.some(k=>t.includes(k))) return false
+      return resultsKeywords.some(k=>t.includes(k))
     }
-    const missing=[...new Set(announcements.filter(isConcall).map(a=>a.symbol).filter(sym=>sym&&!concallCache[sym]))]
+    const missing=[...new Set(announcements.filter(isResultsFiling).map(a=>a.symbol).filter(sym=>sym&&!concallCache[sym]))]
     missing.forEach(sym=>{
       fetchConcallSummaries(sym).then(rows=>{
         setConcallCache(p=>p[sym]?p:{...p,[sym]:rows})
@@ -9116,7 +9125,7 @@ export default function App(){
                           return (
                             <div style={{fontSize:11,color:C.text,marginBottom:4,marginTop:2,lineHeight:1.5,
                               background:C.card,border:`1px solid ${C.border}`,borderRadius:6,padding:'6px 8px'}}>
-                              <div style={{fontSize:10,fontWeight:800,color:C.accent,marginBottom:3}}>🎙️ AI Concall Summary</div>
+                              <div style={{fontSize:10,fontWeight:800,color:C.accent,marginBottom:3}}>🤖 AI Results Summary</div>
                               {cs.summary}
                             </div>
                           )
