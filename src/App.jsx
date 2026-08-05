@@ -1881,7 +1881,7 @@ function EmaBreadthTable({data,isMobile,dragProps,rangeLabel}){
   )
 }
 
-function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate}){
+function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks}){
   const [loaded, setLoaded] = useState(false)
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
   useEffect(()=>{ if(isIndex) setChartTab('own') },[isIndex])
@@ -2020,7 +2020,19 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
       </div>
       {!isIndex&&(
         <div style={{flexShrink:0,padding:'8px 14px 14px'}}>
+          {(()=>{
+            const mcapStock = stocks?.find(s=>s.sym===sym)
+            if(mcapStock?.marketCap==null) return null
+            return (
+              <div style={{marginBottom:8,fontSize:12,fontWeight:700,color:C.text}}>
+                Market Cap: <span style={{color:C.muted,fontWeight:600}}>
+                  {mcapStock.marketCap>=100000?`₹${(mcapStock.marketCap/100000).toFixed(1)}L Cr`:`₹${mcapStock.marketCap.toFixed(0)} Cr`}
+                </span>
+              </div>
+            )
+          })()}
           <ResultsHistoryTable symbol={sym}/>
+          <SectorRankingPanel symbol={sym} sector={stocks?.find(s=>s.sym===sym)?.sector} stocks={stocks}/>
           <div style={{marginTop:8}}><ConcallSummary symbol={sym}/></div>
         </div>
       )}
@@ -2149,6 +2161,69 @@ function ResultsHistoryTable({symbol}){
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// Ranks a stock's result-quality rating (same computeResultRating() used
+// everywhere else, so this always agrees with the badge shown above)
+// against other stocks in the same sector, so the user can see whether
+// "Excellent" results are actually standing out from peers or whether
+// the whole sector had a strong quarter together. Capped to 40 peers
+// (prioritized by market cap, since smaller/thinly-tracked peers are
+// less useful for comparison and this bounds the number of parallel
+// results-history queries) rather than querying an entire large sector
+// at once.
+const RATING_ORDER = {Excellent:3, Good:2, Neutral:1, Weak:0}
+function SectorRankingPanel({symbol, sector, stocks}){
+  const [ranking, setRanking] = useState(undefined) // undefined=loading, null=no sector/peers, array=loaded
+  useEffect(()=>{
+    let cancelled = false
+    setRanking(undefined)
+    if(!symbol || !sector || !stocks?.length){ setRanking(null); return }
+    const peers = stocks.filter(s=>s.sector===sector && s.sym)
+      .sort((a,b)=>(b.marketCap??0)-(a.marketCap??0))
+      .slice(0, 40)
+    if(!peers.some(p=>p.sym===symbol)){
+      const self = stocks.find(s=>s.sym===symbol)
+      if(self) peers.push(self)
+    }
+    if(peers.length < 2){ setRanking(null); return }
+    Promise.all(peers.map(p=>
+      fetchFinancialResultsHistory(p.sym).then(hist=>({sym:p.sym, rating:computeResultRating(hist)}))
+    )).then(results=>{
+      if(cancelled) return
+      const rated = results.filter(r=>r.rating!=null)
+        .sort((a,b)=>RATING_ORDER[b.rating]-RATING_ORDER[a.rating])
+      setRanking(rated.length>=2 ? rated : null)
+    })
+    return ()=>{cancelled=true}
+  }, [symbol, sector, stocks])
+
+  if(ranking===undefined) return (
+    <div style={{marginTop:8,fontSize:10.5,color:C.muted,padding:'4px 2px'}}>Ranking vs {sector} sector peers…</div>
+  )
+  if(ranking===null) return null
+  const myIdx = ranking.findIndex(r=>r.sym===symbol)
+  if(myIdx===-1) return null
+  const ratingColor = r => r==='Excellent'?C.green:r==='Good'?'#7dd3a8':r==='Weak'?C.red:C.yellow
+  return (
+    <div style={{marginTop:8,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px'}}>
+      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>
+        #{myIdx+1} of {ranking.length} rated in {sector}
+      </div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+        {ranking.map((r,i)=>(
+          <div key={r.sym} title={r.rating}
+            style={{display:'flex',alignItems:'center',gap:4,padding:'2px 7px',borderRadius:10,
+              fontSize:10,fontWeight:r.sym===symbol?800:600,
+              background:ratingColor(r.rating)+(r.sym===symbol?'33':'18'),
+              color:ratingColor(r.rating),
+              border:r.sym===symbol?`1px solid ${ratingColor(r.rating)}`:'1px solid transparent'}}>
+            <span style={{opacity:0.7}}>#{i+1}</span> {r.sym}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -9214,13 +9289,20 @@ export default function App(){
                                   return (r?.sales && r?.pbt != null && r?.other_income != null && r.sales !== 0)
                                     ? (r.pbt - r.other_income) / r.sales * 100 : null
                                 }
+                                const qoqFor = (metric, backendVal) => backendVal != null ? backendVal : pct(metric(current), metric(prevQtr))
                                 const metrics = [
-                                  {label:'Sales (₹Cr)', get:r=>r?.sales, yoyPct:pct(current.sales, yoyRow?.sales)},
-                                  {label:'Other Income (₹Cr)', get:r=>r?.other_income, yoyPct:pct(current.other_income, yoyRow?.other_income)},
-                                  {label:'OPM %', get:opm, yoyPct:pct(opm(current), opm(yoyRow)), isPct:true},
-                                  {label:'PBT (₹Cr)',   get:r=>r?.pbt,   yoyPct:pct(current.pbt,   yoyRow?.pbt)},
-                                  {label:'PAT (₹Cr)',   get:r=>r?.pat,   yoyPct:pct(current.pat,   yoyRow?.pat)},
-                                  {label:'EPS (₹)',     get:r=>r?.eps,   yoyPct:pct(current.eps,   yoyRow?.eps)},
+                                  {label:'Sales (₹Cr)', get:r=>r?.sales, yoyPct:pct(current.sales, yoyRow?.sales),
+                                    qoqPct:qoqFor(r=>r?.sales, current.sales_qoq_pct)},
+                                  {label:'Other Income (₹Cr)', get:r=>r?.other_income, yoyPct:pct(current.other_income, yoyRow?.other_income),
+                                    qoqPct:pct(current.other_income, prevQtr?.other_income)},
+                                  {label:'OPM %', get:opm, yoyPct:pct(opm(current), opm(yoyRow)), isPct:true,
+                                    qoqPct:pct(opm(current), opm(prevQtr))},
+                                  {label:'PBT (₹Cr)',   get:r=>r?.pbt,   yoyPct:pct(current.pbt,   yoyRow?.pbt),
+                                    qoqPct:pct(current.pbt, prevQtr?.pbt)},
+                                  {label:'PAT (₹Cr)',   get:r=>r?.pat,   yoyPct:pct(current.pat,   yoyRow?.pat),
+                                    qoqPct:qoqFor(r=>r?.pat, current.pat_qoq_pct)},
+                                  {label:'EPS (₹)',     get:r=>r?.eps,   yoyPct:pct(current.eps,   yoyRow?.eps),
+                                    qoqPct:pct(current.eps, prevQtr?.eps)},
                                 ]
                                 // Flag when other income has spiked vs the previous
                                 // quarter (>50% jump) - a common red flag where profit
@@ -9263,6 +9345,7 @@ export default function App(){
                                         <tr>
                                           <td></td>
                                           <td style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px'}}>YoY</td>
+                                          <td style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px'}}>QoQ</td>
                                           {cols.map((c,i)=>(
                                             <td key={i} style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px',whiteSpace:'nowrap'}}>{c.label}</td>
                                           ))}
@@ -9279,6 +9362,10 @@ export default function App(){
                                             <td style={{textAlign:'right',padding:'4px 6px',fontWeight:700,
                                               color:m.yoyPct==null?C.muted:m.yoyPct>=0?C.green:C.red}}>
                                               {m.yoyPct==null?'—':`${m.yoyPct>=0?'▲':'▼'} ${Math.abs(m.yoyPct).toFixed(0)}%`}
+                                            </td>
+                                            <td style={{textAlign:'right',padding:'4px 6px',fontWeight:700,
+                                              color:m.qoqPct==null?C.muted:m.qoqPct>=0?C.green:C.red}}>
+                                              {m.qoqPct==null?'—':`${m.qoqPct>=0?'▲':'▼'} ${Math.abs(m.qoqPct).toFixed(0)}%`}
                                             </td>
                                             {cols.map((c,i)=>{
                                               const v = m.get(c.row)
@@ -9449,6 +9536,7 @@ export default function App(){
         isMobile={isMobile}
         symList={displayedRS.map(s=>s.sym)}
         onNavigate={setChartSym}
+        stocks={stocks}
       />
       </div>
 
