@@ -4656,9 +4656,16 @@ function computeResultRating(hist){
     const dayDiff = Math.abs((d.getMonth()*30+d.getDate())-(curDate.getMonth()*30+curDate.getDate()))
     return yearsBack===1 && dayDiff<=20
   }) || null
+  // Adjusted PAT excludes any disclosed one-off item (asset sale gain,
+  // impairment, write-off, VRS cost, insurance claim, tax reversal,
+  // etc.) so the rating reflects normal operating performance rather
+  // than a one-time boost or hit. Falls back to raw PAT when
+  // exceptional_item is null (most quarters don't have one) - purely
+  // additive, doesn't change any quarter without a disclosed item.
+  const adjPat = row => row==null ? null : (row.pat==null ? null : row.pat - (row.exceptional_item||0))
   const pct=(now,then)=>(now==null||then==null||then===0)?null:((now-then)/Math.abs(then)*100)
   const salesYoy = pct(current.sales, yoyRow?.sales)
-  const patYoy = pct(current.pat, yoyRow?.pat)
+  const patYoy = pct(adjPat(current), adjPat(yoyRow))
   let resultRating = null
   if (patYoy!=null && salesYoy!=null) {
     if (patYoy>=20 && salesYoy>=10) resultRating='Excellent'
@@ -4677,7 +4684,7 @@ function computeResultRating(hist){
   // recovery. Shift one tier when the sequential trend meaningfully
   // contradicts the YoY story, without fully overriding it.
   if (resultRating && prevQtr) {
-    const patQoq = pct(current.pat, prevQtr.pat)
+    const patQoq = pct(adjPat(current), adjPat(prevQtr))
     const salesQoq = pct(current.sales, prevQtr.sales)
     const tiers = ['Weak','Neutral','Good','Excellent']
     let idx = tiers.indexOf(resultRating)
