@@ -2682,8 +2682,9 @@ function CandlestickChart({sym, isMobile, isIndex}){
   const handleMouseMove = (e) => {
     if (!dragRef.current) return
     const deltaBars = pxToBars(e.clientX - dragRef.current.startX)
+    const capturedStartPanOffset = dragRef.current.startPanOffset
     // Dragging right reveals older data -> increase panOffset
-    throttle(() => setPanOffset(Math.max(0, Math.min(maxPanOffset, dragRef.current.startPanOffset - deltaBars))))
+    throttle(() => setPanOffset(Math.max(0, Math.min(maxPanOffset, capturedStartPanOffset - deltaBars))))
   }
   const handleMouseUp = () => { dragRef.current = null }
   const touchDist = (touches) => {
@@ -2703,10 +2704,12 @@ function CandlestickChart({sym, isMobile, isIndex}){
       e.preventDefault()
       const newDist = touchDist(e.touches)
       const ratio = dragRef.current.pinchDist / Math.max(1, newDist) // fingers apart = zoom in
-      throttle(() => setZoomBars(Math.max(10, Math.min(n, Math.round(dragRef.current.pinchZoomBars * ratio)))))
+      const capturedPinchZoomBars = dragRef.current.pinchZoomBars
+      throttle(() => setZoomBars(Math.max(10, Math.min(n, Math.round(capturedPinchZoomBars * ratio)))))
     } else if (e.touches.length === 1 && dragRef.current.startX != null) {
       const deltaBars = pxToBars(e.touches[0].clientX - dragRef.current.startX)
-      throttle(() => setPanOffset(Math.max(0, Math.min(maxPanOffset, dragRef.current.startPanOffset - deltaBars))))
+      const capturedStartPanOffset = dragRef.current.startPanOffset
+      throttle(() => setPanOffset(Math.max(0, Math.min(maxPanOffset, capturedStartPanOffset - deltaBars))))
     }
   }
   const handleTouchEnd = () => { dragRef.current = null }
