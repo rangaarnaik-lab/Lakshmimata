@@ -2332,21 +2332,27 @@ const GUIDANCE_BADGE = {
 // than uniform gray-on-gray text blocks.
 const TRANSCRIPT_SECTIONS = [
   {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: '#7fae8e'},
+  {key: 'operational_kpis', label: 'Operational KPIs', icon: '📊', color: '#7fae8e'},
   {key: 'cost_margin_commentary', label: 'Cost & Margin', icon: '📉', color: '#d4a15a'},
   {key: 'expansion_capex', label: 'Expansion / Capex', icon: '🏗️', color: '#8a9bb0'},
   {key: 'outlook_guidance', label: 'Outlook & Guidance', icon: '🎯', color: '#7fae8e'},
   {key: 'management_changes', label: 'Management Changes', icon: '👤', color: '#8a9bb0'},
   {key: 'capital_allocation', label: 'Capital Allocation', icon: '💵', color: '#8a9bb0'},
   {key: 'competitive_positioning', label: 'Competitive Position', icon: '⚔️', color: '#8a9bb0'},
+  {key: 'regulatory_legal', label: 'Regulatory / Legal', icon: '⚖️', color: '#8a9bb0'},
+  {key: 'risks_flagged', label: 'Risks Flagged', icon: '⚠️', color: '#c0605a'},
   {key: 'key_concerns', label: 'Analyst Concerns (Q&A)', icon: '❓', color: '#c0605a'},
 ]
 
 const PPT_SECTIONS = [
   {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: '#7fae8e'},
+  {key: 'operational_kpis', label: 'Operational KPIs', icon: '📊', color: '#7fae8e'},
   {key: 'business_segments', label: 'Business Segments', icon: '🧩', color: '#8a9bb0'},
   {key: 'strategic_initiatives', label: 'Strategic Initiatives', icon: '🚀', color: '#7fae8e'},
   {key: 'capital_allocation', label: 'Capital Allocation', icon: '💵', color: '#8a9bb0'},
   {key: 'industry_outlook', label: 'Industry Outlook', icon: '🌐', color: '#8a9bb0'},
+  {key: 'regulatory_legal', label: 'Regulatory / Legal', icon: '⚖️', color: '#8a9bb0'},
+  {key: 'risks_flagged', label: 'Risks Flagged', icon: '⚠️', color: '#c0605a'},
 ]
 
 // Shared bullet-card renderer for one section - array of short bullet
