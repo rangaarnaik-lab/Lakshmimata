@@ -948,6 +948,26 @@ export async function fetchConcallSummaries(symbol) {
   return data || []
 }
 
+export async function fetchTranscriptSummaries(symbol) {
+  // Returns AI-generated earnings-call TRANSCRIPT summaries for a
+  // symbol, most recent first - a different document type from
+  // concall_summaries above (which summarizes the results PDF filing,
+  // not the separate call transcript). status='done' rows have real
+  // structured content; 'skipped' (not a genuine transcript, or no
+  // usable content found) and transient-error rows are filtered out.
+  const { data, error } = await supabase
+    .from('transcript_summaries')
+    .select('announced_at,attachment_url,status,financial_highlights,cost_margin_commentary,'
+      + 'expansion_capex,outlook_guidance,guidance_direction,management_changes,'
+      + 'capital_allocation,competitive_positioning,key_concerns,overall_summary')
+    .eq('symbol', symbol)
+    .eq('status', 'done')
+    .order('announced_at', { ascending: false })
+    .limit(5)
+  if (error) { console.error('fetchTranscriptSummaries error:', error.message); return [] }
+  return data || []
+}
+
 export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = null, filters = {}, excludeCategoryLike = null) {
   // R2 fast-path — only for the single default/unfiltered case (first
   // page, no category/sector/mcap/order-size/symbol/date filters,
