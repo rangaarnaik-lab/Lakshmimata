@@ -2316,61 +2316,94 @@ function ConcallSummary({symbol}){
   )
 }
 
-// Guidance direction badge colors - reuses the same visual vocabulary
-// (green=good, amber=caution/neutral, red=bad) as the result-rating
-// system elsewhere in the app, so a user doesn't need to learn a
-// second color convention.
-const GUIDANCE_BADGE = {
-  raised: {label: 'Guidance Raised', color: '#7fae8e'},
-  lowered: {label: 'Guidance Lowered', color: '#c0605a'},
-  maintained: {label: 'Guidance Maintained', color: '#8a9bb0'},
-  reiterated: {label: 'Guidance Reiterated', color: '#8a9bb0'},
-}
-
 // Icon+color per section, so each card is identifiable at a glance
 // while scanning - matches the "quick to catch and read" goal, rather
 // than uniform gray-on-gray text blocks.
+// Guidance direction badge - upgraded with directional arrows and a
+// gradient fill so the single most scannable signal (is guidance
+// going up or down) reads instantly, not just as small colored text.
+const GUIDANCE_BADGE = {
+  raised: {label: 'Guidance Raised', color: C.green, arrow: '▲'},
+  lowered: {label: 'Guidance Lowered', color: C.red, arrow: '▼'},
+  maintained: {label: 'Guidance Maintained', color: C.blue, arrow: '●'},
+  reiterated: {label: 'Guidance Reiterated', color: C.blue, arrow: '●'},
+}
+
+// Highlights numbers/currency/percentages within a bullet phrase so the
+// concrete facts (₹5,400 Cr, +39%, 2.5x) pop visually against the
+// surrounding text instead of blending into uniform prose - this is
+// what makes a bullet scannable in under a second rather than requiring
+// a full read.
+const NUMBER_RE = /(₹\s?[\d,]+\.?\d*\s?(?:Cr|Crore|Lakh|L|K)?|[+-]?\d[\d,]*\.?\d*\s?%|\d[\d,]*\.?\d*x\b)/gi
+function HighlightedBullet({text, color}){
+  const parts = text.split(NUMBER_RE)
+  return (
+    <>
+      {parts.map((part, i) => NUMBER_RE.test(part)
+        ? <span key={i} style={{color, fontWeight:800}}>{part}</span>
+        : <span key={i}>{part}</span>
+      )}
+    </>
+  )
+}
+
+// Vibrant theme-color rotation per section, drawn from the app's real
+// palette (not arbitrary grays) so each card feels like part of the
+// same design system while still being visually distinct at a glance.
 const TRANSCRIPT_SECTIONS = [
-  {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: '#7fae8e'},
-  {key: 'operational_kpis', label: 'Operational KPIs', icon: '📊', color: '#7fae8e'},
-  {key: 'cost_margin_commentary', label: 'Cost & Margin', icon: '📉', color: '#d4a15a'},
-  {key: 'expansion_capex', label: 'Expansion / Capex', icon: '🏗️', color: '#8a9bb0'},
-  {key: 'outlook_guidance', label: 'Outlook & Guidance', icon: '🎯', color: '#7fae8e'},
-  {key: 'management_changes', label: 'Management Changes', icon: '👤', color: '#8a9bb0'},
-  {key: 'capital_allocation', label: 'Capital Allocation', icon: '💵', color: '#8a9bb0'},
-  {key: 'competitive_positioning', label: 'Competitive Position', icon: '⚔️', color: '#8a9bb0'},
-  {key: 'regulatory_legal', label: 'Regulatory / Legal', icon: '⚖️', color: '#8a9bb0'},
-  {key: 'risks_flagged', label: 'Risks Flagged', icon: '⚠️', color: '#c0605a'},
-  {key: 'key_concerns', label: 'Analyst Concerns (Q&A)', icon: '❓', color: '#c0605a'},
+  {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: C.green},
+  {key: 'operational_kpis', label: 'Operational KPIs', icon: '📊', color: C.teal},
+  {key: 'cost_margin_commentary', label: 'Cost & Margin', icon: '📉', color: C.orange},
+  {key: 'expansion_capex', label: 'Expansion / Capex', icon: '🏗️', color: C.blue},
+  {key: 'outlook_guidance', label: 'Outlook & Guidance', icon: '🎯', color: C.lime},
+  {key: 'management_changes', label: 'Management Changes', icon: '👤', color: C.purple},
+  {key: 'capital_allocation', label: 'Capital Allocation', icon: '💵', color: C.teal},
+  {key: 'competitive_positioning', label: 'Competitive Position', icon: '⚔️', color: C.pink},
+  {key: 'regulatory_legal', label: 'Regulatory / Legal', icon: '⚖️', color: C.purple},
+  {key: 'risks_flagged', label: 'Risks Flagged', icon: '⚠️', color: C.yellow},
+  {key: 'key_concerns', label: 'Analyst Concerns (Q&A)', icon: '❓', color: C.red},
 ]
 
 const PPT_SECTIONS = [
-  {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: '#7fae8e'},
-  {key: 'operational_kpis', label: 'Operational KPIs', icon: '📊', color: '#7fae8e'},
-  {key: 'business_segments', label: 'Business Segments', icon: '🧩', color: '#8a9bb0'},
-  {key: 'strategic_initiatives', label: 'Strategic Initiatives', icon: '🚀', color: '#7fae8e'},
-  {key: 'capital_allocation', label: 'Capital Allocation', icon: '💵', color: '#8a9bb0'},
-  {key: 'industry_outlook', label: 'Industry Outlook', icon: '🌐', color: '#8a9bb0'},
-  {key: 'regulatory_legal', label: 'Regulatory / Legal', icon: '⚖️', color: '#8a9bb0'},
-  {key: 'risks_flagged', label: 'Risks Flagged', icon: '⚠️', color: '#c0605a'},
+  {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: C.green},
+  {key: 'operational_kpis', label: 'Operational KPIs', icon: '📊', color: C.teal},
+  {key: 'business_segments', label: 'Business Segments', icon: '🧩', color: C.blue},
+  {key: 'strategic_initiatives', label: 'Strategic Initiatives', icon: '🚀', color: C.lime},
+  {key: 'capital_allocation', label: 'Capital Allocation', icon: '💵', color: C.teal},
+  {key: 'industry_outlook', label: 'Industry Outlook', icon: '🌐', color: C.pink},
+  {key: 'regulatory_legal', label: 'Regulatory / Legal', icon: '⚖️', color: C.purple},
+  {key: 'risks_flagged', label: 'Risks Flagged', icon: '⚠️', color: C.yellow},
 ]
 
-// Shared bullet-card renderer for one section - array of short bullet
-// strings, rendered as a compact list with a colored dot marker rather
-// than a paragraph, so each fact is scannable independently.
+// Shared bullet-card renderer for one section: circular gradient icon
+// badge, gradient card background fading from the section color,
+// chevron markers, and automatic number-highlighting within each
+// bullet so the whole thing reads as a compact, colorful fact-sheet
+// rather than a wall of uniform text.
 function BulletSection({icon, label, color, bullets}){
   if (!bullets || bullets.length === 0) return null
   return (
-    <div style={{background:color+'0d',border:`1px solid ${color}33`,borderRadius:7,padding:'8px 10px'}}>
-      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:5}}>
-        <span style={{fontSize:13}}>{icon}</span>
-        <span style={{fontSize:10.5,fontWeight:800,color,textTransform:'uppercase',letterSpacing:'0.03em'}}>{label}</span>
+    <div style={{
+      background:`linear-gradient(135deg, ${color}1a 0%, ${color}05 100%)`,
+      border:`1px solid ${color}40`,borderRadius:10,padding:'10px 12px',
+      boxShadow:`0 1px 3px ${color}15`,
+    }}>
+      <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:6}}>
+        <div style={{
+          width:22,height:22,borderRadius:'50%',flexShrink:0,
+          background:`linear-gradient(135deg, ${color}, ${color}bb)`,
+          display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,
+          boxShadow:`0 1px 4px ${color}66`,
+        }}>{icon}</div>
+        <span style={{fontSize:10.5,fontWeight:800,color,textTransform:'uppercase',letterSpacing:'0.04em'}}>{label}</span>
       </div>
-      <div style={{display:'flex',flexDirection:'column',gap:3}}>
+      <div style={{display:'flex',flexDirection:'column',gap:4}}>
         {bullets.map((b,i)=>(
           <div key={i} style={{display:'flex',gap:6,alignItems:'flex-start'}}>
-            <span style={{color,fontSize:8,marginTop:5,flexShrink:0}}>●</span>
-            <span style={{fontSize:12,lineHeight:1.4,color:C.text}}>{b}</span>
+            <span style={{color,fontSize:10,marginTop:2,flexShrink:0,fontWeight:900}}>›</span>
+            <span style={{fontSize:12.5,lineHeight:1.45,color:C.text}}>
+              <HighlightedBullet text={b} color={color}/>
+            </span>
           </div>
         ))}
       </div>
@@ -2393,33 +2426,48 @@ function TranscriptSummary({symbol}){
     {day:'numeric', month:'short', year:'numeric'})
   const badge = GUIDANCE_BADGE[latest.guidance_direction]
   return (
-    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px'}}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6,gap:8}}>
-        <div style={{fontSize:11,fontWeight:800,color:C.accent}}>🎙️ AI Call Transcript Summary</div>
-        <div style={{fontSize:10,color:C.muted,flexShrink:0}}>{dateLabel}</div>
-      </div>
-      {badge && (
-        <div style={{display:'inline-block',fontSize:10,fontWeight:700,color:badge.color,
-          border:`1px solid ${badge.color}55`,borderRadius:4,padding:'2px 7px',marginBottom:8}}>
-          {badge.label}
+    <div style={{
+      background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',
+      boxShadow:'0 2px 12px rgba(0,0,0,0.25)',
+    }}>
+      <div style={{height:4,background:`linear-gradient(90deg, ${C.purple}, ${C.blue}, ${C.teal}, ${C.green})`}}/>
+      <div style={{padding:'12px 14px'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,gap:8}}>
+          <div style={{fontSize:12,fontWeight:900,color:C.text,display:'flex',alignItems:'center',gap:6}}>
+            <span style={{fontSize:15}}>🎙️</span> AI Call Transcript Summary
+          </div>
+          <div style={{fontSize:10,color:C.muted,flexShrink:0,fontWeight:600}}>{dateLabel}</div>
         </div>
-      )}
-      {latest.overall_summary && (
-        <div style={{fontSize:12,lineHeight:1.5,color:C.text,marginBottom:10}}>{latest.overall_summary}</div>
-      )}
-      <div style={{display:'flex',flexDirection:'column',gap:6}}>
-        {TRANSCRIPT_SECTIONS.map(s=>(
-          <BulletSection key={s.key} icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
-        ))}
-      </div>
-      <div style={{display:'flex',gap:12,marginTop:8}}>
-        {latest.attachment_url&&(
-          <a href={latest.attachment_url} target="_blank" rel="noopener noreferrer"
-            style={{fontSize:10,fontWeight:700,color:C.muted}}>View original transcript ↗</a>
+        {badge && (
+          <div style={{
+            display:'inline-flex',alignItems:'center',gap:5,fontSize:11,fontWeight:800,color:'#fff',
+            background:`linear-gradient(135deg, ${badge.color}, ${badge.color}cc)`,
+            borderRadius:20,padding:'4px 12px',marginBottom:10,
+            boxShadow:`0 2px 8px ${badge.color}55`,
+          }}>
+            <span>{badge.arrow}</span>{badge.label}
+          </div>
         )}
-      </div>
-      <div style={{fontSize:9,color:C.muted,marginTop:8,fontStyle:'italic'}}>
-        AI-generated summary of the earnings call transcript — paraphrased, may miss nuance. Not investment advice.
+        {latest.overall_summary && (
+          <div style={{
+            borderLeft:`3px solid ${C.accent}`,paddingLeft:10,marginBottom:12,
+            fontSize:12.5,lineHeight:1.6,color:C.text,fontStyle:'italic',
+          }}>{latest.overall_summary}</div>
+        )}
+        <div style={{display:'flex',flexDirection:'column',gap:7}}>
+          {TRANSCRIPT_SECTIONS.map(s=>(
+            <BulletSection key={s.key} icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
+          ))}
+        </div>
+        <div style={{display:'flex',gap:12,marginTop:10}}>
+          {latest.attachment_url&&(
+            <a href={latest.attachment_url} target="_blank" rel="noopener noreferrer"
+              style={{fontSize:10,fontWeight:700,color:C.accent}}>View original transcript ↗</a>
+          )}
+        </div>
+        <div style={{fontSize:9,color:C.muted,marginTop:8,fontStyle:'italic'}}>
+          AI-generated summary of the earnings call transcript — paraphrased, may miss nuance. Not investment advice.
+        </div>
       </div>
     </div>
   )
@@ -2440,33 +2488,48 @@ function PptSummary({symbol}){
     {day:'numeric', month:'short', year:'numeric'})
   const badge = GUIDANCE_BADGE[latest.guidance_direction]
   return (
-    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px'}}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6,gap:8}}>
-        <div style={{fontSize:11,fontWeight:800,color:C.accent}}>📊 AI Presentation Summary</div>
-        <div style={{fontSize:10,color:C.muted,flexShrink:0}}>{dateLabel}</div>
-      </div>
-      {badge && (
-        <div style={{display:'inline-block',fontSize:10,fontWeight:700,color:badge.color,
-          border:`1px solid ${badge.color}55`,borderRadius:4,padding:'2px 7px',marginBottom:8}}>
-          {badge.label}
+    <div style={{
+      background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',
+      boxShadow:'0 2px 12px rgba(0,0,0,0.25)',
+    }}>
+      <div style={{height:4,background:`linear-gradient(90deg, ${C.orange}, ${C.pink}, ${C.purple}, ${C.blue})`}}/>
+      <div style={{padding:'12px 14px'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,gap:8}}>
+          <div style={{fontSize:12,fontWeight:900,color:C.text,display:'flex',alignItems:'center',gap:6}}>
+            <span style={{fontSize:15}}>📊</span> AI Presentation Summary
+          </div>
+          <div style={{fontSize:10,color:C.muted,flexShrink:0,fontWeight:600}}>{dateLabel}</div>
         </div>
-      )}
-      {latest.overall_summary && (
-        <div style={{fontSize:12,lineHeight:1.5,color:C.text,marginBottom:10}}>{latest.overall_summary}</div>
-      )}
-      <div style={{display:'flex',flexDirection:'column',gap:6}}>
-        {PPT_SECTIONS.map(s=>(
-          <BulletSection key={s.key} icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
-        ))}
-      </div>
-      <div style={{display:'flex',gap:12,marginTop:8}}>
-        {latest.attachment_url&&(
-          <a href={latest.attachment_url} target="_blank" rel="noopener noreferrer"
-            style={{fontSize:10,fontWeight:700,color:C.muted}}>View original presentation ↗</a>
+        {badge && (
+          <div style={{
+            display:'inline-flex',alignItems:'center',gap:5,fontSize:11,fontWeight:800,color:'#fff',
+            background:`linear-gradient(135deg, ${badge.color}, ${badge.color}cc)`,
+            borderRadius:20,padding:'4px 12px',marginBottom:10,
+            boxShadow:`0 2px 8px ${badge.color}55`,
+          }}>
+            <span>{badge.arrow}</span>{badge.label}
+          </div>
         )}
-      </div>
-      <div style={{fontSize:9,color:C.muted,marginTop:8,fontStyle:'italic'}}>
-        AI-generated summary of the investor presentation — paraphrased, may miss nuance. Not investment advice.
+        {latest.overall_summary && (
+          <div style={{
+            borderLeft:`3px solid ${C.accent}`,paddingLeft:10,marginBottom:12,
+            fontSize:12.5,lineHeight:1.6,color:C.text,fontStyle:'italic',
+          }}>{latest.overall_summary}</div>
+        )}
+        <div style={{display:'flex',flexDirection:'column',gap:7}}>
+          {PPT_SECTIONS.map(s=>(
+            <BulletSection key={s.key} icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
+          ))}
+        </div>
+        <div style={{display:'flex',gap:12,marginTop:10}}>
+          {latest.attachment_url&&(
+            <a href={latest.attachment_url} target="_blank" rel="noopener noreferrer"
+              style={{fontSize:10,fontWeight:700,color:C.accent}}>View original presentation ↗</a>
+          )}
+        </div>
+        <div style={{fontSize:9,color:C.muted,marginTop:8,fontStyle:'italic'}}>
+          AI-generated summary of the investor presentation — paraphrased, may miss nuance. Not investment advice.
+        </div>
       </div>
     </div>
   )
