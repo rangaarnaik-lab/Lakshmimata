@@ -2381,7 +2381,17 @@ const PPT_SECTIONS = [
 // bullet so the whole thing reads as a compact, colorful fact-sheet
 // rather than a wall of uniform text.
 function BulletSection({icon, label, color, bullets}){
-  if (!bullets || bullets.length === 0) return null
+  // Defensive normalization: old rows saved before the bullet-array
+  // backend migration are still plain strings in the database. Calling
+  // .map() directly on a string throws "X.map is not a function" and
+  // crashes the entire app (not just this component), confirmed via a
+  // real production error report. A non-empty string becomes a
+  // single-item array so it still renders (as one bullet) instead of
+  // crashing; anything else falls through to rendering nothing.
+  const bulletList = Array.isArray(bullets) ? bullets
+    : (typeof bullets === 'string' && bullets.trim()) ? [bullets.trim()]
+    : []
+  if (bulletList.length === 0) return null
   return (
     <div style={{
       background:`linear-gradient(135deg, ${color}1a 0%, ${color}05 100%)`,
@@ -2398,11 +2408,11 @@ function BulletSection({icon, label, color, bullets}){
         <span style={{fontSize:10.5,fontWeight:800,color,textTransform:'uppercase',letterSpacing:'0.04em'}}>{label}</span>
       </div>
       <div style={{display:'flex',flexDirection:'column',gap:4}}>
-        {bullets.map((b,i)=>(
+        {bulletList.map((b,i)=>(
           <div key={i} style={{display:'flex',gap:6,alignItems:'flex-start'}}>
             <span style={{color,fontSize:10,marginTop:2,flexShrink:0,fontWeight:900}}>›</span>
             <span style={{fontSize:12.5,lineHeight:1.45,color:C.text}}>
-              <HighlightedBullet text={b} color={color}/>
+              <HighlightedBullet text={String(b)} color={color}/>
             </span>
           </div>
         ))}
