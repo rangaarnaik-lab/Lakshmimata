@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -2034,6 +2034,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
           <ResultsHistoryTable symbol={sym}/>
           <SectorRankingPanel symbol={sym} sector={stocks?.find(s=>s.sym===sym)?.sector} stocks={stocks}/>
           <div style={{marginTop:8}}><ConcallSummary symbol={sym}/></div>
+          <div style={{marginTop:8}}><TranscriptSummary symbol={sym}/></div>
         </div>
       )}
     </div>
@@ -2273,6 +2274,91 @@ function ConcallSummary({symbol}){
       </div>
       <div style={{fontSize:9,color:C.muted,marginTop:8,fontStyle:'italic'}}>
         AI-generated summary of the official results filing — may miss nuance. Not investment advice.
+      </div>
+    </div>
+  )
+}
+
+// Guidance direction badge colors - reuses the same visual vocabulary
+// (green=good, amber=caution/neutral, red=bad) as the result-rating
+// system elsewhere in the app, so a user doesn't need to learn a
+// second color convention.
+const GUIDANCE_BADGE = {
+  raised: {label: 'Guidance Raised', color: '#7fae8e'},
+  lowered: {label: 'Guidance Lowered', color: '#c0605a'},
+  maintained: {label: 'Guidance Maintained', color: '#8a9bb0'},
+  reiterated: {label: 'Guidance Reiterated', color: '#8a9bb0'},
+}
+
+// Structured sections shown on expand - only rendered when the field
+// actually has content, since most calls don't touch every topic
+// (e.g. most quarters have no management change to report at all).
+const TRANSCRIPT_SECTIONS = [
+  {key: 'financial_highlights', label: 'Financial Highlights'},
+  {key: 'cost_margin_commentary', label: 'Cost & Margin Commentary'},
+  {key: 'expansion_capex', label: 'Expansion / Capex'},
+  {key: 'outlook_guidance', label: 'Outlook & Guidance'},
+  {key: 'management_changes', label: 'Management Changes'},
+  {key: 'capital_allocation', label: 'Capital Allocation'},
+  {key: 'competitive_positioning', label: 'Competitive Positioning'},
+  {key: 'key_concerns', label: 'Analyst Concerns (Q&A)'},
+]
+
+function TranscriptSummary({symbol}){
+  const [rows, setRows] = useState(null) // null=loading, []=none, array=loaded
+  const [expanded, setExpanded] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    setRows(null)
+    if (!symbol) return
+    fetchTranscriptSummaries(symbol).then(r => { if (!cancelled) setRows(r) })
+    return () => { cancelled = true }
+  }, [symbol])
+  if (!rows || rows.length === 0) return null
+  const latest = rows[0]
+  const dateLabel = new Date(latest.announced_at).toLocaleDateString('en-IN',
+    {day:'numeric', month:'short', year:'numeric'})
+  const badge = GUIDANCE_BADGE[latest.guidance_direction]
+  const sectionsWithContent = TRANSCRIPT_SECTIONS.filter(s => latest[s.key])
+  return (
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6,gap:8}}>
+        <div style={{fontSize:11,fontWeight:800,color:C.accent}}>🎙️ AI Call Transcript Summary</div>
+        <div style={{fontSize:10,color:C.muted,flexShrink:0}}>{dateLabel}</div>
+      </div>
+      {badge && (
+        <div style={{display:'inline-block',fontSize:10,fontWeight:700,color:badge.color,
+          border:`1px solid ${badge.color}55`,borderRadius:4,padding:'2px 7px',marginBottom:8}}>
+          {badge.label}
+        </div>
+      )}
+      {latest.overall_summary && (
+        <div style={{fontSize:12,lineHeight:1.5,color:C.text}}>{latest.overall_summary}</div>
+      )}
+      {expanded && sectionsWithContent.length > 0 && (
+        <div style={{marginTop:10,display:'flex',flexDirection:'column',gap:8}}>
+          {sectionsWithContent.map(s => (
+            <div key={s.key}>
+              <div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:2,
+                textTransform:'uppercase',letterSpacing:'0.03em'}}>{s.label}</div>
+              <div style={{fontSize:12,lineHeight:1.5,color:C.text}}>{latest[s.key]}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{display:'flex',gap:12,marginTop:8}}>
+        {sectionsWithContent.length > 0 && (
+          <span onClick={()=>setExpanded(e=>!e)} style={{fontSize:10,fontWeight:700,color:C.accent,cursor:'pointer'}}>
+            {expanded?'Show less':'Show full breakdown'}
+          </span>
+        )}
+        {latest.attachment_url&&(
+          <a href={latest.attachment_url} target="_blank" rel="noopener noreferrer"
+            style={{fontSize:10,fontWeight:700,color:C.muted}}>View original transcript ↗</a>
+        )}
+      </div>
+      <div style={{fontSize:9,color:C.muted,marginTop:8,fontStyle:'italic'}}>
+        AI-generated summary of the earnings call transcript — paraphrased, may miss nuance. Not investment advice.
       </div>
     </div>
   )
