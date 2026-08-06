@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -1881,6 +1881,46 @@ function EmaBreadthTable({data,isMobile,dragProps,rangeLabel}){
   )
 }
 
+// Tabbed results/summary section on the stock detail page, replacing
+// what used to be four sections stacked vertically. Tab order follows
+// what's most likely to have content for a given stock: numeric
+// results first (always present if the company has filed), then the
+// three AI summaries in the order their source documents typically
+// get filed (results PDF same-day, transcript/presentation days later).
+const STOCK_DETAIL_TABS = [
+  {key: 'results', label: 'Results'},
+  {key: 'resultsSummary', label: 'Results Summary'},
+  {key: 'concall', label: 'Concall AI Summary'},
+  {key: 'ppt', label: 'PPT'},
+]
+function StockDetailTabs({sym, stocks}){
+  const [tab, setTab] = useState('results')
+  return (
+    <div>
+      <div style={{display:'flex',gap:4,marginBottom:10,borderBottom:`1px solid ${C.border}`,overflowX:'auto'}}>
+        {STOCK_DETAIL_TABS.map(t=>(
+          <div key={t.key} onClick={()=>setTab(t.key)} style={{
+            padding:'6px 10px',fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',
+            color:tab===t.key?C.accent:C.muted,
+            borderBottom:tab===t.key?`2px solid ${C.accent}`:'2px solid transparent',
+          }}>
+            {t.label}
+          </div>
+        ))}
+      </div>
+      {tab==='results' && (
+        <>
+          <ResultsHistoryTable symbol={sym}/>
+          <SectorRankingPanel symbol={sym} sector={stocks?.find(s=>s.sym===sym)?.sector} stocks={stocks}/>
+        </>
+      )}
+      {tab==='resultsSummary' && <ConcallSummary symbol={sym}/>}
+      {tab==='concall' && <TranscriptSummary symbol={sym}/>}
+      {tab==='ppt' && <PptSummary symbol={sym}/>}
+    </div>
+  )
+}
+
 function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks}){
   const [loaded, setLoaded] = useState(false)
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
@@ -2031,10 +2071,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
               </div>
             )
           })()}
-          <ResultsHistoryTable symbol={sym}/>
-          <SectorRankingPanel symbol={sym} sector={stocks?.find(s=>s.sym===sym)?.sector} stocks={stocks}/>
-          <div style={{marginTop:8}}><ConcallSummary symbol={sym}/></div>
-          <div style={{marginTop:8}}><TranscriptSummary symbol={sym}/></div>
+          <StockDetailTabs sym={sym} stocks={stocks}/>
         </div>
       )}
     </div>
@@ -2359,6 +2396,74 @@ function TranscriptSummary({symbol}){
       </div>
       <div style={{fontSize:9,color:C.muted,marginTop:8,fontStyle:'italic'}}>
         AI-generated summary of the earnings call transcript — paraphrased, may miss nuance. Not investment advice.
+      </div>
+    </div>
+  )
+}
+
+const PPT_SECTIONS = [
+  {key: 'financial_highlights', label: 'Financial Highlights'},
+  {key: 'business_segments', label: 'Business Segments'},
+  {key: 'strategic_initiatives', label: 'Strategic Initiatives'},
+  {key: 'capital_allocation', label: 'Capital Allocation'},
+  {key: 'industry_outlook', label: 'Industry Outlook'},
+]
+
+function PptSummary({symbol}){
+  const [rows, setRows] = useState(null) // null=loading, []=none, array=loaded
+  const [expanded, setExpanded] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    setRows(null)
+    if (!symbol) return
+    fetchPptSummaries(symbol).then(r => { if (!cancelled) setRows(r) })
+    return () => { cancelled = true }
+  }, [symbol])
+  if (!rows || rows.length === 0) return null
+  const latest = rows[0]
+  const dateLabel = new Date(latest.announced_at).toLocaleDateString('en-IN',
+    {day:'numeric', month:'short', year:'numeric'})
+  const badge = GUIDANCE_BADGE[latest.guidance_direction]
+  const sectionsWithContent = PPT_SECTIONS.filter(s => latest[s.key])
+  return (
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6,gap:8}}>
+        <div style={{fontSize:11,fontWeight:800,color:C.accent}}>📊 AI Presentation Summary</div>
+        <div style={{fontSize:10,color:C.muted,flexShrink:0}}>{dateLabel}</div>
+      </div>
+      {badge && (
+        <div style={{display:'inline-block',fontSize:10,fontWeight:700,color:badge.color,
+          border:`1px solid ${badge.color}55`,borderRadius:4,padding:'2px 7px',marginBottom:8}}>
+          {badge.label}
+        </div>
+      )}
+      {latest.overall_summary && (
+        <div style={{fontSize:12,lineHeight:1.5,color:C.text}}>{latest.overall_summary}</div>
+      )}
+      {expanded && sectionsWithContent.length > 0 && (
+        <div style={{marginTop:10,display:'flex',flexDirection:'column',gap:8}}>
+          {sectionsWithContent.map(s => (
+            <div key={s.key}>
+              <div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:2,
+                textTransform:'uppercase',letterSpacing:'0.03em'}}>{s.label}</div>
+              <div style={{fontSize:12,lineHeight:1.5,color:C.text}}>{latest[s.key]}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{display:'flex',gap:12,marginTop:8}}>
+        {sectionsWithContent.length > 0 && (
+          <span onClick={()=>setExpanded(e=>!e)} style={{fontSize:10,fontWeight:700,color:C.accent,cursor:'pointer'}}>
+            {expanded?'Show less':'Show full breakdown'}
+          </span>
+        )}
+        {latest.attachment_url&&(
+          <a href={latest.attachment_url} target="_blank" rel="noopener noreferrer"
+            style={{fontSize:10,fontWeight:700,color:C.muted}}>View original presentation ↗</a>
+        )}
+      </div>
+      <div style={{fontSize:9,color:C.muted,marginTop:8,fontStyle:'italic'}}>
+        AI-generated summary of the investor presentation — paraphrased, may miss nuance. Not investment advice.
       </div>
     </div>
   )
