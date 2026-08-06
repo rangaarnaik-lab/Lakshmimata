@@ -2327,23 +2327,53 @@ const GUIDANCE_BADGE = {
   reiterated: {label: 'Guidance Reiterated', color: '#8a9bb0'},
 }
 
-// Structured sections shown on expand - only rendered when the field
-// actually has content, since most calls don't touch every topic
-// (e.g. most quarters have no management change to report at all).
+// Icon+color per section, so each card is identifiable at a glance
+// while scanning - matches the "quick to catch and read" goal, rather
+// than uniform gray-on-gray text blocks.
 const TRANSCRIPT_SECTIONS = [
-  {key: 'financial_highlights', label: 'Financial Highlights'},
-  {key: 'cost_margin_commentary', label: 'Cost & Margin Commentary'},
-  {key: 'expansion_capex', label: 'Expansion / Capex'},
-  {key: 'outlook_guidance', label: 'Outlook & Guidance'},
-  {key: 'management_changes', label: 'Management Changes'},
-  {key: 'capital_allocation', label: 'Capital Allocation'},
-  {key: 'competitive_positioning', label: 'Competitive Positioning'},
-  {key: 'key_concerns', label: 'Analyst Concerns (Q&A)'},
+  {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: '#7fae8e'},
+  {key: 'cost_margin_commentary', label: 'Cost & Margin', icon: '📉', color: '#d4a15a'},
+  {key: 'expansion_capex', label: 'Expansion / Capex', icon: '🏗️', color: '#8a9bb0'},
+  {key: 'outlook_guidance', label: 'Outlook & Guidance', icon: '🎯', color: '#7fae8e'},
+  {key: 'management_changes', label: 'Management Changes', icon: '👤', color: '#8a9bb0'},
+  {key: 'capital_allocation', label: 'Capital Allocation', icon: '💵', color: '#8a9bb0'},
+  {key: 'competitive_positioning', label: 'Competitive Position', icon: '⚔️', color: '#8a9bb0'},
+  {key: 'key_concerns', label: 'Analyst Concerns (Q&A)', icon: '❓', color: '#c0605a'},
 ]
+
+const PPT_SECTIONS = [
+  {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: '#7fae8e'},
+  {key: 'business_segments', label: 'Business Segments', icon: '🧩', color: '#8a9bb0'},
+  {key: 'strategic_initiatives', label: 'Strategic Initiatives', icon: '🚀', color: '#7fae8e'},
+  {key: 'capital_allocation', label: 'Capital Allocation', icon: '💵', color: '#8a9bb0'},
+  {key: 'industry_outlook', label: 'Industry Outlook', icon: '🌐', color: '#8a9bb0'},
+]
+
+// Shared bullet-card renderer for one section - array of short bullet
+// strings, rendered as a compact list with a colored dot marker rather
+// than a paragraph, so each fact is scannable independently.
+function BulletSection({icon, label, color, bullets}){
+  if (!bullets || bullets.length === 0) return null
+  return (
+    <div style={{background:color+'0d',border:`1px solid ${color}33`,borderRadius:7,padding:'8px 10px'}}>
+      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:5}}>
+        <span style={{fontSize:13}}>{icon}</span>
+        <span style={{fontSize:10.5,fontWeight:800,color,textTransform:'uppercase',letterSpacing:'0.03em'}}>{label}</span>
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:3}}>
+        {bullets.map((b,i)=>(
+          <div key={i} style={{display:'flex',gap:6,alignItems:'flex-start'}}>
+            <span style={{color,fontSize:8,marginTop:5,flexShrink:0}}>●</span>
+            <span style={{fontSize:12,lineHeight:1.4,color:C.text}}>{b}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function TranscriptSummary({symbol}){
   const [rows, setRows] = useState(null) // null=loading, []=none, array=loaded
-  const [expanded, setExpanded] = useState(false)
   useEffect(() => {
     let cancelled = false
     setRows(null)
@@ -2356,7 +2386,6 @@ function TranscriptSummary({symbol}){
   const dateLabel = new Date(latest.announced_at).toLocaleDateString('en-IN',
     {day:'numeric', month:'short', year:'numeric'})
   const badge = GUIDANCE_BADGE[latest.guidance_direction]
-  const sectionsWithContent = TRANSCRIPT_SECTIONS.filter(s => latest[s.key])
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px'}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6,gap:8}}>
@@ -2370,25 +2399,14 @@ function TranscriptSummary({symbol}){
         </div>
       )}
       {latest.overall_summary && (
-        <div style={{fontSize:12,lineHeight:1.5,color:C.text}}>{latest.overall_summary}</div>
+        <div style={{fontSize:12,lineHeight:1.5,color:C.text,marginBottom:10}}>{latest.overall_summary}</div>
       )}
-      {expanded && sectionsWithContent.length > 0 && (
-        <div style={{marginTop:10,display:'flex',flexDirection:'column',gap:8}}>
-          {sectionsWithContent.map(s => (
-            <div key={s.key}>
-              <div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:2,
-                textTransform:'uppercase',letterSpacing:'0.03em'}}>{s.label}</div>
-              <div style={{fontSize:12,lineHeight:1.5,color:C.text}}>{latest[s.key]}</div>
-            </div>
-          ))}
-        </div>
-      )}
+      <div style={{display:'flex',flexDirection:'column',gap:6}}>
+        {TRANSCRIPT_SECTIONS.map(s=>(
+          <BulletSection key={s.key} icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
+        ))}
+      </div>
       <div style={{display:'flex',gap:12,marginTop:8}}>
-        {sectionsWithContent.length > 0 && (
-          <span onClick={()=>setExpanded(e=>!e)} style={{fontSize:10,fontWeight:700,color:C.accent,cursor:'pointer'}}>
-            {expanded?'Show less':'Show full breakdown'}
-          </span>
-        )}
         {latest.attachment_url&&(
           <a href={latest.attachment_url} target="_blank" rel="noopener noreferrer"
             style={{fontSize:10,fontWeight:700,color:C.muted}}>View original transcript ↗</a>
@@ -2401,17 +2419,8 @@ function TranscriptSummary({symbol}){
   )
 }
 
-const PPT_SECTIONS = [
-  {key: 'financial_highlights', label: 'Financial Highlights'},
-  {key: 'business_segments', label: 'Business Segments'},
-  {key: 'strategic_initiatives', label: 'Strategic Initiatives'},
-  {key: 'capital_allocation', label: 'Capital Allocation'},
-  {key: 'industry_outlook', label: 'Industry Outlook'},
-]
-
 function PptSummary({symbol}){
   const [rows, setRows] = useState(null) // null=loading, []=none, array=loaded
-  const [expanded, setExpanded] = useState(false)
   useEffect(() => {
     let cancelled = false
     setRows(null)
@@ -2424,7 +2433,6 @@ function PptSummary({symbol}){
   const dateLabel = new Date(latest.announced_at).toLocaleDateString('en-IN',
     {day:'numeric', month:'short', year:'numeric'})
   const badge = GUIDANCE_BADGE[latest.guidance_direction]
-  const sectionsWithContent = PPT_SECTIONS.filter(s => latest[s.key])
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px'}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6,gap:8}}>
@@ -2438,25 +2446,14 @@ function PptSummary({symbol}){
         </div>
       )}
       {latest.overall_summary && (
-        <div style={{fontSize:12,lineHeight:1.5,color:C.text}}>{latest.overall_summary}</div>
+        <div style={{fontSize:12,lineHeight:1.5,color:C.text,marginBottom:10}}>{latest.overall_summary}</div>
       )}
-      {expanded && sectionsWithContent.length > 0 && (
-        <div style={{marginTop:10,display:'flex',flexDirection:'column',gap:8}}>
-          {sectionsWithContent.map(s => (
-            <div key={s.key}>
-              <div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:2,
-                textTransform:'uppercase',letterSpacing:'0.03em'}}>{s.label}</div>
-              <div style={{fontSize:12,lineHeight:1.5,color:C.text}}>{latest[s.key]}</div>
-            </div>
-          ))}
-        </div>
-      )}
+      <div style={{display:'flex',flexDirection:'column',gap:6}}>
+        {PPT_SECTIONS.map(s=>(
+          <BulletSection key={s.key} icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
+        ))}
+      </div>
       <div style={{display:'flex',gap:12,marginTop:8}}>
-        {sectionsWithContent.length > 0 && (
-          <span onClick={()=>setExpanded(e=>!e)} style={{fontSize:10,fontWeight:700,color:C.accent,cursor:'pointer'}}>
-            {expanded?'Show less':'Show full breakdown'}
-          </span>
-        )}
         {latest.attachment_url&&(
           <a href={latest.attachment_url} target="_blank" rel="noopener noreferrer"
             style={{fontSize:10,fontWeight:700,color:C.muted}}>View original presentation ↗</a>
