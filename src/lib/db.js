@@ -948,6 +948,23 @@ export async function fetchConcallSummaries(symbol) {
   return data || []
 }
 
+export async function fetchPptSummaries(symbol) {
+  // Returns AI-generated investor-presentation summaries for a symbol,
+  // most recent first - a third distinct document type from both
+  // concall_summaries (results PDF) and transcript_summaries (call
+  // transcript). status='done' rows have real structured content.
+  const { data, error } = await supabase
+    .from('ppt_summaries')
+    .select('announced_at,attachment_url,status,financial_highlights,business_segments,'
+      + 'strategic_initiatives,capital_allocation,industry_outlook,guidance_direction,overall_summary')
+    .eq('symbol', symbol)
+    .eq('status', 'done')
+    .order('announced_at', { ascending: false })
+    .limit(5)
+  if (error) { console.error('fetchPptSummaries error:', error.message); return [] }
+  return data || []
+}
+
 export async function fetchTranscriptSummaries(symbol) {
   // Returns AI-generated earnings-call TRANSCRIPT summaries for a
   // symbol, most recent first - a different document type from
