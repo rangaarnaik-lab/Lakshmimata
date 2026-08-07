@@ -5829,6 +5829,10 @@ const _RESULTS_ANN_KEYWORDS_JS = ['financial result', 'quarterly result',
  * what made VARROC Q1 FY27 look "Excellent" (prior year had a large
  * exceptional gain; adjusted YoY looked strong while reported PAT was
  * −28% and OPM compressed). Investors see the headline number first.
+ *
+ * Excellent also needs a non-flat sequential print: strong YoY alone
+ * with flat/soft QoQ (e.g. POCL Sales 0% QoQ, PAT −4% QoQ) is Good
+ * at best — otherwise every base-effect YoY spike would look Excellent.
  */
 function computeResultRating(hist){
   if(!hist || hist.length===0) return null
@@ -5851,6 +5855,8 @@ function computeResultRating(hist){
   const adjPatYoy = pct(adjPat(current), adjPat(yoyRow))
   const patYoy = adjPatYoy ?? rawPatYoy
   const opmYoy = pct(current.opm_pct, yoyRow?.opm_pct)
+  const opmPp = (current.opm_pct!=null && yoyRow?.opm_pct!=null)
+    ? (current.opm_pct - yoyRow.opm_pct) : null
   let resultRating = null
   if (patYoy!=null && salesYoy!=null) {
     if (patYoy>=20 && salesYoy>=10) resultRating='Excellent'
@@ -5877,12 +5883,20 @@ function computeResultRating(hist){
     resultRating = tiers[idx]
   }
 
-  // Operating-margin collapse gate (when OPM is on file).
-  if (resultRating && opmYoy!=null && opmYoy <= -20) {
+  // Operating-margin gates (when OPM is on file).
+  // Soft compression: Excellent needs margin not clearly worse YoY.
+  // Hard collapse: Neutral max (unchanged from prior logic).
+  if (resultRating) {
     const tiers = ['Weak','Neutral','Good','Excellent']
     let idx = tiers.indexOf(resultRating)
-    idx = Math.min(idx, 1) // Neutral max
-    if (opmYoy <= -35 && (rawPatYoy==null || rawPatYoy < 0)) idx = Math.min(idx, 0)
+    const softCompress = (opmYoy!=null && opmYoy <= -5) || (opmPp!=null && opmPp <= -1)
+    const hardCollapse = (opmYoy!=null && opmYoy <= -20) || (opmPp!=null && opmPp <= -3)
+    if (hardCollapse) {
+      idx = Math.min(idx, 1) // Neutral max
+      if (opmYoy!=null && opmYoy <= -35 && (rawPatYoy==null || rawPatYoy < 0)) idx = Math.min(idx, 0)
+    } else if (softCompress) {
+      idx = Math.min(idx, 2) // Good max — not Excellent
+    }
     resultRating = tiers[idx]
   }
 
@@ -5897,12 +5911,17 @@ function computeResultRating(hist){
     if (patQoq!=null) {
       const decelerating = patQoq <= -15 && (salesQoq==null || salesQoq <= 0)
       const recovering = patQoq >= 15 && (salesQoq==null || salesQoq >= 0)
+      // Sequentially flat/soft: strong YoY alone is not Excellent
+      // (POCL-style: Sales ~0% QoQ, PAT slightly down).
+      const sequentiallyFlat = (salesQoq==null || salesQoq <= 2)
+        && patQoq <= 2
       // Don't let QoQ recovery promote past the headline-PAT gate
       const maxIdx = (rawPatYoy!=null && rawPatYoy <= -15) ? 0
         : (rawPatYoy!=null && rawPatYoy < 0) ? 1
         : tiers.length-1
       if (decelerating && idx > 0) idx -= 1
       else if (recovering && idx < maxIdx) idx += 1
+      if (sequentiallyFlat) idx = Math.min(idx, 2) // Good max
     }
     resultRating = tiers[idx]
   }
