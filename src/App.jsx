@@ -2241,7 +2241,7 @@ function MgmtFlagsCard({symbol, compact}){
             Flags · Management diligence
           </div>
           <div style={{fontSize:9,color:C.muted,marginTop:1}}>
-            Promise vs execution · AI research{dateLabel?` · ${dateLabel}`:''}
+            Promise vs execution · from PPT/Concall on file{dateLabel?` · ${dateLabel}`:''}
           </div>
         </div>
         <span style={{
@@ -2322,8 +2322,8 @@ function AskAiPanel({symbol}){
       <div style={{padding:'12px 14px'}}>
         <div style={{fontSize:13,fontWeight:900,color:C.text}}>Ask AI · {symbol}</div>
         <div style={{fontSize:10,color:C.muted,marginTop:2,marginBottom:10,lineHeight:1.45}}>
-          Ask about management quality, promises vs delivery, governance, or filings.
-          Answers use PPT/concall on file + web research. Not investment advice.
+          Ask using PPT/Concall already on file for this stock. No web search —
+          if filings aren’t summarized yet, Flags stay hidden. Not investment advice.
         </div>
 
         <MgmtFlagsCard symbol={symbol}/>
