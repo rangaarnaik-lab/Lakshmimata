@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -1689,11 +1689,10 @@ function PriceHistoryChart({ sym }) {
 }
 
 function StockDetail({s}){
-  const isBankLike = (x)=>{
-    const t = `${x?.sector||''} ${x?.industry||''}`.toLowerCase()
-    return /bank|nbfc|housing finance|finance - housing|finance - nbfc|financing -/.test(t)
-  }
   const {copy,copied}=useCopy()
+  const allFundCards = buildFundamentalMetricCards(s)
+  const bankFundCards = allFundCards.filter(c=>c.group==='bank')
+  const mainFundCards = allFundCards.filter(c=>c.group!=='bank')
   return(
     <div style={{borderTop:`1px solid ${C.border}`,padding:'14px'}}>
       {/* TV copy for single stock */}
@@ -1799,66 +1798,18 @@ function StockDetail({s}){
         ))}
       </div>
 
-      {/* Fundamentals — valuation + cash-flow for ALL stocks; banks/NBFCs
-          get an extra NIM/NPA/CAR block on top of the shared metrics. */}
+      {/* Fundamentals snapshot — AI takeaways live under chart → Fundamentals tab */}
       <div style={{marginTop:14}}>
         <div style={{fontSize:11,fontWeight:800,color:C.teal,marginBottom:8,textTransform:'uppercase'}}>
           💰 Fundamentals
         </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-          {[
-            ['Market Cap', s.marketCap!=null?(s.marketCap>=100000?`₹${(s.marketCap/100000).toFixed(1)}L Cr`:`₹${s.marketCap.toFixed(0)} Cr`):'—', C.text],
-            ['P/E', s.pe!=null?s.pe.toFixed(1):'—', s.pe!=null?(s.pe<20?C.green:s.pe<40?C.yellow:C.red):C.muted],
-            ['Industry PE', s.industryPe!=null?s.industryPe.toFixed(1):'—', C.muted],
-            ['PEG Ratio', s.pegRatio!=null?s.pegRatio.toFixed(2):'—', s.pegRatio!=null?(s.pegRatio<1?C.green:s.pegRatio<2?C.yellow:C.red):C.muted],
-            ['P/B', s.pb!=null?s.pb.toFixed(2):'—', s.pb!=null?(s.pb<3?C.green:s.pb<6?C.yellow:C.red):C.muted],
-            ['ROE', s.roe!=null?`${s.roe.toFixed(1)}%`:'—', s.roe!=null?(s.roe>20?C.green:s.roe>10?C.yellow:C.red):C.muted],
-            ['ROCE', s.roce!=null?`${s.roce.toFixed(1)}%`:'—', s.roce!=null?(s.roce>15?C.green:s.roce>8?C.yellow:C.red):C.muted],
-            ['Debt/Equity', s.debtEq!=null?s.debtEq.toFixed(2):'—', s.debtEq!=null?(s.debtEq<0.5?C.green:s.debtEq<1.5?C.yellow:C.red):C.muted],
-            ['CFO', s.cfo!=null?`₹${s.cfo.toFixed(0)} Cr`:'—', s.cfo!=null?(s.cfo>0?C.green:C.red):C.muted],
-            ['FCF', s.fcf!=null?`₹${s.fcf.toFixed(0)} Cr`:'—', s.fcf!=null?(s.fcf>0?C.green:C.red):C.muted],
-            ['CFO / PAT', s.cfoPat!=null?s.cfoPat.toFixed(2):'—', s.cfoPat!=null?(s.cfoPat>=1?C.green:s.cfoPat>=0.7?C.yellow:C.red):C.muted],
-            ['Div Yield', s.divYield!=null?`${s.divYield.toFixed(1)}%`:'—', C.text],
-            ['EPS', s.eps!=null?`₹${s.eps.toFixed(1)}`:'—', C.text],
-            ['EPS QoQ', s.epsQoq!=null?`${s.epsQoq>0?'+':''}${s.epsQoq.toFixed(1)}%`:'—', s.epsQoq!=null?(s.epsQoq>0?C.green:C.red):C.muted],
-            ['EPS YoY', s.epsYoy!=null?`${s.epsYoy>0?'+':''}${s.epsYoy.toFixed(1)}%`:'—', s.epsYoy!=null?(s.epsYoy>0?C.green:C.red):C.muted],
-            ['EPS Growth Streak', s.epsGrowthStreak!=null?`${s.epsGrowthStreak}Q`:'—', s.epsGrowthStreak>=3?C.green:C.muted],
-            ['Sales QoQ', s.salesQoq!=null?`${s.salesQoq>0?'+':''}${s.salesQoq.toFixed(1)}%`:'—', s.salesQoq!=null?(s.salesQoq>0?C.green:C.red):C.muted],
-            ['Sales YoY', s.salesYoy!=null?`${s.salesYoy>0?'+':''}${s.salesYoy.toFixed(1)}%`:'—', s.salesYoy!=null?(s.salesYoy>0?C.green:C.red):C.muted],
-            ['OPM %', s.opmPct!=null?`${s.opmPct.toFixed(1)}%`:'—', C.text],
-            ['OPM Trend', s.opmTrend!=null?`${s.opmTrend>0?'+':''}${s.opmTrend.toFixed(1)}pp`:'—', s.opmTrend!=null?(s.opmTrend>0?C.green:s.opmTrend<0?C.red:C.muted):C.muted],
-            ['Promoter', s.promoter!=null?`${s.promoter.toFixed(1)}%`:'—', s.promoter!=null?(s.promoter>55?C.green:s.promoter>35?C.yellow:C.red):C.muted],
-            ['Promoter Trend', s.promoterTrend!=null?`${s.promoterTrend>0?'+':''}${s.promoterTrend.toFixed(2)}pp`:'—', s.promoterTrend!=null?(s.promoterTrend>0?C.green:s.promoterTrend<0?C.red:C.muted):C.muted],
-            ['FII %', s.fiiPct!=null?`${s.fiiPct.toFixed(1)}%`:'—', C.text],
-            ['FII Trend', s.fiiTrend!=null?`${s.fiiTrend>0?'+':''}${s.fiiTrend.toFixed(2)}pp`:'—', s.fiiTrend!=null?(s.fiiTrend>0?C.green:s.fiiTrend<0?C.red:C.muted):C.muted],
-            ['DII %', s.diiPct!=null?`${s.diiPct.toFixed(1)}%`:'—', C.text],
-            ['DII Trend', s.diiTrend!=null?`${s.diiTrend>0?'+':''}${s.diiTrend.toFixed(2)}pp`:'—', s.diiTrend!=null?(s.diiTrend>0?C.green:s.diiTrend<0?C.red:C.muted):C.muted],
-          ].map(([k,v,c])=>(
-            <div key={k} style={{background:C.bg,borderRadius:8,padding:'9px 11px'}}>
-              <div style={{fontSize:9,color:C.muted,marginBottom:2,textTransform:'uppercase',letterSpacing:'0.06em'}}>{k}</div>
-              <div style={{fontWeight:800,fontSize:14,color:c}}>{v}</div>
-            </div>
-          ))}
-        </div>
-        {isBankLike(s) && (
+        <MetricCardsGrid cards={mainFundCards}/>
+        {bankFundCards.length>0 && (
           <div style={{marginTop:12}}>
             <div style={{fontSize:11,fontWeight:800,color:C.blue,marginBottom:8,textTransform:'uppercase'}}>
               Bank / NBFC ratios
             </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-              {[
-                ['NIM', s.nim!=null?`${s.nim.toFixed(2)}%`:'—', s.nim!=null?(s.nim>=3?C.green:s.nim>=2.5?C.yellow:C.red):C.muted],
-                ['Gross NPA', s.gnpa!=null?`${s.gnpa.toFixed(2)}%`:'—', s.gnpa!=null?(s.gnpa<3?C.green:s.gnpa<6?C.yellow:C.red):C.muted],
-                ['Net NPA', s.nnpa!=null?`${s.nnpa.toFixed(2)}%`:'—', s.nnpa!=null?(s.nnpa<1?C.green:s.nnpa<2?C.yellow:C.red):C.muted],
-                ['CAR / CRAR', s.car!=null?`${s.car.toFixed(1)}%`:'—', s.car!=null?(s.car>=15?C.green:s.car>=12?C.yellow:C.red):C.muted],
-                ['CASA', s.casa!=null?`${s.casa.toFixed(1)}%`:'—', s.casa!=null?(s.casa>=40?C.green:s.casa>=30?C.yellow:C.muted):C.muted],
-              ].map(([k,v,c])=>(
-                <div key={k} style={{background:C.bg,borderRadius:8,padding:'9px 11px'}}>
-                  <div style={{fontSize:9,color:C.muted,marginBottom:2,textTransform:'uppercase',letterSpacing:'0.06em'}}>{k}</div>
-                  <div style={{fontWeight:800,fontSize:14,color:c}}>{v}</div>
-                </div>
-              ))}
-            </div>
+            <MetricCardsGrid cards={bankFundCards}/>
           </div>
         )}
       </div>
@@ -2092,13 +2043,249 @@ function EmaBreadthTable({data,isMobile,dragProps,rangeLabel}){
   )
 }
 
-// Tabbed detail under the chart: AI company brief, then Results / filings.
+// Tabbed detail under the chart: About, Fundamentals ratios, Results / filings.
 const STOCK_DETAIL_TABS = [
   {key: 'about', label: 'About Company'},
+  {key: 'fundamentals', label: 'Fundamentals'},
   {key: 'results', label: 'Results'},
   {key: 'concall', label: 'Concall Report'},
   {key: 'ppt', label: 'PPT'},
 ]
+
+function isBankLikeStock(x){
+  const t = `${x?.sector||''} ${x?.industry||''}`.toLowerCase()
+  return /bank|nbfc|housing finance|finance - housing|finance - nbfc|financing -/.test(t)
+}
+
+function fundLabelColor(label){
+  if(label==='Excellent') return C.green
+  if(label==='Good') return '#7dd3a8'
+  if(label==='Fair') return C.yellow
+  if(label==='Poor') return C.red
+  return C.muted
+}
+
+function buildFundamentalMetricCards(s){
+  // Shared metric definitions for Fundamentals tab + expand panel.
+  const cards = [
+    {key:'marketCap', label:'Market Cap', value:s.marketCap!=null?(s.marketCap>=100000?`₹${(s.marketCap/100000).toFixed(1)}L Cr`:`₹${s.marketCap.toFixed(0)} Cr`):'—', color:C.text, group:'valuation'},
+    {key:'pe', label:'P/E', value:s.pe!=null?s.pe.toFixed(1):'—', color:s.pe!=null?(s.pe<20?C.green:s.pe<40?C.yellow:C.red):C.muted, group:'valuation'},
+    {key:'industryPe', label:'Industry PE', value:s.industryPe!=null?s.industryPe.toFixed(1):'—', color:C.muted, group:'valuation'},
+    {key:'pegRatio', label:'PEG Ratio', value:s.pegRatio!=null?s.pegRatio.toFixed(2):'—', color:s.pegRatio!=null?(s.pegRatio<1?C.green:s.pegRatio<2?C.yellow:C.red):C.muted, group:'valuation'},
+    {key:'pb', label:'P/B', value:s.pb!=null?s.pb.toFixed(2):'—', color:s.pb!=null?(s.pb<3?C.green:s.pb<6?C.yellow:C.red):C.muted, group:'valuation'},
+    {key:'roe', label:'ROE', value:s.roe!=null?`${s.roe.toFixed(1)}%`:'—', color:s.roe!=null?(s.roe>20?C.green:s.roe>10?C.yellow:C.red):C.muted, group:'quality'},
+    {key:'roce', label:'ROCE', value:s.roce!=null?`${s.roce.toFixed(1)}%`:'—', color:s.roce!=null?(s.roce>15?C.green:s.roce>8?C.yellow:C.red):C.muted, group:'quality'},
+    {key:'debtEq', label:'Debt/Equity', value:s.debtEq!=null?s.debtEq.toFixed(2):'—', color:s.debtEq!=null?(s.debtEq<0.5?C.green:s.debtEq<1.5?C.yellow:C.red):C.muted, group:'quality'},
+    {key:'cfo', label:'CFO', value:s.cfo!=null?`₹${s.cfo.toFixed(0)} Cr`:'—', color:s.cfo!=null?(s.cfo>0?C.green:C.red):C.muted, group:'cash'},
+    {key:'fcf', label:'FCF', value:s.fcf!=null?`₹${s.fcf.toFixed(0)} Cr`:'—', color:s.fcf!=null?(s.fcf>0?C.green:C.red):C.muted, group:'cash'},
+    {key:'cfoPat', label:'CFO / PAT', value:s.cfoPat!=null?s.cfoPat.toFixed(2):'—', color:s.cfoPat!=null?(s.cfoPat>=1?C.green:s.cfoPat>=0.7?C.yellow:C.red):C.muted, group:'cash'},
+    {key:'divYield', label:'Div Yield', value:s.divYield!=null?`${s.divYield.toFixed(1)}%`:'—', color:C.text, group:'cash'},
+    {key:'eps', label:'EPS', value:s.eps!=null?`₹${s.eps.toFixed(1)}`:'—', color:C.text, group:'growth'},
+    {key:'epsQoq', label:'EPS QoQ', value:s.epsQoq!=null?`${s.epsQoq>0?'+':''}${s.epsQoq.toFixed(1)}%`:'—', color:s.epsQoq!=null?(s.epsQoq>0?C.green:C.red):C.muted, group:'growth'},
+    {key:'epsYoy', label:'EPS YoY', value:s.epsYoy!=null?`${s.epsYoy>0?'+':''}${s.epsYoy.toFixed(1)}%`:'—', color:s.epsYoy!=null?(s.epsYoy>0?C.green:C.red):C.muted, group:'growth'},
+    {key:'epsGrowthStreak', label:'EPS Growth Streak', value:s.epsGrowthStreak!=null?`${s.epsGrowthStreak}Q`:'—', color:s.epsGrowthStreak>=3?C.green:C.muted, group:'growth'},
+    {key:'salesQoq', label:'Sales QoQ', value:s.salesQoq!=null?`${s.salesQoq>0?'+':''}${s.salesQoq.toFixed(1)}%`:'—', color:s.salesQoq!=null?(s.salesQoq>0?C.green:C.red):C.muted, group:'growth'},
+    {key:'salesYoy', label:'Sales YoY', value:s.salesYoy!=null?`${s.salesYoy>0?'+':''}${s.salesYoy.toFixed(1)}%`:'—', color:s.salesYoy!=null?(s.salesYoy>0?C.green:C.red):C.muted, group:'growth'},
+    {key:'opmPct', label:'OPM %', value:s.opmPct!=null?`${s.opmPct.toFixed(1)}%`:'—', color:C.text, group:'growth'},
+    {key:'opmTrend', label:'OPM Trend', value:s.opmTrend!=null?`${s.opmTrend>0?'+':''}${s.opmTrend.toFixed(1)}pp`:'—', color:s.opmTrend!=null?(s.opmTrend>0?C.green:s.opmTrend<0?C.red:C.muted):C.muted, group:'growth'},
+    {key:'promoter', label:'Promoter', value:s.promoter!=null?`${s.promoter.toFixed(1)}%`:'—', color:s.promoter!=null?(s.promoter>55?C.green:s.promoter>35?C.yellow:C.red):C.muted, group:'ownership'},
+    {key:'promoterTrend', label:'Promoter Trend', value:s.promoterTrend!=null?`${s.promoterTrend>0?'+':''}${s.promoterTrend.toFixed(2)}pp`:'—', color:s.promoterTrend!=null?(s.promoterTrend>0?C.green:s.promoterTrend<0?C.red:C.muted):C.muted, group:'ownership'},
+    {key:'fiiPct', label:'FII %', value:s.fiiPct!=null?`${s.fiiPct.toFixed(1)}%`:'—', color:C.text, group:'ownership'},
+    {key:'fiiTrend', label:'FII Trend', value:s.fiiTrend!=null?`${s.fiiTrend>0?'+':''}${s.fiiTrend.toFixed(2)}pp`:'—', color:s.fiiTrend!=null?(s.fiiTrend>0?C.green:s.fiiTrend<0?C.red:C.muted):C.muted, group:'ownership'},
+    {key:'diiPct', label:'DII %', value:s.diiPct!=null?`${s.diiPct.toFixed(1)}%`:'—', color:C.text, group:'ownership'},
+    {key:'diiTrend', label:'DII Trend', value:s.diiTrend!=null?`${s.diiTrend>0?'+':''}${s.diiTrend.toFixed(2)}pp`:'—', color:s.diiTrend!=null?(s.diiTrend>0?C.green:s.diiTrend<0?C.red:C.muted):C.muted, group:'ownership'},
+  ]
+  if(isBankLikeStock(s)){
+    cards.push(
+      {key:'nim', label:'NIM', value:s.nim!=null?`${s.nim.toFixed(2)}%`:'—', color:s.nim!=null?(s.nim>=3?C.green:s.nim>=2.5?C.yellow:C.red):C.muted, group:'bank'},
+      {key:'gnpa', label:'Gross NPA', value:s.gnpa!=null?`${s.gnpa.toFixed(2)}%`:'—', color:s.gnpa!=null?(s.gnpa<3?C.green:s.gnpa<6?C.yellow:C.red):C.muted, group:'bank'},
+      {key:'nnpa', label:'Net NPA', value:s.nnpa!=null?`${s.nnpa.toFixed(2)}%`:'—', color:s.nnpa!=null?(s.nnpa<1?C.green:s.nnpa<2?C.yellow:C.red):C.muted, group:'bank'},
+      {key:'car', label:'CAR / CRAR', value:s.car!=null?`${s.car.toFixed(1)}%`:'—', color:s.car!=null?(s.car>=15?C.green:s.car>=12?C.yellow:C.red):C.muted, group:'bank'},
+      {key:'casa', label:'CASA', value:s.casa!=null?`${s.casa.toFixed(1)}%`:'—', color:s.casa!=null?(s.casa>=40?C.green:s.casa>=30?C.yellow:C.muted):C.muted, group:'bank'},
+    )
+  }
+  return cards
+}
+
+const FUND_DB_KEY_TO_CARD = {
+  pe:'pe', pb:'pb', roe:'roe', roce:'roce', peg_ratio:'pegRatio', debt_eq:'debtEq',
+  eps:'eps', eps_yoy:'epsYoy', eps_qoq:'epsQoq', sales_yoy:'salesYoy', sales_qoq:'salesQoq',
+  opm_pct:'opmPct', opm_trend:'opmTrend', cfo:'cfo', fcf:'fcf', cfo_pat:'cfoPat',
+  div_yield:'divYield', promoter:'promoter', promoter_trend:'promoterTrend',
+  fii_pct:'fiiPct', fii_trend:'fiiTrend', dii_pct:'diiPct', dii_trend:'diiTrend',
+  industry_pe:'industryPe', market_cap:'marketCap', nim:'nim', gnpa:'gnpa', nnpa:'nnpa',
+  car:'car', casa:'casa', eps_growth_streak:'epsGrowthStreak',
+}
+
+function mergeFundamentalsOntoStock(base, row){
+  if(!row) return base || {}
+  const b = base || {}
+  const num = (a, db) => (db != null ? db : a)
+  return {
+    ...b,
+    sector: row.sector || b.sector,
+    industry: row.industry || b.industry,
+    marketCap: num(b.marketCap, row.market_cap),
+    pe: num(b.pe, row.pe),
+    pb: num(b.pb, row.pb),
+    roe: num(b.roe, row.roe),
+    roce: num(b.roce, row.roce),
+    eps: num(b.eps, row.eps),
+    debtEq: num(b.debtEq, row.debt_eq),
+    promoter: num(b.promoter, row.promoter),
+    pegRatio: num(b.pegRatio, row.peg_ratio),
+    industryPe: num(b.industryPe, row.industry_pe),
+    divYield: num(b.divYield, row.div_yield),
+    cfo: num(b.cfo, row.cfo),
+    fcf: num(b.fcf, row.fcf),
+    cfoPat: num(b.cfoPat, row.cfo_pat),
+    nim: num(b.nim, row.nim),
+    gnpa: num(b.gnpa, row.gnpa),
+    nnpa: num(b.nnpa, row.nnpa),
+    car: num(b.car, row.car),
+    casa: num(b.casa, row.casa),
+    epsQoq: num(b.epsQoq, row.eps_qoq),
+    epsYoy: num(b.epsYoy, row.eps_yoy),
+    salesQoq: num(b.salesQoq, row.sales_qoq),
+    salesYoy: num(b.salesYoy, row.sales_yoy),
+    opmPct: num(b.opmPct, row.opm_pct),
+    opmTrend: num(b.opmTrend, row.opm_trend),
+    epsGrowthStreak: num(b.epsGrowthStreak, row.eps_growth_streak),
+    fiiPct: num(b.fiiPct, row.fii_pct),
+    fiiTrend: num(b.fiiTrend, row.fii_trend),
+    diiPct: num(b.diiPct, row.dii_pct),
+    diiTrend: num(b.diiTrend, row.dii_trend),
+    promoterTrend: num(b.promoterTrend, row.promoter_trend),
+    fundamentalScore: num(b.fundamentalScore, row.fundamental_score),
+    fundamentalLabel: row.fundamental_label || b.fundamentalLabel,
+  }
+}
+
+function MetricCardsGrid({cards}){
+  if(!cards?.length) return null
+  return (
+    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:8}}>
+      {cards.map(m=>(
+        <div key={m.key} style={{background:C.bg,borderRadius:8,padding:'9px 11px'}}>
+          <div style={{fontSize:9,color:C.muted,marginBottom:2,textTransform:'uppercase',letterSpacing:'0.06em'}}>{m.label}</div>
+          <div style={{fontWeight:800,fontSize:14,color:m.color}}>{m.value}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function FundamentalsPanel({symbol, stocks}){
+  const scan = stocks?.find(x=>x.sym===symbol) || null
+  const [fundRow, setFundRow] = useState(undefined) // undefined=loading
+  useEffect(()=>{
+    let cancelled=false
+    setFundRow(undefined)
+    if(!symbol){ setFundRow(null); return }
+    fetchStockFundamentals(symbol).then(row=>{ if(!cancelled) setFundRow(row) })
+    return()=>{cancelled=true}
+  },[symbol])
+
+  if(fundRow===undefined && !scan){
+    return <div style={{padding:'12px',fontSize:11,color:C.muted,textAlign:'center',
+      background:C.card,border:`1px solid ${C.border}`,borderRadius:10}}>
+      Loading fundamentals…
+    </div>
+  }
+
+  const s = mergeFundamentalsOntoStock(scan, fundRow || null)
+  const hasAny = fundRow || (scan && (scan.pe!=null || scan.roe!=null || scan.marketCap!=null
+    || scan.fundamentalLabel || scan.cfo!=null || scan.pb!=null))
+  if(!hasAny && fundRow===null){
+    return (
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 16px'}}>
+        <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:6}}>Fundamentals</div>
+        <div style={{fontSize:12,color:C.muted,lineHeight:1.55}}>
+          Ratios for {symbol||'this stock'} are still being scraped / AI-filled.
+          They appear here once the fundamentals worker finishes a cycle.
+        </div>
+      </div>
+    )
+  }
+
+  const allCards = buildFundamentalMetricCards(s)
+  const aiKeys = Array.isArray(fundRow?.ai_key_metrics) ? fundRow.ai_key_metrics : []
+  const importantKeys = aiKeys
+    .map(k=>FUND_DB_KEY_TO_CARD[k] || FUND_DB_KEY_TO_CARD[String(k).toLowerCase()])
+    .filter(Boolean)
+  const defaultImportant = isBankLikeStock(s)
+    ? ['pe','pb','roe','nim','nnpa','car','casa','cfoPat']
+    : ['pe','pb','roe','roce','pegRatio','cfo','fcf','cfoPat','epsYoy','debtEq']
+  const focusKeys = (importantKeys.length >= 3 ? importantKeys : defaultImportant)
+  const byKey = Object.fromEntries(allCards.map(c=>[c.key,c]))
+  const importantCards = [...new Set(focusKeys)].map(k=>byKey[k]).filter(Boolean)
+  const importantSet = new Set(importantCards.map(c=>c.key))
+  const restCards = allCards.filter(c=>!importantSet.has(c.key))
+  const highlights = normalizeBullets(fundRow?.ai_highlights)
+  const label = s.fundamentalLabel
+  const labelCol = fundLabelColor(label)
+  const updated = fundRow?.ai_highlights_at || fundRow?.fetched_at
+  const updatedLabel = updated
+    ? new Date(updated).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})
+    : null
+
+  return (
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
+      <div style={{height:3,background:`linear-gradient(90deg, ${C.teal}, ${C.accent})`}}/>
+      <div style={{padding:'12px 14px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:10}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:900,color:C.text}}>Fundamentals · {symbol}</div>
+            <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+              Important ratios · AI ranks what matters for this business · not investment advice
+            </div>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4,flexShrink:0}}>
+            {label&&(
+              <span title="Overall fundamental quality (ROE, growth, debt, margins, ownership) — not the same as Excellent/Good Result (latest quarter only)."
+                style={{fontSize:10,fontWeight:800,color:labelCol,background:labelCol+'22',
+                  border:`1px solid ${labelCol}55`,borderRadius:999,padding:'3px 9px',cursor:'help'}}>
+                {label}{s.fundamentalScore!=null?` · ${Math.round(s.fundamentalScore)}`:''}
+              </span>
+            )}
+            {updatedLabel&&(
+              <span style={{fontSize:9,fontWeight:700,color:C.muted}}>{updatedLabel}</span>
+            )}
+          </div>
+        </div>
+
+        {highlights.length>0?(
+          <div style={{marginBottom:14,padding:'10px 12px',borderRadius:10,
+            background:C.teal+'12',border:`1px solid ${C.teal}33`}}>
+            <div style={{fontSize:10,fontWeight:800,color:C.teal,textTransform:'uppercase',
+              letterSpacing:'0.04em',marginBottom:6}}>AI takeaways</div>
+            <ul style={{margin:0,paddingLeft:16,fontSize:12.5,lineHeight:1.5,color:C.text}}>
+              {highlights.map((h,i)=><li key={i} style={{marginBottom:4}}>{h}</li>)}
+            </ul>
+          </div>
+       ):(
+          <div style={{marginBottom:12,fontSize:11,color:C.muted,lineHeight:1.45}}>
+            AI takeaways generate in the background once enough ratios are on file.
+          </div>
+        )}
+
+        <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+          letterSpacing:'0.04em',marginBottom:8}}>
+          {aiKeys.length>=3?'AI-picked important metrics':'Important metrics'}
+        </div>
+        <MetricCardsGrid cards={importantCards}/>
+
+        {restCards.length>0&&(
+          <div style={{marginTop:14}}>
+            <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+              letterSpacing:'0.04em',marginBottom:8}}>All metrics</div>
+            <MetricCardsGrid cards={restCards}/>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function AboutCompanyPanel({symbol, stocks}){
   const s = stocks?.find(x=>x.sym===symbol) || null
@@ -2222,19 +2409,33 @@ function AboutCompanyPanel({symbol, stocks}){
 function StockDetailTabs({sym, stocks, onSelectSymbol}){
   const [tab, setTab] = useState('about')
   // Tab flags so users can see Concall/PPT history exists without opening
-  // each tab — count + latest filing date. About uses company_abouts.
-  const [flags, setFlags] = useState({concall: undefined, ppt: undefined, about: undefined})
+  // each tab — count + latest filing date. About uses company_abouts;
+  // Fundamentals uses stock_fundamentals AI takeaways / ratio coverage.
+  const [flags, setFlags] = useState({concall: undefined, ppt: undefined, about: undefined, fundamentals: undefined})
   useEffect(() => {
     let cancelled = false
     setTab('about')
-    setFlags({concall: undefined, ppt: undefined, about: undefined})
+    setFlags({concall: undefined, ppt: undefined, about: undefined, fundamentals: undefined})
     if (!sym) return
-    Promise.all([fetchTranscriptSummaries(sym), fetchPptSummaries(sym), fetchCompanyAbout(sym)]).then(([t, p, about]) => {
+    Promise.all([
+      fetchTranscriptSummaries(sym),
+      fetchPptSummaries(sym),
+      fetchCompanyAbout(sym),
+      fetchStockFundamentals(sym),
+    ]).then(([t, p, about, fund]) => {
       if (cancelled) return
+      const fundReady = !!(fund && (
+        fund.ai_highlights?.length
+        || fund.pe != null || fund.roe != null || fund.pb != null || fund.cfo != null
+        || fund.fundamental_label
+      ))
       setFlags({
         concall: {count: t?.length || 0, latestAt: t?.[0]?.announced_at || null},
         ppt: {count: p?.length || 0, latestAt: p?.[0]?.announced_at || null},
         about: about ? {count: 1, latestAt: about.source_announced_at || about.updated_at || null} : {count: 0, latestAt: null},
+        fundamentals: fundReady
+          ? {count: 1, latestAt: fund.ai_highlights_at || fund.fetched_at || null}
+          : {count: 0, latestAt: null},
       })
     })
     return () => { cancelled = true }
@@ -2249,13 +2450,15 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
     <div>
       <div style={{display:'flex',gap:4,marginBottom:10,borderBottom:`1px solid ${C.border}`,overflowX:'auto'}}>
         {STOCK_DETAIL_TABS.map(t=>{
-          const flag = t.key==='concall'?flags.concall:t.key==='ppt'?flags.ppt:t.key==='about'?flags.about:null
+          const flag = t.key==='concall'?flags.concall:t.key==='ppt'?flags.ppt:t.key==='about'?flags.about:t.key==='fundamentals'?flags.fundamentals:null
           const hasContent = flag && flag.count > 0
           const dateHint = hasContent ? fmtFlagDate(flag.latestAt) : null
           return (
             <div key={t.key} onClick={()=>setTab(t.key)} title={
               t.key==='about'
-                ? (hasContent ? 'AI company brief from filings' : 'Brief generates after PPT/Concall is summarized')
+                ? (hasContent ? 'AI company brief from web + filings' : 'Brief generates after worker cycles')
+                : t.key==='fundamentals'
+                  ? (hasContent ? 'Ratios + AI takeaways' : 'Waiting for fundamentals scrape / AI fill')
                 : hasContent
                   ? `${flag.count} report${flag.count>1?'s':''} on file — open to read history`
                   : (flag && flag.count===0 ? `No ${t.label} yet` : undefined)
@@ -2271,10 +2474,10 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
                   fontSize:9,fontWeight:800,color:C.green,background:C.green+'22',
                   border:`1px solid ${C.green}55`,borderRadius:999,padding:'1px 6px',
                 }}>
-                  {t.key==='about' ? (dateHint || 'Ready') : (flag.count>1 ? `${flag.count} · ${dateHint}` : dateHint || 'Ready')}
+                  {(t.key==='about'||t.key==='fundamentals') ? (dateHint || 'Ready') : (flag.count>1 ? `${flag.count} · ${dateHint}` : dateHint || 'Ready')}
                 </span>
               )}
-              {flag && flag.count===0 && (t.key==='concall'||t.key==='ppt'||t.key==='about') && (
+              {flag && flag.count===0 && (t.key==='concall'||t.key==='ppt'||t.key==='about'||t.key==='fundamentals') && (
                 <span style={{fontSize:9,fontWeight:600,color:C.muted,opacity:0.7}}>—</span>
               )}
             </div>
@@ -2282,6 +2485,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
         })}
       </div>
       {tab==='about' && <AboutCompanyPanel symbol={sym} stocks={stocks}/>}
+      {tab==='fundamentals' && <FundamentalsPanel symbol={sym} stocks={stocks}/>}
       {tab==='results' && (
         <>
           <ResultsHistoryTable symbol={sym}/>
