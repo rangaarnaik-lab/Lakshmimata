@@ -1890,7 +1890,7 @@ function EmaBreadthTable({data,isMobile,dragProps,rangeLabel}){
 const STOCK_DETAIL_TABS = [
   {key: 'results', label: 'Results'},
   {key: 'resultsSummary', label: 'Results Summary'},
-  {key: 'concall', label: 'Concall AI Summary'},
+  {key: 'concall', label: 'Concall Report'},
   {key: 'ppt', label: 'PPT'},
 ]
 function StockDetailTabs({sym, stocks}){
@@ -2350,7 +2350,18 @@ function HighlightedBullet({text, color}){
 // Vibrant theme-color rotation per section, drawn from the app's real
 // palette (not arbitrary grays) so each card feels like part of the
 // same design system while still being visually distinct at a glance.
-const TRANSCRIPT_SECTIONS = [
+// Simple report sections first — the 4 things a retail investor
+// usually wants from a concall. Full list stays available behind
+// "Show full report" so we can deepen the UI later without changing
+// the default experience.
+const TRANSCRIPT_SIMPLE_SECTIONS = [
+  {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: C.green},
+  {key: 'outlook_guidance', label: 'Outlook & Guidance', icon: '🎯', color: C.lime},
+  {key: 'key_concerns', label: 'Analyst Concerns (Q&A)', icon: '❓', color: C.red},
+  {key: 'risks_flagged', label: 'Risks Flagged', icon: '⚠️', color: C.yellow},
+]
+
+const TRANSCRIPT_FULL_SECTIONS = [
   {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: C.green},
   {key: 'operational_kpis', label: 'Operational KPIs', icon: '📊', color: C.teal},
   {key: 'cost_margin_commentary', label: 'Cost & Margin', icon: '📉', color: C.orange},
@@ -2363,6 +2374,8 @@ const TRANSCRIPT_SECTIONS = [
   {key: 'risks_flagged', label: 'Risks Flagged', icon: '⚠️', color: C.yellow},
   {key: 'key_concerns', label: 'Analyst Concerns (Q&A)', icon: '❓', color: C.red},
 ]
+
+const TRANSCRIPT_SECTIONS = TRANSCRIPT_FULL_SECTIONS
 
 const PPT_SECTIONS = [
   {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: C.green},
@@ -2380,17 +2393,30 @@ const PPT_SECTIONS = [
 // chevron markers, and automatic number-highlighting within each
 // bullet so the whole thing reads as a compact, colorful fact-sheet
 // rather than a wall of uniform text.
-function BulletSection({icon, label, color, bullets}){
+function normalizeBullets(bullets){
   // Defensive normalization: old rows saved before the bullet-array
   // backend migration are still plain strings in the database. Calling
   // .map() directly on a string throws "X.map is not a function" and
   // crashes the entire app (not just this component), confirmed via a
-  // real production error report. A non-empty string becomes a
-  // single-item array so it still renders (as one bullet) instead of
-  // crashing; anything else falls through to rendering nothing.
-  const bulletList = Array.isArray(bullets) ? bullets
-    : (typeof bullets === 'string' && bullets.trim()) ? [bullets.trim()]
-    : []
+  // real production error report. Some rows also store a JSON-encoded
+  // array as a string (e.g. '["Revenue up 10%"]') — parse those so the
+  // UI shows real bullets instead of one blob of normal text.
+  if (Array.isArray(bullets)) return bullets
+  if (typeof bullets === 'string' && bullets.trim()) {
+    const raw = bullets.trim()
+    if (raw.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) return parsed
+      } catch (_) { /* fall through */ }
+    }
+    return [raw]
+  }
+  return []
+}
+
+function BulletSection({icon, label, color, bullets}){
+  const bulletList = normalizeBullets(bullets)
   if (bulletList.length === 0) return null
   return (
     <div style={{
@@ -2423,18 +2449,46 @@ function BulletSection({icon, label, color, bullets}){
 
 function TranscriptSummary({symbol}){
   const [rows, setRows] = useState(null) // null=loading, []=none, array=loaded
+  const [showFull, setShowFull] = useState(false)
   useEffect(() => {
     let cancelled = false
     setRows(null)
+    setShowFull(false)
     if (!symbol) return
     fetchTranscriptSummaries(symbol).then(r => { if (!cancelled) setRows(r) })
     return () => { cancelled = true }
   }, [symbol])
-  if (!rows || rows.length === 0) return null
+
+  if (rows === null) {
+    return (
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'20px 14px',
+        textAlign:'center',color:C.muted,fontSize:12}}>
+        Loading concall report…
+      </div>
+    )
+  }
+  if (rows.length === 0) {
+    return (
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'20px 14px',
+        textAlign:'center'}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:6}}>No concall report yet</div>
+        <div style={{fontSize:11.5,color:C.muted,lineHeight:1.5}}>
+          When an earnings-call transcript is filed for {symbol}, the server will read it and generate a simple report here.
+        </div>
+      </div>
+    )
+  }
+
   const latest = rows[0]
   const dateLabel = new Date(latest.announced_at).toLocaleDateString('en-IN',
     {day:'numeric', month:'short', year:'numeric'})
   const badge = GUIDANCE_BADGE[latest.guidance_direction]
+  const sections = showFull ? TRANSCRIPT_FULL_SECTIONS : TRANSCRIPT_SIMPLE_SECTIONS
+  const hasMoreSections = TRANSCRIPT_FULL_SECTIONS.some(s => {
+    if (TRANSCRIPT_SIMPLE_SECTIONS.some(ss => ss.key === s.key)) return false
+    return normalizeBullets(latest[s.key]).length > 0
+  })
+
   return (
     <div style={{
       background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',
@@ -2444,7 +2498,7 @@ function TranscriptSummary({symbol}){
       <div style={{padding:'12px 14px'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,gap:8}}>
           <div style={{fontSize:12,fontWeight:900,color:C.text,display:'flex',alignItems:'center',gap:6}}>
-            <span style={{fontSize:15}}>🎙️</span> AI Call Transcript Summary
+            <span style={{fontSize:15}}>🎙️</span> Concall Report
           </div>
           <div style={{fontSize:10,color:C.muted,flexShrink:0,fontWeight:600}}>{dateLabel}</div>
         </div>
@@ -2461,15 +2515,21 @@ function TranscriptSummary({symbol}){
         {latest.overall_summary && (
           <div style={{
             borderLeft:`3px solid ${C.accent}`,paddingLeft:10,marginBottom:12,
-            fontSize:12.5,lineHeight:1.6,color:C.text,fontStyle:'italic',
+            fontSize:12.5,lineHeight:1.6,color:C.text,
           }}>{latest.overall_summary}</div>
         )}
         <div style={{display:'flex',flexDirection:'column',gap:7}}>
-          {TRANSCRIPT_SECTIONS.map(s=>(
+          {sections.map(s=>(
             <BulletSection key={s.key} icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
           ))}
         </div>
-        <div style={{display:'flex',gap:12,marginTop:10}}>
+        <div style={{display:'flex',gap:12,marginTop:10,flexWrap:'wrap',alignItems:'center'}}>
+          {(hasMoreSections || showFull) && (
+            <span onClick={()=>setShowFull(v=>!v)}
+              style={{fontSize:10,fontWeight:700,color:C.accent,cursor:'pointer'}}>
+              {showFull ? 'Show simple report' : 'Show full report'}
+            </span>
+          )}
           {latest.attachment_url&&(
             <a href={latest.attachment_url} target="_blank" rel="noopener noreferrer"
               style={{fontSize:10,fontWeight:700,color:C.accent}}>View original transcript ↗</a>
