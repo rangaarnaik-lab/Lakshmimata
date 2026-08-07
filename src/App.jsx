@@ -2343,10 +2343,10 @@ function HighlightedBullet({text, color}){
 // Vibrant theme-color rotation per section, drawn from the app's real
 // palette (not arbitrary grays) so each card feels like part of the
 // same design system while still being visually distinct at a glance.
-// Simple report sections first — the 4 things a retail investor
-// usually wants from a concall. Full list stays available behind
-// "Show full report" so we can deepen the UI later without changing
-// the default experience.
+// Simple report sections — ordered by what a retail investor needs first:
+// numbers → forward view → Q&A heat → risks. Watch Next is rendered
+// right after Outlook (see TranscriptSummary) so the action list sits
+// near guidance, not buried under optional full-report sections.
 const TRANSCRIPT_SIMPLE_SECTIONS = [
   {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: C.green},
   {key: 'outlook_guidance', label: 'Outlook & Guidance', icon: '🎯', color: C.lime},
@@ -2354,31 +2354,34 @@ const TRANSCRIPT_SIMPLE_SECTIONS = [
   {key: 'risks_flagged', label: 'Risks Flagged', icon: '⚠️', color: C.yellow},
 ]
 
+// Full report — same priority spine, then supporting depth.
 const TRANSCRIPT_FULL_SECTIONS = [
   {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: C.green},
-  {key: 'operational_kpis', label: 'Operational KPIs', icon: '📊', color: C.teal},
-  {key: 'cost_margin_commentary', label: 'Cost & Margin', icon: '📉', color: C.orange},
-  {key: 'expansion_capex', label: 'Expansion / Capex', icon: '🏗️', color: C.blue},
   {key: 'outlook_guidance', label: 'Outlook & Guidance', icon: '🎯', color: C.lime},
-  {key: 'management_changes', label: 'Management Changes', icon: '👤', color: C.purple},
+  {key: 'cost_margin_commentary', label: 'Cost & Margin', icon: '📉', color: C.orange},
+  {key: 'operational_kpis', label: 'Operational KPIs', icon: '📊', color: C.teal},
+  {key: 'key_concerns', label: 'Analyst Concerns (Q&A)', icon: '❓', color: C.red},
+  {key: 'risks_flagged', label: 'Risks Flagged', icon: '⚠️', color: C.yellow},
+  {key: 'expansion_capex', label: 'Expansion / Capex', icon: '🏗️', color: C.blue},
   {key: 'capital_allocation', label: 'Capital Allocation', icon: '💵', color: C.teal},
   {key: 'competitive_positioning', label: 'Competitive Position', icon: '⚔️', color: C.pink},
+  {key: 'management_changes', label: 'Management Changes', icon: '👤', color: C.purple},
   {key: 'regulatory_legal', label: 'Regulatory / Legal', icon: '⚖️', color: C.purple},
-  {key: 'risks_flagged', label: 'Risks Flagged', icon: '⚠️', color: C.yellow},
-  {key: 'key_concerns', label: 'Analyst Concerns (Q&A)', icon: '❓', color: C.red},
 ]
 
 const TRANSCRIPT_SECTIONS = TRANSCRIPT_FULL_SECTIONS
 
+// PPT — numbers & strategy first; risks / legal last. Watch Next is
+// inserted after Financial Highlights in PptSummary.
 const PPT_SECTIONS = [
   {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: C.green},
+  {key: 'strategic_initiatives', label: 'Strategic Initiatives', icon: '🚀', color: C.lime},
   {key: 'operational_kpis', label: 'Operational KPIs', icon: '📊', color: C.teal},
   {key: 'business_segments', label: 'Business Segments', icon: '🧩', color: C.blue},
-  {key: 'strategic_initiatives', label: 'Strategic Initiatives', icon: '🚀', color: C.lime},
   {key: 'capital_allocation', label: 'Capital Allocation', icon: '💵', color: C.teal},
   {key: 'industry_outlook', label: 'Industry Outlook', icon: '🌐', color: C.pink},
-  {key: 'regulatory_legal', label: 'Regulatory / Legal', icon: '⚖️', color: C.purple},
   {key: 'risks_flagged', label: 'Risks Flagged', icon: '⚠️', color: C.yellow},
+  {key: 'regulatory_legal', label: 'Regulatory / Legal', icon: '⚖️', color: C.purple},
 ]
 
 // Shared bullet-card renderer for one section: circular gradient icon
@@ -2525,11 +2528,16 @@ function TranscriptSummary({symbol}){
           }}>{latest.overall_summary}</div>
         )}
         <div style={{display:'flex',flexDirection:'column',gap:7}}>
-          <BulletSection icon="🌱" label="Theme Evidence" color={C.lime} bullets={latest.theme_evidence}/>
           {sections.map(s=>(
-            <BulletSection key={s.key} icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
+            <React.Fragment key={s.key}>
+              <BulletSection icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
+              {/* Watch Next sits right after Outlook — action list near forward view */}
+              {s.key==='outlook_guidance' && (
+                <BulletSection icon="👁️" label="Watch Next" color={C.accent} bullets={latest.watch_next}/>
+              )}
+            </React.Fragment>
           ))}
-          <BulletSection icon="👁️" label="Watch Next" color={C.accent} bullets={latest.watch_next}/>
+          <BulletSection icon="🌱" label="Theme Evidence" color={C.lime} bullets={latest.theme_evidence}/>
         </div>
         <div style={{display:'flex',gap:12,marginTop:10,flexWrap:'wrap',alignItems:'center'}}>
           {(hasMoreSections || showFull) && (
