@@ -2403,7 +2403,7 @@ function ResultsHistoryTable({symbol}){
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px',overflowX:'auto'}}>
       {resultRating&&(
-        <div title="Quality from Sales/PAT YoY vs same quarter last year. Adjusted for one-offs for operating quality, but capped if reported (headline) PAT fell — so a prior-year exceptional gain can't make a profit decline look Excellent. Also considers OPM and QoQ trend. Not a buy/sell call."
+        <div title="Quality from Sales/PAT YoY. Capped if headline PAT fell, OPM compressed, or QoQ is flat/soft — strong YoY alone is not Excellent. Not a buy/sell call."
           style={{display:'inline-block',marginBottom:6,padding:'2px 9px',borderRadius:12,
             fontSize:10,fontWeight:800,cursor:'help',
             background:(resultRating==='Excellent'?C.green:resultRating==='Good'?'#7dd3a8':
