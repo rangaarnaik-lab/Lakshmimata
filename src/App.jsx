@@ -10457,7 +10457,7 @@ export default function App(){
                                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderTop:'none',
                                     borderRadius:'0 0 8px 8px',padding:'8px 10px',overflowX:'auto'}}>
                                     {resultRating&&(
-                                      <div title="Quality rating from Sales/PAT YoY growth vs. the same quarter last year, adjusted one tier if the sequential (QoQ) trend meaningfully contradicts it — not a buy/sell call, just how the numbers moved."
+                                      <div title="Quality from Sales/PAT YoY. Capped if headline PAT fell, OPM compressed, or QoQ is flat/soft — strong YoY alone is not Excellent. Not a buy/sell call."
                                         style={{display:'inline-block',marginBottom:6,padding:'2px 9px',borderRadius:12,
                                           fontSize:10,fontWeight:800,cursor:'help',
                                           background:(resultRating==='Excellent'?C.green:resultRating==='Good'?'#7dd3a8':
