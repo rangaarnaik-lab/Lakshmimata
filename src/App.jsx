@@ -5473,7 +5473,6 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
   const [info,setInfo]=useState('')
   const [loading,setLoading]=useState(false)
   const [googleLoading,setGoogleLoading]=useState(false)
-  const ownerMode=!!OWNER_TOKEN
 
   const validateProfile=(fullName,phoneRaw,iso)=>{
     if(!String(fullName||'').trim()) throw new Error('Name is required.')
@@ -5573,16 +5572,9 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
           <div style={{width:60,height:60,background:`linear-gradient(135deg,${C.accent},${C.purple})`,
             borderRadius:18,display:'inline-flex',alignItems:'center',justifyContent:'center',
             fontWeight:900,color:'#000',fontSize:30,marginBottom:14,
-            boxShadow:`0 8px 32px ${C.accent}44`}}>P</div>
+            boxShadow:`0 8px 32px ${C.accent}44`}}>L</div>
           <div style={{fontWeight:800,fontSize:26,letterSpacing:'-0.03em'}}>Lakshmimata</div>
           <div style={{color:C.muted,fontSize:13,marginTop:4}}>NSE Stock Scanner</div>
-          {ownerMode&&(
-            <div style={{marginTop:10,padding:'6px 14px',borderRadius:20,
-              background:C.green+'18',border:`1px solid ${C.green}44`,
-              display:'inline-block',fontSize:11,color:C.green,fontWeight:600}}>
-              ✅ No Upstox token needed — powered by owner data
-            </div>
-          )}
         </div>
 
         <div style={{background:C.card,borderRadius:20,border:`1px solid ${C.border}`,
@@ -5872,7 +5864,7 @@ function PaywallScreen({reason,onLogout}){
       <div style={{width:'100%',maxWidth:460,textAlign:'center'}}>
         <div style={{width:60,height:60,background:`linear-gradient(135deg,${C.accent},${C.purple})`,
           borderRadius:18,display:'inline-flex',alignItems:'center',justifyContent:'center',
-          fontWeight:900,color:'#000',fontSize:30,marginBottom:20}}>P</div>
+          fontWeight:900,color:'#000',fontSize:30,marginBottom:20}}>L</div>
         <div style={{fontWeight:800,fontSize:22,marginBottom:12}}>{msg.title}</div>
         <div style={{fontSize:14,color:C.muted,lineHeight:1.6,marginBottom:24}}>{msg.body}</div>
 
