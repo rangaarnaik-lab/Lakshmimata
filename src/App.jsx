@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchTranscriptSummaries, fetchPptSummaries, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -1889,7 +1889,6 @@ function EmaBreadthTable({data,isMobile,dragProps,rangeLabel}){
 // get filed (results PDF same-day, transcript/presentation days later).
 const STOCK_DETAIL_TABS = [
   {key: 'results', label: 'Results'},
-  {key: 'resultsSummary', label: 'Results Summary'},
   {key: 'concall', label: 'Concall Report'},
   {key: 'ppt', label: 'PPT'},
 ]
@@ -1914,7 +1913,6 @@ function StockDetailTabs({sym, stocks}){
           <SectorRankingPanel symbol={sym} sector={stocks?.find(s=>s.sym===sym)?.sector} stocks={stocks}/>
         </>
       )}
-      {tab==='resultsSummary' && <ConcallSummary symbol={sym}/>}
       {tab==='concall' && <TranscriptSummary symbol={sym}/>}
       {tab==='ppt' && <PptSummary symbol={sym}/>}
     </div>
@@ -2269,59 +2267,6 @@ function SectorRankingPanel({symbol, sector, stocks}){
   )
 }
 
-// AI-generated summary of a company's most recent results filing PDF
-// (Gemini-summarized from the official NSE/BSE filing, backend-side) -
-// focused on qualitative content the raw numbers alone don't capture
-// (management commentary, segment breakdown, one-off items, guidance).
-// Was concall-focused, switched to target results filings per user
-// request on 2026-08-04 (results are filed every quarter by every
-// company; concalls are comparatively rare) - component name kept as
-// ConcallSummary since the underlying concall_summaries table/pipeline
-// may summarize concalls again later. Renders nothing at all - not even
-// a placeholder - when there's no summary available.
-function ConcallSummary({symbol}){
-  const [rows, setRows] = useState(null) // null=loading, []=none, array=loaded
-  const [expanded, setExpanded] = useState(false)
-  useEffect(() => {
-    let cancelled = false
-    setRows(null)
-    if (!symbol) return
-    fetchConcallSummaries(symbol).then(r => { if (!cancelled) setRows(r) })
-    return () => { cancelled = true }
-  }, [symbol])
-  if (!rows || rows.length === 0) return null
-  const latest = rows[0]
-  const dateLabel = new Date(latest.announced_at).toLocaleDateString('en-IN',
-    {day:'numeric', month:'short', year:'numeric'})
-  return (
-    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px'}}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
-        <div style={{fontSize:11,fontWeight:800,color:C.accent}}>🤖 AI Results Summary</div>
-        <div style={{fontSize:10,color:C.muted}}>{dateLabel}</div>
-      </div>
-      <div style={{fontSize:12,lineHeight:1.5,color:C.text,
-        display:'-webkit-box',WebkitLineClamp:expanded?'unset':4,WebkitBoxOrient:'vertical',overflow:'hidden'}}>
-        {latest.summary}
-      </div>
-      <div style={{display:'flex',gap:12,marginTop:6}}>
-        <span onClick={()=>setExpanded(e=>!e)} style={{fontSize:10,fontWeight:700,color:C.accent,cursor:'pointer'}}>
-          {expanded?'Show less':'Show more'}
-        </span>
-        {latest.attachment_url&&(
-          <a href={latest.attachment_url} target="_blank" rel="noopener noreferrer"
-            style={{fontSize:10,fontWeight:700,color:C.muted}}>View original PDF ↗</a>
-        )}
-      </div>
-      <div style={{fontSize:9,color:C.muted,marginTop:8,fontStyle:'italic'}}>
-        AI-generated summary of the official results filing — may miss nuance. Not investment advice.
-      </div>
-    </div>
-  )
-}
-
-// Icon+color per section, so each card is identifiable at a glance
-// while scanning - matches the "quick to catch and read" goal, rather
-// than uniform gray-on-gray text blocks.
 // Guidance direction badge - upgraded with directional arrows and a
 // gradient fill so the single most scannable signal (is guidance
 // going up or down) reads instantly, not just as small colored text.
@@ -5798,30 +5743,6 @@ export default function App(){
       })
     })
   },[mainTab,announcementsCategory,announcements,resultsHistoryCache])
-  // AI results-filing summaries — fetched lazily per symbol, only for
-  // announcement rows whose own category/subject text looks like an
-  // actual results filing (same keyword/exclude set the Results tab
-  // itself uses, and what the backend's summarization loop now
-  // targets - was concall-focused, switched to results per user
-  // request on 2026-08-04 since results are filed by every company
-  // every quarter, concalls are comparatively rare).
-  const [concallCache,setConcallCache]=useState({})
-  useEffect(()=>{
-    if(mainTab!=='announcements') return
-    const resultsKeywords=['financial result','quarterly result','results for the quarter','unaudited results','audited results']
-    const resultsExclude=['newspaper publication','newspaper advertisement','transcript','press release','investor meet','con. call','con call','conference call','clarification']
-    const isResultsFiling=a=>{
-      const t=((a.category||'')+' '+(a.subject||'')).toLowerCase()
-      if(resultsExclude.some(k=>t.includes(k))) return false
-      return resultsKeywords.some(k=>t.includes(k))
-    }
-    const missing=[...new Set(announcements.filter(isResultsFiling).map(a=>a.symbol).filter(sym=>sym&&!concallCache[sym]))]
-    missing.forEach(sym=>{
-      fetchConcallSummaries(sym).then(rows=>{
-        setConcallCache(p=>p[sym]?p:{...p,[sym]:rows})
-      })
-    })
-  },[mainTab,announcements,concallCache])
   useEffect(()=>{
     if(mainTab==='announcements'&&announcementsCategory==='results')
       fetchRecentFinancialResults().then(setResultsMap)
@@ -9641,16 +9562,6 @@ export default function App(){
                             🤖 {a.ai_summary}
                           </div>
                         )}
-                        {concallCache[a.symbol]&&concallCache[a.symbol].length>0&&(()=>{
-                          const cs=concallCache[a.symbol][0]
-                          return (
-                            <div style={{fontSize:11,color:C.text,marginBottom:4,marginTop:2,lineHeight:1.5,
-                              background:C.card,border:`1px solid ${C.border}`,borderRadius:6,padding:'6px 8px'}}>
-                              <div style={{fontSize:10,fontWeight:800,color:C.accent,marginBottom:3}}>🤖 AI Results Summary</div>
-                              {cs.summary}
-                            </div>
-                          )
-                        })()}
                         {announcementsCategory==='results'&&!resultsMap[a.symbol]&&(
                           <div style={{fontSize:9,color:C.yellow,background:C.yellow+'18',
                             border:`1px solid ${C.yellow}44`,borderRadius:6,padding:'4px 8px',marginBottom:4}}>
