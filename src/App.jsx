@@ -1961,7 +1961,7 @@ function SimpleStockTable({stocks, isMobile, onChart}){
   return (
     <div ref={dragProps.ref} {...dragProps.handlers}
       style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflowX:'auto',...dragProps.style}}>
-      <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px 32px 32px',
+      <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px',
         padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
         fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
         <span style={{textAlign:'center',color:C.muted}}>#</span>
@@ -1982,9 +1982,6 @@ function SimpleStockTable({stocks, isMobile, onChart}){
         <span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>
         <span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>
         <span title="Overall fundamental quality — not the same as Excellent/Good Result (latest quarter only)." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Rating</span>
-        <span/>
-        <span style={{textAlign:'center',color:C.muted,fontSize:9}}>TV</span>
-        <span style={{textAlign:'center',color:C.muted,fontSize:9}}>Scr</span>
       </div>
       {stocks.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>onChart&&onChart(s.sym)}/>)}
     </div>
@@ -4036,9 +4033,7 @@ function SortableHeader({label,sortKey,sortBy,sortDir,onSort,align='left',legend
 // Shared between the RS table's header row and DesktopRow so both always
 // compute the exact same grid-column layout from the same visibility
 // state — if they ever drifted out of sync, headers and cells would
-// misalign. 'true' entries are the core columns that always stay visible
-// (#, Symbol, RS-TV, Price, Chg%, Expand, TV, Scr link) — vis.X entries
-// are the customizable ones.
+// misalign. Core columns: #, Symbol, RS, Price. Optional via vis.X.
 function computeRsGridCols(vis){
   const rsCount = 1 + (vis.mid?1:0) + (vis.sml?1:0) + (vis.sec?1:0) // Nifty always shown, others toggleable
   const cols=[
@@ -4047,8 +4042,7 @@ function computeRsGridCols(vis){
     ['182px',vis.pp10||vis.rs7d],['140px',vis.stage],['170px',vis.squeeze],
     ['160px',vis.wl52],['150px',vis.weakrs],
     ['55px',vis.mcap],['55px',vis.pe],['48px',vis.roe],['48px',vis.de],['48px',vis.prom],
-    ['58px',vis.fundRating], // Fund / Rating — was missing, so "Good" lined up under TV
-    ['28px',true],['32px',true],['32px',true], // expand, TV, Scr
+    ['58px',vis.fundRating],
   ]
   return cols.filter(([,show])=>show).map(([w])=>w).join(' ')
 }
@@ -4159,9 +4153,6 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,de
             {visibleRsCols.de&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>}
             {visibleRsCols.prom&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>}
             {visibleRsCols.fundRating&&<span title="Overall fundamental quality (ROE, growth, debt, margins, ownership) — not the same as Excellent/Good Result under the chart, which is only the latest quarter." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Rating</span>}
-            <span/>
-            <span style={{textAlign:'center',color:C.muted,fontSize:9}}>TV</span>
-            <span style={{textAlign:'center',color:C.muted,fontSize:9}}>Scr</span>
           </div>
           {paged.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>onChartOpen(s.sym)} visibleRsCols={visibleRsCols}/>)}
         </div>
@@ -4588,7 +4579,8 @@ function SectionNav({items, refs}){
 function DesktopRow({s,i,onChart,visibleRsCols}){
   const [open,setOpen]=useState(false)
   const vis=visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,fundRating:true}
-  // Grid: # | Symbol+Sector+Badges | RS | [MID] | [SML] | [SEC] | [Trend] | Price | Chg% | [PP 10d] | [RS 7d] | [Stage] | [MCap] | [P/E] | [ROE] | [D/E] | [Prom] | expand | TV | Scr
+  // Grid matches computeRsGridCols — expand chevron lives in the Symbol cell
+  // (row click opens chart; expand still opens inline StockDetail).
   const COLS=computeRsGridCols(vis)
   return(
     <div style={{borderBottom:`1px solid ${C.border}22`}}>
@@ -4606,7 +4598,7 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
         {/* Symbol — WealthLab style: bold sym + muted sector on same line */}
         <div style={{minWidth:0,overflow:'hidden'}}>
           <div style={{display:'flex',alignItems:'center',gap:4}}>
-            <span onClick={e=>{e.stopPropagation();onChart&&onChart()}}
+            <span onClick={e=>{e.stopPropagation();onChart&&onChart(s.sym)}}
               style={{fontWeight:600,fontSize:12,color:C.accent,
                 letterSpacing:'0.01em',cursor:'pointer',textDecoration:'underline',
                 textDecorationColor:C.accent+'55',textUnderlineOffset:'2px'}}
@@ -4614,6 +4606,11 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
             {s.pp.isPP&&<span style={{fontSize:9,color:C.orange,fontWeight:700}}>PP</span>}
             {s.hy.isHY&&<span style={{fontSize:9,color:C.blue,fontWeight:700}}>HY</span>}
             {s.ht.isHT&&<span style={{fontSize:9,color:C.purple,fontWeight:700}}>HT</span>}
+            <span onClick={e=>{e.stopPropagation();setOpen(o=>!o)}}
+              title={open?'Collapse details':'Expand details'}
+              style={{marginLeft:'auto',fontSize:9,color:C.muted,cursor:'pointer',padding:'2px 4px',flexShrink:0}}>
+              {open?'▲':'▼'}
+            </span>
           </div>
           <div style={{fontSize:9,color:C.muted,marginTop:1,
             overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
@@ -4850,25 +4847,6 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
           ):<span style={{color:C.muted}}>—</span>}
         </div>}
 
-        {/* Expand — separate click target from the row (which now opens
-            the chart), so both actions stay reachable */}
-        <span onClick={e=>{e.stopPropagation();setOpen(o=>!o)}}
-          style={{textAlign:'center',fontSize:10,color:C.muted,cursor:'pointer',padding:'4px 0'}}>
-          {open?'▲':'▼'}
-        </span>
-
-        {/* Direct-open links — icons only, stop propagation so clicking
-            doesn't also toggle the row's expand/collapse */}
-        <a href={`https://www.tradingview.com/chart/?symbol=NSE:${s.sym}`}
-          target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
-          title="Open in TradingView" style={{textAlign:'center',fontSize:14,textDecoration:'none'}}>
-          📈
-        </a>
-        <a href={`https://www.screener.in/company/${s.sym}/consolidated/`}
-          target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
-          title="Open in Screener.in" style={{textAlign:'center',fontSize:14,textDecoration:'none'}}>
-          📊
-        </a>
       </div>
       {open&&<StockDetail s={s}/>}
     </div>
@@ -8195,9 +8173,6 @@ export default function App(){
                     {visibleRsCols.de&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>}
                     {visibleRsCols.prom&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>}
                     {visibleRsCols.fundRating&&<span title="Overall fundamental quality (ROE, growth, debt, margins, ownership) — not the same as Excellent/Good Result under the chart, which is only the latest quarter." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Rating</span>}
-                    <span/>
-                    <span style={{textAlign:'center',color:C.muted,fontSize:9}}>TV</span>
-                    <span style={{textAlign:'center',color:C.muted,fontSize:9}}>Scr</span>
                   </div>
                   {pagedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>setChartSym(s.sym)} visibleRsCols={visibleRsCols}/>)}
                 </div>
