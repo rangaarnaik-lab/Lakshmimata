@@ -357,6 +357,7 @@ const AMBIENT_SOUNDS = [
   ['pad','🎐 Ambient Pad'],
   ['bowl','🔔 Singing Bowl'],
   ['rain','🌧️ Rain'],
+  ['sea','🌊 Sea'],
   ['piano','🎹 Generative Piano'],
 ]
 
@@ -448,15 +449,24 @@ function useAmbientSound(){
   const nodesRef=useRef([])   // oscillators/sources to stop() on cleanup
   const timersRef=useRef([])  // setTimeout ids for generative patterns (bowl strikes, piano notes)
   const masterRef=useRef(null)
+  // Refs keep start/stop/setSoundType free of stale React closures —
+  // without these, switching rain/piano while playing often restarts
+  // the *old* sound (or no-ops because `playing` is still true).
+  const playingRef=useRef(false)
+  const soundTypeRef=useRef('pad')
+  const volumeRef=useRef(0.25)
+  const enabledRef=useRef(false)
 
-  const stop=()=>{
+  const stop=useCallback(()=>{
     timersRef.current.forEach(id=>clearTimeout(id))
     timersRef.current=[]
     nodesRef.current.forEach(n=>{ try{n.stop()}catch(e){} })
     nodesRef.current=[]
     if(ctxRef.current){ ctxRef.current.close().catch(()=>{}); ctxRef.current=null }
+    masterRef.current=null
+    playingRef.current=false
     setPlaying(false)
-  }
+  },[])
 
   // -- Ambient Pad -- the original sound, a few detuned sines forming an
   // open chord, each breathing via its own slow LFO.
@@ -498,7 +508,7 @@ function useAmbientSound(){
         osc.start()
         const now=ctx.currentTime
         g.gain.setValueAtTime(0,now)
-        g.gain.linearRampToValueAtTime(amp*0.18,now+0.05) // fast attack
+        g.gain.linearRampToValueAtTime(amp*0.22,now+0.05) // fast attack
         g.gain.exponentialRampToValueAtTime(0.0001,now+16+i*1.5) // long decay
         osc.stop(now+18)
         nodesRef.current.push(osc)
@@ -509,9 +519,10 @@ function useAmbientSound(){
     const pitches=[196,220,261.6] // a few pleasant strike pitches to cycle through
     let i=0
     const scheduleStrike=()=>{
+      if(!ctxRef.current || ctxRef.current!==ctx) return
       strikeBowl(ctx,filter,pitches[i%pitches.length])
       i++
-      const next=12000+Math.random()*8000 // re-strike every 12-20s
+      const next=8000+Math.random()*6000 // re-strike every 8-14s
       timersRef.current.push(setTimeout(scheduleStrike,next))
     }
     scheduleStrike()
@@ -521,24 +532,84 @@ function useAmbientSound(){
   // a buffer of random samples stands in for one), shaped toward the
   // mid/high energy real rain has, with slow amplitude swells so it
   // doesn't sound like a flat hiss.
-  const startRain=(ctx,filter)=>{
+  const startRain=(ctx,dest)=>{
     const bufferSize=2*ctx.sampleRate
     const buffer=ctx.createBuffer(1,bufferSize,ctx.sampleRate)
     const data=buffer.getChannelData(0)
     for(let i=0;i<bufferSize;i++) data[i]=Math.random()*2-1
     const noise=ctx.createBufferSource()
     noise.buffer=buffer; noise.loop=true
-    const hp=ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=800
-    const shelf=ctx.createBiquadFilter(); shelf.type='highshelf'; shelf.frequency.value=3000; shelf.gain.value=-6
-    const swellGain=ctx.createGain(); swellGain.gain.value=0.22
+    const hp=ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=400
+    const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=6500
+    const shelf=ctx.createBiquadFilter(); shelf.type='highshelf'; shelf.frequency.value=2500; shelf.gain.value=-4
+    const swellGain=ctx.createGain(); swellGain.gain.value=0.35
     const swellLfo=ctx.createOscillator()
     const swellLfoGain=ctx.createGain()
-    swellLfo.frequency.value=0.04
-    swellLfoGain.gain.value=0.06
+    swellLfo.frequency.value=0.05
+    swellLfoGain.gain.value=0.08
     swellLfo.connect(swellLfoGain); swellLfoGain.connect(swellGain.gain)
-    noise.connect(hp); hp.connect(shelf); shelf.connect(swellGain); swellGain.connect(filter)
+    noise.connect(hp); hp.connect(lp); lp.connect(shelf); shelf.connect(swellGain); swellGain.connect(dest)
     noise.start(); swellLfo.start()
     nodesRef.current.push(noise,swellLfo)
+  }
+
+  // -- Sea -- low/mid filtered noise with slow wave swells + a quieter
+  // "shore hiss" layer. Not a sample loop — generative wash that rises
+  // and falls like surf.
+  const startSea=(ctx,dest)=>{
+    const makeNoiseBuffer=()=>{
+      const bufferSize=2*ctx.sampleRate
+      const buffer=ctx.createBuffer(1,bufferSize,ctx.sampleRate)
+      const data=buffer.getChannelData(0)
+      for(let i=0;i<bufferSize;i++) data[i]=Math.random()*2-1
+      return buffer
+    }
+    const buffer=makeNoiseBuffer()
+
+    // Deep body of the wave (muffled rumble)
+    const body=ctx.createBufferSource()
+    body.buffer=buffer; body.loop=true
+    const bodyHp=ctx.createBiquadFilter(); bodyHp.type='highpass'; bodyHp.frequency.value=80
+    const bodyLp=ctx.createBiquadFilter(); bodyLp.type='lowpass'; bodyLp.frequency.value=900
+    const bodyGain=ctx.createGain(); bodyGain.gain.value=0.28
+    const waveLfo=ctx.createOscillator()
+    const waveDepth=ctx.createGain()
+    waveLfo.type='sine'; waveLfo.frequency.value=0.12 // ~8s wave cycle
+    waveDepth.gain.value=0.18
+    waveLfo.connect(waveDepth); waveDepth.connect(bodyGain.gain)
+    body.connect(bodyHp); bodyHp.connect(bodyLp); bodyLp.connect(bodyGain); bodyGain.connect(dest)
+
+    // Bright foam / shore hiss riding on top
+    const foam=ctx.createBufferSource()
+    foam.buffer=buffer; foam.loop=true
+    const foamHp=ctx.createBiquadFilter(); foamHp.type='highpass'; foamHp.frequency.value=1200
+    const foamLp=ctx.createBiquadFilter(); foamLp.type='lowpass'; foamLp.frequency.value=5500
+    const foamGain=ctx.createGain(); foamGain.gain.value=0.08
+    const foamLfo=ctx.createOscillator()
+    const foamDepth=ctx.createGain()
+    foamLfo.type='sine'; foamLfo.frequency.value=0.18
+    foamDepth.gain.value=0.07
+    foamLfo.connect(foamDepth); foamDepth.connect(foamGain.gain)
+    foam.connect(foamHp); foamHp.connect(foamLp); foamLp.connect(foamGain); foamGain.connect(dest)
+
+    // Occasional soft crash accents so it doesn't feel perfectly periodic
+    const scheduleCrash=()=>{
+      if(!ctxRef.current || ctxRef.current!==ctx) return
+      const now=ctx.currentTime
+      bodyGain.gain.cancelScheduledValues(now)
+      bodyGain.gain.setValueAtTime(bodyGain.gain.value,now)
+      bodyGain.gain.linearRampToValueAtTime(0.42,now+0.6)
+      bodyGain.gain.linearRampToValueAtTime(0.22,now+2.8)
+      foamGain.gain.cancelScheduledValues(now)
+      foamGain.gain.setValueAtTime(foamGain.gain.value,now)
+      foamGain.gain.linearRampToValueAtTime(0.16,now+0.4)
+      foamGain.gain.linearRampToValueAtTime(0.06,now+2.2)
+      timersRef.current.push(setTimeout(scheduleCrash,7000+Math.random()*9000))
+    }
+
+    body.start(); foam.start(); waveLfo.start(); foamLfo.start()
+    nodesRef.current.push(body,foam,waveLfo,foamLfo)
+    timersRef.current.push(setTimeout(scheduleCrash,4000+Math.random()*4000))
   }
 
   // -- Generative Piano -- sparse, randomized notes from a pentatonic
@@ -549,6 +620,7 @@ function useAmbientSound(){
     // C major pentatonic across two octaves
     const scale=[261.6,293.7,329.6,392.0,440.0,523.3,587.3,659.3,784.0,880.0]
     const playNote=()=>{
+      if(!ctxRef.current || ctxRef.current!==ctx) return
       const freq=scale[Math.floor(Math.random()*scale.length)]
       const osc=ctx.createOscillator()
       osc.type='triangle'; osc.frequency.value=freq
@@ -560,55 +632,72 @@ function useAmbientSound(){
       osc2.connect(g2); g2.connect(filter)
       osc.start(); osc2.start()
       const now=ctx.currentTime
-      g.gain.setValueAtTime(0,now); g.gain.linearRampToValueAtTime(0.11,now+0.02)
+      g.gain.setValueAtTime(0.0001,now); g.gain.linearRampToValueAtTime(0.16,now+0.02)
       g.gain.exponentialRampToValueAtTime(0.0001,now+3.5)
-      g2.gain.setValueAtTime(0,now); g2.gain.linearRampToValueAtTime(0.03,now+0.02)
+      g2.gain.setValueAtTime(0.0001,now); g2.gain.linearRampToValueAtTime(0.045,now+0.02)
       g2.gain.exponentialRampToValueAtTime(0.0001,now+2)
       osc.stop(now+4); osc2.stop(now+2.2)
       nodesRef.current.push(osc,osc2)
-      const next=1800+Math.random()*3200 // next note in 1.8-5s
+      const next=900+Math.random()*2200 // next note in 0.9-3.1s
       timersRef.current.push(setTimeout(playNote,next))
     }
     playNote()
   }
 
-  const SOUND_STARTERS={pad:startPad,bowl:startBowl,rain:startRain,piano:startPiano}
+  const SOUND_STARTERS={pad:startPad,bowl:startBowl,rain:startRain,sea:startSea,piano:startPiano}
+  const FILTER_HZ={pad:900,bowl:1400,rain:8000,sea:6000,piano:3200}
+  const SELF_SHAPED=new Set(['rain','sea']) // these build their own EQ; skip shared filter LFO
 
-  const start=()=>{
-    if(playing) return
+  const start=useCallback((typeOverride)=>{
+    const type=typeOverride || soundTypeRef.current
+    if(playingRef.current) stop()
     const ctx=new (window.AudioContext||window.webkitAudioContext)()
     ctxRef.current=ctx
-    const master=ctx.createGain(); master.gain.value=volume
+    // User-gesture paths should already be unlocked; resume covers
+    // suspended contexts after tab switches / autoplay policy.
+    if(ctx.state==='suspended') ctx.resume().catch(()=>{})
+    const master=ctx.createGain(); master.gain.value=volumeRef.current
     const filter=ctx.createBiquadFilter()
-    filter.type='lowpass'; filter.frequency.value=soundType==='rain'?4000:900
+    filter.type='lowpass'
+    filter.frequency.value=FILTER_HZ[type]||900
+    filter.Q.value=0.7
     filter.connect(master); master.connect(ctx.destination)
     masterRef.current=master
 
-    if(soundType!=='rain'){
-      // Slowly sweep the filter for gentle movement (rain shapes its own
-      // texture via the highpass/shelf chain instead, this would just
-      // muffle it)
+    if(!SELF_SHAPED.has(type)){
+      // Slowly sweep the filter for gentle movement (rain/sea shape their
+      // own texture via dedicated filters instead).
       const filterLfo=ctx.createOscillator()
       const filterLfoGain=ctx.createGain()
-      filterLfo.frequency.value=0.03; filterLfoGain.gain.value=350
+      filterLfo.frequency.value=0.03
+      filterLfoGain.gain.value=type==='piano'?500:350
       filterLfo.connect(filterLfoGain); filterLfoGain.connect(filter.frequency)
       filterLfo.start()
       nodesRef.current.push(filterLfo)
     }
 
-    ;(SOUND_STARTERS[soundType]||startPad)(ctx,filter)
+    ;(SOUND_STARTERS[type]||startPad)(ctx,filter)
+    playingRef.current=true
     setPlaying(true)
-  }
+  },[stop])
 
   const setVol = (v) => {
     setVolume(v)
-    if(masterRef.current) masterRef.current.gain.setTargetAtTime(v, ctxRef.current.currentTime, 0.1)
+    volumeRef.current=v
+    if(masterRef.current && ctxRef.current){
+      masterRef.current.gain.setTargetAtTime(v, ctxRef.current.currentTime, 0.1)
+    }
   }
 
   const setSoundType = (type) => {
+    soundTypeRef.current=type
     setSoundTypeState(type)
     try{ localStorage.setItem('lakshmimata-ambient-sound', type) }catch(e){}
-    if(playing){ stop(); setTimeout(()=>start(),50) } // restart with the new soundscape
+    // Restart immediately with the new type (pass explicitly — don't wait
+    // for a re-render that would leave start() on the previous sound).
+    if(playingRef.current || enabledRef.current){
+      start(type)
+    }
   }
 
   // Load the persisted enable/disable + sound-type preference once on mount.
@@ -618,6 +707,8 @@ function useAmbientSound(){
       pref = localStorage.getItem('lakshmimata-ambient-enabled')==='true'
       savedType = localStorage.getItem('lakshmimata-ambient-sound') || 'pad'
     }catch(e){}
+    enabledRef.current=pref
+    soundTypeRef.current=savedType
     setEnabled(pref)
     setSoundTypeState(savedType)
   },[])
@@ -629,21 +720,29 @@ function useAmbientSound(){
   // every single visit isn't necessary once they've opted in once.
   useEffect(()=>{
     if(!enabled || playing) return
-    const resumeOnce = () => { start(); document.removeEventListener('click', resumeOnce) }
+    const resumeOnce = () => {
+      start(soundTypeRef.current)
+      document.removeEventListener('click', resumeOnce)
+      document.removeEventListener('keydown', resumeOnce)
+    }
     document.addEventListener('click', resumeOnce)
-    return () => document.removeEventListener('click', resumeOnce)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[enabled])
+    document.addEventListener('keydown', resumeOnce)
+    return () => {
+      document.removeEventListener('click', resumeOnce)
+      document.removeEventListener('keydown', resumeOnce)
+    }
+  },[enabled, playing, start])
 
 
   const toggle = () => {
-    const next = !enabled
+    const next = !enabledRef.current
+    enabledRef.current=next
     setEnabled(next)
     try{ localStorage.setItem('lakshmimata-ambient-enabled', String(next)) }catch(e){}
-    if(next) start(); else stop()
+    if(next) start(soundTypeRef.current); else stop()
   }
 
-  useEffect(()=>()=>stop(),[]) // cleanup on unmount
+  useEffect(()=>()=>stop(),[stop]) // cleanup on unmount
 
   return { playing, enabled, volume, toggle, setVolume: setVol, soundType, setSoundType }
 }
@@ -4934,20 +5033,111 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
   )
 }
 
+// ── Phone countries (dial code + expected national length) ────────────
+const PHONE_COUNTRIES = [
+  {iso:'IN', dial:'91',  flag:'🇮🇳', name:'India',        len:10},
+  {iso:'US', dial:'1',   flag:'🇺🇸', name:'United States',len:10},
+  {iso:'GB', dial:'44',  flag:'🇬🇧', name:'United Kingdom',len:10},
+  {iso:'AE', dial:'971', flag:'🇦🇪', name:'UAE',          len:9},
+  {iso:'SG', dial:'65',  flag:'🇸🇬', name:'Singapore',    len:8},
+  {iso:'AU', dial:'61',  flag:'🇦🇺', name:'Australia',    len:9},
+  {iso:'CA', dial:'1',   flag:'🇨🇦', name:'Canada',       len:10},
+  {iso:'DE', dial:'49',  flag:'🇩🇪', name:'Germany',      len:10, lenMax:11},
+  {iso:'FR', dial:'33',  flag:'🇫🇷', name:'France',       len:9},
+  {iso:'JP', dial:'81',  flag:'🇯🇵', name:'Japan',        len:10},
+  {iso:'NP', dial:'977', flag:'🇳🇵', name:'Nepal',        len:10},
+  {iso:'LK', dial:'94',  flag:'🇱🇰', name:'Sri Lanka',    len:9},
+  {iso:'BD', dial:'880', flag:'🇧🇩', name:'Bangladesh',   len:10},
+]
+
+function findPhoneCountry(iso){
+  return PHONE_COUNTRIES.find(c=>c.iso===iso) || PHONE_COUNTRIES[0]
+}
+
+function formatE164(dial, nationalDigits){
+  return `+${dial}${nationalDigits}`
+}
+
+function validatePhoneForCountry(iso, nationalRaw){
+  const country=findPhoneCountry(iso)
+  const digits=String(nationalRaw||'').replace(/\D/g,'')
+  // Drop a leading 0 (common when pasting local format)
+  const national=digits.startsWith('0')?digits.slice(1):digits
+  const min=country.len
+  const max=country.lenMax||country.len
+  if(national.length<min||national.length>max){
+    throw new Error(`Enter a valid ${min===max?min:`${min}–${max}`}-digit phone number for ${country.name}.`)
+  }
+  return {
+    phone: formatE164(country.dial, national),
+    phone_country: country.iso,
+    phone_national: national,
+  }
+}
+
+function PhoneInput({countryIso, onCountryChange, value, onChange, required}){
+  const country=findPhoneCountry(countryIso)
+  const inputStyle={
+    padding:'12px 13px',background:C.bg,border:`1px solid ${C.border}`,
+    borderRadius:9,color:C.text,fontSize:14,outline:'none',boxSizing:'border-box',
+  }
+  return (
+    <div>
+      <label style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:'uppercase',
+        letterSpacing:'0.08em',display:'block',marginBottom:5}}>
+        Phone Number {required&&<span style={{color:C.red}}>*</span>}
+      </label>
+      <div style={{display:'flex',gap:8}}>
+        <select value={countryIso} onChange={e=>onCountryChange(e.target.value)}
+          aria-label="Country code"
+          style={{...inputStyle, width:118, flexShrink:0, cursor:'pointer',
+            appearance:'auto', paddingRight:6}}>
+          {PHONE_COUNTRIES.map(c=>(
+            <option key={c.iso} value={c.iso}>{c.flag} +{c.dial}</option>
+          ))}
+        </select>
+        <input type="tel" value={value} onChange={e=>onChange(e.target.value.replace(/[^\d\s-]/g,''))}
+          placeholder={`${country.len}-digit number`}
+          inputMode="numeric"
+          maxLength={(country.lenMax||country.len)+2}
+          style={{...inputStyle, flex:1, minWidth:0}}/>
+      </div>
+      <div style={{fontSize:10,color:C.muted,marginTop:5}}>
+        {country.flag} {country.name} (+{country.dial}) · required
+      </div>
+    </div>
+  )
+}
+
+function ReqLabel(text){
+  return (
+    <label style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:'uppercase',
+      letterSpacing:'0.08em',display:'block',marginBottom:5}}>
+      {text} <span style={{color:C.red}}>*</span>
+    </label>
+  )
+}
+
 // ── Auth Screen ──────────────────────────────────────────────────────
 function AuthScreen({onLogin,initialMode='login',onBack}){
   const [mode,setMode]=useState(initialMode) // login | register | forgot
   const [email,setEmail]=useState('')
   const [password,setPassword]=useState('')
   const [name,setName]=useState('')
-  const [upstoxToken,setUpstoxToken]=useState('')
+  const [phone,setPhone]=useState('')
+  const [phoneCountry,setPhoneCountry]=useState('IN')
   const [error,setError]=useState('')
   const [info,setInfo]=useState('')
   const [loading,setLoading]=useState(false)
   const [googleLoading,setGoogleLoading]=useState(false)
-  const [agreedToTerms,setAgreedToTerms]=useState(false)
-  const [showFullTerms,setShowFullTerms]=useState(false)
   const ownerMode=!!OWNER_TOKEN
+
+  const validateProfile=(fullName,phoneRaw,iso)=>{
+    if(!String(fullName||'').trim()) throw new Error('Name is required.')
+    if(!String(email||'').trim()) throw new Error('Email is required.')
+    const phoneInfo=validatePhoneForCountry(iso, phoneRaw)
+    return {full_name:String(fullName).trim(), ...phoneInfo}
+  }
 
   // Google OAuth — Supabase handles everything
   const handleGoogle=async()=>{
@@ -4967,20 +5157,22 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
     setError('');setInfo('');setLoading(true)
     try{
       if(mode==='forgot'){
+        if(!email.trim()) throw new Error('Email is required.')
         const{error:e}=await supabase.auth.resetPasswordForEmail(email,{
           redirectTo:`${window.location.origin}?reset=true`
         })
         if(e)throw e
         setInfo('Password reset email sent! Check your inbox.');setMode('login')
       } else if(mode==='login'){
+        if(!email.trim()) throw new Error('Email is required.')
+        if(!password) throw new Error('Password is required.')
         const{data,error:e}=await supabase.auth.signInWithPassword({email,password})
         if(e)throw e
         const{data:decryptedToken}=await supabase.rpc('get_upstox_token')
         onLogin({user:data.user,token:decryptedToken||OWNER_TOKEN})
       } else {
-        // Register — password must be at least 10 characters and contain
-        // both letters and numbers, checked client-side before hitting
-        // Supabase so the person gets immediate, specific feedback.
+        // Register — name, phone (with country), email, password all required.
+        const profile=validateProfile(name,phone,phoneCountry)
         if(password.length<10){
           throw new Error('Password must be at least 10 characters long.')
         }
@@ -4989,12 +5181,15 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
         }
         const{data,error:e}=await supabase.auth.signUp({
           email,password,
-          options:{data:{full_name:name||email.split('@')[0]}}
+          options:{data:{
+            full_name:profile.full_name,
+            phone:profile.phone,
+            phone_country:profile.phone_country,
+            phone_national:profile.phone_national,
+            profile_complete:true,
+          }}
         })
         if(e)throw e
-        if(data.user&&upstoxToken){
-          await supabase.rpc('save_upstox_token',{token:upstoxToken})
-        }
         if(data.user){
           // Start the 30-day free trial. ignoreDuplicates so this is
           // safe to call even if it somehow runs twice for the same
@@ -5010,6 +5205,12 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
       }
     }catch(e){setError(e.message||'Auth error')}
     setLoading(false)
+  }
+
+  const fieldInput={
+    width:'100%',padding:'12px 13px',background:C.bg,
+    border:`1px solid ${C.border}`,borderRadius:9,color:C.text,
+    fontSize:14,outline:'none',boxSizing:'border-box',
   }
 
   return(
@@ -5044,49 +5245,70 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
         <div style={{background:C.card,borderRadius:20,border:`1px solid ${C.border}`,
           padding:28,boxShadow:`0 20px 60px #00000044`}}>
 
-          {/* ── Google Sign In (primary) ── */}
-          <button onClick={handleGoogle} disabled={googleLoading||loading}
-            style={{width:'100%',padding:'13px',borderRadius:12,
-              border:`1px solid ${C.border}`,cursor:'pointer',
-              background:'#fff',color:'#1f1f1f',fontWeight:700,fontSize:14,
-              display:'flex',alignItems:'center',justifyContent:'center',gap:10,
-              marginBottom:20,transition:'all 0.2s',
-              boxShadow:googleLoading?'none':'0 1px 3px #00000022'}}>
-            {googleLoading?(
-              <div style={{width:18,height:18,border:'2px solid #4285f4',borderTopColor:'transparent',
-                borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
-            ):(
-              /* Google G logo SVG */
-              <svg width="18" height="18" viewBox="0 0 18 18">
-                <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
-                <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
-                <path fill="#FBBC05" d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"/>
-                <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.96l3.007 2.332C4.672 5.163 6.656 3.58 9 3.58z"/>
-              </svg>
-            )}
-            {googleLoading?'Connecting to Google…':'Continue with Google'}
-          </button>
+        <div style={{background:C.card,borderRadius:20,border:`1px solid ${C.border}`,
+          padding:28,boxShadow:`0 20px 60px #00000044`}}>
 
-          {/* Divider */}
-          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
-            <div style={{flex:1,height:1,background:C.border}}/>
-            <span style={{fontSize:11,color:C.muted,fontWeight:600}}>OR</span>
-            <div style={{flex:1,height:1,background:C.border}}/>
-          </div>
+          {/* Mode tabs first — Register is email signup with mandatory
+              name/phone; Google is only offered on Sign In, then blocked
+              until profile is completed. */}
+          {mode!=='forgot'&&(
+            <div style={{display:'flex',background:C.bg,borderRadius:10,padding:3,marginBottom:20}}>
+              {[['login','Sign In'],['register','Register']].map(([m,label])=>(
+                <button key={m} onClick={()=>{setMode(m);setError('');setInfo('')}}
+                  style={{flex:1,padding:'7px',borderRadius:8,border:'none',cursor:'pointer',
+                    fontWeight:700,fontSize:12,
+                    background:mode===m?C.card:'transparent',
+                    color:mode===m?C.text:C.muted,
+                    boxShadow:mode===m?'0 1px 4px #00000044':'none'}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
 
-          {/* Mode tabs */}
-          <div style={{display:'flex',background:C.bg,borderRadius:10,padding:3,marginBottom:20}}>
-            {[['login','Sign In'],['register','Register']].map(([m,label])=>(
-              <button key={m} onClick={()=>{setMode(m);setError('');setInfo('')}}
-                style={{flex:1,padding:'7px',borderRadius:8,border:'none',cursor:'pointer',
-                  fontWeight:700,fontSize:12,
-                  background:mode===m?C.card:'transparent',
-                  color:mode===m?C.text:C.muted,
-                  boxShadow:mode===m?'0 1px 4px #00000044':'none'}}>
-                {label}
+          {/* Google — Sign In only. New Google accounts still must finish
+              name + phone on the Complete Profile / Finish signup screen. */}
+          {mode==='login'&&(
+            <>
+              <button onClick={handleGoogle} disabled={googleLoading||loading}
+                style={{width:'100%',padding:'13px',borderRadius:12,
+                  border:`1px solid ${C.border}`,cursor:'pointer',
+                  background:'#fff',color:'#1f1f1f',fontWeight:700,fontSize:14,
+                  display:'flex',alignItems:'center',justifyContent:'center',gap:10,
+                  marginBottom:12,transition:'all 0.2s',
+                  boxShadow:googleLoading?'none':'0 1px 3px #00000022'}}>
+                {googleLoading?(
+                  <div style={{width:18,height:18,border:'2px solid #4285f4',borderTopColor:'transparent',
+                    borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
+                ):(
+                  <svg width="18" height="18" viewBox="0 0 18 18">
+                    <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+                    <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+                    <path fill="#FBBC05" d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"/>
+                    <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.96l3.007 2.332C4.672 5.163 6.656 3.58 9 3.58z"/>
+                  </svg>
+                )}
+                {googleLoading?'Connecting to Google…':'Sign in with Google'}
               </button>
-            ))}
-          </div>
+              <div style={{fontSize:10,color:C.muted,marginBottom:16,lineHeight:1.5,textAlign:'center'}}>
+                First time with Google? You'll confirm name &amp; phone next — required.
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
+                <div style={{flex:1,height:1,background:C.border}}/>
+                <span style={{fontSize:11,color:C.muted,fontWeight:600}}>OR</span>
+                <div style={{flex:1,height:1,background:C.border}}/>
+              </div>
+            </>
+          )}
+
+          {mode==='register'&&(
+            <div style={{fontSize:11,color:C.muted,marginBottom:14,lineHeight:1.5,
+              background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px'}}>
+              New accounts need <strong style={{color:C.text}}>name</strong> and{' '}
+              <strong style={{color:C.text}}>phone</strong> below. Prefer Google?
+              Switch to Sign In — you'll finish signup there before using the app.
+            </div>
+          )}
 
           {/* Alerts */}
           {error&&(
@@ -5105,30 +5327,35 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
           {/* Form fields */}
           <div style={{display:'flex',flexDirection:'column',gap:12}}>
             {mode==='register'&&(
-              <div>
-                <label style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:'uppercase',
-                  letterSpacing:'0.08em',display:'block',marginBottom:5}}>Name</label>
-                <input value={name} onChange={e=>setName(e.target.value)}
-                  placeholder="Your name"
-                  style={{width:'100%',padding:'12px 13px',background:C.bg,
-                    border:`1px solid ${C.border}`,borderRadius:9,color:C.text,
-                    fontSize:14,outline:'none',boxSizing:'border-box'}}/>
-              </div>
+              <>
+                <div>
+                  {reqLabel('Name')}
+                  <input value={name} onChange={e=>setName(e.target.value)}
+                    placeholder="Your full name" required
+                    style={fieldInput}/>
+                </div>
+                <PhoneInput
+                  required
+                  countryIso={phoneCountry}
+                  onCountryChange={setPhoneCountry}
+                  value={phone}
+                  onChange={setPhone}
+                />
+              </>
             )}
             <div>
-              <label style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:'uppercase',
-                letterSpacing:'0.08em',display:'block',marginBottom:5}}>Email</label>
+              {reqLabel('Email')}
               <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
-                placeholder="you@gmail.com"
+                placeholder="you@gmail.com" required
                 onKeyDown={e=>e.key==='Enter'&&handleEmailAuth()}
-                style={{width:'100%',padding:'12px 13px',background:C.bg,
-                  border:`1px solid ${C.border}`,borderRadius:9,color:C.text,
-                  fontSize:14,outline:'none',boxSizing:'border-box'}}/>
+                style={fieldInput}/>
             </div>
             {mode!=='forgot'&&(
               <div>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
-                  <label style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.08em'}}>Password</label>
+                  <label style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.08em'}}>
+                    Password <span style={{color:C.red}}>*</span>
+                  </label>
                   {mode==='login'&&(
                     <button onClick={()=>{setMode('forgot');setError('');setInfo('')}}
                       style={{fontSize:11,color:C.accent,fontWeight:600,background:'none',border:'none',cursor:'pointer',padding:0}}>
@@ -5138,29 +5365,14 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
                 </div>
                 <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
                   placeholder={mode==='register'?'Min 10 characters, letters + numbers':'Enter password'}
+                  required
                   onKeyDown={e=>e.key==='Enter'&&handleEmailAuth()}
-                  style={{width:'100%',padding:'12px 13px',background:C.bg,
-                    border:`1px solid ${C.border}`,borderRadius:9,color:C.text,
-                    fontSize:14,outline:'none',boxSizing:'border-box'}}/>
+                  style={fieldInput}/>
                 {mode==='register'&&(
                   <div style={{fontSize:11,color:C.muted,marginTop:6}}>
-                    At least 10 characters, with both letters and numbers.
+                    At least 10 characters, with both letters and numbers. · <span style={{color:C.red}}>*</span> required
                   </div>
                 )}
-              </div>
-            )}
-            {mode==='register'&&(
-              <div>
-                <label style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:'uppercase',
-                  letterSpacing:'0.08em',display:'block',marginBottom:5}}>
-                  Upstox Token <span style={{color:C.muted,fontWeight:400,textTransform:'none'}}>(optional)</span>
-                </label>
-                <input type="password" value={upstoxToken}
-                  placeholder={ownerMode?'Leave blank to use owner token':'eyJ0eXAiOiJKV1Q…'}
-                  onChange={e=>setUpstoxToken(e.target.value)}
-                  style={{width:'100%',padding:'12px 13px',background:C.bg,
-                    border:`1px solid ${C.border}`,borderRadius:9,color:C.text,
-                    fontSize:13,outline:'none',boxSizing:'border-box',fontFamily:'monospace'}}/>
               </div>
             )}
 
@@ -5191,6 +5403,106 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
               <span>Passwords bcrypt-hashed · Google OAuth 2.0 · Row Level Security · TLS encrypted</span>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Profile incomplete until we explicitly mark it. Google OAuth alone
+// never sets profile_complete — so Google users must finish name+phone.
+function needsProfileDetails(user){
+  const meta=user?.user_metadata||{}
+  const fullName=(meta.full_name||meta.name||'').trim()
+  const phone=String(meta.phone||'').trim()
+  const phoneOk=/^\+\d{8,15}$/.test(phone) || /^\d{10}$/.test(phone.replace(/\D/g,''))
+  if(meta.profile_complete===true && fullName && phoneOk) return false
+  // Missing flag, name, or phone → block the app (Finish signup screen)
+  return true
+}
+
+// Shown after Google (or older accounts) until name + phone are saved.
+function CompleteProfileScreen({session,onDone,onLogout}){
+  const meta=session?.user?.user_metadata||{}
+  const [name,setName]=useState(meta.full_name||meta.name||'')
+  const [phone,setPhone]=useState(meta.phone_national||'')
+  const [phoneCountry,setPhoneCountry]=useState(meta.phone_country||'IN')
+  const [error,setError]=useState('')
+  const [loading,setLoading]=useState(false)
+
+  const save=async()=>{
+    setError('');setLoading(true)
+    try{
+      const full_name=String(name||'').trim()
+      if(!full_name) throw new Error('Name is required.')
+      const phoneInfo=validatePhoneForCountry(phoneCountry, phone)
+      const{data,error:e}=await supabase.auth.updateUser({
+        data:{
+          full_name,
+          phone:phoneInfo.phone,
+          phone_country:phoneInfo.phone_country,
+          phone_national:phoneInfo.phone_national,
+          profile_complete:true,
+        }
+      })
+      if(e) throw e
+      // Google-first users never went through email register — start trial here.
+      if(data.user){
+        const trialEnd=new Date(Date.now()+30*24*60*60*1000).toISOString()
+        await supabase.from('subscriptions').upsert(
+          {user_id:data.user.id,status:'trialing',trial_end:trialEnd},
+          {onConflict:'user_id',ignoreDuplicates:true}
+        )
+      }
+      onDone({...session, user:data.user})
+    }catch(e){ setError(e.message||'Could not save profile') }
+    setLoading(false)
+  }
+
+  return(
+    <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',
+      justifyContent:'center',padding:20}}>
+      <div style={{width:'100%',maxWidth:400,background:C.card,borderRadius:20,
+        border:`1px solid ${C.border}`,padding:28,boxShadow:`0 20px 60px #00000044`}}>
+        <div style={{fontWeight:800,fontSize:18,marginBottom:6}}>Finish signup</div>
+        <div style={{color:C.muted,fontSize:12,marginBottom:18,lineHeight:1.5}}>
+          Google signed you in — now add your <strong style={{color:C.text}}>name</strong> and{' '}
+          <strong style={{color:C.text}}>phone</strong> to continue. Both are required.
+        </div>
+        {error&&(
+          <div style={{background:C.red+'18',border:`1px solid ${C.red}44`,borderRadius:8,
+            padding:'10px 12px',marginBottom:14,fontSize:12,color:C.red,fontWeight:600}}>
+            ❌ {error}
+          </div>
+        )}
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          <div>
+            {reqLabel('Name')}
+            <input value={name} onChange={e=>setName(e.target.value)}
+              placeholder="Your full name"
+              style={{width:'100%',padding:'12px 13px',background:C.bg,
+                border:`1px solid ${C.border}`,borderRadius:9,color:C.text,
+                fontSize:14,outline:'none',boxSizing:'border-box'}}/>
+          </div>
+          <PhoneInput
+            required
+            countryIso={phoneCountry}
+            onCountryChange={setPhoneCountry}
+            value={phone}
+            onChange={setPhone}
+          />
+          <button onClick={save} disabled={loading}
+            style={{width:'100%',padding:'13px',marginTop:4,
+              background:loading?C.border:`linear-gradient(135deg,${C.accent},${C.accent}cc)`,
+              color:loading?C.muted:'#000',border:'none',borderRadius:9,
+              fontWeight:800,fontSize:14,cursor:loading?'not-allowed':'pointer'}}>
+            {loading?'Saving…':'Complete signup'}
+          </button>
+          <button onClick={onLogout}
+            style={{width:'100%',padding:'10px',background:'transparent',color:C.muted,
+              border:'none',cursor:'pointer',fontSize:13,fontWeight:600}}>
+            Sign out
+          </button>
         </div>
       </div>
     </div>
@@ -5258,18 +5570,15 @@ function PaywallScreen({reason,onLogout}){
 
 // ── Settings Panel ────────────────────────────────────────────────────
 function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchTheme,ambient,userSubscription}){
-  const [newToken,setNewToken]=useState('')
-  const [msg,setMsg]=useState('')
-  const [loading,setLoading]=useState(false)
   const ownerMode=!!OWNER_TOKEN
 
   // Demo mode: session is deliberately null (see the demoMode feature —
   // it's real sample data, not a fake account), and this whole panel is
-  // account management (token, saved scanners, sign out) that doesn't
-  // apply without one. Everything below this point assumes session.user
-  // exists without optional chaining, so without this guard a demo user
-  // clicking into Settings would crash the whole app (this is exactly
-  // what happened — 'Cannot read properties of null (reading user)').
+  // account management that doesn't apply without one. Everything below
+  // this point assumes session.user exists without optional chaining, so
+  // without this guard a demo user clicking into Settings would crash
+  // the whole app (this is exactly what happened — 'Cannot read
+  // properties of null (reading user)').
   if(!session){
     return (
       <div style={{maxWidth:480,margin:'32px auto',padding:'0 16px'}}>
@@ -5277,7 +5586,7 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
           <div style={{fontSize:32,marginBottom:10}}>👁</div>
           <div style={{fontWeight:800,fontSize:16,marginBottom:6}}>You're in Demo Mode</div>
           <div style={{color:C.muted,fontSize:12,marginBottom:20,lineHeight:1.6}}>
-            Account settings, saved scanners, and your Upstox token need a real account.
+            Account settings and saved scanners need a real account.
             Sign up to unlock these — it's free to start.
           </div>
           <button onClick={onExitDemo}
@@ -5290,16 +5599,10 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
     )
   }
 
-  const saveToken=async()=>{
-    if(!newToken){setMsg('❌ Enter a token');return}
-    setLoading(true)
-    const{error}=await supabase.from('user_tokens')
-      .upsert({user_id:session.user.id,upstox_token:newToken},{onConflict:'user_id'})
-    if(error)setMsg('❌ '+error.message)
-    else{setMsg('✅ Token saved!');onUpdate({...session,token:newToken});setNewToken('')}
-    setLoading(false)
-  }
   const handleLogout=async()=>{await supabase.auth.signOut();onLogout()}
+  const meta=session.user.user_metadata||{}
+  const displayPhone=meta.phone?String(meta.phone).trim():''
+  const displayName=(meta.full_name||meta.name||'').trim()
 
   return(
     <div style={{maxWidth:480,margin:'32px auto',padding:'0 16px'}}>
@@ -5308,6 +5611,13 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
         <div style={{color:C.muted,fontSize:12,marginBottom:16}}>
           Signed in as <strong style={{color:C.accent}}>{session.user.email}</strong>
         </div>
+        {(displayName||displayPhone)&&(
+          <div style={{marginBottom:16,background:C.bg,border:`1px solid ${C.border}`,
+            borderRadius:10,padding:14,fontSize:12,color:C.muted,lineHeight:1.7}}>
+            {displayName&&<div><strong style={{color:C.text}}>Name:</strong> {displayName}</div>}
+            {displayPhone&&<div><strong style={{color:C.text}}>Phone:</strong> {displayPhone}</div>}
+          </div>
+        )}
         <div style={{marginBottom:20,fontSize:12,color:C.muted,background:C.bg,
           border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px'}}>
           🎨 Theme and ambient sound moved — look for the palette icon in the top-right corner, on any tab.
@@ -5349,32 +5659,8 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
           <div style={{background:C.green+'18',border:`1px solid ${C.green}33`,borderRadius:8,
             padding:'10px 12px',marginBottom:16,fontSize:12,color:C.green}}>
             ✅ Using owner's Upstox token — scanner works without your own token.
-            You can optionally override with your own below.
           </div>
         )}
-        {msg&&<div style={{background:(msg.startsWith('✅')?C.green:C.red)+'18',
-          border:`1px solid ${(msg.startsWith('✅')?C.green:C.red)}44`,
-          borderRadius:8,padding:'10px 12px',marginBottom:14,fontSize:12,
-          color:msg.startsWith('✅')?C.green:C.red,fontWeight:600}}>{msg}</div>}
-        <div style={{marginBottom:20}}>
-          <label style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:'uppercase',
-            letterSpacing:'0.08em',display:'block',marginBottom:6}}>
-            {ownerMode?'Override with your own Upstox Token (optional)':'Update Upstox Token'}
-          </label>
-          <input type="password" value={newToken} placeholder="eyJ0eXAiOiJKV1Q…"
-            onChange={e=>setNewToken(e.target.value)}
-            style={{width:'100%',padding:'11px 13px',background:C.bg,border:`1px solid ${C.border}`,
-              borderRadius:8,color:C.text,fontSize:13,outline:'none',boxSizing:'border-box',
-              fontFamily:'monospace',marginBottom:10}}/>
-          <button onClick={saveToken} disabled={loading}
-            style={{width:'100%',padding:'11px',background:C.accent,color:'#000',border:'none',
-              borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer'}}>💾 Save Token</button>
-        </div>
-        <div style={{padding:'12px',background:C.accent+'10',border:`1px solid ${C.accent}22`,borderRadius:8,marginBottom:16}}>
-          <div style={{fontSize:11,color:C.muted,lineHeight:1.7}}>
-            <strong style={{color:C.accent}}>🔒</strong> Tokens encrypted in Supabase Postgres with Row Level Security.
-          </div>
-        </div>
         <button onClick={handleLogout}
           style={{width:'100%',padding:'11px',background:'transparent',color:C.red,
             border:`1px solid ${C.red}44`,borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer'}}>
@@ -6737,6 +7023,16 @@ export default function App(){
       onDemo={()=>setDemoMode(true)}
     />
     return <AuthScreen onLogin={s=>setSession(s)} initialMode={authMode} onBack={()=>setShowAuth(false)}/>
+  }
+
+  // Name + phone are mandatory. Google (and older email accounts) may
+  // be missing them — block the app until the profile is completed.
+  if(session && !demoMode && needsProfileDetails(session.user)){
+    return <CompleteProfileScreen
+      session={session}
+      onDone={s=>setSession(s)}
+      onLogout={async()=>{await supabase.auth.signOut();setSession(null);setShowAuth(false)}}
+    />
   }
 
   if(session && !demoMode && subscriptionLoading)return(
@@ -10326,6 +10622,7 @@ export default function App(){
                 Will start on your next tap anywhere (browsers block silent autoplay).
               </div>
             )}
+            <BreathingExercise ambient={ambient}/>
           </div>
         )}
       </div>
