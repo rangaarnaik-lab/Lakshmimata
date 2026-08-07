@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -2048,6 +2048,7 @@ const STOCK_DETAIL_TABS = [
   {key: 'about', label: 'About Company'},
   {key: 'fundamentals', label: 'Fundamentals'},
   {key: 'results', label: 'Results'},
+  {key: 'resultsSummary', label: 'Results Summary'},
   {key: 'concall', label: 'Concall Report'},
   {key: 'ppt', label: 'PPT'},
 ]
@@ -2760,18 +2761,25 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
   // Tab flags so users can see Concall/PPT history exists without opening
   // each tab — count + latest filing date. About uses company_abouts;
   // Fundamentals uses stock_fundamentals AI takeaways / ratio coverage.
-  const [flags, setFlags] = useState({concall: undefined, ppt: undefined, about: undefined, fundamentals: undefined})
+  const [flags, setFlags] = useState({
+    concall: undefined, ppt: undefined, about: undefined,
+    fundamentals: undefined, resultsSummary: undefined,
+  })
   useEffect(() => {
     let cancelled = false
     setTab('about')
-    setFlags({concall: undefined, ppt: undefined, about: undefined, fundamentals: undefined})
+    setFlags({
+      concall: undefined, ppt: undefined, about: undefined,
+      fundamentals: undefined, resultsSummary: undefined,
+    })
     if (!sym) return
     Promise.all([
       fetchTranscriptSummaries(sym),
       fetchPptSummaries(sym),
       fetchCompanyAbout(sym),
       fetchStockFundamentals(sym),
-    ]).then(([t, p, about, fund]) => {
+      fetchConcallSummaries(sym),
+    ]).then(([t, p, about, fund, rs]) => {
       if (cancelled) return
       const fundReady = !!(fund && (
         fund.ai_highlights?.length
@@ -2785,6 +2793,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
         fundamentals: fundReady
           ? {count: 1, latestAt: fund.ai_highlights_at || fund.fetched_at || null}
           : {count: 0, latestAt: null},
+        resultsSummary: {count: rs?.length || 0, latestAt: rs?.[0]?.announced_at || null},
       })
     })
     return () => { cancelled = true }
@@ -2799,7 +2808,12 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
     <div>
       <div style={{display:'flex',gap:4,marginBottom:10,borderBottom:`1px solid ${C.border}`,overflowX:'auto'}}>
         {STOCK_DETAIL_TABS.map(t=>{
-          const flag = t.key==='concall'?flags.concall:t.key==='ppt'?flags.ppt:t.key==='about'?flags.about:t.key==='fundamentals'?flags.fundamentals:null
+          const flag = t.key==='concall'?flags.concall
+            : t.key==='ppt'?flags.ppt
+            : t.key==='about'?flags.about
+            : t.key==='fundamentals'?flags.fundamentals
+            : t.key==='resultsSummary'?flags.resultsSummary
+            : null
           const hasContent = flag && flag.count > 0
           const dateHint = hasContent ? fmtFlagDate(flag.latestAt) : null
           return (
@@ -2808,6 +2822,8 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
                 ? (hasContent ? 'AI company brief from web + filings' : 'Brief generates after worker cycles')
                 : t.key==='fundamentals'
                   ? (hasContent ? 'Ratios + AI takeaways' : 'Waiting for fundamentals scrape / AI fill')
+                : t.key==='resultsSummary'
+                  ? (hasContent ? 'AI summary of results PDF filing' : 'Waiting for results-PDF AI summary')
                 : hasContent
                   ? `${flag.count} report${flag.count>1?'s':''} on file — open to read history`
                   : (flag && flag.count===0 ? `No ${t.label} yet` : undefined)
@@ -2826,7 +2842,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
                   {(t.key==='about'||t.key==='fundamentals') ? (dateHint || 'Ready') : (flag.count>1 ? `${flag.count} · ${dateHint}` : dateHint || 'Ready')}
                 </span>
               )}
-              {flag && flag.count===0 && (t.key==='concall'||t.key==='ppt'||t.key==='about'||t.key==='fundamentals') && (
+              {flag && flag.count===0 && (t.key==='concall'||t.key==='ppt'||t.key==='about'||t.key==='fundamentals'||t.key==='resultsSummary') && (
                 <span style={{fontSize:9,fontWeight:600,color:C.muted,opacity:0.7}}>—</span>
               )}
             </div>
@@ -2845,6 +2861,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
             onSelectSymbol={onSelectSymbol}/>
         </>
       )}
+      {tab==='resultsSummary' && <ResultsFilingSummary symbol={sym}/>}
       {tab==='concall' && <TranscriptSummary symbol={sym}/>}
       {tab==='ppt' && <PptSummary symbol={sym}/>}
     </div>
@@ -3014,10 +3031,77 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
   )
 }
 
-// Same results table shown in the Announcements tab, extracted into a
-// standalone, self-fetching component so it can also sit below the price
-// chart — letting someone see price action and recent results together
-// for a quick call, without switching tabs.
+// AI summary of the official results-filing PDF (concall_summaries table).
+// Distinct from numeric Results + structured Concall/PPT reports.
+function ResultsFilingSummary({symbol}){
+  const [rows, setRows] = useState(null) // null=loading, []=none, array=loaded
+  const [expanded, setExpanded] = useState(false)
+  const [selectedIdx, setSelectedIdx] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    setRows(null)
+    setExpanded(false)
+    setSelectedIdx(0)
+    if (!symbol) return
+    fetchConcallSummaries(symbol).then(r => { if (!cancelled) setRows(r) })
+    return () => { cancelled = true }
+  }, [symbol])
+  if (rows === null) {
+    return (
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'20px 14px',
+        textAlign:'center',color:C.muted,fontSize:12}}>
+        Loading results summary…
+      </div>
+    )
+  }
+  if (rows.length === 0) {
+    return (
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'20px 14px',
+        textAlign:'center'}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:6}}>No results summary yet</div>
+        <div style={{fontSize:11.5,color:C.muted,lineHeight:1.5}}>
+          When a quarterly results PDF is filed for {symbol}, the server reads it and writes an AI summary here.
+        </div>
+      </div>
+    )
+  }
+  const latest = rows[Math.min(selectedIdx, rows.length - 1)]
+  const dateLabel = new Date(latest.announced_at).toLocaleDateString('en-IN',
+    {day:'numeric', month:'short', year:'numeric'})
+  return (
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',
+      boxShadow:'0 2px 12px rgba(0,0,0,0.25)'}}>
+      <div style={{height:4,background:`linear-gradient(90deg, ${C.green}, ${C.teal}, ${C.blue})`}}/>
+      <div style={{padding:'12px 14px'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,gap:8}}>
+          <div style={{fontSize:12,fontWeight:900,color:C.text,display:'flex',alignItems:'center',gap:6}}>
+            <span style={{fontSize:15}}>📄</span> AI Results Summary
+          </div>
+          <div style={{fontSize:10,color:C.muted,flexShrink:0,fontWeight:600}}>{dateLabel}</div>
+        </div>
+        <ReportHistoryPicker rows={rows} selectedIdx={selectedIdx}
+          onSelect={i=>{ setSelectedIdx(i); setExpanded(false) }}/>
+        <div style={{fontSize:12.5,lineHeight:1.55,color:C.text,
+          display:'-webkit-box',WebkitLineClamp:expanded?'unset':6,WebkitBoxOrient:'vertical',overflow:'hidden'}}>
+          {latest.summary}
+        </div>
+        <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
+          <span onClick={()=>setExpanded(e=>!e)} style={{fontSize:10,fontWeight:700,color:C.accent,cursor:'pointer'}}>
+            {expanded?'Show less':'Show more'}
+          </span>
+          {latest.attachment_url&&(
+            <a href={latest.attachment_url} target="_blank" rel="noopener noreferrer"
+              style={{fontSize:10,fontWeight:700,color:C.accent}}>View original PDF ↗</a>
+          )}
+        </div>
+        <div style={{fontSize:9,color:C.muted,marginTop:8,fontStyle:'italic'}}>
+          AI-generated summary of the official results filing — may miss nuance. Not investment advice.
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ResultsHistoryTable({symbol}){
   const [hist, setHist] = useState(undefined) // undefined=loading, []=no data, array=loaded
   useEffect(() => {
