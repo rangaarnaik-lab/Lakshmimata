@@ -5902,7 +5902,6 @@ function PaywallScreen({reason,onLogout}){
 
 // ── Settings Panel ────────────────────────────────────────────────────
 function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchTheme,ambient,userSubscription}){
-  const ownerMode=!!OWNER_TOKEN
 
   // Demo mode: session is deliberately null (see the demoMode feature —
   // it's real sample data, not a fake account), and this whole panel is
