@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap, ArrowUpRight,
-  TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal, Layers
+  TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal, Layers,
+  ThumbsUp, ThumbsDown
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -2724,21 +2725,42 @@ function AboutCompanyPanel({symbol, stocks}){
         </div>
 
         {about.overall_brief&&(
-          <div style={{fontSize:12.5,lineHeight:1.55,color:C.text,marginBottom:12,
-            borderLeft:`3px solid ${C.accent}`,paddingLeft:10}}>
-            {about.overall_brief}
+          <div style={{marginBottom:12}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:4}}>
+              <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+                letterSpacing:'0.04em'}}>Overview</div>
+              <SectionFeedback symbol={symbol} contentType="about" sectionKey="overall_brief"
+                sectionLabel="Overview"/>
+            </div>
+            <div style={{fontSize:12.5,lineHeight:1.55,color:C.text,
+              borderLeft:`3px solid ${C.accent}`,paddingLeft:10}}>
+              {about.overall_brief}
+            </div>
           </div>
         )}
         {about.what_they_do&&(
           <div style={{marginBottom:12}}>
-            <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
-              letterSpacing:'0.04em',marginBottom:4}}>What they do</div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:4}}>
+              <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+                letterSpacing:'0.04em'}}>What they do</div>
+              <SectionFeedback symbol={symbol} contentType="about" sectionKey="what_they_do"
+                sectionLabel="What they do"/>
+            </div>
             <div style={{fontSize:12.5,lineHeight:1.5,color:C.text}}>{about.what_they_do}</div>
           </div>
         )}
-        {customers.length>0&&<BulletSection icon="👥" label="Customers & markets" color={C.blue} bullets={customers}/>}
-        {segments.length>0&&<BulletSection icon="🧩" label="Business segments" color={C.teal} bullets={segments}/>}
-        {innovation.length>0&&<BulletSection icon="🚀" label="Innovation & strategy" color={C.lime} bullets={innovation}/>}
+        {customers.length>0&&(
+          <BulletSection icon="👥" label="Customers & markets" color={C.blue} bullets={customers}
+            feedback={{symbol, contentType:'about', sectionKey:'customers'}}/>
+        )}
+        {segments.length>0&&(
+          <BulletSection icon="🧩" label="Business segments" color={C.teal} bullets={segments}
+            feedback={{symbol, contentType:'about', sectionKey:'segments'}}/>
+        )}
+        {innovation.length>0&&(
+          <BulletSection icon="🚀" label="Innovation & strategy" color={C.lime} bullets={innovation}
+            feedback={{symbol, contentType:'about', sectionKey:'innovation'}}/>
+        )}
         {Array.isArray(about.sources)&&about.sources.some(s=>s?.url)&&(
           <div style={{marginTop:12,paddingTop:10,borderTop:`1px solid ${C.border}`}}>
             <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
@@ -3573,7 +3595,123 @@ function StockThemesAfterMcap({symbol}){
   )
 }
 
-function BulletSection({icon, label, color, bullets}){
+function _feedbackStorageKey(contentType, symbol, sectionKey){
+  return `lm_fb_${contentType||''}_${(symbol||'').toUpperCase()}_${sectionKey||''}`
+}
+
+/** Compact thumbs up/down for one AI section. Downvote opens an issue form. */
+function SectionFeedback({symbol, contentType, sectionKey, sectionLabel}){
+  const storageKey = _feedbackStorageKey(contentType, symbol, sectionKey)
+  const [vote, setVote] = useState(()=>{
+    try{ return localStorage.getItem(storageKey) || null }catch{ return null }
+  })
+  const [showIssue, setShowIssue] = useState(false)
+  const [comment, setComment] = useState('')
+  const [sending, setSending] = useState(false)
+  const [err, setErr] = useState('')
+  const [thanks, setThanks] = useState(false)
+
+  useEffect(()=>{
+    try{ setVote(localStorage.getItem(storageKey) || null) }catch{ setVote(null) }
+    setShowIssue(false); setComment(''); setErr(''); setThanks(false)
+  },[storageKey])
+
+  if(!symbol || !contentType || !sectionKey) return null
+
+  async function send(v, note){
+    setSending(true); setErr('')
+    const res = await submitContentFeedback({
+      symbol, contentType, sectionKey, sectionLabel, vote:v, comment:note,
+    })
+    setSending(false)
+    if(res.error){ setErr(res.error); return }
+    setVote(v)
+    try{ localStorage.setItem(storageKey, v) }catch{/* ignore */}
+    setShowIssue(false)
+    setComment('')
+    setThanks(true)
+  }
+
+  const btn = (active, onClick, Icon, title, activeColor)=>(
+    <button type="button" title={title} disabled={sending||!!vote}
+      onClick={onClick}
+      style={{
+        display:'inline-flex',alignItems:'center',justifyContent:'center',
+        width:26,height:26,borderRadius:7,cursor:vote?'default':'pointer',
+        border:`1px solid ${active?activeColor:C.border}`,
+        background:active?activeColor+'22':'transparent',
+        color:active?activeColor:C.muted,padding:0,opacity:sending?0.6:1,
+      }}>
+      <Icon size={13} strokeWidth={2.4}/>
+    </button>
+  )
+
+  return (
+    <>
+      <div style={{display:'inline-flex',alignItems:'center',gap:4,flexShrink:0}}
+        onClick={e=>e.stopPropagation()}>
+        {thanks&&!showIssue?(
+          <span style={{fontSize:9,fontWeight:700,color:C.green}}>Thanks</span>
+        ):null}
+        {btn(vote==='up', ()=>send('up'), ThumbsUp, 'Helpful', C.green)}
+        {btn(vote==='down', ()=>{
+          if(vote) return
+          setShowIssue(true); setErr(''); setThanks(false)
+        }, ThumbsDown, 'Report issue', C.red||'#ef4444')}
+      </div>
+      {showIssue&&(
+        <div onClick={()=>{ if(!sending) setShowIssue(false) }}
+          style={{position:'fixed',inset:0,zIndex:2100,background:'rgba(0,0,0,0.6)',
+            display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,
+              padding:'20px 22px',width:'100%',maxWidth:400,
+              boxShadow:'0 20px 50px rgba(0,0,0,0.5)'}}>
+            <div style={{fontWeight:800,fontSize:15,color:C.text,marginBottom:4}}>
+              What is wrong?
+            </div>
+            <div style={{fontSize:11.5,color:C.muted,marginBottom:12,lineHeight:1.45}}>
+              {symbol} · {sectionLabel||sectionKey}. Tell us what to fix (wrong facts, outdated, unclear…).
+            </div>
+            <textarea
+              value={comment}
+              onChange={e=>setComment(e.target.value)}
+              rows={4}
+              placeholder="Describe the issue…"
+              autoFocus
+              style={{
+                width:'100%',boxSizing:'border-box',resize:'vertical',
+                background:C.bg||C.card,color:C.text,border:`1px solid ${C.border}`,
+                borderRadius:9,padding:'10px 12px',fontSize:13,lineHeight:1.45,
+                outline:'none',marginBottom:8,fontFamily:'inherit',
+              }}
+            />
+            {err&&(
+              <div style={{fontSize:11,color:C.red||'#ef4444',marginBottom:8}}>{err}</div>
+            )}
+            <div style={{display:'flex',gap:8}}>
+              <button type="button" disabled={sending}
+                onClick={()=>send('down', comment)}
+                style={{flex:1,padding:'10px 0',borderRadius:9,border:'none',cursor:'pointer',
+                  background:C.accent,color:'#000',fontWeight:700,fontSize:13,
+                  opacity:sending?0.7:1}}>
+                {sending?'Sending…':'Submit issue'}
+              </button>
+              <button type="button" disabled={sending}
+                onClick={()=>setShowIssue(false)}
+                style={{padding:'10px 14px',borderRadius:9,border:`1px solid ${C.border}`,
+                  cursor:'pointer',background:'transparent',color:C.muted,fontWeight:600,fontSize:12}}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+function BulletSection({icon, label, color, bullets, feedback}){
   const bulletList = normalizeBullets(bullets)
   if (bulletList.length === 0) return null
   return (
@@ -3589,7 +3727,16 @@ function BulletSection({icon, label, color, bullets}){
           display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,
           boxShadow:`0 1px 4px ${color}66`,
         }}>{icon}</div>
-        <span style={{fontSize:10.5,fontWeight:800,color,textTransform:'uppercase',letterSpacing:'0.04em'}}>{label}</span>
+        <span style={{fontSize:10.5,fontWeight:800,color,textTransform:'uppercase',
+          letterSpacing:'0.04em',flex:1,minWidth:0}}>{label}</span>
+        {feedback&&(
+          <SectionFeedback
+            symbol={feedback.symbol}
+            contentType={feedback.contentType}
+            sectionKey={feedback.sectionKey}
+            sectionLabel={label}
+          />
+        )}
       </div>
       <div style={{display:'flex',flexDirection:'column',gap:4}}>
         {bulletList.map((b,i)=>(
@@ -3702,18 +3849,28 @@ function TranscriptSummary({symbol}){
           sourceLabel="Highlighted from this concall"
         />
         {latest.overall_summary && (
-          <div style={{
-            borderLeft:`3px solid ${C.accent}`,paddingLeft:10,marginBottom:12,
-            fontSize:12.5,lineHeight:1.6,color:C.text,
-          }}>{latest.overall_summary}</div>
+          <div style={{marginBottom:12}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:4}}>
+              <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+                letterSpacing:'0.04em'}}>Summary</div>
+              <SectionFeedback symbol={symbol} contentType="concall" sectionKey="overall_summary"
+                sectionLabel="Summary"/>
+            </div>
+            <div style={{
+              borderLeft:`3px solid ${C.accent}`,paddingLeft:10,
+              fontSize:12.5,lineHeight:1.6,color:C.text,
+            }}>{latest.overall_summary}</div>
+          </div>
         )}
         <div style={{display:'flex',flexDirection:'column',gap:7}}>
           {sections.map(s=>(
             <React.Fragment key={s.key}>
-              <BulletSection icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
+              <BulletSection icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}
+                feedback={{symbol, contentType:'concall', sectionKey:s.key}}/>
               {/* Watch Next sits right after Outlook — action list near forward view */}
               {s.key==='outlook_guidance' && (
-                <BulletSection icon="👁️" label="Watch Next" color={C.accent} bullets={latest.watch_next}/>
+                <BulletSection icon="👁️" label="Watch Next" color={C.accent} bullets={latest.watch_next}
+                  feedback={{symbol, contentType:'concall', sectionKey:'watch_next'}}/>
               )}
             </React.Fragment>
           ))}
@@ -3793,18 +3950,28 @@ function PptSummary({symbol}){
           sourceLabel="Highlighted from this PPT"
         />
         {latest.overall_summary && (
-          <div style={{
-            borderLeft:`3px solid ${C.accent}`,paddingLeft:10,marginBottom:12,
-            fontSize:12.5,lineHeight:1.6,color:C.text,fontStyle:'italic',
-          }}>{latest.overall_summary}</div>
+          <div style={{marginBottom:12}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:4}}>
+              <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+                letterSpacing:'0.04em'}}>Summary</div>
+              <SectionFeedback symbol={symbol} contentType="ppt" sectionKey="overall_summary"
+                sectionLabel="Summary"/>
+            </div>
+            <div style={{
+              borderLeft:`3px solid ${C.accent}`,paddingLeft:10,
+              fontSize:12.5,lineHeight:1.6,color:C.text,fontStyle:'italic',
+            }}>{latest.overall_summary}</div>
+          </div>
         )}
         <div style={{display:'flex',flexDirection:'column',gap:7}}>
           {PPT_SECTIONS.map(s=>(
             <React.Fragment key={s.key}>
-              <BulletSection icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
+              <BulletSection icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}
+                feedback={{symbol, contentType:'ppt', sectionKey:s.key}}/>
               {/* Watch Next right after numbers — what to track from the deck */}
               {s.key==='financial_highlights' && (
-                <BulletSection icon="👁️" label="Watch Next" color={C.accent} bullets={latest.watch_next}/>
+                <BulletSection icon="👁️" label="Watch Next" color={C.accent} bullets={latest.watch_next}
+                  feedback={{symbol, contentType:'ppt', sectionKey:'watch_next'}}/>
               )}
             </React.Fragment>
           ))}

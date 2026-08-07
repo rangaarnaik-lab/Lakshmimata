@@ -1068,6 +1068,49 @@ function getVisitorId() {
   }
 }
 
+/** Thumbs up/down on an AI content section (About / Concall / PPT). */
+export async function submitContentFeedback({
+  symbol,
+  contentType,
+  sectionKey,
+  sectionLabel,
+  vote,
+  comment,
+} = {}) {
+  const sym = (symbol || '').trim().toUpperCase()
+  const ctype = (contentType || '').trim().toLowerCase().slice(0, 40)
+  const skey = (sectionKey || '').trim().slice(0, 60)
+  const v = vote === 'down' ? 'down' : vote === 'up' ? 'up' : null
+  const note = (comment || '').trim()
+  if (!sym || !ctype || !skey || !v) {
+    return { error: 'Missing feedback fields.' }
+  }
+  if (v === 'down' && (note.length < 5 || note.length > 1000)) {
+    return { error: 'Please describe the issue (5–1000 characters).' }
+  }
+  const { data: { user } } = await supabase.auth.getUser()
+  const payload = {
+    symbol: sym,
+    content_type: ctype,
+    section_key: skey,
+    section_label: (sectionLabel || '').trim().slice(0, 120) || null,
+    vote: v,
+    comment: v === 'down' ? note : (note || null),
+    visitor_id: getVisitorId(),
+    user_id: user?.id || null,
+  }
+  const { data, error } = await supabase
+    .from('content_feedback')
+    .insert(payload)
+    .select('id,created_at')
+    .single()
+  if (error) {
+    console.error('submitContentFeedback error:', error.message)
+    return { error: error.message || 'Could not save feedback' }
+  }
+  return { feedback: data }
+}
+
 export async function submitStockAiAsk(symbol, question, askMode = 'filings') {
   // Queue a free-form diligence question; fundamentals worker answers via Gemini.
   // askMode: 'filings' (PPT/concall on file only) | 'web' (Google Search + filings)
