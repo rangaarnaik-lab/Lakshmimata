@@ -2122,8 +2122,8 @@ function AboutCompanyPanel({symbol, stocks}){
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 16px'}}>
         <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:6}}>About Company</div>
         <div style={{fontSize:12,color:C.muted,lineHeight:1.55}}>
-          AI brief appears after a PPT or Concall summary is on file for {symbol||'this stock'}.
-          The server then writes what they do, customers, segments, and innovation — usually within a few minutes of a new filing.
+          AI researches the web (company site, Screener, filings, news) plus any PPT/Concall
+          already on file for {symbol||'this stock'}. Briefs fill in over the next worker cycles.
         </div>
         {s?.industry||s?.sector?(
           <div style={{marginTop:10,fontSize:11,color:C.text}}>
@@ -2149,13 +2149,13 @@ function AboutCompanyPanel({symbol, stocks}){
           <div>
             <div style={{fontSize:13,fontWeight:900,color:C.text}}>About {symbol}</div>
             <div style={{fontSize:10,color:C.muted,marginTop:2}}>
-              AI brief from PPT / Concall filings · not investment advice
+              AI web research + filings · not investment advice
             </div>
           </div>
           {srcDate&&(
             <span style={{fontSize:9,fontWeight:700,color:C.accent,background:C.accent+'18',
               border:`1px solid ${C.accent}44`,borderRadius:999,padding:'3px 8px',flexShrink:0}}>
-              Filing {srcDate}
+              Updated {srcDate}
             </span>
           )}
         </div>
@@ -2176,6 +2176,21 @@ function AboutCompanyPanel({symbol, stocks}){
         {customers.length>0&&<BulletSection icon="👥" label="Customers & markets" color={C.blue} bullets={customers}/>}
         {segments.length>0&&<BulletSection icon="🧩" label="Business segments" color={C.teal} bullets={segments}/>}
         {innovation.length>0&&<BulletSection icon="🚀" label="Innovation & strategy" color={C.lime} bullets={innovation}/>}
+        {Array.isArray(about.sources)&&about.sources.some(s=>s?.url)&&(
+          <div style={{marginTop:12,paddingTop:10,borderTop:`1px solid ${C.border}`}}>
+            <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+              letterSpacing:'0.04em',marginBottom:6}}>Sources</div>
+            <div style={{display:'flex',flexDirection:'column',gap:4}}>
+              {about.sources.filter(s=>s?.url).slice(0,6).map((s,i)=>(
+                <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
+                  style={{fontSize:11,color:C.accent,textDecoration:'none',
+                    overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                  {s.title||s.url}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
