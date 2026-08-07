@@ -1006,12 +1006,14 @@ export async function fetchStockFundamentals(symbol) {
       + 'eps_qoq,eps_yoy,sales_qoq,sales_yoy,opm_pct,opm_trend,eps_growth_streak,'
       + 'fii_pct,fii_trend,dii_pct,dii_trend,promoter_trend,'
       + 'fundamental_score,fundamental_label,industry,sector,'
-      + 'ai_highlights,ai_key_metrics,ai_highlights_at,fetched_at')
+      + 'ai_highlights,ai_key_metrics,ai_highlights_at,fetched_at,'
+      + 'emerging_themes,theme_evidence,theme_intensity,themes_source,'
+      + 'themes_at,themes_announced_at')
     .eq('sym', symbol)
     .maybeSingle()
   if (error) {
-    // Older DBs may lack ai_* columns — retry without them
-    if (/ai_highlights|ai_key_metrics|ai_highlights_at/i.test(error.message || '')) {
+    // Older DBs may lack ai_* / theme columns — retry without them
+    if (/ai_highlights|ai_key_metrics|ai_highlights_at|emerging_themes|theme_/i.test(error.message || '')) {
       const { data: d2, error: e2 } = await supabase
         .from('stock_fundamentals')
         .select('sym,market_cap,pe,pb,roe,roce,eps,debt_eq,promoter,peg_ratio,industry_pe,'
@@ -1028,6 +1030,28 @@ export async function fetchStockFundamentals(symbol) {
     return null
   }
   return data || null
+}
+
+export async function fetchStockThemes(symbol) {
+  // Emerging themes for the Market Cap card — prefers rows already
+  // synced onto stock_fundamentals (PPT / concall / AI web).
+  if (!symbol) return null
+  const row = await fetchStockFundamentals(symbol)
+  if (!row) return null
+  const themes = row.emerging_themes
+  const evidence = row.theme_evidence
+  const hasThemes = Array.isArray(themes) ? themes.length > 0
+    : (typeof themes === 'string' && themes.trim().length > 0)
+  const hasEvidence = Array.isArray(evidence) ? evidence.length > 0
+    : (typeof evidence === 'string' && evidence.trim().length > 0)
+  if (!hasThemes && !hasEvidence) return null
+  return {
+    themes: row.emerging_themes,
+    intensity: row.theme_intensity,
+    evidence: row.theme_evidence,
+    source: row.themes_source || 'ai_web',
+    at: row.themes_announced_at || row.themes_at,
+  }
 }
 
 export async function fetchTranscriptSummaries(symbol) {
@@ -1072,22 +1096,32 @@ export const EMERGING_THEME_LABELS = {
 
 export async function fetchEmergingThemeRadar(days = 30) {
   // Aggregates emerging_themes from recent transcript + PPT summaries
-  // into { themeId: [{symbol, source, announced_at, intensity, evidence}] }.
+  // and from stock_fundamentals AI/synced themes into
+  // { themeId: [{symbol, source, announced_at, intensity, evidence}] }.
   const since = new Date(Date.now() - days * 86400000).toISOString()
   const select = 'symbol,announced_at,emerging_themes,theme_evidence,theme_intensity,attachment_url'
-  const [tx, ppt] = await Promise.all([
+  const [tx, ppt, fund] = await Promise.all([
     supabase.from('transcript_summaries').select(select)
       .eq('status', 'done').not('emerging_themes', 'is', null)
       .gte('announced_at', since).order('announced_at', { ascending: false }).limit(500),
     supabase.from('ppt_summaries').select(select)
       .eq('status', 'done').not('emerging_themes', 'is', null)
       .gte('announced_at', since).order('announced_at', { ascending: false }).limit(500),
+    supabase.from('stock_fundamentals')
+      .select('sym,emerging_themes,theme_evidence,theme_intensity,themes_source,themes_at,themes_announced_at')
+      .not('emerging_themes', 'is', null)
+      .order('themes_at', { ascending: false }).limit(800),
   ])
   if (tx.error) console.error('fetchEmergingThemeRadar transcript:', tx.error.message)
   if (ppt.error) console.error('fetchEmergingThemeRadar ppt:', ppt.error.message)
+  if (fund.error && !/emerging_themes|themes_at/i.test(fund.error.message || '')) {
+    console.error('fetchEmergingThemeRadar fund:', fund.error.message)
+  }
 
   const byTheme = {}
-  const pushRow = (row, source) => {
+  const pushRow = (row, source, symbolKey = 'symbol') => {
+    const symbol = row[symbolKey] || row.symbol || row.sym
+    if (!symbol) return
     let themes = row.emerging_themes
     if (typeof themes === 'string') {
       try { themes = JSON.parse(themes) } catch { themes = [] }
@@ -1097,22 +1131,25 @@ export async function fetchEmergingThemeRadar(days = 30) {
     if (typeof evidence === 'string') {
       try { evidence = JSON.parse(evidence) } catch { evidence = evidence ? [evidence] : [] }
     }
+    const announced = row.announced_at || row.themes_announced_at || row.themes_at
     for (const theme of themes) {
       if (!byTheme[theme]) byTheme[theme] = []
-      // One row per symbol per theme (keep newest)
-      if (byTheme[theme].some(x => x.symbol === row.symbol)) continue
+      // One row per symbol per theme (keep newest / filing-first)
+      if (byTheme[theme].some(x => x.symbol === symbol)) continue
       byTheme[theme].push({
-        symbol: row.symbol,
+        symbol,
         source,
-        announced_at: row.announced_at,
+        announced_at: announced,
         intensity: row.theme_intensity || 'medium',
         evidence: Array.isArray(evidence) ? evidence.slice(0, 2) : [],
         attachment_url: row.attachment_url,
       })
     }
   }
+  // Filings first so radar prefers PPT/concall over AI web when both exist
   ;(tx.data || []).forEach(r => pushRow(r, 'concall'))
   ;(ppt.data || []).forEach(r => pushRow(r, 'ppt'))
+  ;(fund.data || []).forEach(r => pushRow(r, r.themes_source || 'ai_web', 'sym'))
   return byTheme
 }
 

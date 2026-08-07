@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -3072,31 +3072,54 @@ function ThemeHighlightSection({themes, intensity, evidence, sourceLabel, compac
 }
 
 // Sits under Market Cap (above Results/Concall/PPT tabs). Prefers the
-// latest PPT themes; falls back to concall so the strip still shows.
+// latest PPT themes; then concall; then AI-synced stock_fundamentals so
+// every stock can show the same Emerging Themes card over time.
 function StockThemesAfterMcap({symbol}){
   const [info, setInfo] = useState(undefined) // undefined=loading, null=none, object=loaded
   useEffect(()=>{
     let cancelled=false
     setInfo(undefined)
     if(!symbol){ setInfo(null); return }
-    Promise.all([fetchPptSummaries(symbol), fetchTranscriptSummaries(symbol)]).then(([ppt, tx])=>{
+    Promise.all([
+      fetchPptSummaries(symbol),
+      fetchTranscriptSummaries(symbol),
+      fetchStockThemes(symbol),
+    ]).then(([ppt, tx, fundThemes])=>{
       if(cancelled) return
       const pptHit = (ppt||[]).find(r=>normalizeBullets(r.emerging_themes).length>0
         || normalizeBullets(r.theme_evidence).length>0)
       const txHit = (tx||[]).find(r=>normalizeBullets(r.emerging_themes).length>0
         || normalizeBullets(r.theme_evidence).length>0)
-      const hit = pptHit || txHit
-      if(!hit){ setInfo(null); return }
-      const dateLabel = new Date(hit.announced_at).toLocaleDateString('en-IN',
-        {day:'numeric', month:'short', year:'numeric'})
-      setInfo({
-        themes: hit.emerging_themes,
-        intensity: hit.theme_intensity,
-        evidence: hit.theme_evidence,
-        sourceLabel: pptHit
-          ? `From PPT · ${dateLabel}`
-          : `From Concall · ${dateLabel}`,
-      })
+      if(pptHit || txHit){
+        const hit = pptHit || txHit
+        const dateLabel = new Date(hit.announced_at).toLocaleDateString('en-IN',
+          {day:'numeric', month:'short', year:'numeric'})
+        setInfo({
+          themes: hit.emerging_themes,
+          intensity: hit.theme_intensity,
+          evidence: hit.theme_evidence,
+          sourceLabel: pptHit
+            ? `From PPT · ${dateLabel}`
+            : `From Concall · ${dateLabel}`,
+        })
+        return
+      }
+      if(fundThemes){
+        const srcMap = {ppt:'From PPT', concall:'From Concall', ai_web:'From AI research'}
+        const src = srcMap[fundThemes.source] || 'From AI research'
+        const dateLabel = fundThemes.at
+          ? new Date(fundThemes.at).toLocaleDateString('en-IN',
+            {day:'numeric', month:'short', year:'numeric'})
+          : null
+        setInfo({
+          themes: fundThemes.themes,
+          intensity: fundThemes.intensity,
+          evidence: fundThemes.evidence,
+          sourceLabel: dateLabel ? `${src} · ${dateLabel}` : src,
+        })
+        return
+      }
+      setInfo(null)
     })
     return()=>{cancelled=true}
   },[symbol])
