@@ -3780,7 +3780,181 @@ const HELP_CONTENT = [
     fundamentals, stage, signals — to decide between similar candidates.`},
   {id:'watchlist', title:'Watchlist', body:`Your saved stock lists. Set one as active from the header dropdown on 
     any scanner tab to filter that tab down to just your watchlist.`},
+  {id:'announcements', title:'Announcements', body:`Corporate filings feed — results, concalls, PPTs and other NSE 
+    announcements. Open a stock to see Results numbers, Concall Report, and PPT summary tabs under the chart. Green 
+    badges on Concall/PPT mean reports are on file; use History chips to read older filings.`},
+  {id:'themes', title:'Emerging Themes', body:`Radar of themes the AI tagged from recent PPT/concall text (data 
+    center, defence, AI, etc.). Pick a theme to see which stocks mentioned it — useful for thematic scans, not a 
+    buy signal by itself.`},
+  {id:'bestpicks', title:'AI Picks', body:`Curated best-picks list from the server scan. Treat as a shortlist to 
+    research further with RS, Results rating, and Concall/PPT — not automated advice.`},
+  {id:'settings', title:'Account / Settings', body:`Theme, account, and app preferences. Help (?) in the header 
+    opens this guide for every page.`},
+  {id:'chart', title:'Stock chart & Results', body:`Open any stock to see Our Chart (candles, MAs, S/R, patterns) 
+    plus Results / Concall / PPT under it. Result quality (Excellent/Good/Neutral/Weak) uses Sales & PAT YoY, gated 
+    so headline profit declines can't look Excellent. Peer pills under Results are clickable to open that peer.`},
 ]
+
+// Free in-app guide agent — answers from predefined help text + local
+// stock fields already loaded in the UI. No Gemini / no API cost.
+const GUIDE_SUGGESTIONS = {
+  _default: [
+    'How do I use this page?',
+    'What is RS rating?',
+    'How do I open a stock chart?',
+    'Where are Concall and PPT?',
+  ],
+  rs: ['How do I use RS Rating?', 'What do the signal chips mean?', 'How do I filter by sector?'],
+  market: ['How do I read Market verdict?', 'What is Smart Money?'],
+  rotation: ['How do I read the rotation chart?', 'What is Leading vs Improving?'],
+  announcements: ['Where are Results / Concall / PPT?', 'What does the green badge mean?'],
+  themes: ['What are Emerging Themes?'],
+  chart: [
+    'How do I read Results rating?',
+    'What is Concall Report?',
+    'What is PPT summary?',
+    'Can I open peer stocks from ranking?',
+  ],
+}
+
+const GUIDE_QA = [
+  {keys:['rs rating','relative strength','what is rs','how do i use rs'],
+    answer:'RS (Relative Strength) ranks a stock 1–99 vs the whole market. Higher = stronger tape vs peers. Use the RS Rating tab, tap a row for the chart, and combine with Results/Concall — RS alone is not a buy call.'},
+  {keys:['this page','how do i use','how to use','what is this tab','explain this page'],
+    answer:null}, // filled from HELP_CONTENT for current page
+  {keys:['open chart','stock chart','tap a row','click a stock'],
+    answer:'Tap any symbol row (or the ticker at the top) to open the chart panel. Use ◀ ▶ to flip stocks. Results, Concall Report, and PPT sit under the chart.'},
+  {keys:['concall','transcript','earnings call'],
+    answer:'Open a stock → Concall Report tab. Green badge on the tab means a report exists. If several filings exist, use History date chips to read older calls. Tone + Watch Next appear when extracted.'},
+  {keys:['ppt','presentation','slide'],
+    answer:'Open a stock → PPT tab. Same History chips as Concall when multiple decks exist. Shows slide story, financial highlights, strategy, risks, and Watch Next when available.'},
+  {keys:['excellent','result rating','weak result','good result','neutral result'],
+    answer:'Result quality (Excellent/Good/Neutral/Weak) comes from Sales & PAT vs the same quarter last year, with QoQ and OPM checks. Headline PAT declines are capped — sales up + profit down will not stay Excellent.'},
+  {keys:['peer','ranking','jewellery','industry'],
+    answer:'Under Results, peers are ranked in the same industry when available. Click another peer pill to open that stock’s chart.'},
+  {keys:['theme','emerging'],
+    answer:'Emerging Themes tab lists themes tagged from PPT/concall text. Open a theme to see stocks that mentioned it — for scanning ideas, not as a standalone signal.'},
+  {keys:['watchlist'],
+    answer:'Watchlist tab saves lists. In the header dropdown on scanner pages, pick a watchlist (wl:…) to filter that page to your list only.'},
+  {keys:['cost','ai agent','gemini','chatgpt'],
+    answer:'This Ask Guide is free and offline to your browser — it uses built-in help text and data already on screen. It does not call paid AI. Live Gemini is only used on the server to build Concall/PPT summaries in the background.'},
+  {keys:['buy','sell','advice','should i'],
+    answer:'PocketRS Pro is a scanner and research aid, not investment advice. Use RS, Results, Concall/PPT, and your own judgment — nothing here is a buy/sell recommendation.'},
+]
+
+function answerGuideQuestion(raw, {mainTab, chartSym, stocks}){
+  const q = (raw||'').trim().toLowerCase()
+  if(!q) return {title:'Ask anything', body:'Try a suggested question, or type how to use a page / what a badge means.'}
+  const pageId = chartSym ? 'chart' : mainTab
+  const pageHelp = HELP_CONTENT.find(h=>h.id===pageId) || HELP_CONTENT.find(h=>h.id===mainTab)
+
+  // Explicit "this page" → current help article
+  if(/this page|this tab|how do i use|how to use|explain/.test(q) && pageHelp){
+    return {title: pageHelp.title, body: pageHelp.body.replace(/\s+/g,' ').trim()}
+  }
+
+  let best = null, bestScore = 0
+  for(const item of GUIDE_QA){
+    let score = 0
+    for(const k of item.keys){
+      if(q.includes(k)) score += k.length
+    }
+    if(score > bestScore){ bestScore = score; best = item }
+  }
+  if(best && bestScore > 0){
+    if(best.answer) return {title:'Guide', body:best.answer}
+    if(pageHelp) return {title:pageHelp.title, body:pageHelp.body.replace(/\s+/g,' ').trim()}
+  }
+
+  // Match a HELP_CONTENT title
+  for(const h of HELP_CONTENT){
+    const t = h.title.toLowerCase()
+    if(q.includes(t) || t.split(/\s+/).every(w=>w.length<3||q.includes(w))){
+      if(q.includes(t.split(' ')[0])) return {title:h.title, body:h.body.replace(/\s+/g,' ').trim()}
+    }
+  }
+
+  // Stock-local context (free — already in memory)
+  if(chartSym){
+    const s = stocks?.find(x=>x.sym===chartSym)
+    if(s && (/this stock|about |what about|tell me|overview|summary/.test(q) || q.includes(chartSym.toLowerCase()))){
+      const bits = [
+        `${chartSym}${s.sector?` · ${s.sector}`:''}${s.industry?` · ${s.industry}`:''}.`,
+        s.rs!=null?`RS about ${s.rs}.`:'',
+        s.chg_pct!=null?`Day change ${s.chg_pct>=0?'+':''}${Number(s.chg_pct).toFixed(2)}%.`:'',
+        'Open Results for quality rating, Concall/PPT for filings (green tab badge = report on file).',
+      ].filter(Boolean)
+      return {title: chartSym, body: bits.join(' ')}
+    }
+  }
+
+  if(pageHelp){
+    return {
+      title: 'Closest match — '+pageHelp.title,
+      body: pageHelp.body.replace(/\s+/g,' ').trim()
+        +'\n\nTip: try “How do I use this page?”, “What is Concall?”, or “What is RS rating?”',
+    }
+  }
+  return {title:'Not sure', body:'Try: How do I use this page? · What is RS rating? · Where are Concall and PPT? · What does Excellent Result mean?'}
+}
+
+function GuideAskPanel({mainTab, chartSym, stocks}){
+  const [query, setQuery] = useState('')
+  const [answer, setAnswer] = useState(null)
+  const pageKey = chartSym ? 'chart' : mainTab
+  const suggestions = [
+    ...(GUIDE_SUGGESTIONS[pageKey]||[]),
+    ...GUIDE_SUGGESTIONS._default.filter(s=>(GUIDE_SUGGESTIONS[pageKey]||[]).indexOf(s)<0),
+  ].slice(0, 6)
+
+  const ask = (text) => {
+    const a = answerGuideQuestion(text, {mainTab, chartSym, stocks})
+    setQuery(text)
+    setAnswer(a)
+  }
+
+  return (
+    <div style={{padding:'10px 8px 14px',borderBottom:`1px solid ${C.divider}`}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:8}}>
+        <div style={{fontSize:12,fontWeight:800,color:C.text}}>Ask Guide</div>
+        <span style={{fontSize:9,fontWeight:700,color:C.green,background:C.green+'18',
+          border:`1px solid ${C.green}44`,borderRadius:999,padding:'2px 8px'}}>
+          Free · no AI cost
+        </span>
+      </div>
+      {chartSym && (
+        <div style={{fontSize:10,color:C.muted,marginBottom:6}}>
+          Context: open stock <span style={{color:C.accent,fontWeight:700}}>{chartSym}</span>
+        </div>
+      )}
+      <div style={{display:'flex',gap:6,marginBottom:8}}>
+        <input value={query} onChange={e=>setQuery(e.target.value)}
+          onKeyDown={e=>{ if(e.key==='Enter') ask(query) }}
+          placeholder="Ask how to use a page, or about this stock…"
+          style={{flex:1,padding:'8px 10px',borderRadius:8,border:`1px solid ${C.border}`,
+            background:C.bg,color:C.text,fontSize:12,outline:'none'}}/>
+        <button type="button" onClick={()=>ask(query)}
+          style={{padding:'8px 12px',borderRadius:8,border:'none',background:C.accent,
+            color:'#000',fontWeight:800,fontSize:11,cursor:'pointer'}}>Ask</button>
+      </div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:5,marginBottom:answer?10:0}}>
+        {suggestions.map(s=>(
+          <button key={s} type="button" onClick={()=>ask(s)}
+            style={{fontSize:10,fontWeight:600,padding:'4px 9px',borderRadius:999,cursor:'pointer',
+              border:`1px solid ${C.border}`,background:C.card,color:C.muted}}>
+            {s}
+          </button>
+        ))}
+      </div>
+      {answer && (
+        <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px'}}>
+          <div style={{fontSize:11,fontWeight:800,color:C.accent,marginBottom:4}}>{answer.title}</div>
+          <div style={{fontSize:11.5,color:C.text,lineHeight:1.65,whiteSpace:'pre-line'}}>{answer.body}</div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function generateRotationInsights(rolledData,scopeLabel){
   const plural=scopeLabel.toLowerCase()+'s'
@@ -10123,6 +10297,7 @@ export default function App(){
                 style={{background:'transparent',border:'none',color:C.muted,fontSize:18,cursor:'pointer',padding:4}}>✕</button>
             </div>
             <div style={{overflowY:'auto',padding:'8px 10px'}}>
+              <GuideAskPanel mainTab={mainTab} chartSym={chartSym} stocks={stocks}/>
               {HELP_CONTENT.map(({id,title,body})=>{
                 const isOpen = helpCenterSection ? helpCenterSection===id : mainTab===id
                 return(
