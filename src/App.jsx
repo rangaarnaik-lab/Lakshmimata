@@ -2333,6 +2333,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
               </div>
             )
           })()}
+          <StockThemesAfterMcap symbol={sym}/>
           <StockDetailTabs sym={sym} stocks={stocks} onSelectSymbol={onNavigate}/>
         </div>
       )}
@@ -2698,6 +2699,119 @@ function ThemeChips({themes, intensity}){
   )
 }
 
+// Dedicated theme block for PPT / under Market Cap — chips alone were too
+// easy to miss; this is a full section with evidence bullets.
+function ThemeHighlightSection({themes, intensity, evidence, sourceLabel, compact}){
+  const list = normalizeBullets(themes)
+  const evidenceList = normalizeBullets(evidence)
+  if (!list.length && !evidenceList.length) return null
+  const tone = intensity==='high'?C.green:intensity==='low'?C.muted:C.lime
+  return (
+    <div style={{
+      marginBottom: compact ? 10 : 12,
+      background:`linear-gradient(135deg, ${tone}22 0%, ${C.card} 55%)`,
+      border:`1px solid ${tone}55`,
+      borderRadius:10,padding:compact?'9px 11px':'11px 13px',
+      boxShadow:`0 2px 10px ${tone}18`,
+    }}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:7}}>
+          <div style={{
+            width:24,height:24,borderRadius:'50%',flexShrink:0,
+            background:`linear-gradient(135deg, ${tone}, ${tone}bb)`,
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,
+            boxShadow:`0 1px 4px ${tone}66`,
+          }}>🌱</div>
+          <div>
+            <div style={{fontSize:11,fontWeight:900,color:tone,textTransform:'uppercase',letterSpacing:'0.05em'}}>
+              Emerging Themes
+            </div>
+            {sourceLabel && (
+              <div style={{fontSize:9,color:C.muted,fontWeight:600,marginTop:1}}>{sourceLabel}</div>
+            )}
+          </div>
+        </div>
+        {intensity && intensity!=='none' && (
+          <span style={{
+            fontSize:9,fontWeight:800,color:tone,background:tone+'22',
+            border:`1px solid ${tone}55`,borderRadius:999,padding:'2px 8px',textTransform:'uppercase',
+          }}>
+            {intensity} intensity
+          </span>
+        )}
+      </div>
+      {list.length>0 && (
+        <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:evidenceList.length?8:0}}>
+          {list.map(t=>(
+            <span key={t} style={{
+              fontSize:11,fontWeight:800,color:C.text,background:tone+'28',
+              border:`1px solid ${tone}66`,borderRadius:999,padding:'4px 11px',
+            }}>
+              {EMERGING_THEME_LABELS[t]||t}
+            </span>
+          ))}
+        </div>
+      )}
+      {evidenceList.length>0 && (
+        <div style={{display:'flex',flexDirection:'column',gap:4}}>
+          <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',letterSpacing:'0.04em'}}>
+            Theme evidence
+          </div>
+          {evidenceList.map((b,i)=>(
+            <div key={i} style={{display:'flex',gap:6,alignItems:'flex-start'}}>
+              <span style={{color:tone,fontSize:10,marginTop:2,flexShrink:0,fontWeight:900}}>›</span>
+              <span style={{fontSize:12,lineHeight:1.45,color:C.text}}>
+                <HighlightedBullet text={String(b)} color={tone}/>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Sits under Market Cap (above Results/Concall/PPT tabs). Prefers the
+// latest PPT themes; falls back to concall so the strip still shows.
+function StockThemesAfterMcap({symbol}){
+  const [info, setInfo] = useState(undefined) // undefined=loading, null=none, object=loaded
+  useEffect(()=>{
+    let cancelled=false
+    setInfo(undefined)
+    if(!symbol){ setInfo(null); return }
+    Promise.all([fetchPptSummaries(symbol), fetchTranscriptSummaries(symbol)]).then(([ppt, tx])=>{
+      if(cancelled) return
+      const pptHit = (ppt||[]).find(r=>normalizeBullets(r.emerging_themes).length>0
+        || normalizeBullets(r.theme_evidence).length>0)
+      const txHit = (tx||[]).find(r=>normalizeBullets(r.emerging_themes).length>0
+        || normalizeBullets(r.theme_evidence).length>0)
+      const hit = pptHit || txHit
+      if(!hit){ setInfo(null); return }
+      const dateLabel = new Date(hit.announced_at).toLocaleDateString('en-IN',
+        {day:'numeric', month:'short', year:'numeric'})
+      setInfo({
+        themes: hit.emerging_themes,
+        intensity: hit.theme_intensity,
+        evidence: hit.theme_evidence,
+        sourceLabel: pptHit
+          ? `From PPT · ${dateLabel}`
+          : `From Concall · ${dateLabel}`,
+      })
+    })
+    return()=>{cancelled=true}
+  },[symbol])
+  if(!info) return null
+  return (
+    <ThemeHighlightSection
+      compact
+      themes={info.themes}
+      intensity={info.intensity}
+      evidence={info.evidence}
+      sourceLabel={info.sourceLabel}
+    />
+  )
+}
+
 function BulletSection({icon, label, color, bullets}){
   const bulletList = normalizeBullets(bullets)
   if (bulletList.length === 0) return null
@@ -2820,7 +2934,12 @@ function TranscriptSummary({symbol}){
         <ReportHistoryPicker rows={rows} selectedIdx={selectedIdx}
           onSelect={i=>{ setSelectedIdx(i); setShowFull(false) }}/>
         <StatusChips guidance={latest.guidance_direction} tone={latest.management_tone}/>
-        <ThemeChips themes={latest.emerging_themes} intensity={latest.theme_intensity}/>
+        <ThemeHighlightSection
+          themes={latest.emerging_themes}
+          intensity={latest.theme_intensity}
+          evidence={latest.theme_evidence}
+          sourceLabel="Highlighted from this concall"
+        />
         {latest.overall_summary && (
           <div style={{
             borderLeft:`3px solid ${C.accent}`,paddingLeft:10,marginBottom:12,
@@ -2837,7 +2956,6 @@ function TranscriptSummary({symbol}){
               )}
             </React.Fragment>
           ))}
-          <BulletSection icon="🌱" label="Theme Evidence" color={C.lime} bullets={latest.theme_evidence}/>
         </div>
         <div style={{display:'flex',gap:12,marginTop:10,flexWrap:'wrap',alignItems:'center'}}>
           {(hasMoreSections || showFull) && (
@@ -2907,7 +3025,12 @@ function PptSummary({symbol}){
         </div>
         <ReportHistoryPicker rows={rows} selectedIdx={selectedIdx} onSelect={setSelectedIdx}/>
         <StatusChips guidance={latest.guidance_direction} tone={latest.management_tone}/>
-        <ThemeChips themes={latest.emerging_themes} intensity={latest.theme_intensity}/>
+        <ThemeHighlightSection
+          themes={latest.emerging_themes}
+          intensity={latest.theme_intensity}
+          evidence={latest.theme_evidence}
+          sourceLabel="Highlighted from this PPT"
+        />
         {latest.overall_summary && (
           <div style={{
             borderLeft:`3px solid ${C.accent}`,paddingLeft:10,marginBottom:12,
@@ -2924,7 +3047,6 @@ function PptSummary({symbol}){
               )}
             </React.Fragment>
           ))}
-          <BulletSection icon="🌱" label="Theme Evidence" color={C.lime} bullets={latest.theme_evidence}/>
         </div>
         <div style={{display:'flex',gap:12,marginTop:10}}>
           {latest.attachment_url&&(
