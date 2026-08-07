@@ -2047,7 +2047,6 @@ function EmaBreadthTable({data,isMobile,dragProps,rangeLabel}){
 const STOCK_DETAIL_TABS = [
   {key: 'about', label: 'About Company'},
   {key: 'fundamentals', label: 'Fundamentals'},
-  {key: 'ask', label: 'Ask AI'},
   {key: 'results', label: 'Results'},
   {key: 'concall', label: 'Concall Report'},
   {key: 'ppt', label: 'PPT'},
@@ -2265,7 +2264,9 @@ const ASK_AI_SUGGESTIONS = [
   'Do they deliver on growth / capex promises?',
 ]
 
-function AskAiPanel({symbol}){
+function AskAiAgent({symbol, isMobile}){
+  // Floating agent popup — not a chart tab section.
+  const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
   const [active, setActive] = useState(null)
@@ -2275,14 +2276,14 @@ function AskAiPanel({symbol}){
 
   useEffect(()=>{
     let cancelled=false
-    setActive(null); setQ(''); setErr(null)
+    setActive(null); setQ(''); setErr(null); setOpen(false)
     if(!symbol){ setRecent([]); return }
     fetchRecentStockAiAsks(symbol).then(rows=>{ if(!cancelled) setRecent(rows||[]) })
     return()=>{cancelled=true}
   },[symbol])
 
   useEffect(()=>{
-    if(!active?.id || active.status!=='pending') return
+    if(!open || !active?.id || active.status!=='pending') return
     let cancelled=false
     const tick = async ()=>{
       const row = await fetchStockAiAsk(active.id)
@@ -2298,7 +2299,9 @@ function AskAiPanel({symbol}){
     const id = setInterval(tick, 2500)
     tick()
     return()=>{cancelled=true; clearInterval(id)}
-  },[active?.id, active?.status, symbol])
+  },[open, active?.id, active?.status, symbol])
+
+  if(!symbol) return null
 
   const submit = async (text)=>{
     const question = (text||q||'').trim()
@@ -2318,152 +2321,206 @@ function AskAiPanel({symbol}){
   }
 
   return (
-    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
-      <div style={{height:3,background:`linear-gradient(90deg, ${C.accent}, ${C.yellow})`}}/>
-      <div style={{padding:'12px 14px'}}>
-        <div style={{fontSize:13,fontWeight:900,color:C.text}}>Ask AI · {symbol}</div>
-        <div style={{fontSize:10,color:C.muted,marginTop:2,marginBottom:10,lineHeight:1.45}}>
-          Choose a source mode, then ask about management, promises vs delivery, or filings.
-          Flags under Market Cap still use PPT/Concall on file only. Not investment advice.
-        </div>
+    <>
+      {!open&&(
+        <button type="button" onClick={()=>setOpen(true)} title="Ask AI agent"
+          style={{
+            position:'absolute',right:14,bottom:isMobile?18:16,zIndex:40,
+            display:'flex',alignItems:'center',gap:8,
+            padding:'11px 16px',borderRadius:999,cursor:'pointer',
+            border:`1px solid ${C.accent}66`,
+            background:`linear-gradient(135deg, ${C.accent}, ${C.teal||C.accent})`,
+            color:'#0a0e14',fontSize:13,fontWeight:900,
+            boxShadow:`0 8px 28px ${C.accent}55`,
+          }}>
+          <span style={{fontSize:15}}>✦</span> Ask AI
+        </button>
+      )}
 
-        <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
-          {[
-            {id:'filings', label:'Filings only', hint:'PPT / Concall on file'},
-            {id:'web', label:'Web research', hint:'Google Search + filings'},
-          ].map(m=>{
-            const on = askMode===m.id
-            return (
-              <button key={m.id} type="button" disabled={busy} onClick={()=>setAskMode(m.id)}
-                title={m.hint}
-                style={{
-                  padding:'6px 12px',borderRadius:999,cursor:busy?'default':'pointer',
-                  border:`1px solid ${on?C.accent:C.border}`,
-                  background:on?C.accent+'22':'transparent',
-                  color:on?C.accent:C.muted,fontSize:11,fontWeight:800,
-                }}>
-                {m.label}
-              </button>
-            )
-          })}
-        </div>
-
-        <MgmtFlagsCard symbol={symbol}/>
-
-        <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
-          {ASK_AI_SUGGESTIONS.map(s=>(
-            <button key={s} type="button" disabled={busy} onClick={()=>submit(s)}
-              style={{
-                fontSize:10,fontWeight:700,cursor:busy?'default':'pointer',
-                padding:'5px 9px',borderRadius:999,
-                border:`1px solid ${C.border}`,background:C.bg,color:C.muted,
-              }}>
-              {s}
-            </button>
-          ))}
-        </div>
-
-        <div style={{display:'flex',gap:8,alignItems:'stretch'}}>
-          <input
-            value={q}
-            onChange={e=>setQ(e.target.value)}
-            onKeyDown={e=>{ if(e.key==='Enter') submit() }}
-            placeholder={`e.g. Is ${symbol}'s management trustworthy?`}
-            disabled={busy}
-            maxLength={400}
+      {open&&(
+        <div style={{position:'absolute',inset:0,zIndex:50,display:'flex',alignItems:'flex-end',justifyContent:'flex-end',
+          padding:isMobile?0:14,background:isMobile?'rgba(0,0,0,0.45)':'transparent'}}
+          onClick={()=>!busy&&setOpen(false)}>
+          <div onClick={e=>e.stopPropagation()}
             style={{
-              flex:1,padding:'9px 11px',borderRadius:8,border:`1px solid ${C.border}`,
-              background:C.bg,color:C.text,fontSize:12,outline:'none',
-            }}
-          />
-          <button type="button" onClick={()=>submit()} disabled={busy || q.trim().length<8}
-            style={{
-              padding:'9px 14px',borderRadius:8,fontSize:12,fontWeight:800,cursor:busy?'default':'pointer',
-              border:`1px solid ${C.accent}55`,background:C.accent+'22',color:C.accent,
-              opacity:(busy || q.trim().length<8)?0.5:1,
+              width:isMobile?'100%':400,maxWidth:'100%',
+              height:isMobile?'78vh':Math.min(560, (typeof window!=='undefined'?window.innerHeight:700)-40),
+              maxHeight:isMobile?'78vh':'calc(100% - 8px)',
+              display:'flex',flexDirection:'column',
+              background:C.card,
+              border:isMobile?`1px solid ${C.border}`:`1px solid ${C.accent}44`,
+              borderRadius:isMobile?'16px 16px 0 0':16,
+              boxShadow:'0 20px 60px rgba(0,0,0,0.55)',
+              overflow:'hidden',
             }}>
-            {busy?'…':'Ask'}
-          </button>
-        </div>
-        {err&&<div style={{marginTop:8,fontSize:11,color:C.red}}>{err}</div>}
+            <div style={{
+              padding:'12px 14px',flexShrink:0,
+              background:`linear-gradient(135deg, ${C.accent}22, ${C.card})`,
+              borderBottom:`1px solid ${C.border}`,
+              display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,
+            }}>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:14,fontWeight:900,color:C.text,display:'flex',alignItems:'center',gap:7}}>
+                  <span style={{
+                    width:26,height:26,borderRadius:8,display:'inline-flex',alignItems:'center',justifyContent:'center',
+                    background:C.accent,color:'#0a0e14',fontSize:13,fontWeight:900,
+                  }}>✦</span>
+                  Ask AI agent
+                </div>
+                <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+                  {symbol} · Filings or Web · not investment advice
+                </div>
+              </div>
+              <button type="button" onClick={()=>setOpen(false)}
+                style={{background:'transparent',border:`1px solid ${C.border}`,color:C.muted,
+                  width:30,height:30,borderRadius:8,cursor:'pointer',fontSize:16,lineHeight:1}}>×</button>
+            </div>
 
-        {active&&(
-          <div style={{marginTop:12,padding:'10px 12px',borderRadius:10,background:C.bg,border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-              <span>
-                {active.status==='pending'?'Researching…'
-                  : active.status==='error'?'Could not answer'
-                    : 'Answer'}
-              </span>
-              {(active.ask_mode||askMode)&&(
-                <span style={{
-                  fontSize:9,fontWeight:700,color:C.accent,background:C.accent+'18',
-                  border:`1px solid ${C.accent}44`,borderRadius:999,padding:'1px 7px',
-                }}>
-                  {(active.ask_mode||askMode)==='web'?'Web research':'Filings only'}
-                </span>
+            <div style={{flex:1,overflowY:'auto',padding:'12px 14px'}}>
+              <div style={{display:'flex',gap:6,marginBottom:10,flexWrap:'wrap'}}>
+                {[
+                  {id:'filings', label:'Filings only', hint:'PPT / Concall on file'},
+                  {id:'web', label:'Web research', hint:'Google Search + filings'},
+                ].map(m=>{
+                  const on = askMode===m.id
+                  return (
+                    <button key={m.id} type="button" disabled={busy} onClick={()=>setAskMode(m.id)}
+                      title={m.hint}
+                      style={{
+                        padding:'6px 12px',borderRadius:999,cursor:busy?'default':'pointer',
+                        border:`1px solid ${on?C.accent:C.border}`,
+                        background:on?C.accent+'22':'transparent',
+                        color:on?C.accent:C.muted,fontSize:11,fontWeight:800,
+                      }}>
+                      {m.label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <MgmtFlagsCard symbol={symbol} compact/>
+
+              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
+                {ASK_AI_SUGGESTIONS.map(s=>(
+                  <button key={s} type="button" disabled={busy} onClick={()=>submit(s)}
+                    style={{
+                      fontSize:10,fontWeight:700,cursor:busy?'default':'pointer',
+                      padding:'5px 9px',borderRadius:999,
+                      border:`1px solid ${C.border}`,background:C.bg,color:C.muted,
+                    }}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+
+              {err&&<div style={{marginBottom:8,fontSize:11,color:C.red}}>{err}</div>}
+
+              {active&&(
+                <div style={{marginBottom:12,padding:'10px 12px',borderRadius:10,background:C.bg,border:`1px solid ${C.border}`}}>
+                  <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                    <span>
+                      {active.status==='pending'?'Researching…'
+                        : active.status==='error'?'Could not answer'
+                          : 'Answer'}
+                    </span>
+                    {(active.ask_mode||askMode)&&(
+                      <span style={{
+                        fontSize:9,fontWeight:700,color:C.accent,background:C.accent+'18',
+                        border:`1px solid ${C.accent}44`,borderRadius:999,padding:'1px 7px',
+                      }}>
+                        {(active.ask_mode||askMode)==='web'?'Web research':'Filings only'}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>{active.question}</div>
+                  {active.status==='pending'&&(
+                    <div style={{fontSize:11,color:C.muted}}>
+                      {(active.ask_mode||askMode)==='web'
+                        ? 'Web research usually takes 30–90 seconds.'
+                        : 'Filings-only answers usually take 15–45 seconds.'}
+                    </div>
+                  )}
+                  {active.status==='error'&&(
+                    <div style={{fontSize:12,color:C.red}}>{active.error||'Try again in a minute.'}</div>
+                  )}
+                  {active.status==='done'&&(
+                    <>
+                      {active.verdict&&(
+                        <div style={{marginBottom:8}}>
+                          <span style={{
+                            fontSize:9,fontWeight:800,color:C.accent,background:C.accent+'18',
+                            border:`1px solid ${C.accent}44`,borderRadius:999,padding:'2px 8px',textTransform:'uppercase',
+                          }}>{active.verdict}</span>
+                        </div>
+                      )}
+                      <div style={{fontSize:12.5,lineHeight:1.55,color:C.text,whiteSpace:'pre-wrap'}}>{active.answer}</div>
+                      <div style={{marginTop:10}}>
+                        <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6}}>Flags</div>
+                        <FlagsList flags={active.flags}/>
+                      </div>
+                      {Array.isArray(active.sources)&&active.sources.some(s=>s?.url)&&(
+                        <div style={{marginTop:10}}>
+                          <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:4}}>Sources</div>
+                          {active.sources.filter(s=>s?.url).slice(0,4).map((s,i)=>(
+                            <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
+                              style={{display:'block',fontSize:11,color:C.accent,textDecoration:'none',
+                                overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                              {s.title||s.url}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {recent.length>0&&!(active&&(active.status==='done'||active.status==='pending'))&&(
+                <div style={{marginBottom:8}}>
+                  <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6}}>Recent asks</div>
+                  {recent.slice(0,3).map(r=>(
+                    <button key={r.id} type="button" onClick={()=>setActive(r)}
+                      style={{
+                        display:'block',width:'100%',textAlign:'left',marginBottom:6,
+                        padding:'8px 10px',borderRadius:8,cursor:'pointer',
+                        border:`1px solid ${C.border}`,background:C.bg,color:C.text,fontSize:11,
+                      }}>
+                      {r.ask_mode==='web'?'🌐 ':''}{r.question}
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
-            <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>{active.question}</div>
-            {active.status==='pending'&&(
-              <div style={{fontSize:11,color:C.muted}}>
-                {(active.ask_mode||askMode)==='web'
-                  ? 'Web research usually takes 30–90 seconds.'
-                  : 'Filings-only answers usually take 15–45 seconds.'}
-              </div>
-            )}
-            {active.status==='error'&&(
-              <div style={{fontSize:12,color:C.red}}>{active.error||'Try again in a minute.'}</div>
-            )}
-            {active.status==='done'&&(
-              <>
-                {active.verdict&&(
-                  <div style={{marginBottom:8}}>
-                    <span style={{
-                      fontSize:9,fontWeight:800,color:C.accent,background:C.accent+'18',
-                      border:`1px solid ${C.accent}44`,borderRadius:999,padding:'2px 8px',textTransform:'uppercase',
-                    }}>{active.verdict}</span>
-                  </div>
-                )}
-                <div style={{fontSize:12.5,lineHeight:1.55,color:C.text,whiteSpace:'pre-wrap'}}>{active.answer}</div>
-                <div style={{marginTop:10}}>
-                  <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6}}>Flags</div>
-                  <FlagsList flags={active.flags}/>
-                </div>
-                {Array.isArray(active.sources)&&active.sources.some(s=>s?.url)&&(
-                  <div style={{marginTop:10}}>
-                    <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:4}}>Sources</div>
-                    {active.sources.filter(s=>s?.url).slice(0,4).map((s,i)=>(
-                      <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
-                        style={{display:'block',fontSize:11,color:C.accent,textDecoration:'none',
-                          overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                        {s.title||s.url}
-                      </a>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
 
-        {recent.length>0&&!(active&&active.status==='done')&&(
-          <div style={{marginTop:12}}>
-            <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6}}>Recent asks</div>
-            {recent.slice(0,3).map(r=>(
-              <button key={r.id} type="button" onClick={()=>setActive(r)}
-                style={{
-                  display:'block',width:'100%',textAlign:'left',marginBottom:6,
-                  padding:'8px 10px',borderRadius:8,cursor:'pointer',
-                  border:`1px solid ${C.border}`,background:C.bg,color:C.text,fontSize:11,
-                }}>
-                {r.ask_mode==='web'?'🌐 ':''}{r.question}
-              </button>
-            ))}
+            <div style={{padding:'10px 12px',borderTop:`1px solid ${C.border}`,flexShrink:0,background:C.card}}>
+              <div style={{display:'flex',gap:8,alignItems:'stretch'}}>
+                <input
+                  value={q}
+                  onChange={e=>setQ(e.target.value)}
+                  onKeyDown={e=>{ if(e.key==='Enter') submit() }}
+                  placeholder={`Ask about ${symbol}…`}
+                  disabled={busy}
+                  maxLength={400}
+                  autoFocus
+                  style={{
+                    flex:1,padding:'10px 12px',borderRadius:10,border:`1px solid ${C.border}`,
+                    background:C.bg,color:C.text,fontSize:12,outline:'none',
+                  }}
+                />
+                <button type="button" onClick={()=>submit()} disabled={busy || q.trim().length<8}
+                  style={{
+                    padding:'10px 14px',borderRadius:10,fontSize:12,fontWeight:900,cursor:busy?'default':'pointer',
+                    border:'none',background:C.accent,color:'#0a0e14',
+                    opacity:(busy || q.trim().length<8)?0.5:1,
+                  }}>
+                  {busy?'…':'Ask'}
+                </button>
+              </div>
+            </div>
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -2778,7 +2835,6 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
       </div>
       {tab==='about' && <AboutCompanyPanel symbol={sym} stocks={stocks}/>}
       {tab==='fundamentals' && <FundamentalsPanel symbol={sym} stocks={stocks}/>}
-      {tab==='ask' && <AskAiPanel symbol={sym}/>}
       {tab==='results' && (
         <>
           <ResultsHistoryTable symbol={sym}/>
@@ -2819,7 +2875,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
 
   const panelStyle = isMobile
     ? {position:'fixed',inset:0,zIndex:1000,display:'flex',flexDirection:'column',background:C.sidebar}
-    : {flex:customPct!=null?`0 0 ${customPct}%`:(['0 0 25%','0 0 45%','0 0 70%'][wide]||'0 0 25%'),
+    : {position:'relative',flex:customPct!=null?`0 0 ${customPct}%`:(['0 0 25%','0 0 45%','0 0 70%'][wide]||'0 0 25%'),
         height:'100vh',overflow:'hidden',
         display:'flex',flexDirection:'column',background:C.sidebar,
         borderLeft:`1px solid ${C.divider}`,transition:customPct!=null?'none':'flex 0.2s ease'}
@@ -2953,6 +3009,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
           <StockDetailTabs sym={sym} stocks={stocks} onSelectSymbol={onNavigate}/>
         </div>
       )}
+      {!isIndex&&<AskAiAgent symbol={sym} isMobile={isMobile}/>}
     </div>
   )
 }
