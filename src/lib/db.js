@@ -1068,7 +1068,31 @@ function getVisitorId() {
   }
 }
 
-/** Thumbs up/down on an AI content section (About / Concall / PPT). */
+/** Aggregate thumbs counts for a symbol/content-type (optional section). */
+export async function fetchContentFeedbackCounts(symbol, contentType, sectionKey = null) {
+  const sym = (symbol || '').trim().toUpperCase()
+  const ctype = (contentType || '').trim().toLowerCase()
+  if (!sym || !ctype) return {}
+  const { data, error } = await supabase.rpc('get_content_feedback_counts', {
+    p_symbol: sym,
+    p_content_type: ctype,
+    p_section_key: sectionKey || null,
+  })
+  if (error) {
+    console.error('fetchContentFeedbackCounts error:', error.message)
+    return {}
+  }
+  const out = {}
+  for (const row of data || []) {
+    out[row.section_key] = {
+      up: Number(row.up_count) || 0,
+      down: Number(row.down_count) || 0,
+    }
+  }
+  return out
+}
+
+/** Upsert thumbs vote for this visitor (one vote per section). */
 export async function submitContentFeedback({
   symbol,
   contentType,
@@ -1082,10 +1106,14 @@ export async function submitContentFeedback({
   const skey = (sectionKey || '').trim().slice(0, 60)
   const v = vote === 'down' ? 'down' : vote === 'up' ? 'up' : null
   const note = (comment || '').trim()
-  if (!sym || !ctype || !skey || !v) {
+  const visitorId = getVisitorId()
+  if (!sym || !ctype || !skey || !v || !visitorId) {
     return { error: 'Missing feedback fields.' }
   }
-  if (v === 'down' && (note.length < 5 || note.length > 1000)) {
+  if (v === 'down' && note && (note.length < 5 || note.length > 1000)) {
+    return { error: 'Please describe the issue (5–1000 characters).' }
+  }
+  if (v === 'down' && !note) {
     return { error: 'Please describe the issue (5–1000 characters).' }
   }
   const { data: { user } } = await supabase.auth.getUser()
@@ -1095,20 +1123,41 @@ export async function submitContentFeedback({
     section_key: skey,
     section_label: (sectionLabel || '').trim().slice(0, 120) || null,
     vote: v,
-    comment: v === 'down' ? note : (note || null),
-    visitor_id: getVisitorId(),
+    comment: v === 'down' ? note : null,
+    visitor_id: visitorId,
     user_id: user?.id || null,
   }
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('content_feedback')
-    .insert(payload)
-    .select('id,created_at')
-    .single()
+    .upsert(payload, { onConflict: 'symbol,content_type,section_key,visitor_id' })
   if (error) {
     console.error('submitContentFeedback error:', error.message)
     return { error: error.message || 'Could not save feedback' }
   }
-  return { feedback: data }
+  return { feedback: { vote: v } }
+}
+
+/** Clear this visitor's vote on a section (unselect). */
+export async function clearContentFeedback({ symbol, contentType, sectionKey } = {}) {
+  const sym = (symbol || '').trim().toUpperCase()
+  const ctype = (contentType || '').trim().toLowerCase().slice(0, 40)
+  const skey = (sectionKey || '').trim().slice(0, 60)
+  const visitorId = getVisitorId()
+  if (!sym || !ctype || !skey || !visitorId) {
+    return { error: 'Missing feedback fields.' }
+  }
+  const { error } = await supabase
+    .from('content_feedback')
+    .delete()
+    .eq('symbol', sym)
+    .eq('content_type', ctype)
+    .eq('section_key', skey)
+    .eq('visitor_id', visitorId)
+  if (error) {
+    console.error('clearContentFeedback error:', error.message)
+    return { error: error.message || 'Could not clear feedback' }
+  }
+  return { ok: true }
 }
 
 export async function submitStockAiAsk(symbol, question, askMode = 'filings') {
