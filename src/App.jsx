@@ -1981,7 +1981,7 @@ function SimpleStockTable({stocks, isMobile, onChart}){
         <span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>
         <span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>
         <span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>
-        <span title="Overall fundamental quality — not the same as Excellent/Good Result (latest quarter only)." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Fund</span>
+        <span title="Overall fundamental quality — not the same as Excellent/Good Result (latest quarter only)." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Rating</span>
         <span/>
         <span style={{textAlign:'center',color:C.muted,fontSize:9}}>TV</span>
         <span style={{textAlign:'center',color:C.muted,fontSize:9}}>Scr</span>
@@ -4848,7 +4848,6 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
               {s.fundamentalLabel}
             </span>
           ):<span style={{color:C.muted}}>—</span>}
-          <div style={{fontSize:8,color:C.muted}}>Fund</div>
         </div>}
 
         {/* Expand — separate click target from the row (which now opens
