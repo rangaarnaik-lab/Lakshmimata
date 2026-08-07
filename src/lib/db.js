@@ -958,7 +958,7 @@ export async function fetchPptSummaries(symbol) {
     .select('announced_at,attachment_url,status,financial_highlights,business_segments,'
       + 'strategic_initiatives,capital_allocation,industry_outlook,operational_kpis,'
       + 'risks_flagged,regulatory_legal,guidance_direction,overall_summary,'
-      + 'emerging_themes,theme_evidence,theme_intensity')
+      + 'emerging_themes,theme_evidence,theme_intensity,management_tone,watch_next')
     .eq('symbol', symbol)
     .eq('status', 'done')
     .order('announced_at', { ascending: false })
@@ -980,7 +980,7 @@ export async function fetchTranscriptSummaries(symbol) {
       + 'expansion_capex,outlook_guidance,guidance_direction,management_changes,'
       + 'capital_allocation,competitive_positioning,operational_kpis,risks_flagged,'
       + 'regulatory_legal,key_concerns,overall_summary,'
-      + 'emerging_themes,theme_evidence,theme_intensity')
+      + 'emerging_themes,theme_evidence,theme_intensity,management_tone,watch_next')
     .eq('symbol', symbol)
     .eq('status', 'done')
     .order('announced_at', { ascending: false })

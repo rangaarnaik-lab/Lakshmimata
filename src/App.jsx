@@ -2285,6 +2285,43 @@ const GUIDANCE_BADGE = {
   reiterated: {label: 'Guidance Reiterated', color: C.blue, arrow: '●'},
 }
 
+const TONE_BADGE = {
+  confident: {label: 'Tone: Confident', color: C.green},
+  cautious: {label: 'Tone: Cautious', color: C.yellow},
+  defensive: {label: 'Tone: Defensive', color: C.orange},
+  mixed: {label: 'Tone: Mixed', color: C.accent},
+  neutral: {label: 'Tone: Neutral', color: C.muted},
+}
+
+function StatusChips({guidance, tone}){
+  const g = GUIDANCE_BADGE[guidance]
+  const t = TONE_BADGE[tone]
+  if (!g && !t) return null
+  return (
+    <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
+      {g && (
+        <div style={{
+          display:'inline-flex',alignItems:'center',gap:5,fontSize:11,fontWeight:800,color:'#fff',
+          background:`linear-gradient(135deg, ${g.color}, ${g.color}cc)`,
+          borderRadius:20,padding:'4px 12px',
+          boxShadow:`0 2px 8px ${g.color}55`,
+        }}>
+          <span>{g.arrow}</span>{g.label}
+        </div>
+      )}
+      {t && (
+        <div style={{
+          display:'inline-flex',alignItems:'center',gap:5,fontSize:11,fontWeight:800,color:t.color,
+          background:t.color+'18',border:`1px solid ${t.color}55`,
+          borderRadius:20,padding:'4px 12px',
+        }}>
+          {t.label}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Highlights numbers/currency/percentages within a bullet phrase so the
 // concrete facts (₹5,400 Cr, +39%, 2.5x) pop visually against the
 // surrounding text instead of blending into uniform prose - this is
@@ -2460,7 +2497,6 @@ function TranscriptSummary({symbol}){
   const latest = rows[0]
   const dateLabel = new Date(latest.announced_at).toLocaleDateString('en-IN',
     {day:'numeric', month:'short', year:'numeric'})
-  const badge = GUIDANCE_BADGE[latest.guidance_direction]
   const sections = showFull ? TRANSCRIPT_FULL_SECTIONS : TRANSCRIPT_SIMPLE_SECTIONS
   const hasMoreSections = TRANSCRIPT_FULL_SECTIONS.some(s => {
     if (TRANSCRIPT_SIMPLE_SECTIONS.some(ss => ss.key === s.key)) return false
@@ -2480,16 +2516,7 @@ function TranscriptSummary({symbol}){
           </div>
           <div style={{fontSize:10,color:C.muted,flexShrink:0,fontWeight:600}}>{dateLabel}</div>
         </div>
-        {badge && (
-          <div style={{
-            display:'inline-flex',alignItems:'center',gap:5,fontSize:11,fontWeight:800,color:'#fff',
-            background:`linear-gradient(135deg, ${badge.color}, ${badge.color}cc)`,
-            borderRadius:20,padding:'4px 12px',marginBottom:10,
-            boxShadow:`0 2px 8px ${badge.color}55`,
-          }}>
-            <span>{badge.arrow}</span>{badge.label}
-          </div>
-        )}
+        <StatusChips guidance={latest.guidance_direction} tone={latest.management_tone}/>
         <ThemeChips themes={latest.emerging_themes} intensity={latest.theme_intensity}/>
         {latest.overall_summary && (
           <div style={{
@@ -2502,6 +2529,7 @@ function TranscriptSummary({symbol}){
           {sections.map(s=>(
             <BulletSection key={s.key} icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
           ))}
+          <BulletSection icon="👁️" label="Watch Next" color={C.accent} bullets={latest.watch_next}/>
         </div>
         <div style={{display:'flex',gap:12,marginTop:10,flexWrap:'wrap',alignItems:'center'}}>
           {(hasMoreSections || showFull) && (
@@ -2536,7 +2564,6 @@ function PptSummary({symbol}){
   const latest = rows[0]
   const dateLabel = new Date(latest.announced_at).toLocaleDateString('en-IN',
     {day:'numeric', month:'short', year:'numeric'})
-  const badge = GUIDANCE_BADGE[latest.guidance_direction]
   return (
     <div style={{
       background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',
@@ -2550,16 +2577,7 @@ function PptSummary({symbol}){
           </div>
           <div style={{fontSize:10,color:C.muted,flexShrink:0,fontWeight:600}}>{dateLabel}</div>
         </div>
-        {badge && (
-          <div style={{
-            display:'inline-flex',alignItems:'center',gap:5,fontSize:11,fontWeight:800,color:'#fff',
-            background:`linear-gradient(135deg, ${badge.color}, ${badge.color}cc)`,
-            borderRadius:20,padding:'4px 12px',marginBottom:10,
-            boxShadow:`0 2px 8px ${badge.color}55`,
-          }}>
-            <span>{badge.arrow}</span>{badge.label}
-          </div>
-        )}
+        <StatusChips guidance={latest.guidance_direction} tone={latest.management_tone}/>
         <ThemeChips themes={latest.emerging_themes} intensity={latest.theme_intensity}/>
         {latest.overall_summary && (
           <div style={{
@@ -2572,6 +2590,7 @@ function PptSummary({symbol}){
           {PPT_SECTIONS.map(s=>(
             <BulletSection key={s.key} icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
           ))}
+          <BulletSection icon="👁️" label="Watch Next" color={C.accent} bullets={latest.watch_next}/>
         </div>
         <div style={{display:'flex',gap:12,marginTop:10}}>
           {latest.attachment_url&&(
