@@ -4400,6 +4400,8 @@ const GUIDE_QA = [
     answer:null}, // filled from HELP_CONTENT for current page
   {keys:['open chart','stock chart','tap a row','click a stock'],
     answer:'Open a stock → Summary tab for a high-level company brief (RS, Fund, growth, themes from Concall/PPT). Results / Concall / PPT sit next to it under the chart.'},
+  {keys:['company brief','summary tab','ai summary','company summary','high level'],
+    answer:'Open a stock → Summary tab. Company Brief pulls RS, Fund quality, growth (Sales/PAT), cash-flow, and themes/outlook from Concall/PPT into one page. Free — uses data already in the app, no extra AI chat cost.'},
   {keys:['concall','transcript','earnings call'],
     answer:'Open a stock → Concall Report tab. Green badge on the tab means a report exists. If several filings exist, use History date chips to read older calls. Tone + Watch Next appear when extracted.'},
   {keys:['ppt','presentation','slide'],
