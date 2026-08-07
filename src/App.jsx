@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -3599,50 +3599,106 @@ function _feedbackStorageKey(contentType, symbol, sectionKey){
   return `lm_fb_${contentType||''}_${(symbol||'').toUpperCase()}_${sectionKey||''}`
 }
 
-/** Compact thumbs up/down for one AI section. Downvote opens an issue form. */
+/** Compact thumbs up/down — toggle anytime; shows total up/down counts. */
 function SectionFeedback({symbol, contentType, sectionKey, sectionLabel}){
   const storageKey = _feedbackStorageKey(contentType, symbol, sectionKey)
   const [vote, setVote] = useState(()=>{
     try{ return localStorage.getItem(storageKey) || null }catch{ return null }
   })
+  const [counts, setCounts] = useState({up:0, down:0})
   const [showIssue, setShowIssue] = useState(false)
   const [comment, setComment] = useState('')
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState('')
-  const [thanks, setThanks] = useState(false)
+
+  const refreshCounts = useCallback(async()=>{
+    const map = await fetchContentFeedbackCounts(symbol, contentType, sectionKey)
+    const c = map[sectionKey] || {up:0, down:0}
+    setCounts({up:c.up||0, down:c.down||0})
+  },[symbol, contentType, sectionKey])
 
   useEffect(()=>{
     try{ setVote(localStorage.getItem(storageKey) || null) }catch{ setVote(null) }
-    setShowIssue(false); setComment(''); setErr(''); setThanks(false)
-  },[storageKey])
+    setShowIssue(false); setComment(''); setErr('')
+    refreshCounts()
+  },[storageKey, refreshCounts])
 
   if(!symbol || !contentType || !sectionKey) return null
 
+  function persistVote(v){
+    setVote(v)
+    try{
+      if(v) localStorage.setItem(storageKey, v)
+      else localStorage.removeItem(storageKey)
+    }catch{/* ignore */}
+  }
+
+  async function clearVote(){
+    setSending(true); setErr('')
+    const prev = vote
+    persistVote(null)
+    setCounts(c=>({
+      up: Math.max(0, c.up - (prev==='up'?1:0)),
+      down: Math.max(0, c.down - (prev==='down'?1:0)),
+    }))
+    const res = await clearContentFeedback({symbol, contentType, sectionKey})
+    setSending(false)
+    if(res.error){
+      setErr(res.error)
+      persistVote(prev)
+      refreshCounts()
+      return
+    }
+    refreshCounts()
+  }
+
   async function send(v, note){
     setSending(true); setErr('')
+    const prev = vote
     const res = await submitContentFeedback({
       symbol, contentType, sectionKey, sectionLabel, vote:v, comment:note,
     })
     setSending(false)
     if(res.error){ setErr(res.error); return }
-    setVote(v)
-    try{ localStorage.setItem(storageKey, v) }catch{/* ignore */}
+    persistVote(v)
+    setCounts(c=>{
+      let up = c.up, down = c.down
+      if(prev==='up') up = Math.max(0, up-1)
+      if(prev==='down') down = Math.max(0, down-1)
+      if(v==='up') up += 1
+      if(v==='down') down += 1
+      return {up, down}
+    })
     setShowIssue(false)
     setComment('')
-    setThanks(true)
+    refreshCounts()
   }
 
-  const btn = (active, onClick, Icon, title, activeColor)=>(
-    <button type="button" title={title} disabled={sending||!!vote}
+  async function onUp(){
+    if(sending) return
+    if(vote==='up') return clearVote()
+    return send('up')
+  }
+
+  function onDown(){
+    if(sending) return
+    if(vote==='down') return clearVote()
+    setShowIssue(true); setErr('')
+  }
+
+  const btn = (active, onClick, Icon, title, activeColor, count)=>(
+    <button type="button" title={title} disabled={sending}
       onClick={onClick}
       style={{
-        display:'inline-flex',alignItems:'center',justifyContent:'center',
-        width:26,height:26,borderRadius:7,cursor:vote?'default':'pointer',
+        display:'inline-flex',alignItems:'center',justifyContent:'center',gap:3,
+        minWidth:26,height:26,borderRadius:7,cursor:sending?'wait':'pointer',
         border:`1px solid ${active?activeColor:C.border}`,
         background:active?activeColor+'22':'transparent',
-        color:active?activeColor:C.muted,padding:0,opacity:sending?0.6:1,
+        color:active?activeColor:C.muted,padding:'0 6px',opacity:sending?0.6:1,
+        fontSize:10,fontWeight:700,
       }}>
       <Icon size={13} strokeWidth={2.4}/>
+      <span>{count}</span>
     </button>
   )
 
@@ -3650,14 +3706,8 @@ function SectionFeedback({symbol, contentType, sectionKey, sectionLabel}){
     <>
       <div style={{display:'inline-flex',alignItems:'center',gap:4,flexShrink:0}}
         onClick={e=>e.stopPropagation()}>
-        {thanks&&!showIssue?(
-          <span style={{fontSize:9,fontWeight:700,color:C.green}}>Thanks</span>
-        ):null}
-        {btn(vote==='up', ()=>send('up'), ThumbsUp, 'Helpful', C.green)}
-        {btn(vote==='down', ()=>{
-          if(vote) return
-          setShowIssue(true); setErr(''); setThanks(false)
-        }, ThumbsDown, 'Report issue', C.red||'#ef4444')}
+        {btn(vote==='up', onUp, ThumbsUp, vote==='up'?'Remove helpful':'Helpful', C.green, counts.up)}
+        {btn(vote==='down', onDown, ThumbsDown, vote==='down'?'Remove report':'Report issue', C.red, counts.down)}
       </div>
       {showIssue&&(
         <div onClick={()=>{ if(!sending) setShowIssue(false) }}
@@ -3687,7 +3737,7 @@ function SectionFeedback({symbol, contentType, sectionKey, sectionLabel}){
               }}
             />
             {err&&(
-              <div style={{fontSize:11,color:C.red||'#ef4444',marginBottom:8}}>{err}</div>
+              <div style={{fontSize:11,color:C.red,marginBottom:8}}>{err}</div>
             )}
             <div style={{display:'flex',gap:8}}>
               <button type="button" disabled={sending}
