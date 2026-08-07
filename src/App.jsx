@@ -4152,7 +4152,7 @@ function sortStocksForTable(stocks,sortBy,sortDir){
  * stock list. Each instance has its own independent sort/page state, so
  * sorting the R1 Breakout table doesn't affect the Cup & Handle table.
  */
-function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,defaultSortBy='rs'}){
+function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=25,defaultSortBy='rs'}){
   const [sortBy,setSortBy]=useState(defaultSortBy)
   const [sortDir,setSortDir]=useState('desc')
   const [page,setPage]=useState(0)
@@ -4173,8 +4173,25 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,de
     return <div style={{textAlign:'center',padding:'20px 0',color:C.muted,fontSize:12}}>No matches right now.</div>
   }
 
+  const pager=(sorted.length>pageSize)&&(
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:12,padding:'8px 0'}}>
+      <button onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={pageClamped===0}
+        style={{padding:'7px 14px',borderRadius:8,cursor:pageClamped===0?'default':'pointer',
+          border:`1px solid ${C.border}`,background:C.card,fontSize:12,fontWeight:600,
+          color:pageClamped===0?C.muted+'66':C.text}}>← Prev</button>
+      <span style={{fontSize:12,color:C.muted,minWidth:140,textAlign:'center'}}>
+        Page {pageClamped+1} of {totalPages} · {sorted.length} stocks
+      </span>
+      <button onClick={()=>setPage(p=>Math.min(totalPages-1,p+1))} disabled={pageClamped>=totalPages-1}
+        style={{padding:'7px 14px',borderRadius:8,cursor:pageClamped>=totalPages-1?'default':'pointer',
+          border:`1px solid ${C.border}`,background:C.card,fontSize:12,fontWeight:600,
+          color:pageClamped>=totalPages-1?C.muted+'66':C.text}}>Next →</button>
+    </div>
+  )
+
   return(
     <div>
+      {pager}
       {isMobile?(
         paged.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={onChartOpen}/>)
       ):(
@@ -4220,21 +4237,6 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,de
           </div>
           {paged.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>onChartOpen(s.sym)} visibleRsCols={visibleRsCols}/>)}
         </div>
-        </div>
-      )}
-      {sorted.length>pageSize&&(
-        <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginTop:14,padding:'10px 0'}}>
-          <button onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={pageClamped===0}
-            style={{padding:'7px 14px',borderRadius:8,cursor:pageClamped===0?'default':'pointer',
-              border:`1px solid ${C.border}`,background:C.card,fontSize:12,fontWeight:600,
-              color:pageClamped===0?C.muted+'66':C.text}}>← Prev</button>
-          <span style={{fontSize:12,color:C.muted,minWidth:140,textAlign:'center'}}>
-            Page {pageClamped+1} of {totalPages} · {sorted.length} stocks
-          </span>
-          <button onClick={()=>setPage(p=>Math.min(totalPages-1,p+1))} disabled={pageClamped>=totalPages-1}
-            style={{padding:'7px 14px',borderRadius:8,cursor:pageClamped>=totalPages-1?'default':'pointer',
-              border:`1px solid ${C.border}`,background:C.card,fontSize:12,fontWeight:600,
-              color:pageClamped>=totalPages-1?C.muted+'66':C.text}}>Next →</button>
         </div>
       )}
     </div>
@@ -6738,7 +6740,7 @@ export default function App(){
     return()=>{window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp)}
   },[isDraggingDivider])
   const [rsPage,setRsPage]=useState(0)
-  const RS_PAGE_SIZE=100
+  const RS_PAGE_SIZE=25
   const [ppFilter52WL,setPpFilter52WL]=useState('all')
   const [ppFilterWeak,setPpFilterWeak]=useState('all')
 
@@ -8169,6 +8171,22 @@ export default function App(){
                 <div style={{fontSize:12}}>Tap Scan or Demo above.</div>
               </div>
             )}
+            {displayedRS.length>RS_PAGE_SIZE&&(
+              <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,
+                marginBottom:12,padding:'8px 0'}}>
+                <button onClick={()=>setRsPage(p=>Math.max(0,p-1))} disabled={rsPageClamped===0}
+                  style={{padding:'7px 14px',borderRadius:8,cursor:rsPageClamped===0?'default':'pointer',
+                    border:`1px solid ${C.border}`,background:C.card,fontSize:12,fontWeight:600,
+                    color:rsPageClamped===0?C.muted+'66':C.text}}>← Prev</button>
+                <span style={{fontSize:12,color:C.muted,minWidth:140,textAlign:'center'}}>
+                  Page {rsPageClamped+1} of {rsTotalPages} · {displayedRS.length} stocks
+                </span>
+                <button onClick={()=>setRsPage(p=>Math.min(rsTotalPages-1,p+1))} disabled={rsPageClamped>=rsTotalPages-1}
+                  style={{padding:'7px 14px',borderRadius:8,cursor:rsPageClamped>=rsTotalPages-1?'default':'pointer',
+                    border:`1px solid ${C.border}`,background:C.card,fontSize:12,fontWeight:600,
+                    color:rsPageClamped>=rsTotalPages-1?C.muted+'66':C.text}}>Next →</button>
+              </div>
+            )}
             {displayedRS.length>0&&(
               isMobile?pagedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={setChartSym}/>):(
                 <>
@@ -8221,22 +8239,6 @@ export default function App(){
                 </div>
                 </>
               )
-            )}
-            {displayedRS.length>RS_PAGE_SIZE&&(
-              <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,
-                marginTop:14,padding:'10px 0'}}>
-                <button onClick={()=>setRsPage(p=>Math.max(0,p-1))} disabled={rsPageClamped===0}
-                  style={{padding:'7px 14px',borderRadius:8,cursor:rsPageClamped===0?'default':'pointer',
-                    border:`1px solid ${C.border}`,background:C.card,fontSize:12,fontWeight:600,
-                    color:rsPageClamped===0?C.muted+'66':C.text}}>← Prev</button>
-                <span style={{fontSize:12,color:C.muted,minWidth:140,textAlign:'center'}}>
-                  Page {rsPageClamped+1} of {rsTotalPages} · {displayedRS.length} stocks
-                </span>
-                <button onClick={()=>setRsPage(p=>Math.min(rsTotalPages-1,p+1))} disabled={rsPageClamped>=rsTotalPages-1}
-                  style={{padding:'7px 14px',borderRadius:8,cursor:rsPageClamped>=rsTotalPages-1?'default':'pointer',
-                    border:`1px solid ${C.border}`,background:C.card,fontSize:12,fontWeight:600,
-                    color:rsPageClamped>=rsTotalPages-1?C.muted+'66':C.text}}>Next →</button>
-              </div>
             )}
           </div>
         </div>
