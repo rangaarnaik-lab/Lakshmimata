@@ -5105,16 +5105,16 @@ const _RESULTS_ANN_KEYWORDS_JS = ['financial result', 'quarterly result',
  * Excellent/Good/Neutral/Weak quality rating from a symbol's results
  * history (current quarter vs previous quarter vs same-quarter-last-
  * year) — shared between the main per-announcement badge chip and the
- * detailed YoY table, so both always agree instead of the top-level
- * chip showing generic keyword-based sentiment (which is inherently
- * "Neutral" for routine filing-notice text like "Company X has
- * submitted results for the period ended Y" regardless of whether the
- * actual numbers were good or bad) while a smarter numbers-based
- * rating sits unused further down the same card.
+ * detailed YoY table, so both always agree.
  *
  * Deliberately a QUALITY label, not a buy/sell call. Returns null if
- * there isn't enough data (e.g. only one quarter on file) to say
- * anything meaningful yet.
+ * there isn't enough data to say anything meaningful yet.
+ *
+ * Uses exceptional-adjusted PAT for operating quality, but NEVER rates
+ * Excellent/Good when reported (headline) PAT fell — that mismatch is
+ * what made VARROC Q1 FY27 look "Excellent" (prior year had a large
+ * exceptional gain; adjusted YoY looked strong while reported PAT was
+ * −28% and OPM compressed). Investors see the headline number first.
  */
 function computeResultRating(hist){
   if(!hist || hist.length===0) return null
@@ -5127,16 +5127,16 @@ function computeResultRating(hist){
     const dayDiff = Math.abs((d.getMonth()*30+d.getDate())-(curDate.getMonth()*30+curDate.getDate()))
     return yearsBack===1 && dayDiff<=20
   }) || null
-  // Adjusted PAT excludes any disclosed one-off item (asset sale gain,
-  // impairment, write-off, VRS cost, insurance claim, tax reversal,
-  // etc.) so the rating reflects normal operating performance rather
-  // than a one-time boost or hit. Falls back to raw PAT when
-  // exceptional_item is null (most quarters don't have one) - purely
-  // additive, doesn't change any quarter without a disclosed item.
+  // Adjusted PAT excludes any disclosed one-off item so the operating
+  // read isn't dominated by a one-time boost/hit. Falls back to raw PAT
+  // when exceptional_item is null.
   const adjPat = row => row==null ? null : (row.pat==null ? null : row.pat - (row.exceptional_item||0))
   const pct=(now,then)=>(now==null||then==null||then===0)?null:((now-then)/Math.abs(then)*100)
   const salesYoy = pct(current.sales, yoyRow?.sales)
-  const patYoy = pct(adjPat(current), adjPat(yoyRow))
+  const rawPatYoy = pct(current.pat, yoyRow?.pat)
+  const adjPatYoy = pct(adjPat(current), adjPat(yoyRow))
+  const patYoy = adjPatYoy ?? rawPatYoy
+  const opmYoy = pct(current.opm_pct, yoyRow?.opm_pct)
   let resultRating = null
   if (patYoy!=null && salesYoy!=null) {
     if (patYoy>=20 && salesYoy>=10) resultRating='Excellent'
@@ -5151,6 +5151,27 @@ function computeResultRating(hist){
   } else if (patYoy!=null) {
     resultRating = patYoy>=25?'Excellent':patYoy>0?'Good':patYoy<-10?'Weak':'Neutral'
   }
+
+  // Headline PAT gate — reported profit is what the market prints.
+  // If it fell, cap the badge even when adjusted-for-exceptionals YoY
+  // looks strong (prior-year one-offs distorting the base).
+  if (resultRating && rawPatYoy!=null && rawPatYoy < 0) {
+    const tiers = ['Weak','Neutral','Good','Excellent']
+    let idx = tiers.indexOf(resultRating)
+    if (rawPatYoy <= -15) idx = Math.min(idx, 0)      // Weak
+    else idx = Math.min(idx, 1)                        // Neutral max
+    resultRating = tiers[idx]
+  }
+
+  // Operating-margin collapse gate (when OPM is on file).
+  if (resultRating && opmYoy!=null && opmYoy <= -20) {
+    const tiers = ['Weak','Neutral','Good','Excellent']
+    let idx = tiers.indexOf(resultRating)
+    idx = Math.min(idx, 1) // Neutral max
+    if (opmYoy <= -35 && (rawPatYoy==null || rawPatYoy < 0)) idx = Math.min(idx, 0)
+    resultRating = tiers[idx]
+  }
+
   // QoQ tier-shift: a YoY-only verdict can miss fast deceleration or
   // recovery. Shift one tier when the sequential trend meaningfully
   // contradicts the YoY story, without fully overriding it.
@@ -5162,8 +5183,12 @@ function computeResultRating(hist){
     if (patQoq!=null) {
       const decelerating = patQoq <= -15 && (salesQoq==null || salesQoq <= 0)
       const recovering = patQoq >= 15 && (salesQoq==null || salesQoq >= 0)
+      // Don't let QoQ recovery promote past the headline-PAT gate
+      const maxIdx = (rawPatYoy!=null && rawPatYoy <= -15) ? 0
+        : (rawPatYoy!=null && rawPatYoy < 0) ? 1
+        : tiers.length-1
       if (decelerating && idx > 0) idx -= 1
-      else if (recovering && idx < tiers.length-1) idx += 1
+      else if (recovering && idx < maxIdx) idx += 1
     }
     resultRating = tiers[idx]
   }
