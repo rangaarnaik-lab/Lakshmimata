@@ -1892,20 +1892,64 @@ const STOCK_DETAIL_TABS = [
   {key: 'concall', label: 'Concall Report'},
   {key: 'ppt', label: 'PPT'},
 ]
-function StockDetailTabs({sym, stocks}){
+function StockDetailTabs({sym, stocks, onSelectSymbol}){
   const [tab, setTab] = useState('results')
+  // Tab flags so users can see Concall/PPT history exists without opening
+  // each tab — count + latest filing date.
+  const [flags, setFlags] = useState({concall: undefined, ppt: undefined})
+  useEffect(() => {
+    let cancelled = false
+    setTab('results')
+    setFlags({concall: undefined, ppt: undefined})
+    if (!sym) return
+    Promise.all([fetchTranscriptSummaries(sym), fetchPptSummaries(sym)]).then(([t, p]) => {
+      if (cancelled) return
+      setFlags({
+        concall: {count: t?.length || 0, latestAt: t?.[0]?.announced_at || null},
+        ppt: {count: p?.length || 0, latestAt: p?.[0]?.announced_at || null},
+      })
+    })
+    return () => { cancelled = true }
+  }, [sym])
+
+  const fmtFlagDate = (iso) => {
+    if (!iso) return null
+    return new Date(iso).toLocaleDateString('en-IN', {day: 'numeric', month: 'short'})
+  }
+
   return (
     <div>
       <div style={{display:'flex',gap:4,marginBottom:10,borderBottom:`1px solid ${C.border}`,overflowX:'auto'}}>
-        {STOCK_DETAIL_TABS.map(t=>(
-          <div key={t.key} onClick={()=>setTab(t.key)} style={{
-            padding:'6px 10px',fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',
-            color:tab===t.key?C.accent:C.muted,
-            borderBottom:tab===t.key?`2px solid ${C.accent}`:'2px solid transparent',
-          }}>
-            {t.label}
-          </div>
-        ))}
+        {STOCK_DETAIL_TABS.map(t=>{
+          const flag = t.key==='concall'?flags.concall:t.key==='ppt'?flags.ppt:null
+          const hasContent = flag && flag.count > 0
+          const dateHint = hasContent ? fmtFlagDate(flag.latestAt) : null
+          return (
+            <div key={t.key} onClick={()=>setTab(t.key)} title={
+              hasContent
+                ? `${flag.count} report${flag.count>1?'s':''} on file — open to read history`
+                : (flag && flag.count===0 ? `No ${t.label} yet` : undefined)
+            } style={{
+              padding:'6px 10px',fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',
+              color:tab===t.key?C.accent:C.muted,
+              borderBottom:tab===t.key?`2px solid ${C.accent}`:'2px solid transparent',
+              display:'flex',alignItems:'center',gap:5,
+            }}>
+              {t.label}
+              {hasContent && (
+                <span style={{
+                  fontSize:9,fontWeight:800,color:C.green,background:C.green+'22',
+                  border:`1px solid ${C.green}55`,borderRadius:999,padding:'1px 6px',
+                }}>
+                  {flag.count>1 ? `${flag.count} · ${dateHint}` : dateHint || 'Ready'}
+                </span>
+              )}
+              {flag && flag.count===0 && (t.key==='concall'||t.key==='ppt') && (
+                <span style={{fontSize:9,fontWeight:600,color:C.muted,opacity:0.7}}>—</span>
+              )}
+            </div>
+          )
+        })}
       </div>
       {tab==='results' && (
         <>
@@ -1913,7 +1957,8 @@ function StockDetailTabs({sym, stocks}){
           <SectorRankingPanel symbol={sym}
             sector={stocks?.find(s=>s.sym===sym)?.sector}
             industry={stocks?.find(s=>s.sym===sym)?.industry}
-            stocks={stocks}/>
+            stocks={stocks}
+            onSelectSymbol={onSelectSymbol}/>
         </>
       )}
       {tab==='concall' && <TranscriptSummary symbol={sym}/>}
@@ -2075,7 +2120,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
               </div>
             )
           })()}
-          <StockDetailTabs sym={sym} stocks={stocks}/>
+          <StockDetailTabs sym={sym} stocks={stocks} onSelectSymbol={onNavigate}/>
         </div>
       )}
     </div>
@@ -2214,7 +2259,7 @@ function ResultsHistoryTable({symbol}){
 // ACs, footwear, durables). Falls back to sector only when industry is
 // missing. Capped to 40 peers by market cap.
 const RATING_ORDER = {Excellent:3, Good:2, Neutral:1, Weak:0}
-function SectorRankingPanel({symbol, sector, industry, stocks}){
+function SectorRankingPanel({symbol, sector, industry, stocks, onSelectSymbol}){
   const [ranking, setRanking] = useState(undefined) // undefined=loading, null=no peers, array=loaded
   const groupLabel = industry || sector
   useEffect(()=>{
@@ -2260,16 +2305,24 @@ function SectorRankingPanel({symbol, sector, industry, stocks}){
         #{myIdx+1} of {ranking.length} rated in {groupLabel}
       </div>
       <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
-        {ranking.map((r,i)=>(
-          <div key={r.sym} title={r.rating}
-            style={{display:'flex',alignItems:'center',gap:4,padding:'2px 7px',borderRadius:10,
-              fontSize:10,fontWeight:r.sym===symbol?800:600,
-              background:ratingColor(r.rating)+(r.sym===symbol?'33':'18'),
-              color:ratingColor(r.rating),
-              border:r.sym===symbol?`1px solid ${ratingColor(r.rating)}`:'1px solid transparent'}}>
-            <span style={{opacity:0.7}}>#{i+1}</span> {r.sym}
-          </div>
-        ))}
+        {ranking.map((r,i)=>{
+          const isSelf = r.sym===symbol
+          const canOpen = !isSelf && typeof onSelectSymbol==='function'
+          return (
+            <div key={r.sym} title={canOpen ? `${r.rating} — open ${r.sym}` : r.rating}
+              onClick={()=>{ if(canOpen) onSelectSymbol(r.sym) }}
+              style={{display:'flex',alignItems:'center',gap:4,padding:'2px 7px',borderRadius:10,
+                fontSize:10,fontWeight:isSelf?800:600,
+                background:ratingColor(r.rating)+(isSelf?'33':'18'),
+                color:ratingColor(r.rating),
+                border:isSelf?`1px solid ${ratingColor(r.rating)}`:'1px solid transparent',
+                cursor:canOpen?'pointer':'default',
+                textDecoration:canOpen?'underline':'none',
+                textUnderlineOffset:2}}>
+              <span style={{opacity:0.7}}>#{i+1}</span> {r.sym}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -2464,13 +2517,46 @@ function BulletSection({icon, label, color, bullets}){
   )
 }
 
+function ReportHistoryPicker({rows, selectedIdx, onSelect}){
+  // Lets readers switch among past Concall/PPT summaries for the same
+  // symbol (most recent first). Hidden when only one filing exists.
+  if (!rows || rows.length <= 1) return null
+  return (
+    <div style={{display:'flex',flexWrap:'wrap',gap:5,marginBottom:10,alignItems:'center'}}>
+      <span style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',letterSpacing:'0.04em'}}>
+        History
+      </span>
+      {rows.map((r, i) => {
+        const label = new Date(r.announced_at).toLocaleDateString('en-IN',
+          {day:'numeric', month:'short', year:'2-digit'})
+        const active = i === selectedIdx
+        return (
+          <button key={r.attachment_url || i} type="button" onClick={()=>onSelect(i)}
+            title={`Read report filed ${label}`}
+            style={{
+              fontSize:10,fontWeight:active?800:600,cursor:'pointer',
+              padding:'3px 8px',borderRadius:999,
+              border:`1px solid ${active?C.accent:C.border}`,
+              background:active?C.accent+'22':C.card,
+              color:active?C.accent:C.muted,
+            }}>
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function TranscriptSummary({symbol}){
   const [rows, setRows] = useState(null) // null=loading, []=none, array=loaded
   const [showFull, setShowFull] = useState(false)
+  const [selectedIdx, setSelectedIdx] = useState(0)
   useEffect(() => {
     let cancelled = false
     setRows(null)
     setShowFull(false)
+    setSelectedIdx(0)
     if (!symbol) return
     fetchTranscriptSummaries(symbol).then(r => { if (!cancelled) setRows(r) })
     return () => { cancelled = true }
@@ -2496,7 +2582,7 @@ function TranscriptSummary({symbol}){
     )
   }
 
-  const latest = rows[0]
+  const latest = rows[Math.min(selectedIdx, rows.length-1)]
   const dateLabel = new Date(latest.announced_at).toLocaleDateString('en-IN',
     {day:'numeric', month:'short', year:'numeric'})
   const sections = showFull ? TRANSCRIPT_FULL_SECTIONS : TRANSCRIPT_SIMPLE_SECTIONS
@@ -2518,6 +2604,8 @@ function TranscriptSummary({symbol}){
           </div>
           <div style={{fontSize:10,color:C.muted,flexShrink:0,fontWeight:600}}>{dateLabel}</div>
         </div>
+        <ReportHistoryPicker rows={rows} selectedIdx={selectedIdx}
+          onSelect={i=>{ setSelectedIdx(i); setShowFull(false) }}/>
         <StatusChips guidance={latest.guidance_direction} tone={latest.management_tone}/>
         <ThemeChips themes={latest.emerging_themes} intensity={latest.theme_intensity}/>
         {latest.overall_summary && (
@@ -2560,15 +2648,35 @@ function TranscriptSummary({symbol}){
 
 function PptSummary({symbol}){
   const [rows, setRows] = useState(null) // null=loading, []=none, array=loaded
+  const [selectedIdx, setSelectedIdx] = useState(0)
   useEffect(() => {
     let cancelled = false
     setRows(null)
+    setSelectedIdx(0)
     if (!symbol) return
     fetchPptSummaries(symbol).then(r => { if (!cancelled) setRows(r) })
     return () => { cancelled = true }
   }, [symbol])
-  if (!rows || rows.length === 0) return null
-  const latest = rows[0]
+  if (rows === null) {
+    return (
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'20px 14px',
+        textAlign:'center',color:C.muted,fontSize:12}}>
+        Loading presentation summary…
+      </div>
+    )
+  }
+  if (rows.length === 0) {
+    return (
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'20px 14px',
+        textAlign:'center'}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:6}}>No PPT summary yet</div>
+        <div style={{fontSize:11.5,color:C.muted,lineHeight:1.5}}>
+          When an investor presentation is filed for {symbol}, the server will read it and generate a summary here.
+        </div>
+      </div>
+    )
+  }
+  const latest = rows[Math.min(selectedIdx, rows.length-1)]
   const dateLabel = new Date(latest.announced_at).toLocaleDateString('en-IN',
     {day:'numeric', month:'short', year:'numeric'})
   return (
@@ -2584,6 +2692,7 @@ function PptSummary({symbol}){
           </div>
           <div style={{fontSize:10,color:C.muted,flexShrink:0,fontWeight:600}}>{dateLabel}</div>
         </div>
+        <ReportHistoryPicker rows={rows} selectedIdx={selectedIdx} onSelect={setSelectedIdx}/>
         <StatusChips guidance={latest.guidance_direction} tone={latest.management_tone}/>
         <ThemeChips themes={latest.emerging_themes} intensity={latest.theme_intensity}/>
         {latest.overall_summary && (
