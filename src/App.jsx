@@ -1511,6 +1511,10 @@ function PriceHistoryChart({ sym }) {
 }
 
 function StockDetail({s}){
+  const isBankLike = (x)=>{
+    const t = `${x?.sector||''} ${x?.industry||''}`.toLowerCase()
+    return /bank|nbfc|housing finance|finance - housing|finance - nbfc|financing -/.test(t)
+  }
   const {copy,copied}=useCopy()
   return(
     <div style={{borderTop:`1px solid ${C.border}`,padding:'14px'}}>
@@ -1617,16 +1621,41 @@ function StockDetail({s}){
         ))}
       </div>
 
-      {/* Fundamentals — snapshot + growth/trend (from Screener.in) */}
+      {/* Fundamentals — valuation + cash-flow; banks get NIM/NPA/CAR instead of D/E & OPM focus */}
       <div style={{marginTop:14}}>
-        <div style={{fontSize:11,fontWeight:800,color:C.teal,marginBottom:8,textTransform:'uppercase'}}>💰 Fundamentals</div>
+        <div style={{fontSize:11,fontWeight:800,color:C.teal,marginBottom:8,textTransform:'uppercase'}}>
+          💰 Fundamentals{isBankLike(s)?' · Bank/NBFC':''}
+        </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-          {[
+          {(isBankLike(s) ? [
+            ['Market Cap', s.marketCap!=null?(s.marketCap>=100000?`₹${(s.marketCap/100000).toFixed(1)}L Cr`:`₹${s.marketCap.toFixed(0)} Cr`):'—', C.text],
+            ['P/B', s.pb!=null?s.pb.toFixed(2):'—', s.pb!=null?(s.pb<1.5?C.green:s.pb<3?C.yellow:C.red):C.muted],
+            ['P/E', s.pe!=null?s.pe.toFixed(1):'—', s.pe!=null?(s.pe<15?C.green:s.pe<25?C.yellow:C.red):C.muted],
+            ['PEG', s.pegRatio!=null?s.pegRatio.toFixed(2):'—', s.pegRatio!=null?(s.pegRatio<1?C.green:s.pegRatio<2?C.yellow:C.red):C.muted],
+            ['ROE', s.roe!=null?`${s.roe.toFixed(1)}%`:'—', s.roe!=null?(s.roe>15?C.green:s.roe>10?C.yellow:C.red):C.muted],
+            ['NIM', s.nim!=null?`${s.nim.toFixed(2)}%`:'—', s.nim!=null?(s.nim>=3?C.green:s.nim>=2.5?C.yellow:C.red):C.muted],
+            ['Gross NPA', s.gnpa!=null?`${s.gnpa.toFixed(2)}%`:'—', s.gnpa!=null?(s.gnpa<3?C.green:s.gnpa<6?C.yellow:C.red):C.muted],
+            ['Net NPA', s.nnpa!=null?`${s.nnpa.toFixed(2)}%`:'—', s.nnpa!=null?(s.nnpa<1?C.green:s.nnpa<2?C.yellow:C.red):C.muted],
+            ['CAR / CRAR', s.car!=null?`${s.car.toFixed(1)}%`:'—', s.car!=null?(s.car>=15?C.green:s.car>=12?C.yellow:C.red):C.muted],
+            ['CASA', s.casa!=null?`${s.casa.toFixed(1)}%`:'—', s.casa!=null?(s.casa>=40?C.green:s.casa>=30?C.yellow:C.muted):C.muted],
+            ['Div Yield', s.divYield!=null?`${s.divYield.toFixed(1)}%`:'—', C.text],
+            ['EPS YoY', s.epsYoy!=null?`${s.epsYoy>0?'+':''}${s.epsYoy.toFixed(1)}%`:'—', s.epsYoy!=null?(s.epsYoy>0?C.green:C.red):C.muted],
+            ['Promoter', s.promoter!=null?`${s.promoter.toFixed(1)}%`:'—', s.promoter!=null?(s.promoter>55?C.green:s.promoter>35?C.yellow:C.red):C.muted],
+            ['FII %', s.fiiPct!=null?`${s.fiiPct.toFixed(1)}%`:'—', C.text],
+            ['DII %', s.diiPct!=null?`${s.diiPct.toFixed(1)}%`:'—', C.text],
+          ] : [
             ['Market Cap', s.marketCap!=null?(s.marketCap>=100000?`₹${(s.marketCap/100000).toFixed(1)}L Cr`:`₹${s.marketCap.toFixed(0)} Cr`):'—', C.text],
             ['P/E', s.pe!=null?s.pe.toFixed(1):'—', s.pe!=null?(s.pe<20?C.green:s.pe<40?C.yellow:C.red):C.muted],
+            ['Industry PE', s.industryPe!=null?s.industryPe.toFixed(1):'—', C.muted],
             ['PEG Ratio', s.pegRatio!=null?s.pegRatio.toFixed(2):'—', s.pegRatio!=null?(s.pegRatio<1?C.green:s.pegRatio<2?C.yellow:C.red):C.muted],
+            ['P/B', s.pb!=null?s.pb.toFixed(2):'—', s.pb!=null?(s.pb<3?C.green:s.pb<6?C.yellow:C.red):C.muted],
             ['ROE', s.roe!=null?`${s.roe.toFixed(1)}%`:'—', s.roe!=null?(s.roe>20?C.green:s.roe>10?C.yellow:C.red):C.muted],
+            ['ROCE', s.roce!=null?`${s.roce.toFixed(1)}%`:'—', s.roce!=null?(s.roce>15?C.green:s.roce>8?C.yellow:C.red):C.muted],
             ['Debt/Equity', s.debtEq!=null?s.debtEq.toFixed(2):'—', s.debtEq!=null?(s.debtEq<0.5?C.green:s.debtEq<1.5?C.yellow:C.red):C.muted],
+            ['CFO', s.cfo!=null?`₹${s.cfo.toFixed(0)} Cr`:'—', s.cfo!=null?(s.cfo>0?C.green:C.red):C.muted],
+            ['FCF', s.fcf!=null?`₹${s.fcf.toFixed(0)} Cr`:'—', s.fcf!=null?(s.fcf>0?C.green:C.red):C.muted],
+            ['CFO / PAT', s.cfoPat!=null?s.cfoPat.toFixed(2):'—', s.cfoPat!=null?(s.cfoPat>=1?C.green:s.cfoPat>=0.7?C.yellow:C.red):C.muted],
+            ['Div Yield', s.divYield!=null?`${s.divYield.toFixed(1)}%`:'—', C.text],
             ['EPS', s.eps!=null?`₹${s.eps.toFixed(1)}`:'—', C.text],
             ['EPS QoQ', s.epsQoq!=null?`${s.epsQoq>0?'+':''}${s.epsQoq.toFixed(1)}%`:'—', s.epsQoq!=null?(s.epsQoq>0?C.green:C.red):C.muted],
             ['EPS YoY', s.epsYoy!=null?`${s.epsYoy>0?'+':''}${s.epsYoy.toFixed(1)}%`:'—', s.epsYoy!=null?(s.epsYoy>0?C.green:C.red):C.muted],
@@ -1641,7 +1670,7 @@ function StockDetail({s}){
             ['FII Trend', s.fiiTrend!=null?`${s.fiiTrend>0?'+':''}${s.fiiTrend.toFixed(2)}pp`:'—', s.fiiTrend!=null?(s.fiiTrend>0?C.green:s.fiiTrend<0?C.red:C.muted):C.muted],
             ['DII %', s.diiPct!=null?`${s.diiPct.toFixed(1)}%`:'—', C.text],
             ['DII Trend', s.diiTrend!=null?`${s.diiTrend>0?'+':''}${s.diiTrend.toFixed(2)}pp`:'—', s.diiTrend!=null?(s.diiTrend>0?C.green:s.diiTrend<0?C.red:C.muted):C.muted],
-          ].map(([k,v,c])=>(
+          ]).map(([k,v,c])=>(
             <div key={k} style={{background:C.bg,borderRadius:8,padding:'9px 11px'}}>
               <div style={{fontSize:9,color:C.muted,marginBottom:2,textTransform:'uppercase',letterSpacing:'0.06em'}}>{k}</div>
               <div style={{fontWeight:800,fontSize:14,color:c}}>{v}</div>
