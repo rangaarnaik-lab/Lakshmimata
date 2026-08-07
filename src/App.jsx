@@ -6584,7 +6584,7 @@ export default function App(){
           )}
         </div>
 
-        <TickerBanner stocks={topMovers}/>
+        <TickerBanner stocks={topMovers} onSelect={setChartSym}/>
 
         {/* ── Page content ── */}
         <div style={{padding:isMobile?'10px':'12px 16px',flex:1,overflowY:'auto'}}>
