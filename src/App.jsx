@@ -1946,7 +1946,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
   const panelStyle = isMobile
     ? {position:'fixed',inset:0,zIndex:1000,display:'flex',flexDirection:'column',background:C.sidebar}
     : {flex:customPct!=null?`0 0 ${customPct}%`:(['0 0 25%','0 0 45%','0 0 70%'][wide]||'0 0 25%'),
-        height:'100vh',overflowY:'auto',
+        height:'100vh',overflow:'hidden',
         display:'flex',flexDirection:'column',background:C.sidebar,
         borderLeft:`1px solid ${C.divider}`,transition:customPct!=null?'none':'flex 0.2s ease'}
 
@@ -2036,8 +2036,10 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
         </div>
       )}
 
-      {/* Body */}
-      <div style={{flex:1,position:'relative',overflow:chartTab==='own'?'auto':'hidden'}}>
+      {/* Body — minHeight keeps the chart visible when Results/Concall/PPT
+          detail tabs below expand (PPT cards are especially tall). */}
+      <div style={{flex:1,minHeight:isMobile?220:280,position:'relative',
+        overflow:chartTab==='own'?'auto':'hidden'}}>
         {chartTab==='tv'?(
           <>
             {!loaded&&(
@@ -2059,7 +2061,8 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
         )}
       </div>
       {!isIndex&&(
-        <div style={{flexShrink:0,padding:'8px 14px 14px'}}>
+        <div style={{flexShrink:0,maxHeight:isMobile?'42vh':'46vh',overflowY:'auto',
+          padding:'8px 14px 14px',borderTop:`1px solid ${C.divider}`}}>
           {(()=>{
             const mcapStock = stocks?.find(s=>s.sym===sym)
             if(mcapStock?.marketCap==null) return null
