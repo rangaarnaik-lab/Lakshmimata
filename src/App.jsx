@@ -4078,21 +4078,31 @@ function SectorPanel({sectorData,allStocks,isMobile,onChart,onViewInRS}){
 // Pure presentational: caller supplies the data, so it can be fed from
 // whichever source is already loaded in that context instead of firing
 // a duplicate fetch.
-function TickerBanner({stocks}){
+function TickerBanner({stocks, onSelect}){
   if(!stocks || stocks.length===0) return null
+  const open = (s) => {
+    const sym = s.sym || s.symbol
+    if(sym && onSelect) onSelect(sym)
+  }
   return(
     <div style={{background:C.card,borderBottom:`1px solid ${C.divider}`,overflow:'hidden',
-      whiteSpace:'nowrap',padding:'7px 0'}}>
+      whiteSpace:'nowrap',padding:'7px 0'}}
+      onMouseEnter={e=>{ const el=e.currentTarget.querySelector('[data-ticker-track]'); if(el) el.style.animationPlayState='paused' }}
+      onMouseLeave={e=>{ const el=e.currentTarget.querySelector('[data-ticker-track]'); if(el) el.style.animationPlayState='running' }}>
       <style>{`
         @keyframes lakshmimata-ticker-scroll {
           from { transform: translateX(0); }
           to { transform: translateX(-50%); }
         }
       `}</style>
-      <div style={{display:'inline-block',animation:'lakshmimata-ticker-scroll 32s linear infinite'}}>
+      <div data-ticker-track style={{display:'inline-block',animation:'lakshmimata-ticker-scroll 32s linear infinite'}}>
         {[...stocks,...stocks].map((s,i)=>(
-          <span key={i} style={{fontFamily:"monospace",fontSize:12,letterSpacing:'0.02em',color:C.muted,marginRight:32}}>
-            <b style={{color:C.text,fontWeight:600}}>{s.sym}</b>{' '}
+          <span key={i}
+            onClick={()=>open(s)}
+            title={onSelect ? `Open ${(s.sym||s.symbol)} chart` : undefined}
+            style={{fontFamily:"monospace",fontSize:12,letterSpacing:'0.02em',color:C.muted,marginRight:32,
+              cursor:onSelect?'pointer':'default'}}>
+            <b style={{color:C.text,fontWeight:600}}>{s.sym||s.symbol}</b>{' '}
             ₹{(s.last_price??s.last)?.toLocaleString('en-IN',{maximumFractionDigits:2})}{' '}
             <span style={{color:(s.chg_pct??s.chg)>=0?C.green:C.red}}>
               {(s.chg_pct??s.chg)>=0?'▲':'▼'} {Math.abs(s.chg_pct??s.chg??0).toFixed(2)}%
