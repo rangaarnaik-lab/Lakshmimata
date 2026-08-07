@@ -2245,10 +2245,14 @@ function MgmtFlagsCard({symbol, compact}){
             Promise vs execution · from PPT/Concall on file{dateLabel?` · ${dateLabel}`:''}
           </div>
         </div>
-        <span style={{
-          fontSize:9,fontWeight:800,color:vColor,background:vColor+'22',
-          border:`1px solid ${vColor}55`,borderRadius:999,padding:'2px 8px',textTransform:'uppercase',
-        }}>{verdict}</span>
+        <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+          <SectionFeedback symbol={symbol} contentType="flags" sectionKey="mgmt_flags"
+            sectionLabel="Management flags"/>
+          <span style={{
+            fontSize:9,fontWeight:800,color:vColor,background:vColor+'22',
+            border:`1px solid ${vColor}55`,borderRadius:999,padding:'2px 8px',textTransform:'uppercase',
+          }}>{verdict}</span>
+        </div>
       </div>
       {info.summary&&(
         <div style={{fontSize:12,lineHeight:1.5,color:C.text,marginBottom:info.flags?.length?8:0}}>
@@ -2608,8 +2612,12 @@ function FundamentalsPanel({symbol, stocks}){
         {highlights.length>0?(
           <div style={{marginBottom:14,padding:'10px 12px',borderRadius:10,
             background:C.teal+'12',border:`1px solid ${C.teal}33`}}>
-            <div style={{fontSize:10,fontWeight:800,color:C.teal,textTransform:'uppercase',
-              letterSpacing:'0.04em',marginBottom:6}}>AI takeaways</div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:6}}>
+              <div style={{fontSize:10,fontWeight:800,color:C.teal,textTransform:'uppercase',
+                letterSpacing:'0.04em'}}>AI takeaways</div>
+              <SectionFeedback symbol={symbol} contentType="fundamentals" sectionKey="ai_highlights"
+                sectionLabel="AI takeaways"/>
+            </div>
             <ul style={{margin:0,paddingLeft:16,fontSize:12.5,lineHeight:1.5,color:C.text}}>
               {highlights.map((h,i)=><li key={i} style={{marginBottom:4}}>{h}</li>)}
             </ul>
@@ -2620,16 +2628,24 @@ function FundamentalsPanel({symbol, stocks}){
           </div>
         )}
 
-        <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
-          letterSpacing:'0.04em',marginBottom:8}}>
-          {aiKeys.length>=3?'AI-picked important metrics':'Important metrics'}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:8}}>
+          <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+            letterSpacing:'0.04em'}}>
+            {aiKeys.length>=3?'AI-picked important metrics':'Important metrics'}
+          </div>
+          <SectionFeedback symbol={symbol} contentType="fundamentals" sectionKey="important_metrics"
+            sectionLabel="Important metrics"/>
         </div>
         <MetricCardsGrid cards={importantCards}/>
 
         {restCards.length>0&&(
           <div style={{marginTop:14}}>
-            <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
-              letterSpacing:'0.04em',marginBottom:8}}>All metrics</div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:8}}>
+              <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+                letterSpacing:'0.04em'}}>All metrics</div>
+              <SectionFeedback symbol={symbol} contentType="fundamentals" sectionKey="all_metrics"
+                sectionLabel="All metrics"/>
+            </div>
             <MetricCardsGrid cards={restCards}/>
           </div>
         )}
@@ -3102,7 +3118,11 @@ function ResultsFilingSummary({symbol}){
           <div style={{fontSize:12,fontWeight:900,color:C.text,display:'flex',alignItems:'center',gap:6}}>
             <span style={{fontSize:15}}>📄</span> AI Results Summary
           </div>
-          <div style={{fontSize:10,color:C.muted,flexShrink:0,fontWeight:600}}>{dateLabel}</div>
+          <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+            <SectionFeedback symbol={symbol} contentType="results_summary" sectionKey="summary"
+              sectionLabel="AI Results Summary"/>
+            <div style={{fontSize:10,color:C.muted,fontWeight:600}}>{dateLabel}</div>
+          </div>
         </div>
         <ReportHistoryPicker rows={rows} selectedIdx={selectedIdx}
           onSelect={i=>{ setSelectedIdx(i); setExpanded(false) }}/>
@@ -3185,18 +3205,26 @@ function ResultsHistoryTable({symbol}){
   const resultRating = computeResultRating(hist)
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px',overflowX:'auto'}}>
-      {resultRating&&(
-        <div title="Quality from Sales/PAT YoY. Capped if headline PAT fell, OPM compressed, or QoQ is flat/soft — strong YoY alone is not Excellent. Not a buy/sell call."
-          style={{display:'inline-block',marginBottom:6,padding:'2px 9px',borderRadius:12,
-            fontSize:10,fontWeight:800,cursor:'help',
-            background:(resultRating==='Excellent'?C.green:resultRating==='Good'?'#7dd3a8':
-              resultRating==='Weak'?C.red:C.yellow)+'22',
-            color:resultRating==='Excellent'?C.green:resultRating==='Good'?'#7dd3a8':
-              resultRating==='Weak'?C.red:C.yellow}}>
-          {resultRating==='Excellent'?'⭐ Excellent':resultRating==='Good'?'✓ Good':
-            resultRating==='Weak'?'⚠ Weak':'– Neutral'} Result
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:6,flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+          {resultRating&&(
+            <div title="Quality from Sales/PAT YoY. Capped if headline PAT fell, OPM compressed, or QoQ is flat/soft — strong YoY alone is not Excellent. Not a buy/sell call."
+              style={{display:'inline-block',padding:'2px 9px',borderRadius:12,
+                fontSize:10,fontWeight:800,cursor:'help',
+                background:(resultRating==='Excellent'?C.green:resultRating==='Good'?'#7dd3a8':
+                  resultRating==='Weak'?C.red:C.yellow)+'22',
+                color:resultRating==='Excellent'?C.green:resultRating==='Good'?'#7dd3a8':
+                  resultRating==='Weak'?C.red:C.yellow}}>
+              {resultRating==='Excellent'?'⭐ Excellent':resultRating==='Good'?'✓ Good':
+                resultRating==='Weak'?'⚠ Weak':'– Neutral'} Result
+            </div>
+          )}
+          <span style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+            letterSpacing:'0.04em'}}>Results</span>
         </div>
-      )}
+        <SectionFeedback symbol={symbol} contentType="results" sectionKey="history_table"
+          sectionLabel="Results table"/>
+      </div>
       {otherIncomeSpike&&(
         <div title="Other income more than 50% higher than the previous quarter - worth checking whether this quarter's profit growth is coming from the core business or a one-time/non-operating gain."
           style={{display:'flex',alignItems:'center',gap:5,marginBottom:6,padding:'4px 9px',
@@ -3461,7 +3489,7 @@ function normalizeBullets(bullets){
 
 // Dedicated theme block for PPT / under Market Cap — chips alone were too
 // easy to miss; this is a full section with evidence bullets.
-function ThemeHighlightSection({themes, intensity, evidence, sourceLabel, compact}){
+function ThemeHighlightSection({themes, intensity, evidence, sourceLabel, compact, feedback}){
   const list = normalizeBullets(themes)
   const evidenceList = normalizeBullets(evidence)
   if (!list.length && !evidenceList.length) return null
@@ -3491,14 +3519,23 @@ function ThemeHighlightSection({themes, intensity, evidence, sourceLabel, compac
             )}
           </div>
         </div>
-        {intensity && intensity!=='none' && (
-          <span style={{
-            fontSize:9,fontWeight:800,color:tone,background:tone+'22',
-            border:`1px solid ${tone}55`,borderRadius:999,padding:'2px 8px',textTransform:'uppercase',
-          }}>
-            {intensity} intensity
-          </span>
-        )}
+        <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+          {feedback&&(
+            <SectionFeedback
+              symbol={feedback.symbol}
+              contentType={feedback.contentType}
+              sectionKey={feedback.sectionKey||'emerging_themes'}
+              sectionLabel="Emerging Themes"/>
+          )}
+          {intensity && intensity!=='none' && (
+            <span style={{
+              fontSize:9,fontWeight:800,color:tone,background:tone+'22',
+              border:`1px solid ${tone}55`,borderRadius:999,padding:'2px 8px',textTransform:'uppercase',
+            }}>
+              {intensity} intensity
+            </span>
+          )}
+        </div>
       </div>
       {list.length>0 && (
         <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:evidenceList.length?8:0}}>
@@ -3591,6 +3628,7 @@ function StockThemesAfterMcap({symbol}){
       intensity={info.intensity}
       evidence={info.evidence}
       sourceLabel={info.sourceLabel}
+      feedback={{symbol, contentType:'themes', sectionKey:'emerging_themes'}}
     />
   )
 }
@@ -3897,6 +3935,7 @@ function TranscriptSummary({symbol}){
           intensity={latest.theme_intensity}
           evidence={latest.theme_evidence}
           sourceLabel="Highlighted from this concall"
+          feedback={{symbol, contentType:'concall', sectionKey:'emerging_themes'}}
         />
         {latest.overall_summary && (
           <div style={{marginBottom:12}}>
@@ -3998,6 +4037,7 @@ function PptSummary({symbol}){
           intensity={latest.theme_intensity}
           evidence={latest.theme_evidence}
           sourceLabel="Highlighted from this PPT"
+          feedback={{symbol, contentType:'ppt', sectionKey:'emerging_themes'}}
         />
         {latest.overall_summary && (
           <div style={{marginBottom:12}}>
