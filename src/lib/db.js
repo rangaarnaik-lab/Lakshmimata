@@ -986,7 +986,7 @@ export async function fetchCompanyAbout(symbol) {
   const { data, error } = await supabase
     .from('company_abouts')
     .select('symbol,overall_brief,what_they_do,customers,segments,innovation,sources,'
-      + 'source_announced_at,status,updated_at')
+      + 'website,image_url,source_announced_at,status,updated_at')
     .eq('symbol', symbol)
     .eq('status', 'done')
     .maybeSingle()

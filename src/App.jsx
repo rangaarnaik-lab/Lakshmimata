@@ -2103,9 +2103,11 @@ const STOCK_DETAIL_TABS = [
 function AboutCompanyPanel({symbol, stocks}){
   const s = stocks?.find(x=>x.sym===symbol) || null
   const [about, setAbout] = useState(undefined) // undefined=loading
+  const [imgBroken, setImgBroken] = useState(false)
   useEffect(()=>{
     let cancelled=false
     setAbout(undefined)
+    setImgBroken(false)
     if(!symbol){ setAbout(null); return }
     fetchCompanyAbout(symbol).then(row=>{ if(!cancelled) setAbout(row) })
     return()=>{cancelled=true}
@@ -2123,7 +2125,7 @@ function AboutCompanyPanel({symbol, stocks}){
         <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:6}}>About Company</div>
         <div style={{fontSize:12,color:C.muted,lineHeight:1.55}}>
           AI researches the web (company site, Screener, filings, news) plus any PPT/Concall
-          already on file for {symbol||'this stock'}. Briefs fill in over the next worker cycles.
+          already on file for {symbol||'this stock'}. Briefs and logos fill in over the next worker cycles.
         </div>
         {s?.industry||s?.sector?(
           <div style={{marginTop:10,fontSize:11,color:C.text}}>
@@ -2137,19 +2139,40 @@ function AboutCompanyPanel({symbol, stocks}){
   const customers = normalizeBullets(about.customers)
   const segments = normalizeBullets(about.segments)
   const innovation = normalizeBullets(about.innovation)
-  const srcDate = about.source_announced_at
-    ? new Date(about.source_announced_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})
+  const srcDate = about.updated_at || about.source_announced_at
+    ? new Date(about.updated_at || about.source_announced_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})
     : null
+  const showImg = about.image_url && !imgBroken
+  const monogram = (symbol||'?').slice(0,1).toUpperCase()
 
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
       <div style={{height:3,background:`linear-gradient(90deg, ${C.accent}, ${C.teal})`}}/>
       <div style={{padding:'12px 14px'}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,marginBottom:8}}>
-          <div>
-            <div style={{fontSize:13,fontWeight:900,color:C.text}}>About {symbol}</div>
-            <div style={{fontSize:10,color:C.muted,marginTop:2}}>
-              AI web research + filings · not investment advice
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:10}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,minWidth:0}}>
+            <div style={{width:44,height:44,borderRadius:10,flexShrink:0,overflow:'hidden',
+              background:`linear-gradient(135deg,${C.accent}33,${C.purple}33)`,
+              border:`1px solid ${C.border}`,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              {showImg?(
+                <img src={about.image_url} alt={`${symbol} logo`}
+                  onError={()=>setImgBroken(true)}
+                  style={{width:'100%',height:'100%',objectFit:'contain',background:'#fff',padding:4}}/>
+              ):(
+                <span style={{fontWeight:900,fontSize:18,color:C.accent}}>{monogram}</span>
+              )}
+            </div>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:900,color:C.text}}>About {symbol}</div>
+              <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+                AI web research + filings · not investment advice
+              </div>
+              {about.website&&(
+                <a href={`https://${about.website}`} target="_blank" rel="noopener noreferrer"
+                  style={{fontSize:10,color:C.accent,textDecoration:'none'}}>
+                  {about.website} ↗
+                </a>
+              )}
             </div>
           </div>
           {srcDate&&(
