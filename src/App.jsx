@@ -2677,28 +2677,6 @@ function normalizeBullets(bullets){
   return []
 }
 
-function ThemeChips({themes, intensity}){
-  const list = normalizeBullets(themes) // reuse: accepts array or JSON string
-  if (!list.length) return null
-  const tone = intensity==='high'?C.green:intensity==='low'?C.muted:C.accent
-  return (
-    <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10,alignItems:'center'}}>
-      <span style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',letterSpacing:'0.04em'}}>Themes</span>
-      {list.map(t=>(
-        <span key={t} style={{
-          fontSize:10,fontWeight:800,color:tone,background:tone+'18',
-          border:`1px solid ${tone}44`,borderRadius:999,padding:'3px 9px',
-        }}>
-          {EMERGING_THEME_LABELS[t]||t}
-        </span>
-      ))}
-      {intensity && intensity!=='none' && (
-        <span style={{fontSize:9,fontWeight:700,color:C.muted}}>{intensity}</span>
-      )}
-    </div>
-  )
-}
-
 // Dedicated theme block for PPT / under Market Cap — chips alone were too
 // easy to miss; this is a full section with evidence bullets.
 function ThemeHighlightSection({themes, intensity, evidence, sourceLabel, compact}){
