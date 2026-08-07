@@ -2302,7 +2302,7 @@ function AskAiAgent({symbol, isMobile}){
         }
       }
     }
-    const id = setInterval(tick, 2500)
+    const id = setInterval(tick, 1000)
     tick()
     return()=>{cancelled=true; clearInterval(id)}
   },[open, active?.id, active?.status, symbol])
@@ -2442,8 +2442,8 @@ function AskAiAgent({symbol, isMobile}){
                   {active.status==='pending'&&(
                     <div style={{fontSize:11,color:C.muted}}>
                       {(active.ask_mode||askMode)==='web'
-                        ? 'Web research usually takes 30–90 seconds.'
-                        : 'Filings-only answers usually take 15–45 seconds.'}
+                        ? 'Working… usually 10–40 seconds (falls back fast if web is slow).'
+                        : 'Working… usually 5–20 seconds.'}
                     </div>
                   )}
                   {active.status==='error'&&(
