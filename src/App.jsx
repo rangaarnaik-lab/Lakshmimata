@@ -6877,10 +6877,18 @@ export default function App(){
   const [resultsHistoryCache,setResultsHistoryCache]=useState({})
   useEffect(()=>{
     if(mainTab!=='announcements'||announcementsCategory!=='results') return
-    const missing=[...new Set(announcements.map(a=>a.symbol).filter(sym=>sym&&!resultsHistoryCache[sym]))]
+    const missing=[...new Set(announcements.map(a=>a.symbol).filter(sym=>{
+      if(!sym) return false
+      const key=String(sym).toUpperCase()
+      return resultsHistoryCache[sym]===undefined && resultsHistoryCache[key]===undefined
+    }))]
     missing.forEach(sym=>{
+      const key=String(sym).toUpperCase()
       fetchFinancialResultsHistory(sym).then(rows=>{
-        setResultsHistoryCache(p=>p[sym]?p:{...p,[sym]:rows})
+        setResultsHistoryCache(p=>{
+          if(p[sym]!==undefined || p[key]!==undefined) return p
+          return {...p, [sym]:rows, [key]:rows}
+        })
       })
     })
   },[mainTab,announcementsCategory,announcements,resultsHistoryCache])
@@ -6888,6 +6896,14 @@ export default function App(){
     if(mainTab==='announcements'&&announcementsCategory==='results')
       fetchRecentFinancialResults().then(setResultsMap)
   },[mainTab,announcementsCategory])
+  // Prefer bulk map; fall back to per-symbol history (new filings often
+  // appear in announcements before the bulk recent-results snapshot).
+  const resultRowFor = (sym)=>{
+    if(!sym) return null
+    return resultsMap[sym] || resultsMap[String(sym).toUpperCase()]
+      || resultsHistoryCache[sym]?.[0] || resultsHistoryCache[String(sym).toUpperCase()]?.[0]
+      || null
+  }
   useEffect(()=>{ if(announcementsCategory!=='orders')setOrderSizeFilter('all') },[announcementsCategory])
   useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter,announcementsScope,announcementsDateFilter])
   const ANNOUNCEMENTS_PAGE_SIZE=50
@@ -10714,15 +10730,8 @@ export default function App(){
                             🤖 {a.ai_summary}
                           </div>
                         )}
-                        {announcementsCategory==='results'&&!resultsMap[a.symbol]&&(
-                          <div style={{fontSize:9,color:C.yellow,background:C.yellow+'18',
-                            border:`1px solid ${C.yellow}44`,borderRadius:6,padding:'4px 8px',marginBottom:4}}>
-                            🔧 DEBUG: no resultsMap entry for "{a.symbol}". resultsMap has {Object.keys(resultsMap).length} symbols.
-                            {Object.keys(resultsMap).length>0&&` Sample: ${Object.keys(resultsMap).slice(0,5).join(', ')}`}
-                          </div>
-                        )}
-                        {announcementsCategory==='results'&&resultsMap[a.symbol]&&(()=>{
-                          const fr=resultsMap[a.symbol]
+                        {announcementsCategory==='results'&&resultRowFor(a.symbol)&&(()=>{
+                          const fr=resultRowFor(a.symbol)
                           const fmt=v=>v==null?'—':(Math.abs(v)>=1000?(v/1).toLocaleString('en-IN',{maximumFractionDigits:0}):v.toLocaleString('en-IN',{maximumFractionDigits:2}))
                           // PE isn't stored on the announcement row itself -
                           // looked up from the already-loaded live stocks
@@ -10749,7 +10758,7 @@ export default function App(){
                                 {a.sector&&<span>Sector: <span style={{color:C.text}}>{a.sector}</span></span>}
                               </div>
                               {(()=>{
-                                const hist = resultsHistoryCache[a.symbol]
+                                const hist = resultsHistoryCache[a.symbol] ?? resultsHistoryCache[String(a.symbol).toUpperCase()]
                                 if(hist===undefined){
                                   return <div style={{padding:'10px',fontSize:11,color:C.muted,textAlign:'center',
                                     background:C.card,border:`1px solid ${C.border}`,borderTop:'none',borderRadius:'0 0 8px 8px'}}>Loading…</div>
@@ -10887,8 +10896,18 @@ export default function App(){
                             </div>
                           )
                         })()}
-                        {!(announcementsCategory==='results'&&resultsMap[a.symbol])&&(
-                          <div style={{fontSize:12.5,color:C.text,lineHeight:1.4}}>{a.subject}</div>
+                        {!(announcementsCategory==='results'&&resultRowFor(a.symbol))&&(
+                          <div style={{fontSize:12.5,color:C.text,lineHeight:1.4}}>
+                            {a.subject}
+                            {announcementsCategory==='results'&&resultsHistoryCache[a.symbol]===undefined&&(
+                              <span style={{display:'block',fontSize:10,color:C.muted,marginTop:4}}>Loading results…</span>
+                            )}
+                            {announcementsCategory==='results'&&Array.isArray(resultsHistoryCache[a.symbol])&&resultsHistoryCache[a.symbol].length===0&&(
+                              <span style={{display:'block',fontSize:10,color:C.muted,marginTop:4}}>
+                                Numbers not scraped yet — check Attachment or open the stock chart.
+                              </span>
+                            )}
+                          </div>
                         )}
                         <div style={{fontSize:10,color:C.muted,marginTop:3,display:'flex',gap:8,alignItems:'center'}}>
                           <span>{dateStr}</span>

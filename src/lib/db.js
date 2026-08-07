@@ -1183,19 +1183,23 @@ export async function fetchWatchlistAnnouncementsSince(syms, sinceISO) {
  * announcements. Last 45 days covers a full results season window.
  */
 export async function fetchRecentFinancialResults() {
-  const since = new Date(Date.now() - 45 * 864e5).toISOString()
+  // 90 days — board-meeting announcements can land before scrape finishes,
+  // and a short window left new tickers with no resultsMap entry (DEBUG noise).
+  const since = new Date(Date.now() - 90 * 864e5).toISOString()
   const { data, error } = await supabase
     .from('financial_results')
     .select('symbol,period_ended,result_type,sales,other_income,pbt,pat,eps,opm_pct,filed_at')
     .gt('filed_at', since)
     .order('filed_at', { ascending: false })
-    .limit(1000)
+    .limit(2000)
   if (error) { console.error('fetchRecentFinancialResults error:', error.message); return {} }
   const bySymbol = {}
   for (const r of data || []) {
     // first (most recent) row per symbol wins; prefer consolidated when
     // both arrive at the same recency
-    if (!bySymbol[r.symbol]) bySymbol[r.symbol] = r
+    const sym = (r.symbol || '').toUpperCase()
+    if (!sym) continue
+    if (!bySymbol[sym]) bySymbol[sym] = { ...r, symbol: sym }
   }
   return bySymbol
 }
