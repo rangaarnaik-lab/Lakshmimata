@@ -4047,7 +4047,8 @@ function computeRsGridCols(vis){
     ['182px',vis.pp10||vis.rs7d],['140px',vis.stage],['170px',vis.squeeze],
     ['160px',vis.wl52],['150px',vis.weakrs],
     ['55px',vis.mcap],['55px',vis.pe],['48px',vis.roe],['48px',vis.de],['48px',vis.prom],
-    ['55px',true],['32px',true],['32px',true],
+    ['58px',vis.fundRating], // Fund / Rating — was missing, so "Good" lined up under TV
+    ['28px',true],['32px',true],['32px',true], // expand, TV, Scr
   ]
   return cols.filter(([,show])=>show).map(([w])=>w).join(' ')
 }
@@ -4157,7 +4158,7 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,de
             {visibleRsCols.roe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>}
             {visibleRsCols.de&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>}
             {visibleRsCols.prom&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>}
-            {visibleRsCols.fundRating&&<span title="Overall fundamental quality (ROE, growth, debt, margins, ownership) — not the same as Excellent/Good Result under the chart, which is only the latest quarter." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Fund</span>}
+            {visibleRsCols.fundRating&&<span title="Overall fundamental quality (ROE, growth, debt, margins, ownership) — not the same as Excellent/Good Result under the chart, which is only the latest quarter." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Rating</span>}
             <span/>
             <span style={{textAlign:'center',color:C.muted,fontSize:9}}>TV</span>
             <span style={{textAlign:'center',color:C.muted,fontSize:9}}>Scr</span>
@@ -8197,7 +8198,7 @@ export default function App(){
                     {visibleRsCols.roe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>}
                     {visibleRsCols.de&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>}
                     {visibleRsCols.prom&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>}
-                    {visibleRsCols.fundRating&&<span title="Overall fundamental quality (ROE, growth, debt, margins, ownership) — not the same as Excellent/Good Result under the chart, which is only the latest quarter." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Fund</span>}
+                    {visibleRsCols.fundRating&&<span title="Overall fundamental quality (ROE, growth, debt, margins, ownership) — not the same as Excellent/Good Result under the chart, which is only the latest quarter." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Rating</span>}
                     <span/>
                     <span style={{textAlign:'center',color:C.muted,fontSize:9}}>TV</span>
                     <span style={{textAlign:'center',color:C.muted,fontSize:9}}>Scr</span>
