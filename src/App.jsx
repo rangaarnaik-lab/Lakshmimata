@@ -2097,23 +2097,281 @@ function EmaBreadthTable({data,isMobile,dragProps,rangeLabel}){
 
 // Tabbed results/summary section on the stock detail page, replacing
 // what used to be four sections stacked vertically. Tab order follows
-// what's most likely to have content for a given stock: numeric
-// results first (always present if the company has filed), then the
-// three AI summaries in the order their source documents typically
-// get filed (results PDF same-day, transcript/presentation days later).
+// what's most likely to have content for a given stock: Company Brief
+// first (cross-page snapshot), then numeric results, then AI filings.
 const STOCK_DETAIL_TABS = [
+  {key: 'summary', label: 'Summary'},
   {key: 'results', label: 'Results'},
   {key: 'concall', label: 'Concall Report'},
   {key: 'ppt', label: 'PPT'},
 ]
+
+function fmtPctSigned(v, digits=0){
+  if(v==null||Number.isNaN(+v)) return null
+  const n=+v
+  return `${n>=0?'+':''}${n.toFixed(digits)}%`
+}
+function fmtMcapCr(mcap){
+  if(mcap==null) return null
+  return mcap>=100000?`₹${(mcap/100000).toFixed(1)}L Cr`:`₹${mcap.toFixed(0)} Cr`
+}
+
+// Cross-page company brief: RS + fundamentals + latest result + Concall/PPT
+// themes/outlook assembled into one high-level read. Uses data already in
+// the app (and AI filings already generated server-side) — no extra chat cost.
+function buildCompanyBrief({s, resultRating, hist, ppt, tx}){
+  const paragraphs=[]
+  const bullets=[]
+  const sectorBit=[s.industry, s.sector].filter(Boolean).join(' · ') || 'NSE-listed'
+  const mcap=fmtMcapCr(s.marketCap)
+  const priceBit=s.price!=null?`trading near ₹${Number(s.price).toLocaleString('en-IN',{maximumFractionDigits:2})}`:null
+  const chgBit=s.chg!=null?`(${fmtPctSigned(s.chg,2)} today)`:null
+  paragraphs.push(
+    `${s.sym} is a ${sectorBit} name${mcap?` with market cap ${mcap}`:''}`
+    + (priceBit?`, ${priceBit}`:'')
+    + (chgBit?` ${chgBit}`:'')
+    + '.'
+  )
+
+  // Momentum / RS
+  const rsParts=[]
+  if(s.rsTv!=null) rsParts.push(`RS-TV ${s.rsTv}`)
+  const stage = calcWeinsteinStage(s)
+  if(stage?.label) rsParts.push(stage.label)
+  if(rsParts.length){
+    paragraphs.push(`On the tape: ${rsParts.join(' · ')}. Relative strength and stage come from the RS scanner — useful for timing context, not as a fundamental verdict.`)
+  }
+
+  // Fund quality
+  if(s.fundamentalLabel){
+    const bits=[`Fund quality ${s.fundamentalLabel}`]
+    if(s.roe!=null) bits.push(`ROE ${s.roe.toFixed(1)}%`)
+    if(s.roce!=null) bits.push(`ROCE ${s.roce.toFixed(1)}%`)
+    if(s.pe!=null) bits.push(`P/E ${s.pe.toFixed(1)}`)
+    if(s.debtEq!=null) bits.push(`D/E ${s.debtEq.toFixed(2)}`)
+    paragraphs.push(`${bits.join(' · ')}. This Fund score is a broader quality read (growth, leverage, ownership) — separate from the latest-quarter Result badge.`)
+  }
+
+  // Growth / latest result
+  const current=hist?.[0]
+  const salesYoy=s.salesYoy??current?.sales_yoy_pct
+  const patYoy=s.patYoy??current?.pat_yoy_pct
+  // compute from hist if needed
+  let salesYoyC=salesYoy, patYoyC=patYoy, salesQoqC=s.salesQoq??current?.sales_qoq_pct, patQoqC=current?.pat_qoq_pct
+  if(hist?.length){
+    const cur=hist[0]
+    const prev=hist[1]
+    const curDate=new Date(cur.period_ended)
+    const yoyRow=hist.slice(1).find(h=>{
+      const d=new Date(h.period_ended)
+      const yearsBack=curDate.getFullYear()-d.getFullYear()
+      const dayDiff=Math.abs((d.getMonth()*30+d.getDate())-(curDate.getMonth()*30+curDate.getDate()))
+      return yearsBack===1 && dayDiff<=20
+    })
+    const pct=(now,then)=>(now==null||then==null||then===0)?null:((now-then)/Math.abs(then)*100)
+    if(salesYoyC==null) salesYoyC=pct(cur.sales, yoyRow?.sales)
+    if(patYoyC==null) patYoyC=pct(cur.pat, yoyRow?.pat)
+    if(salesQoqC==null) salesQoqC=pct(cur.sales, prev?.sales)
+    if(patQoqC==null) patQoqC=pct(cur.pat, prev?.pat)
+  }
+  if(resultRating || salesYoyC!=null || patYoyC!=null){
+    const g=[]
+    if(resultRating) g.push(`latest quarter rated ${resultRating}`)
+    if(salesYoyC!=null) g.push(`Sales ${fmtPctSigned(salesYoyC,0)} YoY`)
+    if(patYoyC!=null) g.push(`PAT ${fmtPctSigned(patYoyC,0)} YoY`)
+    if(salesQoqC!=null) g.push(`Sales ${fmtPctSigned(salesQoqC,0)} QoQ`)
+    if(patQoqC!=null) g.push(`PAT ${fmtPctSigned(patQoqC,0)} QoQ`)
+    paragraphs.push(`Growth snapshot: ${g.join(', ')}.`)
+  }
+  if(s.epsGrowthStreak!=null && s.epsGrowthStreak>=2){
+    bullets.push(`EPS growth streak: ${s.epsGrowthStreak} quarters`)
+  }
+  if(s.opmPct!=null){
+    bullets.push(`OPM ${s.opmPct.toFixed(1)}%`+(s.opmTrend!=null?` (${s.opmTrend>0?'+':''}${s.opmTrend.toFixed(1)}pp trend)`:''))
+  }
+  if(s.cfo!=null || s.fcf!=null){
+    const cash=[]
+    if(s.cfo!=null) cash.push(`CFO ₹${s.cfo.toFixed(0)} Cr`)
+    if(s.fcf!=null) cash.push(`FCF ₹${s.fcf.toFixed(0)} Cr`)
+    if(s.cfoPat!=null) cash.push(`CFO/PAT ${s.cfoPat.toFixed(2)}`)
+    bullets.push(cash.join(' · '))
+  }
+
+  // Themes / management from filings (prefer PPT then concall)
+  const filing = (ppt && (normalizeBullets(ppt.emerging_themes).length || ppt.overall_summary)) ? ppt
+    : (tx && (normalizeBullets(tx.emerging_themes).length || tx.overall_summary)) ? tx
+    : (ppt || tx)
+  const themes=normalizeBullets(filing?.emerging_themes)
+  if(themes.length){
+    paragraphs.push(
+      `Emerging themes from recent ${filing===ppt?'PPT':'concall'}: `
+      + themes.map(t=>EMERGING_THEME_LABELS[t]||t).join(', ')
+      + (filing?.theme_intensity && filing.theme_intensity!=='none' ? ` (${filing.theme_intensity} intensity)` : '')
+      + '.'
+    )
+  }
+  if(filing?.management_tone || filing?.guidance_direction){
+    const t=TONE_BADGE[filing.management_tone]
+    const g=GUIDANCE_BADGE[filing.guidance_direction]
+    const bits=[]
+    if(t) bits.push(t.label)
+    if(g) bits.push(g.label)
+    if(bits.length) paragraphs.push(`Management signal: ${bits.join(' · ')}.`)
+  }
+  if(filing?.overall_summary){
+    paragraphs.push(String(filing.overall_summary).slice(0,420)+(String(filing.overall_summary).length>420?'…':''))
+  }
+  normalizeBullets(filing?.watch_next).slice(0,4).forEach(w=>bullets.push(`Watch: ${w}`))
+  normalizeBullets(filing?.theme_evidence).slice(0,3).forEach(e=>bullets.push(`Theme: ${e}`))
+
+  paragraphs.push('Not investment advice — cross-check Results, Concall, and PPT tabs for full detail.')
+  return {paragraphs, bullets, filingSource: filing===ppt?'PPT':filing===tx?'Concall':null, themes}
+}
+
+function CompanySummaryPanel({symbol, stocks}){
+  const s = stocks?.find(x=>x.sym===symbol) || null
+  const [pack, setPack] = useState(undefined) // undefined loading
+  useEffect(()=>{
+    let cancelled=false
+    setPack(undefined)
+    if(!symbol){ setPack(null); return }
+    Promise.all([
+      fetchFinancialResultsHistory(symbol),
+      fetchPptSummaries(symbol),
+      fetchTranscriptSummaries(symbol),
+    ]).then(([hist, pptRows, txRows])=>{
+      if(cancelled) return
+      setPack({
+        hist: hist||[],
+        ppt: pptRows?.[0]||null,
+        tx: txRows?.[0]||null,
+        resultRating: computeResultRating(hist||[]),
+      })
+    })
+    return()=>{cancelled=true}
+  },[symbol])
+
+  if(!s){
+    return (
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16,
+        fontSize:12,color:C.muted,textAlign:'center'}}>
+        Stock data not in the current scan — open this symbol from RS / Market after a refresh.
+      </div>
+    )
+  }
+  if(pack===undefined){
+    return (
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16,
+        fontSize:12,color:C.muted,textAlign:'center'}}>
+        Building company brief…
+      </div>
+    )
+  }
+
+  const brief=buildCompanyBrief({
+    s, resultRating:pack?.resultRating, hist:pack?.hist, ppt:pack?.ppt, tx:pack?.tx,
+  })
+  const chip=(label,value,color)=>(
+    <div key={label} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px',minWidth:0}}>
+      <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.04em'}}>{label}</div>
+      <div style={{fontSize:13,fontWeight:800,color:color||C.text,marginTop:2,overflow:'hidden',textOverflow:'ellipsis'}}>{value}</div>
+    </div>
+  )
+  const fundColor = s.fundamentalLabel==='Excellent'?C.green:s.fundamentalLabel==='Good'?'#7dd3a8':s.fundamentalLabel==='Fair'?C.yellow:C.red
+  const resColor = pack.resultRating==='Excellent'?C.green:pack.resultRating==='Good'?'#7dd3a8':pack.resultRating==='Weak'?C.red:C.yellow
+
+  return (
+    <div style={{
+      background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',
+      boxShadow:'0 2px 12px rgba(0,0,0,0.25)',
+    }}>
+      <div style={{height:4,background:`linear-gradient(90deg, ${C.accent}, ${C.teal}, ${C.lime}, ${C.purple})`}}/>
+      <div style={{padding:'12px 14px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,marginBottom:10}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:900,color:C.text,display:'flex',alignItems:'center',gap:6}}>
+              <span>✨</span> Company Brief
+            </div>
+            <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+              High-level view from RS, Fund, Results, Concall &amp; PPT · Free · no extra AI chat cost
+            </div>
+          </div>
+          {brief.filingSource && (
+            <span style={{fontSize:9,fontWeight:700,color:C.accent,background:C.accent+'18',
+              border:`1px solid ${C.accent}44`,borderRadius:999,padding:'3px 8px',flexShrink:0}}>
+              + {brief.filingSource}
+            </span>
+          )}
+        </div>
+
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:7,marginBottom:12}}>
+          {chip('Market Cap', fmtMcapCr(s.marketCap)||'—')}
+          {chip('Fund', s.fundamentalLabel||'—', s.fundamentalLabel?fundColor:C.muted)}
+          {chip('Result', pack.resultRating||'—', pack.resultRating?resColor:C.muted)}
+          {chip('RS-TV', s.rsTv!=null?String(s.rsTv):'—', s.rsTv!=null?rsColor(s.rsTv):C.muted)}
+          {chip('Sales YoY', fmtPctSigned(s.salesYoy,0)||'—', s.salesYoy!=null?(s.salesYoy>=0?C.green:C.red):C.muted)}
+          {chip('PAT / EPS YoY', fmtPctSigned(s.epsYoy??s.patYoy,0)||'—',
+            (s.epsYoy??s.patYoy)!=null?((s.epsYoy??s.patYoy)>=0?C.green:C.red):C.muted)}
+        </div>
+
+        {brief.themes?.length>0 && (
+          <div style={{display:'flex',flexWrap:'wrap',gap:5,marginBottom:10}}>
+            {brief.themes.map(t=>(
+              <span key={t} style={{
+                fontSize:10,fontWeight:800,color:C.lime,background:C.lime+'22',
+                border:`1px solid ${C.lime}55`,borderRadius:999,padding:'3px 9px',
+              }}>{EMERGING_THEME_LABELS[t]||t}</span>
+            ))}
+          </div>
+        )}
+
+        <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:brief.bullets.length?12:0}}>
+          {brief.paragraphs.map((p,i)=>(
+            <div key={i} style={{
+              fontSize:12.5,lineHeight:1.55,color:C.text,
+              borderLeft:i===0?`3px solid ${C.accent}`:'3px solid transparent',
+              paddingLeft:10,
+            }}>{p}</div>
+          ))}
+        </div>
+
+        {brief.bullets.length>0 && (
+          <div style={{
+            background:`linear-gradient(135deg, ${C.teal}14 0%, ${C.teal}05 100%)`,
+            border:`1px solid ${C.teal}33`,borderRadius:10,padding:'10px 12px',
+          }}>
+            <div style={{fontSize:10,fontWeight:800,color:C.teal,textTransform:'uppercase',
+              letterSpacing:'0.04em',marginBottom:6}}>Key takeaways</div>
+            <div style={{display:'flex',flexDirection:'column',gap:4}}>
+              {brief.bullets.map((b,i)=>(
+                <div key={i} style={{display:'flex',gap:6,alignItems:'flex-start'}}>
+                  <span style={{color:C.teal,fontWeight:900,fontSize:10,marginTop:2}}>›</span>
+                  <span style={{fontSize:12,lineHeight:1.45,color:C.text}}>
+                    <HighlightedBullet text={String(b)} color={C.teal}/>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{fontSize:9,color:C.muted,marginTop:10,fontStyle:'italic',lineHeight:1.4}}>
+          Assembled from scanner fundamentals + latest Result rating + AI Concall/PPT fields already on file.
+          Open the other tabs for full tables and filings. Not a buy/sell recommendation.
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function StockDetailTabs({sym, stocks, onSelectSymbol}){
-  const [tab, setTab] = useState('results')
+  const [tab, setTab] = useState('summary')
   // Tab flags so users can see Concall/PPT history exists without opening
   // each tab — count + latest filing date.
   const [flags, setFlags] = useState({concall: undefined, ppt: undefined})
   useEffect(() => {
     let cancelled = false
-    setTab('results')
+    setTab('summary')
     setFlags({concall: undefined, ppt: undefined})
     if (!sym) return
     Promise.all([fetchTranscriptSummaries(sym), fetchPptSummaries(sym)]).then(([t, p]) => {
@@ -2140,7 +2398,8 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
           const dateHint = hasContent ? fmtFlagDate(flag.latestAt) : null
           return (
             <div key={t.key} onClick={()=>setTab(t.key)} title={
-              hasContent
+              t.key==='summary' ? 'High-level company brief from RS, Fund, Results, Concall & PPT'
+              : hasContent
                 ? `${flag.count} report${flag.count>1?'s':''} on file — open to read history`
                 : (flag && flag.count===0 ? `No ${t.label} yet` : undefined)
             } style={{
@@ -2165,6 +2424,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
           )
         })}
       </div>
+      {tab==='summary' && <CompanySummaryPanel symbol={sym} stocks={stocks}/>}
       {tab==='results' && (
         <>
           <ResultsHistoryTable symbol={sym}/>
@@ -4096,7 +4356,7 @@ const HELP_CONTENT = [
   {id:'watchlist', title:'Watchlist', body:`Your saved stock lists. Set one as active from the header dropdown on 
     any scanner tab to filter that tab down to just your watchlist.`},
   {id:'announcements', title:'Announcements', body:`Corporate filings feed — results, concalls, PPTs and other NSE 
-    announcements. Open a stock to see Results numbers, Concall Report, and PPT summary tabs under the chart. Green 
+    announcements. Open a stock to see Summary (company brief), Results, Concall, and PPT under the chart. Green 
     badges on Concall/PPT mean reports are on file; use History chips to read older filings.`},
   {id:'themes', title:'Emerging Themes', body:`Radar of themes the AI tagged from recent PPT/concall text (data 
     center, defence, AI, etc.). Pick a theme to see which stocks mentioned it — useful for thematic scans, not a 
@@ -4105,9 +4365,10 @@ const HELP_CONTENT = [
     research further with RS, Results rating, and Concall/PPT — not automated advice.`},
   {id:'settings', title:'Account / Settings', body:`Theme, account, and app preferences. Help (?) in the header 
     opens this guide for every page.`},
-  {id:'chart', title:'Stock chart & Results', body:`Open any stock to see Our Chart (candles, MAs, S/R, patterns) 
-    plus Results / Concall / PPT under it. Result quality (Excellent/Good/Neutral/Weak) uses Sales & PAT YoY, gated 
-    so headline profit declines can't look Excellent. Peer pills under Results are clickable to open that peer.`},
+  {id:'chart', title:'Stock chart & Company Brief', body:`Open any stock for Our Chart plus Summary / Results / 
+    Concall / PPT. Summary assembles a high-level company brief from RS, Fund quality, latest Result, and themes 
+    from filings — free, no extra AI chat. Result quality (Excellent/Good/Neutral/Weak) is the latest quarter only; 
+    Fund is broader quality. Peer pills under Results are clickable.`},
 ]
 
 // Free in-app guide agent — answers from predefined help text + local
@@ -4125,10 +4386,10 @@ const GUIDE_SUGGESTIONS = {
   announcements: ['Where are Results / Concall / PPT?', 'What does the green badge mean?'],
   themes: ['What are Emerging Themes?'],
   chart: [
+    'What is Company Brief / Summary?',
     'How do I read Results rating?',
     'What is Concall Report?',
     'What is PPT summary?',
-    'Can I open peer stocks from ranking?',
   ],
 }
 
@@ -4138,7 +4399,7 @@ const GUIDE_QA = [
   {keys:['this page','how do i use','how to use','what is this tab','explain this page'],
     answer:null}, // filled from HELP_CONTENT for current page
   {keys:['open chart','stock chart','tap a row','click a stock'],
-    answer:'Tap any symbol row (or the ticker at the top) to open the chart panel. Use ◀ ▶ to flip stocks. Results, Concall Report, and PPT sit under the chart.'},
+    answer:'Open a stock → Summary tab for a high-level company brief (RS, Fund, growth, themes from Concall/PPT). Results / Concall / PPT sit next to it under the chart.'},
   {keys:['concall','transcript','earnings call'],
     answer:'Open a stock → Concall Report tab. Green badge on the tab means a report exists. If several filings exist, use History date chips to read older calls. Tone + Watch Next appear when extracted.'},
   {keys:['ppt','presentation','slide'],
@@ -7918,6 +8179,7 @@ export default function App(){
                     {visibleRsCols.roe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>}
                     {visibleRsCols.de&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>}
                     {visibleRsCols.prom&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>}
+                    {visibleRsCols.fundRating&&<span title="Overall fundamental quality (ROE, growth, debt, margins, ownership) — not the same as Excellent/Good Result under the chart, which is only the latest quarter." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Fund</span>}
                     <span/>
                     <span style={{textAlign:'center',color:C.muted,fontSize:9}}>TV</span>
                     <span style={{textAlign:'center',color:C.muted,fontSize:9}}>Scr</span>
