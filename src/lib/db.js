@@ -981,11 +981,11 @@ export async function fetchPptSummaries(symbol) {
 
 export async function fetchCompanyAbout(symbol) {
   // AI-generated company brief (what they do / customers / segments /
-  // innovation) produced by the fundamentals worker from PPT+concall
-  // summary text. One row per symbol.
+  // innovation) produced by the fundamentals worker via Gemini Google
+  // Search + Screener/filings context. One row per symbol.
   const { data, error } = await supabase
     .from('company_abouts')
-    .select('symbol,overall_brief,what_they_do,customers,segments,innovation,'
+    .select('symbol,overall_brief,what_they_do,customers,segments,innovation,sources,'
       + 'source_announced_at,status,updated_at')
     .eq('symbol', symbol)
     .eq('status', 'done')
