@@ -2349,7 +2349,6 @@ function HighlightedBullet({text, color}){
 // near guidance, not buried under optional full-report sections.
 const TRANSCRIPT_SIMPLE_SECTIONS = [
   {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: C.green},
-  {key: 'order_book', label: 'Order Book', icon: '📒', color: C.blue},
   {key: 'outlook_guidance', label: 'Outlook & Guidance', icon: '🎯', color: C.lime},
   {key: 'key_concerns', label: 'Analyst Concerns (Q&A)', icon: '❓', color: C.red},
   {key: 'risks_flagged', label: 'Risks Flagged', icon: '⚠️', color: C.yellow},
@@ -2358,7 +2357,6 @@ const TRANSCRIPT_SIMPLE_SECTIONS = [
 // Full report — same priority spine, then supporting depth.
 const TRANSCRIPT_FULL_SECTIONS = [
   {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: C.green},
-  {key: 'order_book', label: 'Order Book', icon: '📒', color: C.blue},
   {key: 'outlook_guidance', label: 'Outlook & Guidance', icon: '🎯', color: C.lime},
   {key: 'cost_margin_commentary', label: 'Cost & Margin', icon: '📉', color: C.orange},
   {key: 'operational_kpis', label: 'Operational KPIs', icon: '📊', color: C.teal},
@@ -2373,10 +2371,9 @@ const TRANSCRIPT_FULL_SECTIONS = [
 
 const TRANSCRIPT_SECTIONS = TRANSCRIPT_FULL_SECTIONS
 
-// PPT — numbers & order book first; risks / legal last.
+// PPT — numbers & strategy first; risks / legal last.
 const PPT_SECTIONS = [
   {key: 'financial_highlights', label: 'Financial Highlights', icon: '💰', color: C.green},
-  {key: 'order_book', label: 'Order Book', icon: '📒', color: C.blue},
   {key: 'strategic_initiatives', label: 'Strategic Initiatives', icon: '🚀', color: C.lime},
   {key: 'operational_kpis', label: 'Operational KPIs', icon: '📊', color: C.teal},
   {key: 'business_segments', label: 'Business Segments', icon: '🧩', color: C.blue},
@@ -2599,8 +2596,8 @@ function PptSummary({symbol}){
           {PPT_SECTIONS.map(s=>(
             <React.Fragment key={s.key}>
               <BulletSection icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
-              {/* Watch Next after Order Book (or Financials if no OB section key path) */}
-              {s.key==='order_book' && (
+              {/* Watch Next right after numbers — what to track from the deck */}
+              {s.key==='financial_highlights' && (
                 <BulletSection icon="👁️" label="Watch Next" color={C.accent} bullets={latest.watch_next}/>
               )}
             </React.Fragment>
