@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap, ArrowUpRight,
-  TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal
+  TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal, Layers
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -2415,6 +2415,28 @@ function normalizeBullets(bullets){
   return []
 }
 
+function ThemeChips({themes, intensity}){
+  const list = normalizeBullets(themes) // reuse: accepts array or JSON string
+  if (!list.length) return null
+  const tone = intensity==='high'?C.green:intensity==='low'?C.muted:C.accent
+  return (
+    <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10,alignItems:'center'}}>
+      <span style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',letterSpacing:'0.04em'}}>Themes</span>
+      {list.map(t=>(
+        <span key={t} style={{
+          fontSize:10,fontWeight:800,color:tone,background:tone+'18',
+          border:`1px solid ${tone}44`,borderRadius:999,padding:'3px 9px',
+        }}>
+          {EMERGING_THEME_LABELS[t]||t}
+        </span>
+      ))}
+      {intensity && intensity!=='none' && (
+        <span style={{fontSize:9,fontWeight:700,color:C.muted}}>{intensity}</span>
+      )}
+    </div>
+  )
+}
+
 function BulletSection({icon, label, color, bullets}){
   const bulletList = normalizeBullets(bullets)
   if (bulletList.length === 0) return null
@@ -2512,6 +2534,7 @@ function TranscriptSummary({symbol}){
             <span>{badge.arrow}</span>{badge.label}
           </div>
         )}
+        <ThemeChips themes={latest.emerging_themes} intensity={latest.theme_intensity}/>
         {latest.overall_summary && (
           <div style={{
             borderLeft:`3px solid ${C.accent}`,paddingLeft:10,marginBottom:12,
@@ -2519,6 +2542,7 @@ function TranscriptSummary({symbol}){
           }}>{latest.overall_summary}</div>
         )}
         <div style={{display:'flex',flexDirection:'column',gap:7}}>
+          <BulletSection icon="🌱" label="Theme Evidence" color={C.lime} bullets={latest.theme_evidence}/>
           {sections.map(s=>(
             <BulletSection key={s.key} icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
           ))}
@@ -2580,6 +2604,7 @@ function PptSummary({symbol}){
             <span>{badge.arrow}</span>{badge.label}
           </div>
         )}
+        <ThemeChips themes={latest.emerging_themes} intensity={latest.theme_intensity}/>
         {latest.overall_summary && (
           <div style={{
             borderLeft:`3px solid ${C.accent}`,paddingLeft:10,marginBottom:12,
@@ -2587,6 +2612,7 @@ function PptSummary({symbol}){
           }}>{latest.overall_summary}</div>
         )}
         <div style={{display:'flex',flexDirection:'column',gap:7}}>
+          <BulletSection icon="🌱" label="Theme Evidence" color={C.lime} bullets={latest.theme_evidence}/>
           {PPT_SECTIONS.map(s=>(
             <BulletSection key={s.key} icon={s.icon} label={s.label} color={s.color} bullets={latest[s.key]}/>
           ))}
@@ -2600,6 +2626,80 @@ function PptSummary({symbol}){
         <div style={{fontSize:9,color:C.muted,marginTop:8,fontStyle:'italic'}}>
           AI-generated summary of the investor presentation — paraphrased, may miss nuance. Not investment advice.
         </div>
+      </div>
+    </div>
+  )
+}
+
+function ThemesRadarPanel({onOpenSymbol}){
+  const [radar, setRadar] = useState(null) // null=loading
+  const [selected, setSelected] = useState(null)
+  useEffect(()=>{
+    let cancelled=false
+    fetchEmergingThemeRadar(30).then(r=>{
+      if(cancelled) return
+      setRadar(r)
+      const keys=Object.keys(r).sort((a,b)=>(r[b]?.length||0)-(r[a]?.length||0))
+      setSelected(keys[0]||null)
+    })
+    return()=>{cancelled=true}
+  },[])
+  if(radar===null){
+    return <div style={{padding:24,textAlign:'center',color:C.muted,fontSize:13}}>Loading theme radar…</div>
+  }
+  const themes=Object.keys(radar).sort((a,b)=>(radar[b]?.length||0)-(radar[a]?.length||0))
+  if(themes.length===0){
+    return (
+      <div style={{padding:'28px 16px',textAlign:'center'}}>
+        <div style={{fontSize:14,fontWeight:800,color:C.text,marginBottom:8}}>No emerging themes yet</div>
+        <div style={{fontSize:12,color:C.muted,lineHeight:1.5,maxWidth:420,margin:'0 auto'}}>
+          After the worker re-reads new concalls and PPTs, themes like Data Center, AI, Defence will appear here.
+        </div>
+      </div>
+    )
+  }
+  const rows=radar[selected]||[]
+  return (
+    <div style={{padding:'12px 14px',display:'flex',flexDirection:'column',gap:12}}>
+      <div>
+        <div style={{fontSize:14,fontWeight:800,color:C.text}}>Emerging Themes</div>
+        <div style={{fontSize:11,color:C.muted,marginTop:2}}>From concall + PPT summaries · last 30 days</div>
+      </div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+        {themes.map(t=>(
+          <button key={t} onClick={()=>setSelected(t)}
+            style={{
+              padding:'6px 10px',borderRadius:999,cursor:'pointer',fontSize:11,fontWeight:700,
+              border:`1px solid ${selected===t?C.accent:C.border}`,
+              background:selected===t?C.accent+'22':C.card,
+              color:selected===t?C.accent:C.text,
+            }}>
+            {EMERGING_THEME_LABELS[t]||t} · {radar[t].length}
+          </button>
+        ))}
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        {rows.map(r=>(
+          <div key={`${r.symbol}-${r.source}`} style={{
+            background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',
+          }}>
+            <div style={{display:'flex',justifyContent:'space-between',gap:8,alignItems:'center'}}>
+              <span onClick={()=>onOpenSymbol?.(r.symbol)}
+                style={{fontWeight:800,fontSize:13,color:C.accent,cursor:'pointer',textDecoration:'underline',
+                  textDecorationColor:C.accent+'55'}}>{r.symbol}</span>
+              <div style={{fontSize:10,color:C.muted,display:'flex',gap:8}}>
+                <span>{r.source==='concall'?'🎙️ Concall':'📊 PPT'}</span>
+                <span>{new Date(r.announced_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>
+                {r.intensity && r.intensity!=='none' && <span style={{fontWeight:700,color:C.text}}>{r.intensity}</span>}
+              </div>
+            </div>
+            {r.evidence?.length>0 && (
+              <div style={{marginTop:6,fontSize:11.5,color:C.text,lineHeight:1.45}}>
+                {r.evidence.map((e,i)=><div key={i}>› {e}</div>)}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -6298,6 +6398,7 @@ export default function App(){
           {id:'compare',   label:'Compare',          short:'Compare',  Icon:GitCompare},
           {id:'watchlist', label:'Watchlist',        short:'Watch',    Icon:Star},
           {id:'announcements', label:'Announcements',short:'News',     Icon:Megaphone},
+          {id:'themes', label:'Emerging Themes', short:'Themes', Icon:Layers},
           {id:'bestpicks', label:'AI Best Picks',    short:'AI Picks', Icon:Target},
         ]
         const ITEM_H=52, DIVIDER_H=9 // 1px line + 4px margin top/bottom
@@ -6414,7 +6515,8 @@ export default function App(){
                  mainTab==='weak'?'Weak RS':mainTab==='rotation'?'Sector Rotation':
                  mainTab==='leaders'?'Leaders':
                  mainTab==='patterns'?'Patterns':
-                 mainTab==='watchlist'?'Watchlist':mainTab==='announcements'?'Announcements':
+                 mainTab==='watchlist'?'Watchlist':                 mainTab==='announcements'?'Announcements':
+                 mainTab==='themes'?'Emerging Themes':
                  mainTab==='bestpicks'?'AI Best Picks':'Account'}
               </div>
               {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1}}>
@@ -6551,7 +6653,7 @@ export default function App(){
             Announcements/AI Picks/Watchlist/Settings, which read from
             entirely different tables — showing it there was confusing
             (looked like it might be filtering those too, when it isn't). */}
-        {historyDate&&!['announcements','bestpicks','watchlist','settings'].includes(mainTab)&&(
+        {historyDate&&!['announcements','themes','bestpicks','watchlist','settings'].includes(mainTab)&&(
           <div style={{background:C.purple+'18',border:`1px solid ${C.purple}55`,borderRadius:10,
             padding:'10px 14px',marginBottom:14,display:'flex',alignItems:'center',
             justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
@@ -9181,6 +9283,10 @@ export default function App(){
           )
         })()}
 
+        {mainTab==='themes'&&(
+          <ThemesRadarPanel onOpenSymbol={setChartSym}/>
+        )}
+
         {/* ══ CORPORATE ANNOUNCEMENTS ══ */}
         {mainTab==='bestpicks'&&(
           <div>
@@ -9964,10 +10070,10 @@ export default function App(){
               style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <MoreHorizontal size={17} strokeWidth={1.8}
-                color={['squeeze','weak','portfolio','compare','watchlist','announcements','bestpicks','settings','leaders','patterns'].includes(mainTab)?C.accent:C.muted}/>
+                color={['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','settings','leaders','patterns'].includes(mainTab)?C.accent:C.muted}/>
               <span style={{fontSize:8,fontWeight:600,
-                color:['squeeze','weak','portfolio','compare','watchlist','announcements','bestpicks','settings','leaders','patterns'].includes(mainTab)?C.accent:C.muted}}>More</span>
-              {['squeeze','weak','portfolio','compare','watchlist','announcements','bestpicks','settings','leaders','patterns'].includes(mainTab)&&
+                color:['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','settings','leaders','patterns'].includes(mainTab)?C.accent:C.muted}}>More</span>
+              {['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','settings','leaders','patterns'].includes(mainTab)&&
                 <div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           </div>
@@ -9986,7 +10092,7 @@ export default function App(){
                   {[
                     ['squeeze',Zap,'Squeeze'],['weak',TrendingDown,'Weak'],['leaders',Flag,'Leaders'],['patterns',LineChartIcon,'Patterns'],
                     ['portfolio',Briefcase,'Portfolio'],['compare',GitCompare,'Compare'],['watchlist',Star,'Watchlist'],
-                    ['announcements',Megaphone,'Announcements'],['bestpicks',Target,'AI Picks'],
+                    ['announcements',Megaphone,'Announcements'],['themes',Layers,'Themes'],['bestpicks',Target,'AI Picks'],
                     ['settings',Settings,'Account'],
                   ].map(([t,Icon,label])=>(
                     <button key={t} onClick={()=>{setMainTab(t);setShowMoreMenu(false)}}

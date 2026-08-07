@@ -957,7 +957,8 @@ export async function fetchPptSummaries(symbol) {
     .from('ppt_summaries')
     .select('announced_at,attachment_url,status,financial_highlights,business_segments,'
       + 'strategic_initiatives,capital_allocation,industry_outlook,operational_kpis,'
-      + 'risks_flagged,regulatory_legal,guidance_direction,overall_summary')
+      + 'risks_flagged,regulatory_legal,guidance_direction,overall_summary,'
+      + 'emerging_themes,theme_evidence,theme_intensity')
     .eq('symbol', symbol)
     .eq('status', 'done')
     .order('announced_at', { ascending: false })
@@ -978,13 +979,78 @@ export async function fetchTranscriptSummaries(symbol) {
     .select('announced_at,attachment_url,status,financial_highlights,cost_margin_commentary,'
       + 'expansion_capex,outlook_guidance,guidance_direction,management_changes,'
       + 'capital_allocation,competitive_positioning,operational_kpis,risks_flagged,'
-      + 'regulatory_legal,key_concerns,overall_summary')
+      + 'regulatory_legal,key_concerns,overall_summary,'
+      + 'emerging_themes,theme_evidence,theme_intensity')
     .eq('symbol', symbol)
     .eq('status', 'done')
     .order('announced_at', { ascending: false })
     .limit(5)
   if (error) { console.error('fetchTranscriptSummaries error:', error.message); return [] }
   return data || []
+}
+
+export const EMERGING_THEME_LABELS = {
+  data_center: 'Data Center',
+  AI: 'AI',
+  semiconductor: 'Semiconductor',
+  EMS: 'EMS',
+  defence: 'Defence',
+  aerospace: 'Aerospace',
+  nuclear: 'Nuclear',
+  renewable: 'Renewable',
+  green_hydrogen: 'Green Hydrogen',
+  EV: 'EV',
+  battery: 'Battery',
+  railways: 'Railways',
+  CDMO: 'CDMO',
+  specialty_chem: 'Specialty Chem',
+  fintech_infra: 'Fintech Infra',
+}
+
+export async function fetchEmergingThemeRadar(days = 30) {
+  // Aggregates emerging_themes from recent transcript + PPT summaries
+  // into { themeId: [{symbol, source, announced_at, intensity, evidence}] }.
+  const since = new Date(Date.now() - days * 86400000).toISOString()
+  const select = 'symbol,announced_at,emerging_themes,theme_evidence,theme_intensity,attachment_url'
+  const [tx, ppt] = await Promise.all([
+    supabase.from('transcript_summaries').select(select)
+      .eq('status', 'done').not('emerging_themes', 'is', null)
+      .gte('announced_at', since).order('announced_at', { ascending: false }).limit(500),
+    supabase.from('ppt_summaries').select(select)
+      .eq('status', 'done').not('emerging_themes', 'is', null)
+      .gte('announced_at', since).order('announced_at', { ascending: false }).limit(500),
+  ])
+  if (tx.error) console.error('fetchEmergingThemeRadar transcript:', tx.error.message)
+  if (ppt.error) console.error('fetchEmergingThemeRadar ppt:', ppt.error.message)
+
+  const byTheme = {}
+  const pushRow = (row, source) => {
+    let themes = row.emerging_themes
+    if (typeof themes === 'string') {
+      try { themes = JSON.parse(themes) } catch { themes = [] }
+    }
+    if (!Array.isArray(themes) || themes.length === 0) return
+    let evidence = row.theme_evidence
+    if (typeof evidence === 'string') {
+      try { evidence = JSON.parse(evidence) } catch { evidence = evidence ? [evidence] : [] }
+    }
+    for (const theme of themes) {
+      if (!byTheme[theme]) byTheme[theme] = []
+      // One row per symbol per theme (keep newest)
+      if (byTheme[theme].some(x => x.symbol === row.symbol)) continue
+      byTheme[theme].push({
+        symbol: row.symbol,
+        source,
+        announced_at: row.announced_at,
+        intensity: row.theme_intensity || 'medium',
+        evidence: Array.isArray(evidence) ? evidence.slice(0, 2) : [],
+        attachment_url: row.attachment_url,
+      })
+    }
+  }
+  ;(tx.data || []).forEach(r => pushRow(r, 'concall'))
+  ;(ppt.data || []).forEach(r => pushRow(r, 'ppt'))
+  return byTheme
 }
 
 export async function fetchAnnouncements(limit = 50, offset = 0, categoryLike = null, filters = {}, excludeCategoryLike = null) {
