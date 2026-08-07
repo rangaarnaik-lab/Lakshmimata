@@ -1910,7 +1910,10 @@ function StockDetailTabs({sym, stocks}){
       {tab==='results' && (
         <>
           <ResultsHistoryTable symbol={sym}/>
-          <SectorRankingPanel symbol={sym} sector={stocks?.find(s=>s.sym===sym)?.sector} stocks={stocks}/>
+          <SectorRankingPanel symbol={sym}
+            sector={stocks?.find(s=>s.sym===sym)?.sector}
+            industry={stocks?.find(s=>s.sym===sym)?.industry}
+            stocks={stocks}/>
         </>
       )}
       {tab==='concall' && <TranscriptSummary symbol={sym}/>}
