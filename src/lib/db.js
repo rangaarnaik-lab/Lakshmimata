@@ -347,6 +347,18 @@ function transformStockRow(row) {
     diiTrend:       row.dii_trend,         // percentage points vs prior period
     promoterTrend:  row.promoter_trend,    // percentage points vs prior period
     pegRatio:       row.peg_ratio,
+    pb:             row.pb,
+    roce:           row.roce,
+    industryPe:     row.industry_pe,
+    divYield:       row.div_yield,
+    cfo:            row.cfo,            // ₹ Cr operating cash flow
+    fcf:            row.fcf,            // ₹ Cr free cash flow
+    cfoPat:         row.cfo_pat,        // CFO / PAT ratio
+    nim:            row.nim,            // bank NIM %
+    gnpa:           row.gnpa,           // Gross NPA %
+    nnpa:           row.nnpa,           // Net NPA %
+    car:            row.car,            // Capital adequacy / CRAR %
+    casa:           row.casa,           // CASA %
     fundamentalScore: row.fundamental_score,  // 0-100, quality-only (not a price target)
     fundamentalLabel: row.fundamental_label,  // 'Excellent' | 'Good' | 'Fair' | 'Poor'
     hist:       row.rs_hist || [],
