@@ -1068,25 +1068,39 @@ function getVisitorId() {
   }
 }
 
-export async function submitStockAiAsk(symbol, question) {
+export async function submitStockAiAsk(symbol, question, askMode = 'filings') {
   // Queue a free-form diligence question; fundamentals worker answers via Gemini.
+  // askMode: 'filings' (PPT/concall on file only) | 'web' (Google Search + filings)
   const q = (question || '').trim()
   const sym = (symbol || '').trim().toUpperCase()
+  const mode = askMode === 'web' ? 'web' : 'filings'
   if (!sym || q.length < 8 || q.length > 400) {
     return { error: 'Ask a clear question (8–400 characters).' }
   }
   const { data: { user } } = await supabase.auth.getUser()
-  const { data, error } = await supabase
+  const payload = {
+    symbol: sym,
+    question: q,
+    status: 'pending',
+    ask_mode: mode,
+    visitor_id: getVisitorId(),
+    user_id: user?.id || null,
+  }
+  let { data, error } = await supabase
     .from('stock_ai_asks')
-    .insert({
-      symbol: sym,
-      question: q,
-      status: 'pending',
-      visitor_id: getVisitorId(),
-      user_id: user?.id || null,
-    })
-    .select('id,symbol,question,status,created_at')
+    .insert(payload)
+    .select('id,symbol,question,status,ask_mode,created_at')
     .single()
+  // Older DBs may lack ask_mode — retry without it (worker defaults to filings)
+  if (error && /ask_mode/i.test(error.message || '')) {
+    delete payload.ask_mode
+    ;({ data, error } = await supabase
+      .from('stock_ai_asks')
+      .insert(payload)
+      .select('id,symbol,question,status,created_at')
+      .single())
+    if (data) data.ask_mode = mode
+  }
   if (error) {
     console.error('submitStockAiAsk error:', error.message)
     return { error: error.message || 'Could not submit question' }
@@ -1098,10 +1112,22 @@ export async function fetchStockAiAsk(id) {
   if (!id) return null
   const { data, error } = await supabase
     .from('stock_ai_asks')
-    .select('id,symbol,question,status,answer,verdict,flags,sources,error,created_at,answered_at')
+    .select('id,symbol,question,status,ask_mode,answer,verdict,flags,sources,error,created_at,answered_at')
     .eq('id', id)
     .maybeSingle()
-  if (error) { console.error('fetchStockAiAsk error:', error.message); return null }
+  if (error) {
+    if (/ask_mode/i.test(error.message || '')) {
+      const { data: d2, error: e2 } = await supabase
+        .from('stock_ai_asks')
+        .select('id,symbol,question,status,answer,verdict,flags,sources,error,created_at,answered_at')
+        .eq('id', id)
+        .maybeSingle()
+      if (e2) { console.error('fetchStockAiAsk error:', e2.message); return null }
+      return d2 || null
+    }
+    console.error('fetchStockAiAsk error:', error.message)
+    return null
+  }
   return data || null
 }
 
@@ -1109,13 +1135,23 @@ export async function fetchRecentStockAiAsks(symbol, limit = 5) {
   if (!symbol) return []
   const { data, error } = await supabase
     .from('stock_ai_asks')
-    .select('id,symbol,question,status,answer,verdict,flags,sources,error,created_at,answered_at')
+    .select('id,symbol,question,status,ask_mode,answer,verdict,flags,sources,error,created_at,answered_at')
     .eq('symbol', symbol)
     .eq('status', 'done')
     .order('answered_at', { ascending: false })
     .limit(limit)
   if (error) {
-    if (/stock_ai_asks/i.test(error.message || '')) return []
+    if (/stock_ai_asks|ask_mode/i.test(error.message || '')) {
+      const { data: d2, error: e2 } = await supabase
+        .from('stock_ai_asks')
+        .select('id,symbol,question,status,answer,verdict,flags,sources,error,created_at,answered_at')
+        .eq('symbol', symbol)
+        .eq('status', 'done')
+        .order('answered_at', { ascending: false })
+        .limit(limit)
+      if (e2) return []
+      return d2 || []
+    }
     console.error('fetchRecentStockAiAsks error:', error.message)
     return []
   }

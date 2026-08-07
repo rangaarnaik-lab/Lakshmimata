@@ -2271,6 +2271,7 @@ function AskAiPanel({symbol}){
   const [active, setActive] = useState(null)
   const [recent, setRecent] = useState([])
   const [err, setErr] = useState(null)
+  const [askMode, setAskMode] = useState('filings') // 'filings' | 'web'
 
   useEffect(()=>{
     let cancelled=false
@@ -2304,8 +2305,8 @@ function AskAiPanel({symbol}){
     if(busy || question.length<8) return
     setErr(null)
     setBusy(true)
-    setActive({status:'pending', question})
-    const res = await submitStockAiAsk(symbol, question)
+    setActive({status:'pending', question, ask_mode: askMode})
+    const res = await submitStockAiAsk(symbol, question, askMode)
     if(res.error){
       setErr(res.error)
       setBusy(false)
@@ -2322,8 +2323,29 @@ function AskAiPanel({symbol}){
       <div style={{padding:'12px 14px'}}>
         <div style={{fontSize:13,fontWeight:900,color:C.text}}>Ask AI · {symbol}</div>
         <div style={{fontSize:10,color:C.muted,marginTop:2,marginBottom:10,lineHeight:1.45}}>
-          Ask using PPT/Concall already on file for this stock. No web search —
-          if filings aren’t summarized yet, Flags stay hidden. Not investment advice.
+          Choose a source mode, then ask about management, promises vs delivery, or filings.
+          Flags under Market Cap still use PPT/Concall on file only. Not investment advice.
+        </div>
+
+        <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
+          {[
+            {id:'filings', label:'Filings only', hint:'PPT / Concall on file'},
+            {id:'web', label:'Web research', hint:'Google Search + filings'},
+          ].map(m=>{
+            const on = askMode===m.id
+            return (
+              <button key={m.id} type="button" disabled={busy} onClick={()=>setAskMode(m.id)}
+                title={m.hint}
+                style={{
+                  padding:'6px 12px',borderRadius:999,cursor:busy?'default':'pointer',
+                  border:`1px solid ${on?C.accent:C.border}`,
+                  background:on?C.accent+'22':'transparent',
+                  color:on?C.accent:C.muted,fontSize:11,fontWeight:800,
+                }}>
+                {m.label}
+              </button>
+            )
+          })}
         </div>
 
         <MgmtFlagsCard symbol={symbol}/>
@@ -2367,14 +2389,28 @@ function AskAiPanel({symbol}){
 
         {active&&(
           <div style={{marginTop:12,padding:'10px 12px',borderRadius:10,background:C.bg,border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6}}>
-              {active.status==='pending'?'Researching filings & news…'
-                : active.status==='error'?'Could not answer'
-                  : 'Answer'}
+            <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+              <span>
+                {active.status==='pending'?'Researching…'
+                  : active.status==='error'?'Could not answer'
+                    : 'Answer'}
+              </span>
+              {(active.ask_mode||askMode)&&(
+                <span style={{
+                  fontSize:9,fontWeight:700,color:C.accent,background:C.accent+'18',
+                  border:`1px solid ${C.accent}44`,borderRadius:999,padding:'1px 7px',
+                }}>
+                  {(active.ask_mode||askMode)==='web'?'Web research':'Filings only'}
+                </span>
+              )}
             </div>
             <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>{active.question}</div>
             {active.status==='pending'&&(
-              <div style={{fontSize:11,color:C.muted}}>Usually 15–60 seconds after the worker picks it up.</div>
+              <div style={{fontSize:11,color:C.muted}}>
+                {(active.ask_mode||askMode)==='web'
+                  ? 'Web research usually takes 30–90 seconds.'
+                  : 'Filings-only answers usually take 15–45 seconds.'}
+              </div>
             )}
             {active.status==='error'&&(
               <div style={{fontSize:12,color:C.red}}>{active.error||'Try again in a minute.'}</div>
@@ -2421,7 +2457,7 @@ function AskAiPanel({symbol}){
                   padding:'8px 10px',borderRadius:8,cursor:'pointer',
                   border:`1px solid ${C.border}`,background:C.bg,color:C.text,fontSize:11,
                 }}>
-                {r.question}
+                {r.ask_mode==='web'?'🌐 ':''}{r.question}
               </button>
             ))}
           </div>
