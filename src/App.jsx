@@ -2209,21 +2209,24 @@ function ResultsHistoryTable({symbol}){
 
 // Ranks a stock's result-quality rating (same computeResultRating() used
 // everywhere else, so this always agrees with the badge shown above)
-// against other stocks in the same sector, so the user can see whether
-// "Excellent" results are actually standing out from peers or whether
-// the whole sector had a strong quarter together. Capped to 40 peers
-// (prioritized by market cap, since smaller/thinly-tracked peers are
-// less useful for comparison and this bounds the number of parallel
-// results-history queries) rather than querying an entire large sector
-// at once.
+// against other stocks in the SAME INDUSTRY when available (e.g. jewellery
+// vs jewellery — not the whole Consumer Discretionary sector which mixes
+// ACs, footwear, durables). Falls back to sector only when industry is
+// missing. Capped to 40 peers by market cap.
 const RATING_ORDER = {Excellent:3, Good:2, Neutral:1, Weak:0}
-function SectorRankingPanel({symbol, sector, stocks}){
-  const [ranking, setRanking] = useState(undefined) // undefined=loading, null=no sector/peers, array=loaded
+function SectorRankingPanel({symbol, sector, industry, stocks}){
+  const [ranking, setRanking] = useState(undefined) // undefined=loading, null=no peers, array=loaded
+  const groupLabel = industry || sector
   useEffect(()=>{
     let cancelled = false
     setRanking(undefined)
-    if(!symbol || !sector || !stocks?.length){ setRanking(null); return }
-    const peers = stocks.filter(s=>s.sector===sector && s.sym)
+    if(!symbol || !groupLabel || !stocks?.length){ setRanking(null); return }
+    // Prefer industry peers (jewellery ↔ jewellery). Sector-wide ranking
+    // incorrectly mixed KALYANKJIL with BLUESTARCO / WHIRLPOOL etc.
+    let peers = industry
+      ? stocks.filter(s=>s.industry===industry && s.sym)
+      : stocks.filter(s=>s.sector===sector && s.sym)
+    peers = peers
       .sort((a,b)=>(b.marketCap??0)-(a.marketCap??0))
       .slice(0, 40)
     if(!peers.some(p=>p.sym===symbol)){
@@ -2240,10 +2243,12 @@ function SectorRankingPanel({symbol, sector, stocks}){
       setRanking(rated.length>=2 ? rated : null)
     })
     return ()=>{cancelled=true}
-  }, [symbol, sector, stocks])
+  }, [symbol, sector, industry, groupLabel, stocks])
 
   if(ranking===undefined) return (
-    <div style={{marginTop:8,fontSize:10.5,color:C.muted,padding:'4px 2px'}}>Ranking vs {sector} sector peers…</div>
+    <div style={{marginTop:8,fontSize:10.5,color:C.muted,padding:'4px 2px'}}>
+      Ranking vs {groupLabel} {industry?'industry':'sector'} peers…
+    </div>
   )
   if(ranking===null) return null
   const myIdx = ranking.findIndex(r=>r.sym===symbol)
@@ -2252,7 +2257,7 @@ function SectorRankingPanel({symbol, sector, stocks}){
   return (
     <div style={{marginTop:8,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px'}}>
       <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>
-        #{myIdx+1} of {ranking.length} rated in {sector}
+        #{myIdx+1} of {ranking.length} rated in {groupLabel}
       </div>
       <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
         {ranking.map((r,i)=>(
