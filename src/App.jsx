@@ -6819,7 +6819,7 @@ export default function App(){
             )}
           </div>
 
-          <button onClick={()=>{setHelpCenterSection(null);setShowHelpCenter(true)}} title="Help — how to use this app"
+          <button onClick={()=>{setHelpCenterSection(null);setShowHelpCenter(true)}} title="Help & Ask Guide — how to use this app (free, no AI cost)"
             style={{width:26,height:26,borderRadius:'50%',border:`1px solid ${C.border}`,
               background:C.card,color:C.muted,fontSize:13,fontWeight:700,cursor:'pointer',
               display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexShrink:0}}>
