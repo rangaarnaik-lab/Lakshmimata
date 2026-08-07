@@ -979,6 +979,21 @@ export async function fetchPptSummaries(symbol) {
   return data || []
 }
 
+export async function fetchCompanyAbout(symbol) {
+  // AI-generated company brief (what they do / customers / segments /
+  // innovation) produced by the fundamentals worker from PPT+concall
+  // summary text. One row per symbol.
+  const { data, error } = await supabase
+    .from('company_abouts')
+    .select('symbol,overall_brief,what_they_do,customers,segments,innovation,'
+      + 'source_announced_at,status,updated_at')
+    .eq('symbol', symbol)
+    .eq('status', 'done')
+    .maybeSingle()
+  if (error) { console.error('fetchCompanyAbout error:', error.message); return null }
+  return data || null
+}
+
 export async function fetchTranscriptSummaries(symbol) {
   // Returns AI-generated earnings-call TRANSCRIPT summaries for a
   // symbol, most recent first - a different document type from

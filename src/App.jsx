@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchTranscriptSummaries, fetchPptSummaries, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -2092,28 +2092,111 @@ function EmaBreadthTable({data,isMobile,dragProps,rangeLabel}){
   )
 }
 
-// Tabbed detail under the chart: Results, then AI filings.
+// Tabbed detail under the chart: AI company brief, then Results / filings.
 const STOCK_DETAIL_TABS = [
+  {key: 'about', label: 'About Company'},
   {key: 'results', label: 'Results'},
   {key: 'concall', label: 'Concall Report'},
   {key: 'ppt', label: 'PPT'},
 ]
 
+function AboutCompanyPanel({symbol, stocks}){
+  const s = stocks?.find(x=>x.sym===symbol) || null
+  const [about, setAbout] = useState(undefined) // undefined=loading
+  useEffect(()=>{
+    let cancelled=false
+    setAbout(undefined)
+    if(!symbol){ setAbout(null); return }
+    fetchCompanyAbout(symbol).then(row=>{ if(!cancelled) setAbout(row) })
+    return()=>{cancelled=true}
+  },[symbol])
+
+  if(about===undefined){
+    return <div style={{padding:'12px',fontSize:11,color:C.muted,textAlign:'center',
+      background:C.card,border:`1px solid ${C.border}`,borderRadius:10}}>
+      Loading company brief…
+    </div>
+  }
+  if(!about){
+    return (
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 16px'}}>
+        <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:6}}>About Company</div>
+        <div style={{fontSize:12,color:C.muted,lineHeight:1.55}}>
+          AI brief appears after a PPT or Concall summary is on file for {symbol||'this stock'}.
+          The server then writes what they do, customers, segments, and innovation — usually within a few minutes of a new filing.
+        </div>
+        {s?.industry||s?.sector?(
+          <div style={{marginTop:10,fontSize:11,color:C.text}}>
+            Sector: <span style={{color:C.muted}}>{[s.industry,s.sector].filter(Boolean).join(' · ')}</span>
+          </div>
+        ):null}
+      </div>
+    )
+  }
+
+  const customers = normalizeBullets(about.customers)
+  const segments = normalizeBullets(about.segments)
+  const innovation = normalizeBullets(about.innovation)
+  const srcDate = about.source_announced_at
+    ? new Date(about.source_announced_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})
+    : null
+
+  return (
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
+      <div style={{height:3,background:`linear-gradient(90deg, ${C.accent}, ${C.teal})`}}/>
+      <div style={{padding:'12px 14px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,marginBottom:8}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:900,color:C.text}}>About {symbol}</div>
+            <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+              AI brief from PPT / Concall filings · not investment advice
+            </div>
+          </div>
+          {srcDate&&(
+            <span style={{fontSize:9,fontWeight:700,color:C.accent,background:C.accent+'18',
+              border:`1px solid ${C.accent}44`,borderRadius:999,padding:'3px 8px',flexShrink:0}}>
+              Filing {srcDate}
+            </span>
+          )}
+        </div>
+
+        {about.overall_brief&&(
+          <div style={{fontSize:12.5,lineHeight:1.55,color:C.text,marginBottom:12,
+            borderLeft:`3px solid ${C.accent}`,paddingLeft:10}}>
+            {about.overall_brief}
+          </div>
+        )}
+        {about.what_they_do&&(
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+              letterSpacing:'0.04em',marginBottom:4}}>What they do</div>
+            <div style={{fontSize:12.5,lineHeight:1.5,color:C.text}}>{about.what_they_do}</div>
+          </div>
+        )}
+        {customers.length>0&&<BulletSection icon="👥" label="Customers & markets" color={C.blue} bullets={customers}/>}
+        {segments.length>0&&<BulletSection icon="🧩" label="Business segments" color={C.teal} bullets={segments}/>}
+        {innovation.length>0&&<BulletSection icon="🚀" label="Innovation & strategy" color={C.lime} bullets={innovation}/>}
+      </div>
+    </div>
+  )
+}
+
 function StockDetailTabs({sym, stocks, onSelectSymbol}){
-  const [tab, setTab] = useState('results')
+  const [tab, setTab] = useState('about')
   // Tab flags so users can see Concall/PPT history exists without opening
-  // each tab — count + latest filing date.
-  const [flags, setFlags] = useState({concall: undefined, ppt: undefined})
+  // each tab — count + latest filing date. About uses company_abouts.
+  const [flags, setFlags] = useState({concall: undefined, ppt: undefined, about: undefined})
   useEffect(() => {
     let cancelled = false
-    setTab('results')
-    setFlags({concall: undefined, ppt: undefined})
+    setTab('about')
+    setFlags({concall: undefined, ppt: undefined, about: undefined})
     if (!sym) return
-    Promise.all([fetchTranscriptSummaries(sym), fetchPptSummaries(sym)]).then(([t, p]) => {
+    Promise.all([fetchTranscriptSummaries(sym), fetchPptSummaries(sym), fetchCompanyAbout(sym)]).then(([t, p, about]) => {
       if (cancelled) return
       setFlags({
         concall: {count: t?.length || 0, latestAt: t?.[0]?.announced_at || null},
         ppt: {count: p?.length || 0, latestAt: p?.[0]?.announced_at || null},
+        about: about ? {count: 1, latestAt: about.source_announced_at || about.updated_at || null} : {count: 0, latestAt: null},
       })
     })
     return () => { cancelled = true }
@@ -2128,14 +2211,16 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
     <div>
       <div style={{display:'flex',gap:4,marginBottom:10,borderBottom:`1px solid ${C.border}`,overflowX:'auto'}}>
         {STOCK_DETAIL_TABS.map(t=>{
-          const flag = t.key==='concall'?flags.concall:t.key==='ppt'?flags.ppt:null
+          const flag = t.key==='concall'?flags.concall:t.key==='ppt'?flags.ppt:t.key==='about'?flags.about:null
           const hasContent = flag && flag.count > 0
           const dateHint = hasContent ? fmtFlagDate(flag.latestAt) : null
           return (
             <div key={t.key} onClick={()=>setTab(t.key)} title={
-              hasContent
-                ? `${flag.count} report${flag.count>1?'s':''} on file — open to read history`
-                : (flag && flag.count===0 ? `No ${t.label} yet` : undefined)
+              t.key==='about'
+                ? (hasContent ? 'AI company brief from filings' : 'Brief generates after PPT/Concall is summarized')
+                : hasContent
+                  ? `${flag.count} report${flag.count>1?'s':''} on file — open to read history`
+                  : (flag && flag.count===0 ? `No ${t.label} yet` : undefined)
             } style={{
               padding:'6px 10px',fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',
               color:tab===t.key?C.accent:C.muted,
@@ -2148,16 +2233,17 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
                   fontSize:9,fontWeight:800,color:C.green,background:C.green+'22',
                   border:`1px solid ${C.green}55`,borderRadius:999,padding:'1px 6px',
                 }}>
-                  {flag.count>1 ? `${flag.count} · ${dateHint}` : dateHint || 'Ready'}
+                  {t.key==='about' ? (dateHint || 'Ready') : (flag.count>1 ? `${flag.count} · ${dateHint}` : dateHint || 'Ready')}
                 </span>
               )}
-              {flag && flag.count===0 && (t.key==='concall'||t.key==='ppt') && (
+              {flag && flag.count===0 && (t.key==='concall'||t.key==='ppt'||t.key==='about') && (
                 <span style={{fontSize:9,fontWeight:600,color:C.muted,opacity:0.7}}>—</span>
               )}
             </div>
           )
         })}
       </div>
+      {tab==='about' && <AboutCompanyPanel symbol={sym} stocks={stocks}/>}
       {tab==='results' && (
         <>
           <ResultsHistoryTable symbol={sym}/>
