@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -2047,6 +2047,7 @@ function EmaBreadthTable({data,isMobile,dragProps,rangeLabel}){
 const STOCK_DETAIL_TABS = [
   {key: 'about', label: 'About Company'},
   {key: 'fundamentals', label: 'Fundamentals'},
+  {key: 'ask', label: 'Ask AI'},
   {key: 'results', label: 'Results'},
   {key: 'concall', label: 'Concall Report'},
   {key: 'ppt', label: 'PPT'},
@@ -2171,6 +2172,261 @@ function MetricCardsGrid({cards}){
           <div style={{fontWeight:800,fontSize:14,color:m.color}}>{m.value}</div>
         </div>
       ))}
+    </div>
+  )
+}
+
+
+function flagToneColor(tone){
+  if(tone==='green') return C.green
+  if(tone==='red') return C.red
+  return C.yellow
+}
+
+function FlagsList({flags, compact}){
+  const list = Array.isArray(flags) ? flags : []
+  if(!list.length) return null
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:compact?6:8}}>
+      {list.map((f,i)=>{
+        const tone = flagToneColor(f.tone)
+        const mark = f.tone==='green'?'✓':f.tone==='red'?'⚑':'•'
+        return (
+          <div key={i} style={{
+            display:'flex',gap:8,alignItems:'flex-start',
+            padding:compact?'7px 9px':'8px 10px',borderRadius:8,
+            background:tone+'12',border:`1px solid ${tone}44`,
+          }}>
+            <span style={{
+              fontSize:10,fontWeight:900,color:tone,flexShrink:0,marginTop:1,
+              width:16,textAlign:'center',
+            }}>{mark}</span>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:12,fontWeight:800,color:C.text}}>{f.title}</div>
+              {f.detail&&(
+                <div style={{fontSize:11.5,lineHeight:1.45,color:C.muted,marginTop:2}}>{f.detail}</div>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function MgmtFlagsCard({symbol, compact}){
+  const [info, setInfo] = useState(undefined)
+  useEffect(()=>{
+    let cancelled=false
+    setInfo(undefined)
+    if(!symbol){ setInfo(null); return }
+    fetchMgmtFlags(symbol).then(row=>{ if(!cancelled) setInfo(row) })
+    return()=>{cancelled=true}
+  },[symbol])
+  if(!info) return null
+  const verdict = (info.verdict||'unknown').toLowerCase()
+  const vColor = verdict==='trustworthy'?C.green:verdict==='caution'?C.red:verdict==='mixed'?C.yellow:C.muted
+  const dateLabel = info.at
+    ? new Date(info.at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})
+    : null
+  return (
+    <div style={{
+      marginBottom: compact?10:12,
+      background:C.card,border:`1px solid ${vColor}44`,borderRadius:10,
+      padding:compact?'9px 11px':'11px 13px',
+    }}>
+      <div style={{display:'flex',justifyContent:'space-between',gap:8,alignItems:'flex-start',marginBottom:8,flexWrap:'wrap'}}>
+        <div>
+          <div style={{fontSize:11,fontWeight:900,color:vColor,textTransform:'uppercase',letterSpacing:'0.04em'}}>
+            Flags · Management diligence
+          </div>
+          <div style={{fontSize:9,color:C.muted,marginTop:1}}>
+            Promise vs execution · AI research{dateLabel?` · ${dateLabel}`:''}
+          </div>
+        </div>
+        <span style={{
+          fontSize:9,fontWeight:800,color:vColor,background:vColor+'22',
+          border:`1px solid ${vColor}55`,borderRadius:999,padding:'2px 8px',textTransform:'uppercase',
+        }}>{verdict}</span>
+      </div>
+      {info.summary&&(
+        <div style={{fontSize:12,lineHeight:1.5,color:C.text,marginBottom:info.flags?.length?8:0}}>
+          {info.summary}
+        </div>
+      )}
+      <FlagsList flags={info.flags} compact={compact}/>
+    </div>
+  )
+}
+
+const ASK_AI_SUGGESTIONS = [
+  'Is management trustworthy or not?',
+  'Any red flags in recent filings or concalls?',
+  'Do they deliver on growth / capex promises?',
+]
+
+function AskAiPanel({symbol}){
+  const [q, setQ] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [active, setActive] = useState(null)
+  const [recent, setRecent] = useState([])
+  const [err, setErr] = useState(null)
+
+  useEffect(()=>{
+    let cancelled=false
+    setActive(null); setQ(''); setErr(null)
+    if(!symbol){ setRecent([]); return }
+    fetchRecentStockAiAsks(symbol).then(rows=>{ if(!cancelled) setRecent(rows||[]) })
+    return()=>{cancelled=true}
+  },[symbol])
+
+  useEffect(()=>{
+    if(!active?.id || active.status!=='pending') return
+    let cancelled=false
+    const tick = async ()=>{
+      const row = await fetchStockAiAsk(active.id)
+      if(cancelled || !row) return
+      setActive(row)
+      if(row.status==='done' || row.status==='error'){
+        setBusy(false)
+        if(row.status==='done'){
+          fetchRecentStockAiAsks(symbol).then(rows=>setRecent(rows||[]))
+        }
+      }
+    }
+    const id = setInterval(tick, 2500)
+    tick()
+    return()=>{cancelled=true; clearInterval(id)}
+  },[active?.id, active?.status, symbol])
+
+  const submit = async (text)=>{
+    const question = (text||q||'').trim()
+    if(busy || question.length<8) return
+    setErr(null)
+    setBusy(true)
+    setActive({status:'pending', question})
+    const res = await submitStockAiAsk(symbol, question)
+    if(res.error){
+      setErr(res.error)
+      setBusy(false)
+      setActive(null)
+      return
+    }
+    setQ('')
+    setActive(res.ask)
+  }
+
+  return (
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
+      <div style={{height:3,background:`linear-gradient(90deg, ${C.accent}, ${C.yellow})`}}/>
+      <div style={{padding:'12px 14px'}}>
+        <div style={{fontSize:13,fontWeight:900,color:C.text}}>Ask AI · {symbol}</div>
+        <div style={{fontSize:10,color:C.muted,marginTop:2,marginBottom:10,lineHeight:1.45}}>
+          Ask about management quality, promises vs delivery, governance, or filings.
+          Answers use PPT/concall on file + web research. Not investment advice.
+        </div>
+
+        <MgmtFlagsCard symbol={symbol}/>
+
+        <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
+          {ASK_AI_SUGGESTIONS.map(s=>(
+            <button key={s} type="button" disabled={busy} onClick={()=>submit(s)}
+              style={{
+                fontSize:10,fontWeight:700,cursor:busy?'default':'pointer',
+                padding:'5px 9px',borderRadius:999,
+                border:`1px solid ${C.border}`,background:C.bg,color:C.muted,
+              }}>
+              {s}
+            </button>
+          ))}
+        </div>
+
+        <div style={{display:'flex',gap:8,alignItems:'stretch'}}>
+          <input
+            value={q}
+            onChange={e=>setQ(e.target.value)}
+            onKeyDown={e=>{ if(e.key==='Enter') submit() }}
+            placeholder={`e.g. Is ${symbol}'s management trustworthy?`}
+            disabled={busy}
+            maxLength={400}
+            style={{
+              flex:1,padding:'9px 11px',borderRadius:8,border:`1px solid ${C.border}`,
+              background:C.bg,color:C.text,fontSize:12,outline:'none',
+            }}
+          />
+          <button type="button" onClick={()=>submit()} disabled={busy || q.trim().length<8}
+            style={{
+              padding:'9px 14px',borderRadius:8,fontSize:12,fontWeight:800,cursor:busy?'default':'pointer',
+              border:`1px solid ${C.accent}55`,background:C.accent+'22',color:C.accent,
+              opacity:(busy || q.trim().length<8)?0.5:1,
+            }}>
+            {busy?'…':'Ask'}
+          </button>
+        </div>
+        {err&&<div style={{marginTop:8,fontSize:11,color:C.red}}>{err}</div>}
+
+        {active&&(
+          <div style={{marginTop:12,padding:'10px 12px',borderRadius:10,background:C.bg,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6}}>
+              {active.status==='pending'?'Researching filings & news…'
+                : active.status==='error'?'Could not answer'
+                  : 'Answer'}
+            </div>
+            <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>{active.question}</div>
+            {active.status==='pending'&&(
+              <div style={{fontSize:11,color:C.muted}}>Usually 15–60 seconds after the worker picks it up.</div>
+            )}
+            {active.status==='error'&&(
+              <div style={{fontSize:12,color:C.red}}>{active.error||'Try again in a minute.'}</div>
+            )}
+            {active.status==='done'&&(
+              <>
+                {active.verdict&&(
+                  <div style={{marginBottom:8}}>
+                    <span style={{
+                      fontSize:9,fontWeight:800,color:C.accent,background:C.accent+'18',
+                      border:`1px solid ${C.accent}44`,borderRadius:999,padding:'2px 8px',textTransform:'uppercase',
+                    }}>{active.verdict}</span>
+                  </div>
+                )}
+                <div style={{fontSize:12.5,lineHeight:1.55,color:C.text,whiteSpace:'pre-wrap'}}>{active.answer}</div>
+                <div style={{marginTop:10}}>
+                  <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6}}>Flags</div>
+                  <FlagsList flags={active.flags}/>
+                </div>
+                {Array.isArray(active.sources)&&active.sources.some(s=>s?.url)&&(
+                  <div style={{marginTop:10}}>
+                    <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:4}}>Sources</div>
+                    {active.sources.filter(s=>s?.url).slice(0,4).map((s,i)=>(
+                      <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
+                        style={{display:'block',fontSize:11,color:C.accent,textDecoration:'none',
+                          overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                        {s.title||s.url}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {recent.length>0&&!(active&&active.status==='done')&&(
+          <div style={{marginTop:12}}>
+            <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6}}>Recent asks</div>
+            {recent.slice(0,3).map(r=>(
+              <button key={r.id} type="button" onClick={()=>setActive(r)}
+                style={{
+                  display:'block',width:'100%',textAlign:'left',marginBottom:6,
+                  padding:'8px 10px',borderRadius:8,cursor:'pointer',
+                  border:`1px solid ${C.border}`,background:C.bg,color:C.text,fontSize:11,
+                }}>
+                {r.question}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -2486,6 +2742,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
       </div>
       {tab==='about' && <AboutCompanyPanel symbol={sym} stocks={stocks}/>}
       {tab==='fundamentals' && <FundamentalsPanel symbol={sym} stocks={stocks}/>}
+      {tab==='ask' && <AskAiPanel symbol={sym}/>}
       {tab==='results' && (
         <>
           <ResultsHistoryTable symbol={sym}/>
@@ -2656,6 +2913,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
             )
           })()}
           <StockThemesAfterMcap symbol={sym}/>
+          <MgmtFlagsCard symbol={sym} compact/>
           <StockDetailTabs sym={sym} stocks={stocks} onSelectSymbol={onNavigate}/>
         </div>
       )}

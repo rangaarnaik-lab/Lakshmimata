@@ -1008,12 +1008,13 @@ export async function fetchStockFundamentals(symbol) {
       + 'fundamental_score,fundamental_label,industry,sector,'
       + 'ai_highlights,ai_key_metrics,ai_highlights_at,fetched_at,'
       + 'emerging_themes,theme_evidence,theme_intensity,themes_source,'
-      + 'themes_at,themes_announced_at')
+      + 'themes_at,themes_announced_at,'
+      + 'mgmt_verdict,mgmt_summary,mgmt_flags,mgmt_flags_at')
     .eq('sym', symbol)
     .maybeSingle()
   if (error) {
-    // Older DBs may lack ai_* / theme columns — retry without them
-    if (/ai_highlights|ai_key_metrics|ai_highlights_at|emerging_themes|theme_/i.test(error.message || '')) {
+    // Older DBs may lack ai_* / theme / mgmt columns — retry without them
+    if (/ai_highlights|ai_key_metrics|ai_highlights_at|emerging_themes|theme_|mgmt_/i.test(error.message || '')) {
       const { data: d2, error: e2 } = await supabase
         .from('stock_fundamentals')
         .select('sym,market_cap,pe,pb,roe,roce,eps,debt_eq,promoter,peg_ratio,industry_pe,'
@@ -1051,6 +1052,87 @@ export async function fetchStockThemes(symbol) {
     evidence: row.theme_evidence,
     source: row.themes_source || 'ai_web',
     at: row.themes_announced_at || row.themes_at,
+  }
+}
+
+function getVisitorId() {
+  try {
+    let id = localStorage.getItem('lm_visitor_id')
+    if (!id) {
+      id = (crypto?.randomUUID?.() || `v_${Date.now()}_${Math.random().toString(36).slice(2)}`)
+      localStorage.setItem('lm_visitor_id', id)
+    }
+    return id
+  } catch {
+    return null
+  }
+}
+
+export async function submitStockAiAsk(symbol, question) {
+  // Queue a free-form diligence question; fundamentals worker answers via Gemini.
+  const q = (question || '').trim()
+  const sym = (symbol || '').trim().toUpperCase()
+  if (!sym || q.length < 8 || q.length > 400) {
+    return { error: 'Ask a clear question (8–400 characters).' }
+  }
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data, error } = await supabase
+    .from('stock_ai_asks')
+    .insert({
+      symbol: sym,
+      question: q,
+      status: 'pending',
+      visitor_id: getVisitorId(),
+      user_id: user?.id || null,
+    })
+    .select('id,symbol,question,status,created_at')
+    .single()
+  if (error) {
+    console.error('submitStockAiAsk error:', error.message)
+    return { error: error.message || 'Could not submit question' }
+  }
+  return { ask: data }
+}
+
+export async function fetchStockAiAsk(id) {
+  if (!id) return null
+  const { data, error } = await supabase
+    .from('stock_ai_asks')
+    .select('id,symbol,question,status,answer,verdict,flags,sources,error,created_at,answered_at')
+    .eq('id', id)
+    .maybeSingle()
+  if (error) { console.error('fetchStockAiAsk error:', error.message); return null }
+  return data || null
+}
+
+export async function fetchRecentStockAiAsks(symbol, limit = 5) {
+  if (!symbol) return []
+  const { data, error } = await supabase
+    .from('stock_ai_asks')
+    .select('id,symbol,question,status,answer,verdict,flags,sources,error,created_at,answered_at')
+    .eq('symbol', symbol)
+    .eq('status', 'done')
+    .order('answered_at', { ascending: false })
+    .limit(limit)
+  if (error) {
+    if (/stock_ai_asks/i.test(error.message || '')) return []
+    console.error('fetchRecentStockAiAsks error:', error.message)
+    return []
+  }
+  return data || []
+}
+
+export async function fetchMgmtFlags(symbol) {
+  const row = await fetchStockFundamentals(symbol)
+  if (!row) return null
+  const flags = row.mgmt_flags
+  const list = Array.isArray(flags) ? flags : []
+  if (!list.length && !row.mgmt_summary) return null
+  return {
+    verdict: row.mgmt_verdict,
+    summary: row.mgmt_summary,
+    flags: list,
+    at: row.mgmt_flags_at,
   }
 }
 
