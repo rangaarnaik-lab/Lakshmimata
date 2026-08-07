@@ -1981,6 +1981,7 @@ function SimpleStockTable({stocks, isMobile, onChart}){
         <span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>
         <span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>
         <span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>
+        <span title="Overall fundamental quality — not the same as Excellent/Good Result (latest quarter only)." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Fund</span>
         <span/>
         <span style={{textAlign:'center',color:C.muted,fontSize:9}}>TV</span>
         <span style={{textAlign:'center',color:C.muted,fontSize:9}}>Scr</span>
@@ -3896,6 +3897,7 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=20,de
             {visibleRsCols.roe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>}
             {visibleRsCols.de&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>}
             {visibleRsCols.prom&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>}
+            {visibleRsCols.fundRating&&<span title="Overall fundamental quality (ROE, growth, debt, margins, ownership) — not the same as Excellent/Good Result under the chart, which is only the latest quarter." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Fund</span>}
             <span/>
             <span style={{textAlign:'center',color:C.muted,fontSize:9}}>TV</span>
             <span style={{textAlign:'center',color:C.muted,fontSize:9}}>Scr</span>
@@ -4582,7 +4584,7 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
               {s.fundamentalLabel}
             </span>
           ):<span style={{color:C.muted}}>—</span>}
-          <div style={{fontSize:8,color:C.muted}}>Rating</div>
+          <div style={{fontSize:8,color:C.muted}}>Fund</div>
         </div>}
 
         {/* Expand — separate click target from the row (which now opens
