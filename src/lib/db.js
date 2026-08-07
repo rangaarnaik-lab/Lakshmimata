@@ -994,6 +994,42 @@ export async function fetchCompanyAbout(symbol) {
   return data || null
 }
 
+export async function fetchStockFundamentals(symbol) {
+  // Full fundamentals snapshot for the Fundamentals tab — includes AI
+  // takeaways (ai_highlights / ai_key_metrics) that may not be on the
+  // live scan CDN payload yet.
+  if (!symbol) return null
+  const { data, error } = await supabase
+    .from('stock_fundamentals')
+    .select('sym,market_cap,pe,pb,roe,roce,eps,debt_eq,promoter,peg_ratio,industry_pe,'
+      + 'div_yield,cfo,fcf,cfo_pat,nim,gnpa,nnpa,car,casa,'
+      + 'eps_qoq,eps_yoy,sales_qoq,sales_yoy,opm_pct,opm_trend,eps_growth_streak,'
+      + 'fii_pct,fii_trend,dii_pct,dii_trend,promoter_trend,'
+      + 'fundamental_score,fundamental_label,industry,sector,'
+      + 'ai_highlights,ai_key_metrics,ai_highlights_at,fetched_at')
+    .eq('sym', symbol)
+    .maybeSingle()
+  if (error) {
+    // Older DBs may lack ai_* columns — retry without them
+    if (/ai_highlights|ai_key_metrics|ai_highlights_at/i.test(error.message || '')) {
+      const { data: d2, error: e2 } = await supabase
+        .from('stock_fundamentals')
+        .select('sym,market_cap,pe,pb,roe,roce,eps,debt_eq,promoter,peg_ratio,industry_pe,'
+          + 'div_yield,cfo,fcf,cfo_pat,nim,gnpa,nnpa,car,casa,'
+          + 'eps_qoq,eps_yoy,sales_qoq,sales_yoy,opm_pct,opm_trend,eps_growth_streak,'
+          + 'fii_pct,fii_trend,dii_pct,dii_trend,promoter_trend,'
+          + 'fundamental_score,fundamental_label,industry,sector,fetched_at')
+        .eq('sym', symbol)
+        .maybeSingle()
+      if (e2) { console.error('fetchStockFundamentals error:', e2.message); return null }
+      return d2 || null
+    }
+    console.error('fetchStockFundamentals error:', error.message)
+    return null
+  }
+  return data || null
+}
+
 export async function fetchTranscriptSummaries(symbol) {
   // Returns AI-generated earnings-call TRANSCRIPT summaries for a
   // symbol, most recent first - a different document type from
