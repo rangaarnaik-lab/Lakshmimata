@@ -2797,8 +2797,11 @@ function AboutCompanyPanel({symbol, stocks}){
   )
 }
 
-function StockDetailTabs({sym, stocks, onSelectSymbol}){
-  const [tab, setTab] = useState('about')
+function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab}){
+  // Tab can be controlled by ChartPanel (e.g. peer ranking opens Results).
+  const [innerTab, setInnerTab] = useState('about')
+  const activeTab = tab ?? innerTab
+  const changeTab = setTab ?? setInnerTab
   // Tab flags so users can see Concall/PPT history exists without opening
   // each tab — count + latest filing date. About uses company_abouts;
   // Fundamentals uses stock_fundamentals AI takeaways / ratio coverage.
@@ -2808,7 +2811,8 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
   })
   useEffect(() => {
     let cancelled = false
-    setTab('about')
+    // Only reset locally when uncontrolled — controlled parent sets tab on navigate.
+    if (tab == null) setInnerTab('about')
     setFlags({
       concall: undefined, ppt: undefined, about: undefined,
       fundamentals: undefined, resultsSummary: undefined,
@@ -2858,7 +2862,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
           const hasContent = flag && flag.count > 0
           const dateHint = hasContent ? fmtFlagDate(flag.latestAt) : null
           return (
-            <div key={t.key} onClick={()=>setTab(t.key)} title={
+            <div key={t.key} onClick={()=>changeTab(t.key)} title={
               t.key==='about'
                 ? (hasContent ? 'AI company brief from web + filings' : 'Brief generates after worker cycles')
                 : t.key==='fundamentals'
@@ -2870,8 +2874,8 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
                   : (flag && flag.count===0 ? `No ${t.label} yet` : undefined)
             } style={{
               padding:'6px 10px',fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',
-              color:tab===t.key?C.accent:C.muted,
-              borderBottom:tab===t.key?`2px solid ${C.accent}`:'2px solid transparent',
+              color:activeTab===t.key?C.accent:C.muted,
+              borderBottom:activeTab===t.key?`2px solid ${C.accent}`:'2px solid transparent',
               display:'flex',alignItems:'center',gap:5,
             }}>
               {t.label}
@@ -2890,9 +2894,9 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
           )
         })}
       </div>
-      {tab==='about' && <AboutCompanyPanel symbol={sym} stocks={stocks}/>}
-      {tab==='fundamentals' && <FundamentalsPanel symbol={sym} stocks={stocks}/>}
-      {tab==='results' && (
+      {activeTab==='about' && <AboutCompanyPanel symbol={sym} stocks={stocks}/>}
+      {activeTab==='fundamentals' && <FundamentalsPanel symbol={sym} stocks={stocks}/>}
+      {activeTab==='results' && (
         <>
           <ResultsHistoryTable symbol={sym}/>
           <SectorRankingPanel symbol={sym}
@@ -2902,9 +2906,9 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
             onSelectSymbol={onSelectSymbol}/>
         </>
       )}
-      {tab==='resultsSummary' && <ResultsFilingSummary symbol={sym}/>}
-      {tab==='concall' && <TranscriptSummary symbol={sym}/>}
-      {tab==='ppt' && <PptSummary symbol={sym}/>}
+      {activeTab==='resultsSummary' && <ResultsFilingSummary symbol={sym}/>}
+      {activeTab==='concall' && <TranscriptSummary symbol={sym}/>}
+      {activeTab==='ppt' && <PptSummary symbol={sym}/>}
     </div>
   )
 }
@@ -2912,7 +2916,25 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
 function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks}){
   const [loaded, setLoaded] = useState(false)
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
+  // Peer ranking pills open Results; other navigations reset to About.
+  const [detailTab, setDetailTab] = useState('about')
+  const openResultsOnNavRef = useRef(false)
   useEffect(()=>{ if(isIndex) setChartTab('own') },[isIndex])
+  useEffect(()=>{
+    if(openResultsOnNavRef.current){
+      setDetailTab('results')
+      // Delay clear so React Strict Mode's double-effect still sees the flag.
+      queueMicrotask(()=>{ openResultsOnNavRef.current = false })
+    } else {
+      setDetailTab('about')
+    }
+  },[sym])
+  const navigateTo = (nextSym, {openResults=false}={})=>{
+    if(!nextSym || !onNavigate) return
+    openResultsOnNavRef.current = !!openResults
+    if(openResults) setDetailTab('results')
+    onNavigate(nextSym)
+  }
   // is the default: NSE restricted its symbols in TradingView's embeddable
   // widget ("This symbol is only available on TradingView" even for major
   // stocks), so the embed frequently fails. BSE listings still work in
@@ -2944,7 +2966,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
         padding:'14px 14px 8px',borderBottom:`1px solid ${C.divider}`,flexShrink:0,height:48}}>
         <div style={{display:'flex',alignItems:'center',gap:6}}>
-          <button onClick={()=>prevSym&&onNavigate(prevSym)} disabled={!prevSym}
+          <button onClick={()=>prevSym&&navigateTo(prevSym)} disabled={!prevSym}
             title="Previous stock"
             style={{background:'transparent',border:`1px solid ${C.border}`,
               color:prevSym?C.text:C.border,fontSize:13,width:26,height:26,borderRadius:4,
@@ -2952,7 +2974,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
             ◀
           </button>
           <span style={{fontWeight:700,fontSize:14,color:C.text,letterSpacing:'0.01em'}}>{sym}</span>
-          <button onClick={()=>nextSym&&onNavigate(nextSym)} disabled={!nextSym}
+          <button onClick={()=>nextSym&&navigateTo(nextSym)} disabled={!nextSym}
             title="Next stock"
             style={{background:'transparent',border:`1px solid ${C.border}`,
               color:nextSym?C.text:C.border,fontSize:13,width:26,height:26,borderRadius:4,
@@ -3064,7 +3086,9 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
           })()}
           <StockThemesAfterMcap symbol={sym}/>
           <MgmtFlagsCard symbol={sym} compact/>
-          <StockDetailTabs sym={sym} stocks={stocks} onSelectSymbol={onNavigate}/>
+          <StockDetailTabs sym={sym} stocks={stocks}
+            tab={detailTab} setTab={setDetailTab}
+            onSelectSymbol={(s)=>navigateTo(s,{openResults:true})}/>
         </div>
       )}
       {!isIndex&&<AskAiAgent symbol={sym} isMobile={isMobile}/>}
@@ -3333,7 +3357,7 @@ function SectorRankingPanel({symbol, sector, industry, stocks, onSelectSymbol}){
           const isSelf = r.sym===symbol
           const canOpen = !isSelf && typeof onSelectSymbol==='function'
           return (
-            <div key={r.sym} title={canOpen ? `${r.rating} — open ${r.sym}` : r.rating}
+            <div key={r.sym} title={canOpen ? `${r.rating} — open ${r.sym} Results` : r.rating}
               onClick={()=>{ if(canOpen) onSelectSymbol(r.sym) }}
               style={{display:'flex',alignItems:'center',gap:4,padding:'2px 7px',borderRadius:10,
                 fontSize:10,fontWeight:isSelf?800:600,
@@ -5179,7 +5203,7 @@ const GUIDE_QA = [
   {keys:['excellent','result rating','weak result','good result','neutral result'],
     answer:'Result quality (Excellent/Good/Neutral/Weak) comes from Sales & PAT vs the same quarter last year, with QoQ and OPM checks. Headline PAT declines are capped — sales up + profit down will not stay Excellent.'},
   {keys:['peer','ranking','jewellery','industry'],
-    answer:'Under Results, peers are ranked in the same industry when available. Click another peer pill to open that stock’s chart.'},
+    answer:'Under Results, peers are ranked in the same industry when available. Click another peer pill to open that stock’s Results tab.'},
   {keys:['theme','emerging'],
     answer:'Emerging Themes tab lists themes tagged from PPT/concall text. Open a theme to see stocks that mentioned it — for scanning ideas, not as a standalone signal.'},
   {keys:['watchlist'],
