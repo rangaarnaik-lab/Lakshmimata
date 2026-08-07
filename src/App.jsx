@@ -8341,12 +8341,19 @@ export default function App(){
                   .sort((a,b)=>b.avgIbv-a.avgIbv)
               })()
 
-              const Stat=({label,value,total,color,sub})=>(
-                <div style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:10,padding:'14px'}}>
-                  <div style={{fontSize:11,color:C.muted,marginBottom:6}}>{label}</div>
-                  <div style={{fontWeight:700,fontSize:26,color:color||C.text}}>{value}</div>
-                  {total&&<div style={{fontSize:10,color:C.muted,marginTop:3}}>{((value/total)*100).toFixed(1)}% of {total}</div>}
-                  {sub&&<div style={{fontSize:10,color:C.muted,marginTop:3}}>{sub}</div>}
+              // Compact metric cell — label + value on one strip (not a tall card)
+              const Stat=({label,value,total,color})=>(
+                <div title={total!=null?`${((value/total)*100).toFixed(1)}% of ${total}`:undefined}
+                  style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:7,
+                    padding:'7px 9px',minWidth:0}}>
+                  <div style={{fontSize:9,color:C.muted,fontWeight:600,letterSpacing:'0.02em',
+                    whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginBottom:2}}>{label}</div>
+                  <div style={{display:'flex',alignItems:'baseline',gap:5,justifyContent:'space-between'}}>
+                    <span style={{fontWeight:800,fontSize:16,color:color||C.text,lineHeight:1.1}}>{value}</span>
+                    {total!=null&&(
+                      <span style={{fontSize:9,color:C.muted}}>{((value/total)*100).toFixed(0)}%</span>
+                    )}
+                  </div>
                 </div>
               )
 
@@ -8354,82 +8361,86 @@ export default function App(){
               // Composite verdict — synthesizes 5 independent factors
               // instead of the old 2-factor check, so a single skewed
               // metric can't flip the whole read. Each factor shown
-              // individually below (not just the final score) so the
-              // verdict is explainable, not a black box — deliberately
-              // framed as "conditions favor/don't favor", not "you
-              // should trade", since this feeds into real trading
-              // decisions and is a heuristic aid, not a guarantee.
+              // as a compact chip (not a tall list) so the verdict is
+              // explainable without eating the page.
               const factors = [
-                {label:'Advance/Decline', positive:adv>dec, detail:`${adv} advancing vs ${dec} declining`},
-                {label:'RS Momentum', positive:rsi>rsd, detail:`${rsi} improving vs ${rsd} declining`},
-                {label:'Trend Health', positive:stage2>tot*0.2, detail:`${stage2} in confirmed Stage 2 (${((stage2/tot)*100).toFixed(0)}%)`},
-                {label:'Leadership', positive:newHighs>nearLows, detail:`${newHighs} new 52W highs vs ${nearLows} near 52W lows`},
-                {label:'Strength Breadth', positive:s2>tot*0.15, detail:`${s2} stocks RS≥70 (${((s2/tot)*100).toFixed(0)}%)`},
+                {label:'A/D', positive:adv>dec, detail:`${adv} adv vs ${dec} dec`},
+                {label:'RS Mom', positive:rsi>rsd, detail:`${rsi}↑ vs ${rsd}↓`},
+                {label:'Trend', positive:stage2>tot*0.2, detail:`${stage2} Stage 2 (${((stage2/tot)*100).toFixed(0)}%)`},
+                {label:'Leaders', positive:newHighs>nearLows, detail:`${newHighs} highs vs ${nearLows} lows`},
+                {label:'RS≥70', positive:s2>tot*0.15, detail:`${s2} (${((s2/tot)*100).toFixed(0)}%)`},
               ]
               const posCount = factors.filter(f=>f.positive).length
-              const verdict = posCount>=4 ? {label:'Favorable',color:C.green,sub:'Conditions favor new long setups — most signals aligned'}
-                : posCount>=2 ? {label:'Mixed',color:C.yellow,sub:'Selective — be choosy, quality over quantity right now'}
-                : {label:'Unfavorable',color:C.red,sub:'Most signals negative — a defensive posture makes sense'}
+              const verdict = posCount>=4 ? {label:'Favorable',color:C.green,sub:'Conditions favor new long setups'}
+                : posCount>=2 ? {label:'Mixed',color:C.yellow,sub:'Selective — quality over quantity'}
+                : {label:'Unfavorable',color:C.red,sub:'Most signals negative — stay defensive'}
+
+              const breadthStats = [
+                {label:'Advancing', value:adv, color:C.green},
+                {label:'Declining', value:dec, color:C.red},
+                {label:'RS Improving', value:rsi, color:C.accent},
+                {label:'RS Declining', value:rsd, color:C.orange},
+                {label:'PP Today', value:pp, color:C.yellow},
+                {label:'Vol Surge', value:rvs, color:C.purple},
+                {label:'RS Line NH', value:rln, color:C.teal},
+                {label:'RS ≥ 70', value:s2, color:C.green},
+                {label:'Stage 2', value:stage2, color:C.green},
+                {label:'52W Highs', value:newHighs, color:C.accent},
+                {label:'Near 52W Lows', value:nearLows, color:C.red},
+                {label:'In Squeeze', value:inSqueeze, color:C.blue},
+                {label:`Gap Up ≥${GAP_THRESH}%`, value:gapUps.length, color:C.green},
+                {label:`Gap Down ≥${GAP_THRESH}%`, value:gapDowns.length, color:C.red},
+              ]
 
               return(
                 <>
-                  {/* Composite market verdict — pushed to the very top of
-                      the tab, ahead of the header, since this is the
-                      single most useful glance-and-go read on the page */}
+                  {/* Compact verdict: one header row + factor chips */}
                   <div ref={el=>marketSectionRefs.current['verdict']=el}
                     style={{background:verdict.color+'11',border:`1px solid ${verdict.color}44`,
-                    borderRadius:10,padding:'14px 16px',marginBottom:14}}>
-                    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-                      <div style={{width:10,height:10,borderRadius:'50%',background:verdict.color,flexShrink:0}}/>
-                      <span style={{fontWeight:800,fontSize:15,color:verdict.color}}>{verdict.label}</span>
-                      <span style={{fontSize:11,color:C.muted,marginLeft:'auto'}}>{posCount}/5 factors positive</span>
+                    borderRadius:10,padding:'10px 12px',marginBottom:10}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:8}}>
+                      <div style={{width:8,height:8,borderRadius:'50%',background:verdict.color,flexShrink:0}}/>
+                      <span style={{fontWeight:800,fontSize:14,color:verdict.color}}>{verdict.label}</span>
+                      <span style={{fontSize:11,color:C.text}}>· {verdict.sub}</span>
+                      <span style={{fontSize:10,color:C.muted,marginLeft:'auto'}}
+                        title="Market-condition read only — not a trade signal by itself">
+                        {posCount}/5 positive
+                      </span>
                     </div>
-                    <div style={{fontSize:12,color:C.text,marginBottom:10}}>{verdict.sub}</div>
-                    <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
                       {factors.map(f=>(
-                        <div key={f.label} style={{display:'flex',alignItems:'center',gap:8,fontSize:11}}>
-                          <span style={{color:f.positive?C.green:C.red,fontWeight:700,minWidth:14}}>{f.positive?'✓':'✗'}</span>
-                          <span style={{color:C.muted,minWidth:110}}>{f.label}</span>
+                        <div key={f.label} title={f.detail}
+                          style={{display:'flex',alignItems:'center',gap:4,fontSize:10,
+                            padding:'3px 8px',borderRadius:6,
+                            background:f.positive?C.green+'14':C.red+'14',
+                            border:`1px solid ${f.positive?C.green:C.red}44`}}>
+                          <span style={{color:f.positive?C.green:C.red,fontWeight:800}}>{f.positive?'✓':'✗'}</span>
+                          <span style={{color:C.muted,fontWeight:700}}>{f.label}</span>
                           <span style={{color:C.text}}>{f.detail}</span>
                         </div>
                       ))}
                     </div>
-                    <div style={{fontSize:10,color:C.muted,marginTop:10,fontStyle:'italic'}}>
-                      A quick market-condition read, not a signal to act on by itself — always check the individual
-                      setup too.
+                  </div>
+
+                  {/* Breadth header + A/D ratio on one line */}
+                  <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:8,flexWrap:'wrap'}}>
+                    <div style={{fontWeight:700,fontSize:14,color:C.text}}>Market Breadth</div>
+                    <div style={{fontSize:11,color:C.muted}}>NSE daily health</div>
+                    <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:6,
+                      background:C.card,border:`1px solid ${C.border}`,borderRadius:7,padding:'4px 10px'}}>
+                      <span style={{fontSize:10,color:C.muted}}>A/D Ratio</span>
+                      <span style={{fontSize:12,fontWeight:800,color:adRatio>=1?C.green:C.red}}>{adRatio}</span>
                     </div>
                   </div>
 
-                  <div style={{marginBottom:14}}>
-                    <div style={{fontWeight:700,fontSize:16,color:C.text}}>Market Breadth</div>
-                    <div style={{fontSize:11,color:C.muted}}>Daily market health indicators for NSE</div>
-                  </div>
-
-                  {/* Health indicator */}
-                  <div style={{background:C.card,border:`1px solid ${C.border}`,
-                    borderRadius:10,padding:'10px 16px',marginBottom:14,
-                    display:'flex',alignItems:'center',gap:10}}>
-                    <span style={{fontSize:11,color:C.muted}}>Advance/Decline Ratio</span>
-                    <span style={{fontSize:13,fontWeight:700,color:C.text,marginLeft:'auto'}}>{adRatio}</span>
-                  </div>
-
-                  {/* Stats grid */}
+                  {/* Dense stats — 7 cols on desktop ≈ 2 rows instead of 4 */}
                   <div ref={el=>marketSectionRefs.current['stats']=el}
-                    style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:14}}>
-                    <Stat label="Advancing" value={adv} total={tot} color={C.green}/>
-                    <Stat label="Declining"  value={dec} total={tot} color={C.red}/>
-                    <Stat label="RS Improving" value={rsi} total={tot} color={C.accent}/>
-                    <Stat label="RS Declining" value={rsd} total={tot} color={C.orange}/>
-                    <Stat label="PP Today" value={pp} total={tot} color={C.yellow}/>
-                    <Stat label="Vol Surge (RVOL>2)" value={rvs} total={tot} color={C.purple}/>
-                    <Stat label="RS Line New High" value={rln} total={tot} color={C.teal}/>
-                    <Stat label="RS ≥ 70" value={s2} total={tot} color={C.green}/>
-                    <Stat label="Stage 2 (Uptrend)" value={stage2} total={tot} color={C.green}/>
-                    <Stat label="New 52W Highs" value={newHighs} total={tot} color={C.accent}/>
-                    <Stat label="Near 52W Lows" value={nearLows} total={tot} color={C.red}/>
-                    <Stat label="In Squeeze" value={inSqueeze} total={tot} color={C.blue}/>
-                    <Stat label={`Gap Up ≥${GAP_THRESH}%`} value={gapUps.length} total={tot} color={C.green}/>
-                    <Stat label={`Gap Down ≥${GAP_THRESH}%`} value={gapDowns.length} total={tot} color={C.red}/>
+                    style={{display:'grid',
+                      gridTemplateColumns:isMobile?'repeat(3,1fr)':'repeat(7,1fr)',
+                      gap:6,marginBottom:12}}>
+                    {breadthStats.map(s=>(
+                      <Stat key={s.label} label={s.label} value={s.value} total={tot} color={s.color}/>
+                    ))}
                   </div>
 
                 </>
