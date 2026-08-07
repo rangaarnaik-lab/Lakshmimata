@@ -888,18 +888,18 @@ export async function fetchBestPicks() {
  * used elsewhere in the app).
  */
 export async function fetchFinancialResultsHistory(symbol) {
-  // 90-day filed_at window - by design this view won't show a proper
-  // YoY comparison (that row is typically filed ~365 days ago), a
-  // deliberate tradeoff to keep this query bounded/cheap rather than
-  // scanning unbounded history per symbol.
-  const since = new Date(Date.now() - 90 * 864e5).toISOString()
+  // Per-symbol history must NOT use a short filed_at window. A 90-day
+  // filter (previous behaviour) dropped same-quarter-last-year rows and
+  // made Results / YoY / ratings look empty for stocks like GRSE even
+  // when financial_results had the data. Single-symbol queries are cheap
+  // — fetch enough periods, then prefer Consolidated and sort by date.
+  const sym = String(symbol || '').toUpperCase().trim()
+  if (!sym) return []
   const { data, error } = await supabase
     .from('financial_results')
     .select('period_ended,result_type,sales,other_income,pbt,exceptional_item,pat,eps,opm_pct,filed_at,sales_qoq_pct,pat_qoq_pct,sales_yoy_pct,pat_yoy_pct,eps_yoy_pct')
-    .eq('symbol', symbol)
-    .gt('filed_at', since)
-    .order('period_ended', { ascending: false })
-    .limit(16)
+    .eq('symbol', sym)
+    .limit(40)
   if (error) { console.error('fetchFinancialResultsHistory error:', error.message); return [] }
   // Dedupe to one row per period_ended, preferring Consolidated.
   const byPeriod = {}
@@ -1183,23 +1183,30 @@ export async function fetchWatchlistAnnouncementsSince(syms, sinceISO) {
  * announcements. Last 45 days covers a full results season window.
  */
 export async function fetchRecentFinancialResults() {
-  // 90 days — board-meeting announcements can land before scrape finishes,
-  // and a short window left new tickers with no resultsMap entry (DEBUG noise).
-  const since = new Date(Date.now() - 90 * 864e5).toISOString()
-  const { data, error } = await supabase
-    .from('financial_results')
-    .select('symbol,period_ended,result_type,sales,other_income,pbt,pat,eps,opm_pct,filed_at')
-    .gt('filed_at', since)
-    .order('filed_at', { ascending: false })
-    .limit(2000)
-  if (error) { console.error('fetchRecentFinancialResults error:', error.message); return {} }
+  // Bulk map for News → Results cards. Load recent filed rows + any
+  // null-filed_at rows (some scrape paths omit filed_at) so tickers
+  // don't vanish from the map.
+  const since = new Date(Date.now() - 120 * 864e5).toISOString()
+  const select = 'symbol,period_ended,result_type,sales,other_income,pbt,pat,eps,opm_pct,filed_at'
+  const [recent, nullFiled] = await Promise.all([
+    supabase.from('financial_results').select(select)
+      .gt('filed_at', since).order('filed_at', { ascending: false }).limit(3000),
+    supabase.from('financial_results').select(select)
+      .is('filed_at', null).limit(500),
+  ])
+  if (recent.error) console.error('fetchRecentFinancialResults error:', recent.error.message)
+  if (nullFiled.error) console.error('fetchRecentFinancialResults null filed_at:', nullFiled.error.message)
   const bySymbol = {}
-  for (const r of data || []) {
-    // first (most recent) row per symbol wins; prefer consolidated when
-    // both arrive at the same recency
+  const toDate = (s) => {
+    const d = new Date(s)
+    return isNaN(d.getTime()) ? new Date(0) : d
+  }
+  for (const r of [...(recent.data || []), ...(nullFiled.data || [])]) {
     const sym = (r.symbol || '').toUpperCase()
     if (!sym) continue
-    if (!bySymbol[sym]) bySymbol[sym] = { ...r, symbol: sym }
+    const row = { ...r, symbol: sym }
+    const prev = bySymbol[sym]
+    if (!prev || toDate(row.period_ended) > toDate(prev.period_ended)) bySymbol[sym] = row
   }
   return bySymbol
 }
