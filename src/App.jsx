@@ -2661,8 +2661,9 @@ function AboutCompanyPanel({symbol, stocks}){
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 16px'}}>
         <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:6}}>About Company</div>
         <div style={{fontSize:12,color:C.muted,lineHeight:1.55}}>
-          AI researches the web (company site, Screener, filings, news) plus any PPT/Concall
-          already on file for {symbol||'this stock'}. Briefs and logos fill in over the next worker cycles.
+          AI company brief for {symbol||'this stock'} is not ready yet. The worker fills About
+          from filings / known company facts (large caps and your priority symbols first).
+          Check back after the next few cycles.
         </div>
         {s?.industry||s?.sector?(
           <div style={{marginTop:10,fontSize:11,color:C.text}}>
@@ -2702,7 +2703,9 @@ function AboutCompanyPanel({symbol, stocks}){
             <div style={{minWidth:0}}>
               <div style={{fontSize:13,fontWeight:900,color:C.text}}>About {symbol}</div>
               <div style={{fontSize:10,color:C.muted,marginTop:2}}>
-                AI web research + filings · not investment advice
+                {Array.isArray(about.sources)&&about.sources.some(s=>s?.url)
+                  ? 'AI web research + filings · not investment advice'
+                  : 'AI company brief from filings · not investment advice'}
               </div>
               {about.website&&(
                 <a href={`https://${about.website}`} target="_blank" rel="noopener noreferrer"
