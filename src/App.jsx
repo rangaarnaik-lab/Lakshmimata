@@ -360,6 +360,85 @@ const AMBIENT_SOUNDS = [
   ['piano','🎹 Generative Piano'],
 ]
 
+// 4-4-4-4 box breathing — expand/contract ring timed to inhale / hold /
+// exhale / hold. Pairs naturally with Singing Bowl for a short reset.
+function BreathingExercise({ambient}){
+  const PHASES = [
+    {name:'Inhale', secs:4},
+    {name:'Hold', secs:4},
+    {name:'Exhale', secs:4},
+    {name:'Hold', secs:4},
+  ]
+  const [active, setActive] = useState(false)
+  const [phaseIdx, setPhaseIdx] = useState(0)
+  const [left, setLeft] = useState(4)
+  const phase = PHASES[phaseIdx]
+  const scale = phase.name==='Inhale' ? 1.35
+    : phase.name==='Exhale' ? 0.72
+    : (phaseIdx===1 ? 1.35 : 0.72) // hold after inhale stays large; after exhale stays small
+
+  useEffect(()=>{
+    if(!active) return
+    setLeft(PHASES[phaseIdx].secs)
+    const tick = setInterval(()=> setLeft(s=>{
+      if(s<=1){
+        setPhaseIdx(i=>(i+1)%PHASES.length)
+        return PHASES[(phaseIdx+1)%PHASES.length].secs
+      }
+      return s-1
+    }), 1000)
+    return ()=> clearInterval(tick)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, phaseIdx])
+
+  const start = ()=>{
+    // Pair with Singing Bowl + ambient so breath and tone move together
+    ambient.setSoundType('bowl')
+    if(!ambient.enabled) ambient.toggle()
+    setPhaseIdx(0)
+    setLeft(4)
+    setActive(true)
+  }
+  const stop = ()=>{ setActive(false); setPhaseIdx(0); setLeft(4) }
+
+  return (
+    <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.divider}`}}>
+      <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',
+        letterSpacing:'0.06em',marginBottom:8}}>Breathing · Singing Bowl</div>
+      {!active ? (
+        <button type="button" onClick={start}
+          style={{width:'100%',padding:'9px 0',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:700,
+            border:`1px solid ${C.border}`,background:C.bg,color:C.text}}>
+          🌬️ Start 4-4-4-4 breath
+        </button>
+      ) : (
+        <div style={{textAlign:'center'}}>
+          <div style={{
+            width:88,height:88,margin:'6px auto 10px',borderRadius:'50%',
+            border:`2px solid ${C.accent}`,background:C.accent+'14',
+            display:'flex',alignItems:'center',justifyContent:'center',
+            transform:`scale(${scale})`,
+            transition:'transform 3.8s ease-in-out',
+          }}>
+            <div>
+              <div style={{fontSize:13,fontWeight:800,color:C.accent}}>{phase.name}</div>
+              <div style={{fontSize:18,fontWeight:800,color:C.text,marginTop:2}}>{left}</div>
+            </div>
+          </div>
+          <div style={{fontSize:10,color:C.muted,marginBottom:8,lineHeight:1.4}}>
+            Inhale 4 · Hold 4 · Exhale 4 · Hold 4
+          </div>
+          <button type="button" onClick={stop}
+            style={{width:'100%',padding:'7px 0',borderRadius:8,cursor:'pointer',fontSize:11,fontWeight:700,
+              border:`1px solid ${C.border}`,background:C.bg,color:C.muted}}>
+            Stop
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function useAmbientSound(){
   const [playing,setPlaying]=useState(false)
   const [enabled,setEnabled]=useState(false) // persisted preference, separate from live playing state
