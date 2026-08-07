@@ -2100,7 +2100,7 @@ function EmaBreadthTable({data,isMobile,dragProps,rangeLabel}){
 // what's most likely to have content for a given stock: Company Brief
 // first (cross-page snapshot), then numeric results, then AI filings.
 const STOCK_DETAIL_TABS = [
-  {key: 'summary', label: 'Summary'},
+  {key: 'summary', label: 'About Company'},
   {key: 'results', label: 'Results'},
   {key: 'concall', label: 'Concall Report'},
   {key: 'ppt', label: 'PPT'},
@@ -2290,7 +2290,7 @@ function CompanySummaryPanel({symbol, stocks}){
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,marginBottom:10}}>
           <div>
             <div style={{fontSize:13,fontWeight:900,color:C.text,display:'flex',alignItems:'center',gap:6}}>
-              <span>✨</span> Company Brief
+              <span>✨</span> About Company
             </div>
             <div style={{fontSize:10,color:C.muted,marginTop:2}}>
               High-level view from RS, Fund, Results, Concall &amp; PPT · Free · no extra AI chat cost
@@ -2398,7 +2398,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol}){
           const dateHint = hasContent ? fmtFlagDate(flag.latestAt) : null
           return (
             <div key={t.key} onClick={()=>setTab(t.key)} title={
-              t.key==='summary' ? 'High-level company brief from RS, Fund, Results, Concall & PPT'
+              t.key==='summary' ? 'About the company — high-level brief from RS, Fund, Results, Concall & PPT'
               : hasContent
                 ? `${flag.count} report${flag.count>1?'s':''} on file — open to read history`
                 : (flag && flag.count===0 ? `No ${t.label} yet` : undefined)
@@ -4357,7 +4357,7 @@ const HELP_CONTENT = [
   {id:'watchlist', title:'Watchlist', body:`Your saved stock lists. Set one as active from the header dropdown on 
     any scanner tab to filter that tab down to just your watchlist.`},
   {id:'announcements', title:'Announcements', body:`Corporate filings feed — results, concalls, PPTs and other NSE 
-    announcements. Open a stock to see Summary (company brief), Results, Concall, and PPT under the chart. Green 
+    announcements. Open a stock to see About Company, Results, Concall, and PPT under the chart. Green 
     badges on Concall/PPT mean reports are on file; use History chips to read older filings.`},
   {id:'themes', title:'Emerging Themes', body:`Radar of themes the AI tagged from recent PPT/concall text (data 
     center, defence, AI, etc.). Pick a theme to see which stocks mentioned it — useful for thematic scans, not a 
@@ -4366,8 +4366,8 @@ const HELP_CONTENT = [
     research further with RS, Results rating, and Concall/PPT — not automated advice.`},
   {id:'settings', title:'Account / Settings', body:`Theme, account, and app preferences. Help (?) in the header 
     opens this guide for every page.`},
-  {id:'chart', title:'Stock chart & Company Brief', body:`Open any stock for Our Chart plus Summary / Results / 
-    Concall / PPT. Summary assembles a high-level company brief from RS, Fund quality, latest Result, and themes 
+  {id:'chart', title:'Stock chart & About Company', body:`Open any stock for Our Chart plus About Company / Results / 
+    Concall / PPT. About Company assembles a high-level brief from RS, Fund quality, latest Result, and themes 
     from filings — free, no extra AI chat. Result quality (Excellent/Good/Neutral/Weak) is the latest quarter only; 
     Fund is broader quality. Peer pills under Results are clickable.`},
 ]
@@ -4387,7 +4387,7 @@ const GUIDE_SUGGESTIONS = {
   announcements: ['Where are Results / Concall / PPT?', 'What does the green badge mean?'],
   themes: ['What are Emerging Themes?'],
   chart: [
-    'What is Company Brief / Summary?',
+    'What is About Company?',
     'How do I read Results rating?',
     'What is Concall Report?',
     'What is PPT summary?',
@@ -4400,9 +4400,9 @@ const GUIDE_QA = [
   {keys:['this page','how do i use','how to use','what is this tab','explain this page'],
     answer:null}, // filled from HELP_CONTENT for current page
   {keys:['open chart','stock chart','tap a row','click a stock'],
-    answer:'Open a stock → Summary tab for a high-level company brief (RS, Fund, growth, themes from Concall/PPT). Results / Concall / PPT sit next to it under the chart.'},
-  {keys:['company brief','summary tab','ai summary','company summary','high level'],
-    answer:'Open a stock → Summary tab. Company Brief pulls RS, Fund quality, growth (Sales/PAT), cash-flow, and themes/outlook from Concall/PPT into one page. Free — uses data already in the app, no extra AI chat cost.'},
+    answer:'Open a stock → About Company tab for a high-level brief (RS, Fund, growth, themes from Concall/PPT). Results / Concall / PPT sit next to it under the chart.'},
+  {keys:['company brief','summary tab','ai summary','company summary','high level','about company','about the company'],
+    answer:'Open a stock → About Company tab. It pulls RS, Fund quality, growth (Sales/PAT), cash-flow, and themes/outlook from Concall/PPT into one page. Free — uses data already in the app, no extra AI chat cost.'},
   {keys:['concall','transcript','earnings call'],
     answer:'Open a stock → Concall Report tab. Green badge on the tab means a report exists. If several filings exist, use History date chips to read older calls. Tone + Watch Next appear when extracted.'},
   {keys:['ppt','presentation','slide'],
@@ -5606,9 +5606,6 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
             </div>
           )}
         </div>
-
-        <div style={{background:C.card,borderRadius:20,border:`1px solid ${C.border}`,
-          padding:28,boxShadow:`0 20px 60px #00000044`}}>
 
         <div style={{background:C.card,borderRadius:20,border:`1px solid ${C.border}`,
           padding:28,boxShadow:`0 20px 60px #00000044`}}>
