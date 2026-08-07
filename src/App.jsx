@@ -5986,12 +5986,6 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
             </div>
           )
         })()}
-        {ownerMode&&(
-          <div style={{background:C.green+'18',border:`1px solid ${C.green}33`,borderRadius:8,
-            padding:'10px 12px',marginBottom:16,fontSize:12,color:C.green}}>
-            ✅ Using owner's Upstox token — scanner works without your own token.
-          </div>
-        )}
         <button onClick={handleLogout}
           style={{width:'100%',padding:'11px',background:'transparent',color:C.red,
             border:`1px solid ${C.red}44`,borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer'}}>
