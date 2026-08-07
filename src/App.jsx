@@ -5452,7 +5452,7 @@ function PhoneInput({countryIso, onCountryChange, value, onChange, required}){
   )
 }
 
-function ReqLabel(text){
+function reqLabel(text){
   return (
     <label style={{fontSize:11,color:C.muted,fontWeight:700,textTransform:'uppercase',
       letterSpacing:'0.08em',display:'block',marginBottom:5}}>
