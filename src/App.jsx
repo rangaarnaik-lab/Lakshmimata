@@ -4842,6 +4842,7 @@ function CandlestickChart({sym, isMobile, isIndex}){
   const vLows   = lows.slice(start)
   const vCloses = closes.slice(start)
   const vVol    = volumes.slice(start)
+  const vVolEma = emaArr(volumes, 20).slice(start)
   const vMA20   = ma20.slice(start)
   const vMA50   = ma50.slice(start)
   const vMA200  = ma200.slice(start)
@@ -4902,7 +4903,7 @@ function CandlestickChart({sym, isMobile, isIndex}){
     }
   }
 
-  const maxVol = Math.max(...vVol.filter(v=>v!=null), 1)
+  const maxVol = Math.max(...vVol.filter(v=>v!=null), ...vVolEma.filter(v=>v!=null), 1)
   const volToY = v => volTop + volH - (v / maxVol) * volH
 
   // X-axis labels, TradingView style: show the month abbreviation at
@@ -5179,6 +5180,12 @@ function CandlestickChart({sym, isMobile, isIndex}){
           )
         })}
 
+        {/* Volume EMA20 — average volume trend line on the volume pane */}
+        {(() => {
+          const pts = vVolEma.map((v,i)=> v!=null ? `${idxToX(i)},${volToY(v)}` : null).filter(Boolean)
+          return pts.length>1 ? <polyline points={pts.join(' ')} fill="none" stroke={C.teal} strokeWidth={1.3} opacity={0.9}/> : null
+        })()}
+
         {/* Forecast — dashed trend projection, clearly separated from
             real data with its own label and disclaimer below the chart */}
         {showForecast && forecastPoints && (
@@ -5203,6 +5210,7 @@ function CandlestickChart({sym, isMobile, isIndex}){
 
       {/* Legend */}
       <div style={{display:'flex',flexWrap:'wrap',gap:10,marginTop:6,fontSize:9,color:C.muted}}>
+        <span><span style={{color:C.teal}}>—</span> Vol EMA20</span>
         {showMA && <>
           <span><span style={{color:C.teal}}>■</span> EMA9</span>
           <span><span style={{color:C.blue}}>■</span> MA20</span>
