@@ -1,18 +1,22 @@
-From 3a071b274ecc06b212efd5800c01b8a4785aaf2b Mon Sep 17 00:00:00 2001
+From c1508639d953ad66d961d032a334c6ab951cf274 Mon Sep 17 00:00:00 2001
 From: Cursor Agent <cursoragent@cursor.com>
-Date: Sat, 8 Aug 2026 09:12:15 +0000
-Subject: [PATCH] fix(results): after catchup idle, populate About every 15m
+Date: Sat, 8 Aug 2026 09:13:47 +0000
+Subject: [PATCH] =?UTF-8?q?fix(results):=20idle=E2=86=92About=2015m;=20any?=
+ =?UTF-8?q?=20Gemini=20key;=2090d=20catchup?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
-When Results catchup has nothing pending, release PAUSE_ABOUT_COMPANY
-early and run Company Overview (About) on a 15-minute cycle. If Results
-finds new work again, About yields back. Keeps 90d catchup lookback,
-idle backoff, and YoY/comparison dedupe.
+When Results catchup is idle, start Company Overview every 15 minutes
+(and yield back if Results gets work again). About and Results use any
+available GEMINI_API_KEY* (prefer feature key, then fall back). Keep
+90d catchup lookback, idle backoff, and YoY/comparison dedupe.
 ---
- fundamentals_worker.py | 164 +++++++++++++++++++++++++++++++++++------
- 1 file changed, 140 insertions(+), 24 deletions(-)
+ fundamentals_worker.py | 200 ++++++++++++++++++++++++++++++++++-------
+ 1 file changed, 166 insertions(+), 34 deletions(-)
 
 diff --git a/fundamentals_worker.py b/fundamentals_worker.py
-index 77d3fe6..00dca1e 100644
+index 77d3fe6..fffbaeb 100644
 --- a/fundamentals_worker.py
 +++ b/fundamentals_worker.py
 @@ -63,6 +63,46 @@ _GEMINI_JOBS_PAUSED_UNTIL: float | None = None
@@ -95,7 +99,51 @@ index 77d3fe6..00dca1e 100644
      if time.time() < _ABOUT_ENV_PAUSE_UNTIL:
          return True
      if not _ABOUT_ENV_PAUSE_RESUME_LOGGED:
-@@ -1367,8 +1415,9 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
+@@ -218,6 +266,20 @@ def _gemini_api_key_any(*features: str) -> str:
+     return ''
+ 
+ 
++def _gemini_api_key_about() -> str:
++    """Company Overview / About — use ABOUT key if set, else any GEMINI_API_KEY*."""
++    return _gemini_api_key_any(
++        'ABOUT', '', 'RESULTS', 'PPT', 'TRANSCRIPT', 'ASKS',
++        'VALUATION', 'THEMES', 'FLAGS', 'HIGHLIGHTS')
++
++
++def _gemini_api_key_results() -> str:
++    """Results PDF extraction — use RESULTS key if set, else any GEMINI_API_KEY*."""
++    return _gemini_api_key_any(
++        'RESULTS', '', 'ABOUT', 'PPT', 'TRANSCRIPT', 'ASKS',
++        'VALUATION', 'THEMES', 'FLAGS', 'HIGHLIGHTS')
++
++
+ def _gemini_ask_model() -> str:
+     """Prefer free/lite models for interactive Ask AI."""
+     return (os.getenv('GEMINI_ASK_MODEL')
+@@ -914,7 +976,7 @@ async def extract_results_from_pdf(session: aiohttp.ClientSession, symbol: str,
+         'financial_data': None, 'comparison_data': None, 'yoy_data': None,
+         'summary': None, 'error': False, 'rate_limited': False, 'hard_quota': False,
+     }
+-    api_key = _gemini_api_key('RESULTS')
++    api_key = _gemini_api_key_results()
+     if not api_key or not attachment_url:
+         return error_result  # not a real "no content" case - just not configured/no URL, don't mark as processed
+     # Stage 1: download the PDF. Separate try/except so a timeout here
+@@ -1349,10 +1411,10 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
+             continue
+         if await _idle_if_gemini_paused('results', 'Results extraction loop'):
+             continue
+-        if not _gemini_api_key('RESULTS'):
++        if not _gemini_api_key_results():
+             if not _key_status_logged:
+-                log.warning("🎙️ Results extraction loop: GEMINI_API_KEY not set - loop is idle, "
+-                            "checking every 5 min in case it gets added")
++                log.warning("🎙️ Results extraction loop: no GEMINI_API_KEY* set - loop is idle, "
++                            "checking every 5 min in case one gets added")
+                 _key_status_logged = True
+             await asyncio.sleep(300)  # check again in 5 min in case the key gets added
+             continue
+@@ -1367,8 +1429,9 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
              BATCH_SIZE = int(os.getenv('RESULTS_PDF_CATCHUP_BATCH_SIZE', '1'))
              candidates_limit = int(os.getenv('RESULTS_PDF_CATCHUP_CANDIDATES_LIMIT',
                                               os.getenv('RESULTS_PDF_CANDIDATES_LIMIT', '12000')))
@@ -106,7 +154,7 @@ index 77d3fe6..00dca1e 100644
              pacing = float(os.getenv('RESULTS_PDF_CATCHUP_PACING_SECONDS',
                                       os.getenv('RESULTS_PDF_PACING_SECONDS', '3')))
          else:
-@@ -1376,12 +1425,20 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
+@@ -1376,12 +1439,20 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
              candidates_limit = int(os.getenv('RESULTS_PDF_CANDIDATES_LIMIT', '2000'))
              lookback_days = int(os.getenv('RESULTS_PDF_LOOKBACK_DAYS', '90'))
              pacing = float(os.getenv('RESULTS_PDF_PACING_SECONDS', '5'))
@@ -128,7 +176,7 @@ index 77d3fe6..00dca1e 100644
          try:
              since = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).isoformat()
              # DB-level pre-filter on subject/category keywords - confirmed
-@@ -1438,9 +1495,24 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
+@@ -1438,9 +1509,24 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
                        f"(catchup={catchup}, missing_fr≈{missing_n}, "
                        f"candidates={len(candidates)}, matched={len(concall_rows)}, "
                        f"pending={len(pending)}, already={len(already)})")
@@ -155,7 +203,7 @@ index 77d3fe6..00dca1e 100644
          soft_backoff = False
          for i, row in enumerate(todo):
              if i > 0:
-@@ -1545,6 +1617,18 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
+@@ -1545,6 +1631,18 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
              yoy = raw_yoy if yoy_consistent else await _sanity_check_sales_outlier(
                  session, raw_yoy, row['symbol'], row['attachment_url'])
  
@@ -174,7 +222,7 @@ index 77d3fe6..00dca1e 100644
              # All three periods saved together in ONE batch, not three
              # separate calls, specifically so compute_results_yoy_qoq
              # (called inside save_financial_results_to_db) can see all
-@@ -1634,9 +1718,21 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
+@@ -1634,9 +1732,21 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
          if todo:
              log.info(f"🎙️ Results extraction loop: batch complete"
                        f"{' (catchup)' if catchup else ''}")
@@ -198,7 +246,16 @@ index 77d3fe6..00dca1e 100644
          else:
              await asyncio.sleep(120 if todo else 300)
  
-@@ -5026,17 +5122,21 @@ async def _about_company_loop(session: aiohttp.ClientSession):
+@@ -3724,7 +3834,7 @@ async def extract_about_company(session: aiohttp.ClientSession, symbol: str, ppt
+     Returns {'about': dict|None, 'error': bool, 'rate_limited': bool}."""
+     error_result = {'about': None, 'error': True, 'rate_limited': False}
+     no_content_result = {'about': None, 'error': False, 'rate_limited': False}
+-    api_key = _gemini_api_key('ABOUT')
++    api_key = _gemini_api_key_about()
+     if not api_key:
+         return error_result
+ 
+@@ -5026,34 +5136,45 @@ async def _about_company_loop(session: aiohttp.ClientSession):
                        f"— sleeping, then auto-restart with Results")
              await _sleep_while_gemini_hard_paused()
              continue
@@ -225,7 +282,14 @@ index 77d3fe6..00dca1e 100644
          _pause_logged = False
          if await _idle_if_gemini_paused('about', 'About-company loop'):
              continue
-@@ -5049,11 +5149,16 @@ async def _about_company_loop(session: aiohttp.ClientSession):
+-        if not _gemini_api_key('ABOUT'):
++        if not _gemini_api_key_about():
+             if not _key_status_logged:
+-                log.warning("📘 About-company loop: GEMINI_API_KEY not set - loop is idle")
++                log.warning("📘 About-company loop: no GEMINI_API_KEY* set - loop is idle")
+                 _key_status_logged = True
+             await asyncio.sleep(300)
+             continue
          # 5 stocks per cycle (3 in parallel). Override via env if needed.
          BATCH_SIZE = int(os.getenv('ABOUT_COMPANY_BATCH_SIZE', '5'))
          CONCURRENCY = max(1, int(os.getenv('ABOUT_COMPANY_CONCURRENCY', '3')))
@@ -235,14 +299,25 @@ index 77d3fe6..00dca1e 100644
 +            '900' if _results_catchup_over() else '15'))
          if not _key_status_logged:
              _web = os.getenv('ABOUT_COMPANY_WEB_SEARCH', '0')
++            _about_k = _gemini_api_key_about()
              log.info(f"📘 About-company loop: active "
                        f"({'web search' if _web.strip() not in ('0', 'false', 'False') else 'filings-only'}) "
                        f"(batch={BATCH_SIZE}, concurrency={CONCURRENCY}, "
 +                      f"cycle={cycle_secs}s, "
++                      f"key={_gemini_key_fingerprint(_about_k)}, "
                        f"ABOUT_COMPANY_WEB_SEARCH={_web}, "
                        f"GEMINI_FOCUS={os.getenv('GEMINI_FOCUS', 'all')})")
              _key_status_logged = True
-@@ -5434,21 +5539,29 @@ async def _about_company_loop(session: aiohttp.ClientSession):
+@@ -5245,7 +5366,7 @@ async def _about_company_loop(session: aiohttp.ClientSession):
+             _why = (meta_by_sym.get(_next) or {}).get('_about_reason', '?')
+             log.info(f"📘 About-company loop: {len(todo)} symbol(s) to generate "
+                       f"({_mode}; next={_next} reason={_why}; backlog≈{len(ranked)}; "
+-                      f"key={_gemini_key_fingerprint(_gemini_api_key('ABOUT'))})")
++                      f"key={_gemini_key_fingerprint(_gemini_api_key_about())})")
+         else:
+             log.info("📘 About-company loop: nothing new")
+ 
+@@ -5434,21 +5555,29 @@ async def _about_company_loop(session: aiohttp.ClientSession):
              _ABOUT_GEMINI_UNHEALTHY_SINCE = None
              _ABOUT_GEMINI_HARD_QUOTA = False
              _ABOUT_YIELD_TO_RESULTS_UNTIL = None
@@ -280,7 +355,20 @@ index 77d3fe6..00dca1e 100644
  
  
  async def fundamentals_worker_main():
-@@ -5610,6 +5723,9 @@ def _gemini_focus_allows(feature: str) -> bool:
+@@ -5485,10 +5614,10 @@ async def fundamentals_worker_main():
+         log.info(f"  Gemini keys: {', '.join(_feat_keys)}")
+     else:
+         log.warning("  Gemini keys: none configured")
+-    about_k = _gemini_api_key('ABOUT')
++    about_k = _gemini_api_key_about()
+     about_src = ('GEMINI_API_KEY_ABOUT'
+                  if (os.getenv('GEMINI_API_KEY_ABOUT') or '').strip()
+-                 else ('GEMINI_API_KEY' if about_k else 'none'))
++                 else ('any-GEMINI_API_KEY*' if about_k else 'none'))
+     log.info(f"  📘 About will call Gemini with {about_src} "
+              f"{_gemini_key_fingerprint(about_k)}")
+     if _about_company_manually_paused():
+@@ -5610,6 +5739,9 @@ def _gemini_focus_allows(feature: str) -> bool:
              return True
      until = _ABOUT_YIELD_TO_RESULTS_UNTIL
      if until and time.time() < until:
