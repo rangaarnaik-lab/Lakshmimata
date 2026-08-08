@@ -5,7 +5,7 @@ builder = "NIXPACKS"
 nixPkgs = ["python311"]
 
 [build.nixpacksPlan.phases.install]
-cmds = ["pip3 install aiohttp"]
+cmds = ["pip3 install aiohttp requests"]
 
 [deploy]
 startCommand = "python3 scripts/live_server.py"
