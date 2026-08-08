@@ -6,6 +6,21 @@ const supabaseKey  = import.meta.env.VITE_SUPABASE_ANON_KEY
 export const supabase = createClient(supabaseUrl, supabaseKey)
 
 /**
+ * Keep only this browser’s session. Call after a successful sign-in so a
+ * login on phone/laptop immediately invalidates sessions on other devices.
+ * Requires Auth → Sessions → “Enforce single session per user” (or this
+ * alone still revokes other refresh tokens via scope: 'others').
+ */
+export async function revokeOtherSessions() {
+  try {
+    const { error } = await supabase.auth.signOut({ scope: 'others' })
+    if (error) console.warn('revokeOtherSessions:', error.message)
+  } catch (e) {
+    console.warn('revokeOtherSessions:', e?.message || e)
+  }
+}
+
+/**
  * Fetch the owner's Upstox token from Supabase at runtime.
  * Updated daily by GitHub Actions cron — no redeploy needed.
  * Falls back to the VITE_ env var if Supabase fetch fails.
