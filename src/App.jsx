@@ -6753,7 +6753,8 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
           redirectTo:`${window.location.origin}?reset=1`,
         })
         if(e)throw e
-        setInfo('Password reset email sent! Check your inbox.');setMode('login')
+        setInfo('Check your email for a Lakshmimata reset link. Open it, then set a new password on the “Set a new password” screen (10+ characters, letters and numbers).')
+        setMode('login')
       } else if(mode==='login'){
         if(!email.trim()) throw new Error('Email is required.')
         if(!password) throw new Error('Password is required.')
