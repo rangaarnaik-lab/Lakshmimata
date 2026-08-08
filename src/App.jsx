@@ -9477,7 +9477,7 @@ export default function App(){
           </button>
 
           {/* Controls */}
-          {mainTab!=='settings'&&mainTab!=='watchlist'&&mainTab!=='rotation'&&(
+          {mainTab!=='settings'&&mainTab!=='feedback'&&mainTab!=='watchlist'&&mainTab!=='rotation'&&(
             <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
 
               {/* Watchlist OR index selector — one dropdown now covers
