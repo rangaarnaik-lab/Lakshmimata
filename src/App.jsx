@@ -11547,7 +11547,11 @@ export default function App(){
             </div>
             <div style={{marginBottom:14}}>
               <div style={{fontWeight:700,fontSize:16,color:C.text}}>Leaders</div>
-              <div style={{fontSize:11,color:C.muted}}>Stocks flashing early-leadership and breakout signals today</div>
+              <div style={{fontSize:11,color:C.muted}}>
+                {historyDate
+                  ? `Early-leadership and Stage 2 entry signals on ${new Date(historyDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`
+                  : 'Stocks flashing early-leadership and breakout signals today'}
+              </div>
             </div>
             {stocks.length===0?(
               <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>No data loaded yet.</div>
@@ -11568,7 +11572,7 @@ export default function App(){
                   {stocks.filter(s=>s.isS2NewEntry).length>0&&(
                     <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
                       <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
-                        New Stage 2 Entries Today ({stocks.filter(s=>s.isS2NewEntry).length})
+                        New Stage 2 Entries{historyDate?'':' Today'} ({stocks.filter(s=>s.isS2NewEntry).length})
                       </div>
                       <TVCopyPanel stocks={stocks.filter(s=>s.isS2NewEntry)} label="New Stage 2 Entries"/>
                       <BreakoutTable stocks={stocks.filter(s=>s.isS2NewEntry)}
@@ -11577,7 +11581,9 @@ export default function App(){
                   )}
                   {stocks.filter(s=>s.rsLineNewHigh).length===0&&stocks.filter(s=>s.isS2NewEntry).length===0&&(
                     <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
-                      No early leaders or new Stage 2 entries today.
+                      {historyDate
+                        ? `No early leaders or new Stage 2 entries on ${new Date(historyDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}.`
+                        : 'No early leaders or new Stage 2 entries today.'}
                     </div>
                   )}
             </>)}

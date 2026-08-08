@@ -3,6 +3,7 @@
 
 import { supabase } from './supabase'
 import { resolveIndustry, resolveSector } from '../data/industries'
+import { enrichHistoryLeaderFlags } from './historyLeaders'
 
 /**
  * Fetch all stocks from Supabase DB (pre-computed by live server)
@@ -273,7 +274,11 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
   // fetchStocksFromDB) — not inlined here — so the R2 fast-path can
   // produce byte-for-byte identical output to this Supabase path, instead
   // of risking two copies of this large mapping drifting apart over time.
-  return (data || []).map(transformStockRow)
+  const transformed = (data || []).map(transformStockRow)
+  if (historyDate) {
+    await enrichHistoryLeaderFlags(transformed, data || [], historyDate)
+  }
+  return transformed
 }
 
 // Transform one raw DB row (snake_case, matching the Postgres/R2 snapshot
