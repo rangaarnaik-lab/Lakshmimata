@@ -7013,8 +7013,33 @@ function ResetPasswordScreen({session,onDone,onCancel}){
       if(password!==confirm){
         throw new Error('Passwords do not match.')
       }
+      const email=(session?.user?.email||'').trim()
+      // Reject reuse of the current password. If sign-in with the typed
+      // password succeeds, it is the same as the last one.
+      if(email){
+        const{error:sameErr}=await supabase.auth.signInWithPassword({email,password})
+        if(!sameErr){
+          throw new Error('New password must be different from your current password. Please choose another.')
+        }
+        const sameMsg=(sameErr.message||'').toLowerCase()
+        // Only continue when Supabase says credentials are wrong (expected
+        // for a truly new password). Surface unexpected errors instead.
+        const looksInvalid=
+          sameMsg.includes('invalid')||
+          sameMsg.includes('credentials')||
+          sameMsg.includes('invalid login')
+        if(!looksInvalid){
+          throw sameErr
+        }
+      }
       const{data,error:e}=await supabase.auth.updateUser({password})
-      if(e) throw e
+      if(e){
+        const msg=(e.message||'').toLowerCase()
+        if(msg.includes('different')||msg.includes('same as')||msg.includes('identical')||msg.includes('previously used')){
+          throw new Error('New password must be different from your current password. Please choose another.')
+        }
+        throw e
+      }
       setInfo('Password updated. Taking you in…')
       // Drop the ?reset= flag so a refresh doesn't reopen this screen.
       try{
@@ -7041,8 +7066,9 @@ function ResetPasswordScreen({session,onDone,onCancel}){
         border:`1px solid ${C.border}`,padding:28,boxShadow:`0 20px 60px #00000044`}}>
         <div style={{fontWeight:800,fontSize:18,marginBottom:6}}>Set a new password</div>
         <div style={{color:C.muted,fontSize:12,marginBottom:18,lineHeight:1.5}}>
-          Choose a new password for <strong style={{color:C.text}}>{session?.user?.email||'your account'}</strong>.
-          At least 10 characters, with both letters and numbers.
+          Choose a <strong style={{color:C.text}}>new</strong> password for{' '}
+          <strong style={{color:C.text}}>{session?.user?.email||'your account'}</strong>.
+          At least 10 characters, with both letters and numbers — it must be different from your current password.
         </div>
         {error&&(
           <div style={{background:C.red+'18',border:`1px solid ${C.red}44`,borderRadius:8,
