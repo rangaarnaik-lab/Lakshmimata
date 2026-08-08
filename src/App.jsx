@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -254,6 +254,11 @@ const PRESETS = [
   {id:'s3',        label:'Stage 3',      icon:'⚠️', desc:'Weinstein Stage 3 topping — be careful'},
   {id:'s4',        label:'Stage 4',      icon:'🔴', desc:'Weinstein Stage 4 downtrend — avoid'},
   {id:'surge',     label:'Vol Surge',    icon:'🌊', desc:'Volume surge today'},
+  {id:'resultEx',  label:'⭐ Excellent', icon:'📈', desc:'Latest quarter Result quality = Excellent'},
+  {id:'resultGood',label:'✓ Good',       icon:'📗', desc:'Latest quarter Result quality = Good'},
+  {id:'resultNeu', label:'– Neutral',    icon:'📒', desc:'Latest quarter Result quality = Neutral'},
+  {id:'resultWeak',label:'⚠ Weak',       icon:'📕', desc:'Latest quarter Result quality = Weak'},
+  {id:'resultAny', label:'Has Results',  icon:'📊', desc:'Stock has financial results numbers on file'},
 ]
 
 // ── Hooks ─────────────────────────────────────────────────────────────
@@ -1322,7 +1327,8 @@ function VolBadge({vol}){
 }
 
 // ── Preset Filter Bar ─────────────────────────────────────────────────
-function PresetFilterBar({active,setActive,stocks}){
+function PresetFilterBar({active,setActive,stocks,resultRatingsMap}){
+  const ratingOf = (s)=>(resultRatingsMap||{})[String(s.sym||'').toUpperCase()] || null
   const counts = {}
   PRESETS.forEach(p => {
     if(p.id === 'all')       counts[p.id] = stocks.length
@@ -1341,6 +1347,11 @@ function PresetFilterBar({active,setActive,stocks}){
     else if(p.id === 'surge')    counts[p.id] = stocks.filter(s=>s.hy?.pctOfMax>=95).length
     else if(p.id === 'ibv')      counts[p.id] = stocks.filter(s=>topVolumeSignal(s)==='ibv').length
     else if(p.id === 'breakout') counts[p.id] = stocks.filter(s=>calcHYHTBreakout(s).isBreakout).length
+    else if(p.id === 'resultEx') counts[p.id] = stocks.filter(s=>ratingOf(s)==='Excellent').length
+    else if(p.id === 'resultGood') counts[p.id] = stocks.filter(s=>ratingOf(s)==='Good').length
+    else if(p.id === 'resultNeu') counts[p.id] = stocks.filter(s=>ratingOf(s)==='Neutral').length
+    else if(p.id === 'resultWeak') counts[p.id] = stocks.filter(s=>ratingOf(s)==='Weak').length
+    else if(p.id === 'resultAny') counts[p.id] = stocks.filter(s=>!!ratingOf(s)).length
   })
 
   return(
@@ -4998,101 +5009,213 @@ function rrgIdentityColor(id){
 }
 
 /**
- * Rolling-momentum trail computation for an RRG chart — extracted from
- * the Rotation tab's rotationDisplayData useMemo so the same logic can
- * feed a second, independent chart (e.g. an index's constituent stocks)
- * without duplicating it. Pure function: same inputs always produce the
- * same output, safe to call from multiple useMemo call sites.
+ * StockCharts-style RRG inputs — JdK RS-Ratio (X) and JdK RS-Momentum (Y),
+ * both normalized around 100. Uses the open JdK z-score approximation
+ * (SMA/StdDev of relative strength + ROC of RS, each re-centered at 100).
+ * Input series is our daily RS-TV / avg RS trail (already a relative-
+ * strength measure vs the market), which is what we have in history tables.
+ * Proprietary StockCharts exact weights aren't published; this matches the
+ * widely used open formula (RRG-Lite / India RRG implementations).
  */
-function computeRolledRotationData(data,selectedIds,asOfDate=null){
-  const displayData = selectedIds && selectedIds.size>0 ? data.filter(s=>selectedIds.has(s.id)) : data
-  // asOfDate lets the date-range slider "rewind" the chart — trim each
-  // series' trail to only the days up to and including the selected
-  // date, so momentum/level/quadrant all recompute as of that point.
-  const trimmed = asOfDate
-    ? displayData.map(s=>({...s, trail:(s.trail||[]).filter(t=>!t.date||t.date<=asOfDate)}))
-    : displayData
-  const ROLL_K=5 // ~1 trading week lookback for the local rate of change
-  const rolledData=trimmed.map(s=>{
-    const trail=(s.trail||[]).map((t,i,arr)=>{
-      const j=Math.max(0,i-ROLL_K)
-      return {level:t.level, date:t.date, mom:t.level-arr[j].level}
-    })
-    const lastTrail=trail.length?trail[trail.length-1]:null
-    return {...s, trail,
-      level: lastTrail?lastTrail.level:s.level,
-      momentum: lastTrail?lastTrail.mom:(s.momentum||0)}
-  })
-  const maxAbsMom=Math.max(5,...rolledData.flatMap(s=>s.trail.map(t=>Math.abs(t.mom))))
-  return { displayData:trimmed, rolledData, maxAbsMom }
+const JDK_WINDOW = 14
+const JDK_ROC = 10
+const JDK_Z_SCALE = 10 // 100 + 10*z → readable spread around the crosshair
+
+function _jdkSma(arr, n, i){
+  if(i < n - 1) return null
+  let s = 0
+  for(let k = i - n + 1; k <= i; k++) s += arr[k]
+  return s / n
+}
+function _jdkStdev(arr, n, i){
+  const m = _jdkSma(arr, n, i)
+  if(m == null) return null
+  let s = 0
+  for(let k = i - n + 1; k <= i; k++) s += (arr[k] - m) ** 2
+  return Math.sqrt(s / (n - 1))
+}
+
+/** Compute JdK RS-Ratio + RS-Momentum series from a raw RS trail. */
+function computeJdKSeries(levels){
+  const n = levels.length
+  const rsRatio = new Array(n).fill(null)
+  const roc = new Array(n).fill(null)
+  const rsMom = new Array(n).fill(null)
+  for(let i = 0; i < n; i++){
+    const m = _jdkSma(levels, JDK_WINDOW, i)
+    const sd = _jdkStdev(levels, JDK_WINDOW, i)
+    if(m != null && sd != null && sd > 1e-9){
+      rsRatio[i] = 100 + JDK_Z_SCALE * ((levels[i] - m) / sd)
+    }
+    if(i >= JDK_ROC && levels[i - JDK_ROC]){
+      roc[i] = ((levels[i] / levels[i - JDK_ROC]) - 1) * 100
+    }
+  }
+  for(let i = 0; i < n; i++){
+    if(roc[i] == null) continue
+    // Rolling z-score of ROC needs JDK_WINDOW consecutive ROC values
+    let ok = true, sum = 0
+    for(let k = i - JDK_WINDOW + 1; k <= i; k++){
+      if(k < 0 || roc[k] == null){ ok = false; break }
+      sum += roc[k]
+    }
+    if(!ok) continue
+    const m = sum / JDK_WINDOW
+    let ss = 0
+    for(let k = i - JDK_WINDOW + 1; k <= i; k++) ss += (roc[k] - m) ** 2
+    const sd = Math.sqrt(ss / (JDK_WINDOW - 1))
+    rsMom[i] = sd > 1e-9 ? 100 + JDK_Z_SCALE * ((roc[i] - m) / sd) : 100
+  }
+  return { rsRatio, rsMom }
+}
+
+function rrgQuadrant(rsRatio, rsMom){
+  const r = rsRatio ?? 100, m = rsMom ?? 100
+  if(r >= 100 && m >= 100) return 'leading'
+  if(r < 100 && m >= 100) return 'improving'
+  if(r >= 100 && m < 100) return 'weakening'
+  return 'lagging'
+}
+
+function rrgDistFromOrigin(rsRatio, rsMom){
+  const dx = (rsRatio ?? 100) - 100, dy = (rsMom ?? 100) - 100
+  return Math.sqrt(dx * dx + dy * dy)
 }
 
 /**
- * The RRG (Relative Rotation Graph) scatter chart itself — quadrants,
- * trails, arrowheads, legend. Extracted so it can be rendered more than
- * once on the same page (the main sector/index/watchlist chart, AND a
- * second smaller chart for whichever index's constituent stocks are
- * currently expanded) without copy-pasting this SVG block.
- *
- * dotSizing: when true, dots scale up slightly based on each point's
- * `count` field (used for sector aggregation, where a sector's dot
- * represents many stocks) — off by default, since that only makes
- * sense for aggregated points, not individual stocks.
+ * Build RRG display series: convert raw RS trails → JdK RS-Ratio /
+ * RS-Momentum, trim to asOfDate + visible trail length.
  */
-// Quadrant fill/label colors matched to the reference RRG design:
-// deep green (leading), blue (improving), maroon (lagging), olive (weakening).
+function computeRolledRotationData(data, selectedIds, asOfDate=null, trailLen=null){
+  const displayData = selectedIds && selectedIds.size > 0 ? data.filter(s => selectedIds.has(s.id)) : data
+  const trimmed = asOfDate
+    ? displayData.map(s => ({...s, trail: (s.trail || []).filter(t => !t.date || t.date <= asOfDate)}))
+    : displayData
+
+  const rolledData = trimmed.map(s => {
+    const raw = s.trail || []
+    const levels = raw.map(t => t.level)
+    const { rsRatio, rsMom } = computeJdKSeries(levels)
+    let jdkTrail = []
+    for(let i = 0; i < raw.length; i++){
+      if(rsRatio[i] == null || rsMom[i] == null) continue
+      jdkTrail.push({
+        rsRatio: +rsRatio[i].toFixed(2),
+        rsMom: +rsMom[i].toFixed(2),
+        date: raw[i].date,
+        rawLevel: raw[i].level,
+      })
+    }
+    // Visible trail length (StockCharts "tail" slider) — keep last N JdK points
+    const nShow = trailLen || s.windowDays || 10
+    if(jdkTrail.length > nShow) jdkTrail = jdkTrail.slice(-nShow)
+    const last = jdkTrail.length ? jdkTrail[jdkTrail.length - 1] : null
+    return {
+      ...s,
+      trail: jdkTrail,
+      rsRatio: last ? last.rsRatio : null,
+      rsMom: last ? last.rsMom : null,
+      // Keep level/momentum aliases for ranking UI / insights
+      level: last ? last.rsRatio : s.level,
+      momentum: last ? last.rsMom : null,
+      quadrant: last ? rrgQuadrant(last.rsRatio, last.rsMom) : 'lagging',
+      dist: last ? rrgDistFromOrigin(last.rsRatio, last.rsMom) : 0,
+    }
+  }).filter(s => s.trail && s.trail.length > 0)
+
+  return { displayData: trimmed, rolledData }
+}
+
+/**
+ * StockCharts-style Relative Rotation Graph — axes cross at 100/100
+ * (JdK RS-Ratio × JdK RS-Momentum). Clockwise rotation through
+ * Leading → Weakening → Lagging → Improving.
+ */
 const RRG_QUAD={
   leading:    {fill:'#14532d', label:'#4ade80'},
   improving:  {fill:'#1e3a5f', label:'#60a5fa'},
   lagging:    {fill:'#450a0a', label:'#f87171'},
   weakening:  {fill:'#3f2f0a', label:'#facc15'},
 }
-function RRGChart({rolledData,maxAbsMom,levelLabel,windowLabel,onDotClick,dotSizing=false,height=460}){
-  const xFor=level=>20+(Math.max(0,Math.min(100,level??50))/100)*580
-  const yFor=mom=>230-(Math.max(-maxAbsMom,Math.min(maxAbsMom,mom||0))/maxAbsMom)*205
+function RRGChart({rolledData, onDotClick, dotSizing=false, height=480}){
+  const pts = rolledData.flatMap(s => s.trail || [])
+  const xs = pts.map(t => t.rsRatio)
+  const ys = pts.map(t => t.rsMom)
+  // Always keep the 100 crosshair inside the view; pad so trails aren't clipped.
+  const pad = 2
+  let minX = Math.min(100 - pad, ...(xs.length ? xs : [98]))
+  let maxX = Math.max(100 + pad, ...(xs.length ? xs : [102]))
+  let minY = Math.min(100 - pad, ...(ys.length ? ys : [98]))
+  let maxY = Math.max(100 + pad, ...(ys.length ? ys : [102]))
+  // Keep a minimum span so a tight cluster doesn't look blown up oddly
+  if(maxX - minX < 8){ const mid = (minX + maxX) / 2; minX = mid - 4; maxX = mid + 4 }
+  if(maxY - minY < 8){ const mid = (minY + maxY) / 2; minY = mid - 4; maxY = mid + 4 }
+
+  const plot = {x: 48, y: 28, w: 540, h: 400}
+  const xFor = v => plot.x + ((v - minX) / (maxX - minX)) * plot.w
+  const yFor = v => plot.y + plot.h - ((v - minY) / (maxY - minY)) * plot.h
+  const cx0 = xFor(100), cy0 = yFor(100)
+
+  const maxDist = Math.max(1, ...rolledData.map(s => s.dist || 0))
+
   return(
     <svg viewBox={`0 0 620 ${height}`} style={{width:'100%',height:'auto',display:'block'}}>
-      <rect x="310" y="20" width="290" height="210" fill={RRG_QUAD.leading.fill} opacity="0.5"/>
-      <rect x="20" y="20" width="290" height="210" fill={RRG_QUAD.improving.fill} opacity="0.5"/>
-      <rect x="20" y="230" width="290" height="210" fill={RRG_QUAD.lagging.fill} opacity="0.5"/>
-      <rect x="310" y="230" width="290" height="210" fill={RRG_QUAD.weakening.fill} opacity="0.5"/>
-      <line x1="310" y1="20" x2="310" y2="440" stroke="#0b0f1a" strokeWidth="1.5"/>
-      <line x1="20" y1="230" x2="600" y2="230" stroke="#0b0f1a" strokeWidth="1.5"/>
-      <text x="316" y="36" textAnchor="start" fontSize="12" fontWeight="700" fill={RRG_QUAD.leading.label}>Leading</text>
-      <text x="26" y="36" textAnchor="start" fontSize="12" fontWeight="700" fill={RRG_QUAD.improving.label}>Improving</text>
-      <text x="26" y="422" textAnchor="start" fontSize="12" fontWeight="700" fill={RRG_QUAD.lagging.label}>Lagging</text>
-      <text x="574" y="422" textAnchor="end" fontSize="12" fontWeight="700" fill={RRG_QUAD.weakening.label}>Weakening</text>
-      <text x="310" y="455" textAnchor="middle" fontSize="10" fill="#7c88a8">{levelLabel.toUpperCase()} LEVEL →</text>
-      <text x="12" y="230" textAnchor="middle" fontSize="10" fill="#7c88a8" transform="rotate(-90 12 230)">MOMENTUM ({windowLabel}) →</text>
+      {/* Quadrants relative to the 100/100 crosshair */}
+      <rect x={cx0} y={plot.y} width={plot.x + plot.w - cx0} height={cy0 - plot.y}
+        fill={RRG_QUAD.leading.fill} opacity="0.45"/>
+      <rect x={plot.x} y={plot.y} width={cx0 - plot.x} height={cy0 - plot.y}
+        fill={RRG_QUAD.improving.fill} opacity="0.45"/>
+      <rect x={plot.x} y={cy0} width={cx0 - plot.x} height={plot.y + plot.h - cy0}
+        fill={RRG_QUAD.lagging.fill} opacity="0.45"/>
+      <rect x={cx0} y={cy0} width={plot.x + plot.w - cx0} height={plot.y + plot.h - cy0}
+        fill={RRG_QUAD.weakening.fill} opacity="0.45"/>
 
-      {rolledData.filter(s=>s.trail&&s.trail.length>0).map((s,idx)=>{
-        const tx=t=>xFor(t.level), ty=t=>yFor(t.mom)
-        const pathD=s.trail.map((t,i)=>`${i===0?'M':'L'} ${tx(t)} ${ty(t)}`).join(' ')
-        const cx=xFor(s.level), cy=yFor(s.momentum)
-        const sx=tx(s.trail[0]), sy=ty(s.trail[0])
-        const r=dotSizing?7+Math.min(6,(s.count||1)/3):7
-        const leading=(s.level??50)>=50&&(s.momentum||0)>=0
-        const improving=(s.level??50)<50&&(s.momentum||0)>=0
-        const weakening=(s.level??50)>=50&&(s.momentum||0)<0
-        const color=leading?RRG_QUAD.leading.label:improving?RRG_QUAD.improving.label:
-          weakening?RRG_QUAD.weakening.label:RRG_QUAD.lagging.label
-        const markerId=`rrg-arrow-${idx}-${Math.random().toString(36).slice(2,7)}`
+      {/* Crosshair at JdK origin (100, 100) */}
+      <line x1={cx0} y1={plot.y} x2={cx0} y2={plot.y + plot.h} stroke="#0b0f1a" strokeWidth="1.5"/>
+      <line x1={plot.x} y1={cy0} x2={plot.x + plot.w} y2={cy0} stroke="#0b0f1a" strokeWidth="1.5"/>
+      <circle cx={cx0} cy={cy0} r="3" fill="#94a3b8"/>
+
+      <text x={cx0 + 6} y={plot.y + 14} textAnchor="start" fontSize="12" fontWeight="700" fill={RRG_QUAD.leading.label}>Leading</text>
+      <text x={plot.x + 6} y={plot.y + 14} textAnchor="start" fontSize="12" fontWeight="700" fill={RRG_QUAD.improving.label}>Improving</text>
+      <text x={plot.x + 6} y={plot.y + plot.h - 8} textAnchor="start" fontSize="12" fontWeight="700" fill={RRG_QUAD.lagging.label}>Lagging</text>
+      <text x={plot.x + plot.w - 6} y={plot.y + plot.h - 8} textAnchor="end" fontSize="12" fontWeight="700" fill={RRG_QUAD.weakening.label}>Weakening</text>
+
+      <text x={plot.x + plot.w / 2} y={height - 8} textAnchor="middle" fontSize="10" fill="#7c88a8">JdK RS-Ratio →</text>
+      <text x={14} y={plot.y + plot.h / 2} textAnchor="middle" fontSize="10" fill="#7c88a8"
+        transform={`rotate(-90 14 ${plot.y + plot.h / 2})`}>JdK RS-Momentum →</text>
+      <text x={cx0 + 4} y={cy0 - 4} fontSize="9" fill="#64748b">100</text>
+
+      {rolledData.map((s, idx) => {
+        const trail = s.trail || []
+        if(!trail.length) return null
+        const tx = t => xFor(t.rsRatio), ty = t => yFor(t.rsMom)
+        const pathD = trail.map((t, i) => `${i === 0 ? 'M' : 'L'} ${tx(t)} ${ty(t)}`).join(' ')
+        const last = trail[trail.length - 1]
+        const cx = xFor(last.rsRatio), cy = yFor(last.rsMom)
+        const sx = tx(trail[0]), sy = ty(trail[0])
+        const q = s.quadrant || rrgQuadrant(last.rsRatio, last.rsMom)
+        const color = RRG_QUAD[q].label
+        // StockCharts: thicker trails farther from the benchmark (origin)
+        const strokeW = 1 + 2.5 * ((s.dist || 0) / maxDist)
+        const r = dotSizing ? 6 + Math.min(5, (s.count || 1) / 4) : 6
+        const markerId = `rrg-arrow-${s.id.replace(/[^a-zA-Z0-9_-]/g, '')}-${idx}`
         return(
-          <g key={s.id} style={{cursor:'pointer'}} onClick={()=>onDotClick(s)}>
+          <g key={s.id} style={{cursor:'pointer'}} onClick={() => onDotClick && onDotClick(s)}>
             <defs>
               <marker id={markerId} viewBox="0 0 10 10" refX="8" refY="5"
                 markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                 <path d="M 0 0 L 10 5 L 0 10 z" fill={color}/>
               </marker>
             </defs>
-            <path d={pathD} fill="none" stroke={color} strokeWidth="1.5" opacity="0.55"
+            <path d={pathD} fill="none" stroke={color} strokeWidth={strokeW} opacity="0.65"
               markerEnd={`url(#${markerId})`}/>
-            {s.trail.slice(0,-1).map((t,i)=>(
-              <circle key={i} cx={tx(t)} cy={ty(t)} r="3" fill={color} opacity="0.85"/>
+            {trail.slice(0, -1).map((t, i) => (
+              <circle key={i} cx={tx(t)} cy={ty(t)} r="2.5" fill={color} opacity="0.75"/>
             ))}
-            <circle cx={sx} cy={sy} r="4" fill="#0b0f1a" stroke={color} strokeWidth="1.5"/>
-            <circle cx={cx} cy={cy} r={r+3} fill="transparent"/>
-            <text x={cx+r+4} y={cy+4} fontSize="12" fontWeight="700" fill={color}>{s.label}</text>
+            <circle cx={sx} cy={sy} r="3.5" fill="#0b0f1a" stroke={color} strokeWidth="1.5"/>
+            <circle cx={cx} cy={cy} r={r} fill={color} stroke="#0b0f1a" strokeWidth="1.5"/>
+            <circle cx={cx} cy={cy} r={r + 4} fill="transparent"/>
+            <text x={cx + r + 4} y={cy + 4} fontSize="11" fontWeight="700" fill={color}>{s.label}</text>
           </g>
         )
       })}
@@ -5116,21 +5239,16 @@ const HELP_CONTENT = [
   {id:'rs', title:'RS Rating', body:`The core scanner — every NSE stock ranked by Relative Strength (RS), 1-99, 
     against the whole market. Filter by index, sector, RS trend, or signal chips. Tap a row for its chart and full 
     signal breakdown.`},
-  {id:'market', title:'Market', body:`Market-wide health, top to bottom:
-    • Verdict card (Favorable/Mixed/Unfavorable) — a quick read from 5 factors (advance/decline, RS momentum, trend 
-    health, leadership, strength breadth). Not a signal to trade on its own — use it to gauge how aggressive to be, 
-    then check the individual setup.
-    • Stats grid — today's raw breadth counts feeding that verdict.
-    • Smart Money — Sector Flow (FII/DII) — average institutional shareholding change by sector. Quarterly disclosure 
-    data, so it moves slowly — shows where institutions have been positioning, not today's activity.
-    • Smart Money Momentum (Price & Volume) — the daily-reacting version: sectors ranked by Pocket Pivots (an up day 
-    whose volume beats the worst down-volume day of the last 10, price above its 10/50-day averages) plus RS trend.
-    • Gap Up / Gap Down — stocks whose open is ≥2% from yesterday's close. Only populates on live intraday data.
-    • Index Performance Dashboard — every NSE sectoral/thematic index with its own RS-TV rank and Weinstein stage.`},
-  {id:'rotation', title:'Sector Rotation', body:`A Relative Rotation Graph (RRG) — each dot is a sector, index, or 
-    watchlist stock, trailing from where it was to where it is now: momentum (up/down) against RS-TV strength 
-    (left/right). Leading (top-right) is where money's already flowing; Improving (top-left) is early, before it's 
-    obvious. Tap an index dot to drill into its own constituents. Use the date slider to rewind the chart to a past day.`},
+  {id:'market', title:'Market', body:`Market-wide health, split into sub-pages (chips under the header):
+    • One chip at a time: Overview, Indices, Sectors, Industries, Breadth, Gaps, Smart Money.
+    • Overview — Verdict + today's breadth stats. Indices / Sectors / Industries — each its own table.
+    • Breadth — A/D chart + EMA breadth. Gaps — ≥2% open gaps. Smart Money — FII/DII + PP/IBV by sector.`},
+  {id:'rotation', title:'Sector Rotation', body:`A StockCharts-style Relative Rotation Graph (RRG):
+    • X-axis = JdK RS-Ratio (trend of relative strength vs the market), Y-axis = JdK RS-Momentum (rate of change of that trend). Both centered at 100.
+    • Leading (top-right, +/+) — strong and still improving. Weakening (bottom-right, +/-) — still strong but momentum fading.
+    • Lagging (bottom-left, -/-) — weak and still falling. Improving (top-left, -/+) — weak but momentum turning up (often early).
+    • Idealized rotation is clockwise. Trail length = your Window chip; thicker trails sit farther from the 100/100 crosshair.
+    Tap an index to drill into constituents. Date slider rewinds the RRG to a past day.`},
   {id:'leaders', title:'Leaders', body:`Two event-driven lists: RS Line New Highs (stocks whose relative-strength 
     line — not just price — just made a new high, often an early leadership tell) and New Stage 2 Entries (stocks 
     that flipped into a confirmed uptrend today). Both export to TradingView and support alerts.`},
@@ -5202,6 +5320,8 @@ const GUIDE_QA = [
     answer:'Open a stock → PPT tab. Same History chips as Concall when multiple decks exist. Shows slide story, financial highlights, strategy, risks, and Watch Next when available.'},
   {keys:['excellent','result rating','weak result','good result','neutral result'],
     answer:'Result quality (Excellent/Good/Neutral/Weak) comes from Sales & PAT vs the same quarter last year, with QoQ and OPM checks. Headline PAT declines are capped — sales up + profit down will not stay Excellent.'},
+  {keys:['rrg','rotation','rs-ratio','rs-momentum','leading','improving','weakening','lagging','jdk'],
+    answer:'Rotate uses a StockCharts-style Relative Rotation Graph. X = JdK RS-Ratio (relative-strength trend), Y = JdK RS-Momentum (how fast that trend is changing), both centered at 100. Leading = both > 100; Weakening = Ratio > 100 but Momentum < 100; Lagging = both < 100; Improving = Momentum > 100 while Ratio still < 100. Idealized path is clockwise. Built from daily RS-TV / sector avg RS history.'},
   {keys:['peer','ranking','jewellery','industry'],
     answer:'Under Results, peers are ranked in the same industry when available. Click another peer pill to open that stock’s Results tab.'},
   {keys:['theme','emerging'],
@@ -5333,51 +5453,40 @@ function generateRotationInsights(rolledData,scopeLabel){
   const bucket={leading:[],improving:[],weakening:[],lagging:[]}
   for(const s of rolledData){
     if(!s.trail||s.trail.length===0) continue
-    const level=s.level??50, mom=s.momentum||0
-    const key=level>=50?(mom>=0?'leading':'weakening'):(mom>=0?'improving':'lagging')
+    const key=s.quadrant||rrgQuadrant(s.rsRatio,s.rsMom)
     bucket[key].push(s.label)
   }
   const names=arr=>arr.slice(0,4).join(', ')+(arr.length>4?` and ${arr.length-4} more`:'')
   const parts=[]
   if(bucket.leading.length)
-    parts.push(`Focus on leading ${plural} like ${names(bucket.leading)} for potential outperformance.`)
+    parts.push(`Focus on leading ${plural} like ${names(bucket.leading)} (RS-Ratio & RS-Momentum both above 100).`)
   if(bucket.lagging.length)
-    parts.push(`Avoid ${names(bucket.lagging)}, as ${bucket.lagging.length===1?'it is':'they are'} currently lagging.`)
+    parts.push(`Avoid ${names(bucket.lagging)}, as ${bucket.lagging.length===1?'it is':'they are'} lagging below 100 on both axes.`)
   if(bucket.weakening.length)
-    parts.push(`Monitor ${names(bucket.weakening)}, as ${bucket.weakening.length===1?'it is':'they are'} weakening.`)
+    parts.push(`Monitor ${names(bucket.weakening)} — still strong on RS-Ratio but RS-Momentum has turned down.`)
   if(bucket.improving.length)
-    parts.push(`${names(bucket.improving)} ${bucket.improving.length===1?'is':'are'} improving and might offer future opportunities.`)
+    parts.push(`${names(bucket.improving)} ${bucket.improving.length===1?'is':'are'} improving (momentum above 100 while RS-Ratio is still below).`)
   return { text: parts.join(' '), bucket }
+}
+
+/** StockCharts-style rank table: Leading → Improving → Weakening → Lagging, each by distance from (100,100). */
+function rankRrgByQuadrant(rolledData){
+  const order=['leading','improving','weakening','lagging']
+  const labels={leading:'Leading',improving:'Improving',weakening:'Weakening',lagging:'Lagging'}
+  const groups=order.map(q=>({
+    id:q,
+    label:labels[q],
+    color:RRG_QUAD[q].label,
+    rows:[...rolledData].filter(s=>(s.quadrant||rrgQuadrant(s.rsRatio,s.rsMom))===q)
+      .sort((a,b)=>(b.dist||0)-(a.dist||0)),
+  }))
+  return groups.filter(g=>g.rows.length>0)
 }
 
 // Sticky quick-jump nav — a row of pills at the top of a long tab that
 // scroll straight to a section instead of making people scroll past
 // everything to find it. `refs` is a useRef({}) object whose keys match
 // each item's id; sections register themselves via a ref callback.
-function SectionNav({items, refs}){
-  const scrollTo = id=>{
-    const el = refs.current[id]
-    if(el) el.scrollIntoView({behavior:'smooth', block:'start'})
-  }
-  return(
-    <div style={{position:'sticky',top:0,zIndex:5,background:C.bg,
-      marginLeft:-16,marginRight:-16,padding:'8px 16px',
-      borderBottom:`1px solid ${C.border}`,marginBottom:14}}>
-      <div style={{display:'flex',gap:6,overflowX:'auto',WebkitOverflowScrolling:'touch',
-        scrollbarWidth:'none'}}>
-        {items.map(({id,label})=>(
-          <button key={id} onClick={()=>scrollTo(id)}
-            style={{flexShrink:0,padding:'6px 12px',borderRadius:20,
-              border:`1px solid ${C.border}`,background:C.card,color:C.text,
-              fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>
-            {label}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 function DesktopRow({s,i,onChart,visibleRsCols}){
   const [open,setOpen]=useState(false)
   const vis=visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,fundRating:true}
@@ -7115,13 +7224,19 @@ export default function App(){
   const [expandedTileInfo,setExpandedTileInfo]=useState(null)
   const [showRowGuidance,setShowRowGuidance]=useState(false)
   const [showHelpCenter,setShowHelpCenter]=useState(false)
-  const marketSectionRefs=useRef({})
+  const [marketSubTab,setMarketSubTab]=useState('overview')
   const [patternsSubTab,setPatternsSubTab]=useState('breakouts')
+  // Within Patterns → Breakouts: show one breakout type at a time ('all' = every type).
+  const [patternsBreakoutType,setPatternsBreakoutType]=useState('all')
   const [helpCenterSection,setHelpCenterSection]=useState(null)
   const [breadthHistory,setBreadthHistory]=useState([])
   const [emaBreadthHistory,setEmaBreadthHistory]=useState([])
   const [breadthRange,setBreadthRange]=useState('1M')
   const [mainTab,setMainTab]=useState('rs')
+  useEffect(()=>{
+    if(mainTab!=='market') return
+    try{ window.scrollTo({top:0,behavior:'smooth'}) }catch(_){}
+  },[marketSubTab, mainTab])
   const [presetFilter,setPresetFilter]=useState('all')
   const [rsMin,setRsMin]=useState(0),[rsMax,setRsMax]=useState(99)
   const [rsImprFilter,setRsImprFilter]=useState('all')
@@ -7504,6 +7619,9 @@ export default function App(){
     if(sig==='r1breakout') return !!s.isResistanceBreakout
     if(sig==='cupbreakout') return !!s.isCupHandleBreakout
     if(sig==='guppy') return !!s.isGuppyBullishCrossover
+    if(sig==='52wh') return !!s.is52whBreakout
+    if(sig==='hyht') return !!calcHYHTBreakout(s).isBreakout
+    if(sig==='s2new') return !!s.isS2NewEntry
     if(sig==='vcp2t') return !!s.isVCP && s.vcpStage===2
     if(sig==='vcp3t') return !!s.isVCP && s.vcpStage===3
     if(sig==='vcp4t') return !!s.isVCP && s.vcpStage===4
@@ -7529,7 +7647,9 @@ export default function App(){
   const [showColumns,setShowColumns]=useState(false)
   // Which breakout type is shown on the Breakout tab — one table with
   // clickable filter chips instead of 5 always-stacked sections.
-  const [breakoutType,setBreakoutType]=useState('r1')
+  const [breakoutType,setBreakoutType]=useState('hyht')
+  // RS Rating → Filters → Breakout type (single-select, like Result quality).
+  const [breakoutTypeFilter,setBreakoutTypeFilter]=useState('all')
   const [announcements,setAnnouncements]=useState([])
   const [announcementsLoading,setAnnouncementsLoading]=useState(false)
   // AI Best Picks — composite technical+fundamental score computed
@@ -7618,9 +7738,14 @@ export default function App(){
     fetchAnnouncementFilterOptions().then(setAnnouncementFilterOptions)
   },[mainTab])
   const [orderSizeFilter,setOrderSizeFilter]=useState('all')
+  // Results-tab filter: All | Excellent | Good | Neutral | Weak | has
+  const [resultRatingFilterAnn,setResultRatingFilterAnn]=useState('all')
   // Scope for the Announcements tab: 'idx:all' | 'idx:nifty50' | ... |
   // 'wl:<id>' — same prefixed-value scheme as the RS table's dropdown.
   const [announcementsScope,setAnnouncementsScope]=useState('idx:all')
+  // sym → Excellent|Good|Neutral|Weak for Quick Filters + Announcements.
+  const [resultRatingsMap,setResultRatingsMap]=useState({})
+  const [resultRatingsLoading,setResultRatingsLoading]=useState(false)
   // Silent auto-refresh: while the Announcements tab is open, tick every
   // 2 min; the fetch effect below depends on this tick, so page 1
   // re-fetches and new filings surface on their own. Only page 1 — a
@@ -7667,7 +7792,30 @@ export default function App(){
       || null
   }
   useEffect(()=>{ if(announcementsCategory!=='orders')setOrderSizeFilter('all') },[announcementsCategory])
-  useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter,announcementsScope,announcementsDateFilter])
+  useEffect(()=>{ if(announcementsCategory!=='results')setResultRatingFilterAnn('all') },[announcementsCategory])
+  useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter,resultRatingFilterAnn,announcementsScope,announcementsDateFilter])
+
+  // Load result ratings when used by RS filters or Announcements → Results.
+  const resultRatingsLoadedRef=useRef(false)
+  useEffect(()=>{
+    const needRatings =
+      String(presetFilter||'').startsWith('result')
+      || (mainTab==='announcements' && announcementsCategory==='results')
+    if(!needRatings || resultRatingsLoadedRef.current) return
+    let cancelled=false
+    setResultRatingsLoading(true)
+    fetchFinancialResultsGroupedForRatings().then(grouped=>{
+      if(cancelled) return
+      const map={}
+      for(const [sym, hist] of Object.entries(grouped||{})){
+        const rating=computeResultRating(hist)
+        if(rating) map[sym]=rating
+      }
+      setResultRatingsMap(map)
+      resultRatingsLoadedRef.current=true
+    }).finally(()=>{ if(!cancelled) setResultRatingsLoading(false) })
+    return()=>{cancelled=true}
+  },[presetFilter, mainTab, announcementsCategory])
   const ANNOUNCEMENTS_PAGE_SIZE=50
   useEffect(()=>{
     if(mainTab!=='announcements') return
@@ -8047,6 +8195,21 @@ export default function App(){
     if(presetFilter==='surge'&&(s.hy?.pctOfMax||0)<95)return false
     if(presetFilter==='ibv'&&!calcIBV(s).isIBV)return false
     if(presetFilter==='breakout'&&!calcHYHTBreakout(s).isBreakout)return false
+    if(presetFilter==='resultEx'||presetFilter==='resultGood'||presetFilter==='resultNeu'||presetFilter==='resultWeak'||presetFilter==='resultAny'){
+      const rating=resultRatingsMap[String(s.sym||'').toUpperCase()]||null
+      if(presetFilter==='resultAny'&&!rating) return false
+      if(presetFilter==='resultEx'&&rating!=='Excellent') return false
+      if(presetFilter==='resultGood'&&rating!=='Good') return false
+      if(presetFilter==='resultNeu'&&rating!=='Neutral') return false
+      if(presetFilter==='resultWeak'&&rating!=='Weak') return false
+    }
+    // Breakout type filter (RS Filters panel)
+    if(breakoutTypeFilter==='hyht'&&!calcHYHTBreakout(s).isBreakout)return false
+    if(breakoutTypeFilter==='r1'&&!s.isResistanceBreakout)return false
+    if(breakoutTypeFilter==='52wh'&&!s.is52whBreakout)return false
+    if(breakoutTypeFilter==='cup'&&!s.isCupHandleBreakout)return false
+    if(breakoutTypeFilter==='guppy'&&!s.isGuppyBullishCrossover)return false
+    if(breakoutTypeFilter==='s2'&&!s.isS2NewEntry)return false
     return true
   }).sort((a,b)=>{
     const dir = sortDir==='asc'?1:-1
@@ -8079,7 +8242,7 @@ export default function App(){
     // (e.g. P/E) sorting by chg% wouldn't make as much sense.
     if(sortBy==='rs'||sortBy==='rsTv') return (b.chg??0)-(a.chg??0)
     return 0
-  }),[stocks,search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,sectorFilter,presetFilter,sortBy,sortDir])
+  }),[stocks,search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,sectorFilter,presetFilter,resultRatingsMap,breakoutTypeFilter,sortBy,sortDir])
   const displayedRS=rsBase
   const rsTotalPages=Math.max(1,Math.ceil(displayedRS.length/RS_PAGE_SIZE))
   const rsPageClamped=Math.min(rsPage,rsTotalPages-1)
@@ -8123,14 +8286,15 @@ export default function App(){
   useEffect(()=>{ window.scrollTo(0,0) },[mainTab])
   const rotationDisplayData=useMemo(()=>{
     const data = rotationData||[]
-    const {displayData,rolledData,maxAbsMom} = computeRolledRotationData(data,rotationSelectedIds,rotationAsOfDate)
-    return { data, displayData, rolledData, maxAbsMom }
-  },[rotationData,rotationSelectedIds,rotationAsOfDate])
+    const {displayData,rolledData} = computeRolledRotationData(
+      data, rotationSelectedIds, rotationAsOfDate, rotationWindow)
+    return { data, displayData, rolledData }
+  },[rotationData,rotationSelectedIds,rotationAsOfDate,rotationWindow])
 
   const constituentRolledData=useMemo(()=>{
     if(!constituentRotationData) return null
-    return computeRolledRotationData(constituentRotationData,new Set())
-  },[constituentRotationData])
+    return computeRolledRotationData(constituentRotationData, new Set(), null, rotationWindow)
+  },[constituentRotationData,rotationWindow])
 
   // Industries table aggregation — was previously an inline IIFE directly
   // in JSX (Indices tab render), recomputing this O(n) groupby + sort over
@@ -8362,7 +8526,11 @@ export default function App(){
             )}
             <div style={{minWidth:0}}>
               <div style={{fontWeight:600,fontSize:14,color:C.text,lineHeight:1}}>
-                {mainTab==='rs'?'RS Rating':mainTab==='market'?'Market':
+                {mainTab==='rs'?'RS Rating':mainTab==='market'?(
+                   {overview:'Market · Overview',indices:'Market · Indices',sectors:'Market · Sectors',
+                    industries:'Market · Industries',breadth:'Market · Breadth',
+                    gaps:'Market · Gaps',smartmoney:'Market · Smart Money'}[marketSubTab]||'Market'
+                 ):
                  mainTab==='squeeze'?'Squeeze & VCP':
                  mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
                  mainTab==='weak'?'Weak RS':mainTab==='rotation'?'Sector Rotation':
@@ -8873,7 +9041,7 @@ export default function App(){
                           style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilters.length===0?C.muted:C.border}`,
                             cursor:'pointer',fontSize:12,fontWeight:600,
                             background:sigFilters.length===0?C.muted+'22':'transparent',color:sigFilters.length===0?C.text:C.muted}}>All</button>
-                        {[['ht','🚀HT',C.orange],['hy','📊HY',C.pink],['ibv','🏛️IBV',C.blue],['pp','🔥PP',C.green],['ppconsec2','🔥PP 2x Consecutive',C.green],['ppgt2','🔥PP >2 in 10d',C.green],['ema9','⚡EMA9',C.teal],['ema21','⚡EMA21',C.teal],['ema50','⚡EMA50',C.teal],['power','⭐Power',C.accent],['r1breakout','🎯R1 Breakout',C.red],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.purple],['vcp2t','🌀VCP 2T',C.purple],['vcp3t','🌀VCP 3T',C.purple],['vcp4t','🌀VCP 4T',C.purple]].map(([v,label,color])=>{
+                        {[['ht','🚀HT',C.orange],['hy','📊HY',C.pink],['ibv','🏛️IBV',C.blue],['pp','🔥PP',C.green],['ppconsec2','🔥PP 2x Consecutive',C.green],['ppgt2','🔥PP >2 in 10d',C.green],['ema9','⚡EMA9',C.teal],['ema21','⚡EMA21',C.teal],['ema50','⚡EMA50',C.teal],['power','⭐Power',C.accent],['hyht','💥HY/HT Break',C.accent],['r1breakout','🎯R1 Breakout',C.red],['52wh','🏆52W High',C.yellow],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.purple],['s2new','🚀Stage 2 New',C.green],['vcp2t','🌀VCP 2T',C.purple],['vcp3t','🌀VCP 3T',C.purple],['vcp4t','🌀VCP 4T',C.purple]].map(([v,label,color])=>{
                           const active = sigFilters.includes(v)
                           return (
                             <button key={v} onClick={()=>setSigFilters(prev=>active?prev.filter(x=>x!==v):[...prev,v])}
@@ -8892,6 +9060,51 @@ export default function App(){
                             style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${stageFilter===v?color:C.border}`,
                               cursor:'pointer',fontSize:12,fontWeight:600,
                               background:stageFilter===v?color+'22':'transparent',color:stageFilter===v?color:C.muted}}>{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{marginTop:10}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>
+                        Result quality
+                        {resultRatingsLoading&&<span style={{color:C.muted,fontWeight:400}}> (loading…)</span>}
+                        {!resultRatingsLoading&&Object.keys(resultRatingsMap).length>0&&(
+                          <span style={{color:C.muted,fontWeight:400}}> ({Object.keys(resultRatingsMap).length} rated)</span>
+                        )}
+                      </div>
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                        {[
+                          ['all','All',C.muted],
+                          ['resultAny','Has Results',C.accent],
+                          ['resultEx','⭐ Excellent',C.green],
+                          ['resultGood','✓ Good','#7dd3a8'],
+                          ['resultNeu','– Neutral',C.yellow],
+                          ['resultWeak','⚠ Weak',C.red],
+                        ].map(([v,label,color])=>(
+                          <button key={v} onClick={()=>setPresetFilter(v==='all'?'all':v)}
+                            style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${(v==='all'?presetFilter==='all':presetFilter===v)?color:C.border}`,
+                              cursor:'pointer',fontSize:12,fontWeight:600,
+                              background:(v==='all'?presetFilter==='all':presetFilter===v)?color+'22':'transparent',
+                              color:(v==='all'?presetFilter==='all':presetFilter===v)?color:C.muted}}>{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{marginTop:10}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>Breakout type</div>
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                        {[
+                          ['all','All',C.muted],
+                          ['hyht','💥 HY/HT',C.accent],
+                          ['r1','🎯 R1',C.red],
+                          ['52wh','🏆 52W High',C.yellow],
+                          ['cup','☕ Cup',C.yellow],
+                          ['guppy','🐠 Guppy',C.green],
+                          ['s2','🚀 Stage 2 New',C.green],
+                        ].map(([v,label,color])=>(
+                          <button key={v} onClick={()=>setBreakoutTypeFilter(v)}
+                            style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${breakoutTypeFilter===v?color:C.border}`,
+                              cursor:'pointer',fontSize:12,fontWeight:600,
+                              background:breakoutTypeFilter===v?color+'22':'transparent',
+                              color:breakoutTypeFilter===v?color:C.muted}}>{label}</button>
                         ))}
                       </div>
                     </div>
@@ -8987,7 +9200,7 @@ export default function App(){
         )}
 
 
-        {/* ══ MARKET BREADTH (part of combined Market tab) ══ */}
+        {/* ══ MARKET — sub-pages (Overview / Indices / Breadth / Gaps / Smart Money) ══ */}
         {mainTab==='market'&&(
           <div style={{padding:'0 0 20px',position:'relative'}}>
 
@@ -9001,19 +9214,34 @@ export default function App(){
                 availableDates={availableDates} isMobile={isMobile}/>
             </div>
 
-            {stocks.length>0&&(
-              <SectionNav refs={marketSectionRefs} items={[
-                {id:'verdict',    label:'Verdict'},
-                {id:'stats',      label:'Stats'},
-                {id:'industry',   label:'Industry'},
-                {id:'gap',        label:'Gap Up/Down'},
-                {id:'smartmoney', label:'Smart Money'},
-                {id:'momentum',   label:'Momentum'},
-              ]}/>
-            )}
+            <div style={{position:'sticky',top:0,zIndex:5,background:C.bg,
+              marginLeft:-16,marginRight:-16,padding:'8px 16px',
+              borderBottom:`1px solid ${C.border}`,marginBottom:14}}>
+              <div style={{display:'flex',gap:6,overflowX:'auto',WebkitOverflowScrolling:'touch',
+                scrollbarWidth:'none'}}>
+                {[
+                  {id:'overview',   label:'Overview'},
+                  {id:'indices',    label:'Indices'},
+                  {id:'sectors',    label:'Sectors'},
+                  {id:'industries', label:'Industries'},
+                  {id:'breadth',    label:'Breadth'},
+                  {id:'gaps',       label:'Gaps'},
+                  {id:'smartmoney', label:'Smart Money'},
+                ].map(({id,label})=>(
+                  <button key={id} onClick={()=>setMarketSubTab(id)}
+                    style={{flexShrink:0,padding:'6px 12px',borderRadius:20,
+                      border:`1px solid ${marketSubTab===id?C.accent:C.border}`,
+                      background:marketSubTab===id?C.accent+'22':C.card,
+                      color:marketSubTab===id?C.accent:C.text,
+                      fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-            {/* Today's snapshot from stocks already loaded */}
-            {stocks.length>0&&(()=>{
+            {/* Overview: verdict + today's breadth stats */}
+            {marketSubTab==='overview'&&stocks.length>0&&(()=>{
               const tot = stocks.length
               const adv = stocks.filter(s=>s.chg>0).length
               const dec = stocks.filter(s=>s.chg<0).length
@@ -9157,8 +9385,7 @@ export default function App(){
               return(
                 <>
                   {/* Compact verdict: one header row + factor chips */}
-                  <div ref={el=>marketSectionRefs.current['verdict']=el}
-                    style={{background:verdict.color+'11',border:`1px solid ${verdict.color}44`,
+                  <div style={{background:verdict.color+'11',border:`1px solid ${verdict.color}44`,
                     borderRadius:10,padding:'10px 12px',marginBottom:10}}>
                     <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:8}}>
                       <div style={{width:8,height:8,borderRadius:'50%',background:verdict.color,flexShrink:0}}/>
@@ -9196,10 +9423,9 @@ export default function App(){
                   </div>
 
                   {/* Dense stats — 7 cols on desktop ≈ 2 rows instead of 4 */}
-                  <div ref={el=>marketSectionRefs.current['stats']=el}
-                    style={{display:'grid',
-                      gridTemplateColumns:isMobile?'repeat(3,1fr)':'repeat(7,1fr)',
-                      gap:6,marginBottom:12}}>
+                  <div style={{display:'grid',
+                    gridTemplateColumns:isMobile?'repeat(3,1fr)':'repeat(7,1fr)',
+                    gap:6,marginBottom:12}}>
                     {breadthStats.map(s=>(
                       <Stat key={s.label} label={s.label} value={s.value} total={tot} color={s.color}/>
                     ))}
@@ -9208,20 +9434,43 @@ export default function App(){
                 </>
               )
             })()}
+            {marketSubTab==='overview'&&stocks.length===0&&(
+              <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
+                Loading market snapshot…
+              </div>
+            )}
           </div>
         )}
 
-        {/* ══ INDICES DASHBOARD (part of combined Market tab) ══ */}
-        {mainTab==='market'&&(
-          <div ref={el=>marketSectionRefs.current['industry']=el}>
+        {/* ══ INDICES / SECTORS / INDUSTRIES (one sub-page at a time) ══ */}
+        {mainTab==='market'&&(marketSubTab==='indices'||marketSubTab==='sectors'||marketSubTab==='industries')&&(
+          <div>
+            {marketSubTab==='indices'&&(
             <div style={{marginBottom:12}}>
               <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>🗂 Index Performance Dashboard</div>
               <div style={{fontSize:11,color:C.muted}}>
                 Daily · Weekly · Monthly · Quarterly · Yearly performance + RS-TV + Weinstein Stage for each index
               </div>
             </div>
+            )}
+            {marketSubTab==='sectors'&&(
+            <div style={{marginBottom:12}}>
+              <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>🏭 Sectors</div>
+              <div style={{fontSize:11,color:C.muted}}>
+                Sector RS, pocket pivots, and advance % — tap a row for constituent stocks
+              </div>
+            </div>
+            )}
+            {marketSubTab==='industries'&&(
+            <div style={{marginBottom:12}}>
+              <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>🏗 Industries</div>
+              <div style={{fontSize:11,color:C.muted}}>
+                Finer industry breakdown — tap a row for stocks in that industry
+              </div>
+            </div>
+            )}
 
-            {indexData.length===0?(
+            {marketSubTab==='indices'&&indexData.length===0?(
               <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
                 <div style={{fontSize:36,marginBottom:10}}>🗂</div>
                 <div style={{fontSize:14,fontWeight:700,color:C.text}}>No index data yet</div>
@@ -9229,8 +9478,8 @@ export default function App(){
               </div>
             ):(
               <>
-                {/* Summary strip */}
-                {(()=>{
+                {/* Summary strip — Indices only */}
+                {marketSubTab==='indices'&&(()=>{
                   const tiles=[
                     {l:'Stage 2 (Up)',   v:indexData.filter(i=>i.stage===2).length, c:C.green,
                       why:"Indices actively in an uptrend — RS-TV 50+ with a rising trend. These are the sectors currently leading the market. Check here first when deciding where to focus stock-picking — a stock in a Stage 2 sector has the wind at its back, while the same stock in a Stage 4 sector is fighting the current. Tap any 'S2 Up' index below to drill into which stocks are driving that strength right now."},
@@ -9273,11 +9522,9 @@ export default function App(){
                   </>
                 })()}
 
-                {/* Indices + Sectors side by side on desktop, stacked on
-                    mobile. Each table scrolls horizontally independently.
-                    All column headers are click-to-sort (click again to
-                    flip direction). */}
+                {/* One table per sub-page — Indices / Sectors / Industries */}
                 <div style={{display:'grid',gridTemplateColumns:'1fr',gap:12,alignItems:'start'}}>
+                {marketSubTab==='indices'&&(
                 <div>
                 <div style={{fontWeight:800,fontSize:14,margin:'0 0 8px'}}>📊 Indices</div>
                 <div ref={idxTableDrag.ref} {...idxTableDrag.handlers} style={{overflowX:'auto',overflowY:'auto',maxHeight:520,border:`1px solid ${C.border}`,borderRadius:12,...idxTableDrag.style}}>
@@ -9485,12 +9732,13 @@ export default function App(){
                   </div>
                 </div>
                 </div>
+                )}
 
-                {/* Sectors table — second column of the grid, sortable */}
+                {/* Sectors table — Market → Sectors only */}
+                {marketSubTab==='sectors'&&(
                 <div>
-                {sectorData.length>0&&(
+                {sectorData.length>0?(
                   <>
-                    <div style={{fontWeight:800,fontSize:14,margin:'0 0 8px'}}>🏭 Sectors</div>
                     <div ref={secTableDrag.ref} {...secTableDrag.handlers} style={{overflowX:'auto',overflowY:'auto',maxHeight:520,border:`1px solid ${C.border}`,borderRadius:12,...secTableDrag.style}}>
                       <div style={{minWidth:760}}>
                         <div style={{display:'grid',
@@ -9649,32 +9897,29 @@ export default function App(){
                       </div>
                     </div>
                   </>
+                ):(
+                  <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>No sector data yet.</div>
                 )}
                 </div>
-                </div>
+                )}
 
-                {/* Industries table — finer-grained than sectors (like
-                    Chartink's segment breakdown). Aggregated client-side
-                    from each stock's industry field (populated via the
-                    static sector/industry lookup + live Upstox/Screener
-                    fetch). Real NSE industry categories are genuinely
-                    granular — many have just 1-2 listed stocks — so
-                    below MIN_INDUSTRY_STOCKS they're hidden rather than
-                    shown as noise; the header notes how many were
-                    hidden so this doesn't look like data is missing. */}
-                {(()=>{
+                {/* Industries table — Market → Industries only */}
+                {marketSubTab==='industries'&&(()=>{
                   const { rows, hiddenCount } = industriesRows
-                  if(rows.length===0) return null
+                  if(rows.length===0){
+                    return (
+                      <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
+                        No industry data yet.
+                      </div>
+                    )
+                  }
                   return (
                     <>
-                      <div style={{fontWeight:800,fontSize:14,margin:'18px 0 8px'}}>
-                        🏗 Industries ({rows.length})
-                        {hiddenCount>0&&(
-                          <span style={{fontWeight:500,fontSize:11,color:C.muted,marginLeft:8}}>
-                            · {hiddenCount} more hidden (&lt;{MIN_INDUSTRY_STOCKS} stocks each)
-                          </span>
-                        )}
-                      </div>
+                      {hiddenCount>0&&(
+                        <div style={{fontSize:11,color:C.muted,marginBottom:8}}>
+                          {rows.length} industries shown · {hiddenCount} more hidden (&lt;{MIN_INDUSTRY_STOCKS} stocks each)
+                        </div>
+                      )}
                       <div ref={indTableDrag.ref} {...indTableDrag.handlers} style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12,maxHeight:520,overflowY:'auto',...indTableDrag.style}}>
                         <div style={{minWidth:760}}>
                           <div style={{display:'grid',
@@ -9765,32 +10010,50 @@ export default function App(){
                       <div style={{fontSize:9,color:C.muted,marginTop:4}}>
                         Industry data comes from Upstox company profiles and fills in gradually — stocks without it yet aren't shown here.
                       </div>
-
-                      {(()=>{
-                        const days = {'1M':21,'3M':63,'6M':126,'1Y':252,'2Y':504}[breadthRange]
-                        const breadthSlice = breadthHistory.slice(-days)
-                        const emaSlice = emaBreadthHistory.slice(-days)
-                        return <>
-                          <BreadthChart data={breadthSlice} isMobile={isMobile}
-                            breadthRange={breadthRange} setBreadthRange={setBreadthRange}/>
-
-                          <EmaBreadthTable data={emaSlice} isMobile={isMobile} dragProps={emaBreadthTableDrag} rangeLabel={{'1M':'Last Month','3M':'Last 3 Months','6M':'Last 6 Months','1Y':'Last Year','2Y':'Last 2 Years'}[breadthRange]}/>
-                        </>
-                      })()}
                     </>
                   )
                 })()}
+                </div>
               </>
             )}
           </div>
         )}
 
-        {/* ══ GAP UP/DOWN + SMART MONEY — placed after the Indices ══
-            dashboard per request, so index-level context comes first.
+        {/* ══ BREADTH HISTORY (Market → Breadth History) ══ */}
+        {mainTab==='market'&&marketSubTab==='breadth'&&(
+          <div style={{padding:'0 0 20px'}}>
+            <div style={{marginBottom:12}}>
+              <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>📈 Breadth History</div>
+              <div style={{fontSize:11,color:C.muted}}>
+                Advances vs declines and % of stocks above key EMAs over time
+              </div>
+            </div>
+            {(()=>{
+              const days = {'1M':21,'3M':63,'6M':126,'1Y':252,'2Y':504}[breadthRange]
+              const breadthSlice = breadthHistory.slice(-days)
+              const emaSlice = emaBreadthHistory.slice(-days)
+              if(!breadthSlice.length && !emaSlice.length){
+                return (
+                  <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
+                    Breadth history loading…
+                  </div>
+                )
+              }
+              return <>
+                <BreadthChart data={breadthSlice} isMobile={isMobile}
+                  breadthRange={breadthRange} setBreadthRange={setBreadthRange}/>
+                <EmaBreadthTable data={emaSlice} isMobile={isMobile} dragProps={emaBreadthTableDrag}
+                  rangeLabel={{'1M':'Last Month','3M':'Last 3 Months','6M':'Last 6 Months','1Y':'Last Year','2Y':'Last 2 Years'}[breadthRange]}/>
+              </>
+            })()}
+          </div>
+        )}
+
+        {/* ══ GAPS + SMART MONEY (Market sub-pages) ══
             Self-contained: recomputes its own inputs from `stocks`
             rather than reaching into the stats-grid IIFE above, since
             that block's local consts aren't in scope this far down. */}
-        {mainTab==='market'&&stocks.length>0&&(()=>{
+        {mainTab==='market'&&(marketSubTab==='gaps'||marketSubTab==='smartmoney')&&stocks.length>0&&(()=>{
           const GAP_THRESH = 2
           const gapUps   = stocks.filter(s=>s.gapPct!=null&&s.gapPct>=GAP_THRESH).sort((a,b)=>b.gapPct-a.gapPct)
           const gapDowns = stocks.filter(s=>s.gapPct!=null&&s.gapPct<=-GAP_THRESH).sort((a,b)=>a.gapPct-b.gapPct)
@@ -9847,94 +10110,119 @@ export default function App(){
 
           return(
             <div style={{padding:'0 0 20px'}}>
-              {/* Gap Up / Gap Down — today's opening moves */}
-              <div ref={el=>marketSectionRefs.current['gap']=el}>
-              {gapUps.length>0&&(
-                <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                  <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
-                    🟢 Gap Up ≥{GAP_THRESH}% ({gapUps.length})
+              {marketSubTab==='gaps'&&(
+                <>
+                  <div style={{marginBottom:12}}>
+                    <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>Gap Up / Gap Down</div>
+                    <div style={{fontSize:11,color:C.muted}}>
+                      Open ≥{GAP_THRESH}% from prior close — live intraday only
+                    </div>
                   </div>
-                  <TVCopyPanel stocks={gapUps} label="Gap Up"/>
-                  <BreakoutTable stocks={gapUps}
-                    isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
-                </div>
-              )}
-              {gapDowns.length>0&&(
-                <div style={{background:C.card,border:`1px solid ${C.red}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                  <div style={{fontWeight:700,fontSize:13,color:C.red,marginBottom:8}}>
-                    🔴 Gap Down ≥{GAP_THRESH}% ({gapDowns.length})
-                  </div>
-                  <TVCopyPanel stocks={gapDowns} label="Gap Down"/>
-                  <BreakoutTable stocks={gapDowns}
-                    isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
-                </div>
-              )}
-              </div>
-
-              {/* Smart Money — FII/DII sector flow */}
-              {smartMoneyBySector.length>0&&(
-                <div ref={el=>marketSectionRefs.current['smartmoney']=el}
-                  style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                  <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
-                    🏦 Smart Money — Sector Flow (FII/DII)
-                  </div>
-                  <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
-                    Avg. change in FII+DII holding % last quarter, by sector — accumulation vs distribution, not intraday flow
-                  </div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
-                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
-                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>FII pp</div>
-                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>DII pp</div>
-                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Stocks ↑/↓</div>
-                    {smartMoneyBySector.map(b=>(
-                      <React.Fragment key={b.sector}>
-                        <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
-                        <div style={{textAlign:'right',fontWeight:700,color:b.avgFii==null?C.muted:b.avgFii>0?C.green:b.avgFii<0?C.red:C.muted}}>
-                          {b.avgFii==null?'—':`${b.avgFii>0?'+':''}${b.avgFii.toFixed(2)}`}
-                        </div>
-                        <div style={{textAlign:'right',fontWeight:700,color:b.avgDii==null?C.muted:b.avgDii>0?C.green:b.avgDii<0?C.red:C.muted}}>
-                          {b.avgDii==null?'—':`${b.avgDii>0?'+':''}${b.avgDii.toFixed(2)}`}
-                        </div>
-                        <div style={{textAlign:'right',color:C.muted,fontSize:10.5}}>
-                          <span style={{color:C.green}}>{b.accumulating}</span>/<span style={{color:C.red}}>{b.distributing}</span>
-                        </div>
-                      </React.Fragment>
-                    ))}
-                  </div>
-                </div>
+                  {gapUps.length===0&&gapDowns.length===0&&(
+                    <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
+                      No ≥{GAP_THRESH}% gaps right now (or viewing a historical day without open data).
+                    </div>
+                  )}
+                  {gapUps.length>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
+                        🟢 Gap Up ≥{GAP_THRESH}% ({gapUps.length})
+                      </div>
+                      <TVCopyPanel stocks={gapUps} label="Gap Up"/>
+                      <BreakoutTable stocks={gapUps}
+                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                    </div>
+                  )}
+                  {gapDowns.length>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.red}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.red,marginBottom:8}}>
+                        🔴 Gap Down ≥{GAP_THRESH}% ({gapDowns.length})
+                      </div>
+                      <TVCopyPanel stocks={gapDowns} label="Gap Down"/>
+                      <BreakoutTable stocks={gapDowns}
+                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                    </div>
+                  )}
+                </>
               )}
 
-              {/* Smart Money Momentum — price & volume (Pocket Pivots + IBV) */}
-              {volumeSmartMoneyBySector.length>0&&(
-                <div ref={el=>marketSectionRefs.current['momentum']=el}
-                  style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                  <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
-                    📊 Smart Money Momentum — Sector (Price & Volume)
+              {marketSubTab==='smartmoney'&&(
+                <>
+                  <div style={{marginBottom:12}}>
+                    <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>Smart Money</div>
+                    <div style={{fontSize:11,color:C.muted}}>
+                      Institutional positioning by sector — holdings (quarterly) and price/volume (daily)
+                    </div>
                   </div>
-                  <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
-                    Avg. institutional-footprint score (Pocket Pivots + RS/trend) — reacts daily, unlike the FII/DII table above
-                  </div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
-                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
-                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Avg Score</div>
-                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>PP Today</div>
-                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Repeat (≥3/10d)</div>
-                    {volumeSmartMoneyBySector.slice(0,10).map(b=>(
-                      <React.Fragment key={b.sector}>
-                        <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
-                        <div style={{textAlign:'right',fontWeight:700,color:b.avgIbv>=3?C.green:b.avgIbv>=1.5?C.yellow:C.muted}}>
-                          {b.avgIbv.toFixed(2)}
-                        </div>
-                        <div style={{textAlign:'right',color:C.text}}>{b.ppToday}<span style={{color:C.muted}}>/{b.n}</span></div>
-                        <div style={{textAlign:'right',color:C.text}}>{b.ppRepeat}<span style={{color:C.muted}}>/{b.n}</span></div>
-                      </React.Fragment>
-                    ))}
-                  </div>
-                </div>
+                  {smartMoneyBySector.length===0&&volumeSmartMoneyBySector.length===0&&(
+                    <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
+                      Smart money data not available yet.
+                    </div>
+                  )}
+                  {smartMoneyBySector.length>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
+                        🏦 Sector Flow (FII/DII)
+                      </div>
+                      <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
+                        Avg. change in FII+DII holding % last quarter, by sector — accumulation vs distribution, not intraday flow
+                      </div>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>FII pp</div>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>DII pp</div>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Stocks ↑/↓</div>
+                        {smartMoneyBySector.map(b=>(
+                          <React.Fragment key={b.sector}>
+                            <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
+                            <div style={{textAlign:'right',fontWeight:700,color:b.avgFii==null?C.muted:b.avgFii>0?C.green:b.avgFii<0?C.red:C.muted}}>
+                              {b.avgFii==null?'—':`${b.avgFii>0?'+':''}${b.avgFii.toFixed(2)}`}
+                            </div>
+                            <div style={{textAlign:'right',fontWeight:700,color:b.avgDii==null?C.muted:b.avgDii>0?C.green:b.avgDii<0?C.red:C.muted}}>
+                              {b.avgDii==null?'—':`${b.avgDii>0?'+':''}${b.avgDii.toFixed(2)}`}
+                            </div>
+                            <div style={{textAlign:'right',color:C.muted,fontSize:10.5}}>
+                              <span style={{color:C.green}}>{b.accumulating}</span>/<span style={{color:C.red}}>{b.distributing}</span>
+                            </div>
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {volumeSmartMoneyBySector.length>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
+                        📊 Momentum — Sector (Price & Volume)
+                      </div>
+                      <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
+                        Avg. institutional-footprint score (Pocket Pivots + RS/trend) — reacts daily, unlike the FII/DII table above
+                      </div>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Avg Score</div>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>PP Today</div>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Repeat (≥3/10d)</div>
+                        {volumeSmartMoneyBySector.slice(0,10).map(b=>(
+                          <React.Fragment key={b.sector}>
+                            <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
+                            <div style={{textAlign:'right',fontWeight:700,color:b.avgIbv>=3?C.green:b.avgIbv>=1.5?C.yellow:C.muted}}>
+                              {b.avgIbv.toFixed(2)}
+                            </div>
+                            <div style={{textAlign:'right',color:C.text}}>{b.ppToday}<span style={{color:C.muted}}>/{b.n}</span></div>
+                            <div style={{textAlign:'right',color:C.text}}>{b.ppRepeat}<span style={{color:C.muted}}>/{b.n}</span></div>
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )
         })()}
+        {mainTab==='market'&&(marketSubTab==='gaps'||marketSubTab==='smartmoney')&&stocks.length===0&&(
+          <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>Loading…</div>
+        )}
 
         {/* ══ LEADERS — RS Line New Highs + New Stage 2 Entries ══ */}
         {mainTab==='leaders'&&(
@@ -10070,7 +10358,27 @@ export default function App(){
               return GROUPS.filter(({id})=>id===patternsSubTab).map(({id,group,items})=>(
                 <div key={group} style={{marginBottom:18}}>
                   <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,letterSpacing:'0.04em'}}>{group}</div>
-                  {items.map(({key,label,color,filter})=>{
+                  {id==='breakouts'&&(
+                    <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
+                      <button onClick={()=>setPatternsBreakoutType('all')}
+                        style={{padding:'5px 12px',borderRadius:20,fontSize:11,fontWeight:700,cursor:'pointer',
+                          border:`1px solid ${patternsBreakoutType==='all'?C.accent:C.border}`,
+                          background:patternsBreakoutType==='all'?C.accent+'22':'transparent',
+                          color:patternsBreakoutType==='all'?C.accent:C.muted}}>All types</button>
+                      {items.map(({key,label,color,filter})=>(
+                        <button key={key} onClick={()=>setPatternsBreakoutType(key)}
+                          style={{padding:'5px 12px',borderRadius:20,fontSize:11,fontWeight:700,cursor:'pointer',
+                            border:`1px solid ${patternsBreakoutType===key?color:C.border}`,
+                            background:patternsBreakoutType===key?color+'22':'transparent',
+                            color:patternsBreakoutType===key?color:C.muted}}>
+                          {label} ({stocks.filter(filter).length})
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {items
+                    .filter(({key})=>id!=='breakouts'||patternsBreakoutType==='all'||patternsBreakoutType===key)
+                    .map(({key,label,color,filter})=>{
                     const matches = stocks.filter(filter)
                     if(matches.length===0) return null
                     return(
@@ -10084,7 +10392,9 @@ export default function App(){
                       </div>
                     )
                   })}
-                  {items.every(({filter})=>stocks.filter(filter).length===0)&&(
+                  {items
+                    .filter(({key})=>id!=='breakouts'||patternsBreakoutType==='all'||patternsBreakoutType===key)
+                    .every(({filter})=>stocks.filter(filter).length===0)&&(
                     <div style={{fontSize:11,color:C.muted,padding:'4px 0 4px'}}>None right now.</div>
                   )}
                 </div>
@@ -10569,24 +10879,26 @@ export default function App(){
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
                 availableDates={availableDates} isMobile={isMobile}/>
             </div>
-            {/* Stats */}
+            {/* Stats — tap a tile to jump to that breakout type */}
             <div style={{background:C.card,border:`1px solid ${C.accent}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:15,color:C.accent,marginBottom:6}}>💥 HY/HT Breakout Scanner</div>
+              <div style={{fontWeight:800,fontSize:15,color:C.accent,marginBottom:6}}>💥 Breakout Scanner</div>
               <div style={{fontSize:12,color:C.muted,marginBottom:12}}>
-                Stocks that had High Year (HY) or High Time (HT) volume in last 5 days and are breaking out today
+                Pick a breakout type below — one list at a time. Tap a count tile to jump to that type.
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
                 {[
-                  {l:'🚀 Power Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)&&s.rs>=80&&s.chg>=3).length,c:C.accent},
-                  {l:'⭐ Strong Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)&&s.rs>=70&&s.chg>=2).length,c:C.green},
-                  {l:'✅ All Breakouts',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length,c:C.teal},
-                  {l:'🔥 PP + Break',v:stocks.filter(s=>s.pp?.isPP&&calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length,c:C.orange},
-                  {l:'👑 RS 90+ Break',v:stocks.filter(s=>s.rs>=90&&calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length,c:C.yellow},
-                  {l:'🎯 R1 Breakout',v:stocks.filter(s=>s.isResistanceBreakout&&passesMcap(s)).length,c:C.red},
-                  {l:'☕ Cup Breakout',v:stocks.filter(s=>s.isCupHandleBreakout&&passesMcap(s)).length,c:C.yellow},
-                  {l:'🐠 Guppy Crossover',v:stocks.filter(s=>s.isGuppyBullishCrossover&&passesMcap(s)).length,c:C.green},
-                ].map(({l,v,c})=>(
-                  <div key={l} style={{background:C.bg,borderRadius:8,padding:'10px',textAlign:'center'}}>
+                  {l:'💥 HY/HT Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length,c:C.accent,type:'hyht'},
+                  {l:'🎯 R1 Breakout',v:stocks.filter(s=>s.isResistanceBreakout&&passesMcap(s)).length,c:C.red,type:'r1'},
+                  {l:'🏆 52W High',v:stocks.filter(s=>s.is52whBreakout&&passesMcap(s)).length,c:C.yellow,type:'52wh'},
+                  {l:'☕ Cup Breakout',v:stocks.filter(s=>s.isCupHandleBreakout&&passesMcap(s)).length,c:C.yellow,type:'cup'},
+                  {l:'🐠 Guppy Crossover',v:stocks.filter(s=>s.isGuppyBullishCrossover&&passesMcap(s)).length,c:C.green,type:'guppy'},
+                  {l:'🚀 Stage 2 New',v:stocks.filter(s=>s.isS2NewEntry&&passesMcap(s)).length,c:C.green,type:'s2'},
+                  {l:'📅 Weekly Gainers',v:stocks.filter(s=>s.chgW>0&&passesMcap(s)).length,c:C.teal,type:'weekly'},
+                  {l:'🔥 PP + HY/HT',v:stocks.filter(s=>s.pp?.isPP&&calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length,c:C.orange,type:'hyht'},
+                ].map(({l,v,c,type})=>(
+                  <div key={l} onClick={()=>setBreakoutType(type)}
+                    style={{background:breakoutType===type?c+'18':C.bg,borderRadius:8,padding:'10px',textAlign:'center',
+                      cursor:'pointer',border:`1px solid ${breakoutType===type?c+'66':'transparent'}`}}>
                     <div style={{fontSize:22,fontWeight:900,color:c}}>{v}</div>
                     <div style={{fontSize:10,color:C.muted,marginTop:3}}>{l}</div>
                   </div>
@@ -10594,29 +10906,30 @@ export default function App(){
               </div>
             </div>
 
-            {/* Breakout type selector — one table, clickable filter chips
-                instead of 5 always-stacked sections. key={breakoutType} on
-                BreakoutTable forces a clean remount on switch, so sort/page
-                state resets per type (Weekly re-opens sorted by weekly
-                gain, R1 by RS, etc.) instead of carrying over stale state
-                from whichever type was previously selected. */}
+            {/* Breakout type filter — one table at a time */}
             {(()=>{
               const BREAKOUT_TYPES=[
+                {key:'hyht',icon:'💥',label:'HY/HT Breakout',color:C.accent,
+                  desc:'Had High Year or High Time volume in the last 5 days and is breaking out today (price up with strong RS)',
+                  filter:s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s), sort:'rs'},
                 {key:'r1',icon:'🎯',label:'R1 Breakout',color:C.red,
                   desc:'Stocks whose price just crossed above a significant recent resistance level',
                   filter:s=>s.isResistanceBreakout&&passesMcap(s), sort:'rs'},
                 {key:'52wh',icon:'🏆',label:'52W High',color:C.yellow,
                   desc:'Stocks that just crossed above their prior 52-week high — a fresh new high today, not one from days ago',
                   filter:s=>s.is52whBreakout&&passesMcap(s), sort:'rs'},
-                {key:'weekly',icon:'📅',label:'Weekly',color:C.green,
-                  desc:'Biggest gainers over the last week',
-                  filter:s=>s.chgW>0&&passesMcap(s), sort:'chgW'},
                 {key:'cup',icon:'☕',label:'Cup & Handle',color:C.yellow,
                   desc:'Stocks breaking out above a cup-and-handle formation today — algorithmic approximation, use as a visual aid',
                   filter:s=>s.isCupHandleBreakout&&passesMcap(s), sort:'rs'},
                 {key:'guppy',icon:'🐠',label:'Guppy Crossover',color:C.green,
                   desc:'Short-term EMA group just crossed above the long-term EMA group — short-term momentum picking up ahead of the longer trend',
                   filter:s=>s.isGuppyBullishCrossover&&passesMcap(s), sort:'rs'},
+                {key:'s2',icon:'🚀',label:'Stage 2 New',color:C.green,
+                  desc:'Stocks that flipped into a confirmed Weinstein Stage 2 uptrend today',
+                  filter:s=>s.isS2NewEntry&&passesMcap(s), sort:'rs'},
+                {key:'weekly',icon:'📅',label:'Weekly',color:C.teal,
+                  desc:'Biggest gainers over the last week',
+                  filter:s=>s.chgW>0&&passesMcap(s), sort:'chgW'},
               ]
               const active=BREAKOUT_TYPES.find(t=>t.key===breakoutType)||BREAKOUT_TYPES[0]
               const filtered=stocks.filter(active.filter)
@@ -10631,29 +10944,36 @@ export default function App(){
                           color:breakoutType===t.key?t.color:C.muted,
                           fontSize:12,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
                         {t.icon} {t.label}
+                        <span style={{marginLeft:6,opacity:0.75,fontWeight:600}}>
+                          {stocks.filter(t.filter).length}
+                        </span>
                       </button>
                     ))}
                   </div>
                   <div style={{fontWeight:800,fontSize:14,color:active.color,marginBottom:4}}>{active.icon} {active.label}</div>
                   <div style={{fontSize:11,color:C.muted,marginBottom:10}}>{active.desc}</div>
-                  <TVCopyPanel stocks={filtered} label={active.label}/>
-                  <BreakoutTable key={breakoutType} stocks={filtered} isMobile={isMobile} visibleRsCols={visibleRsCols}
-                    onChartOpen={setChartSym} defaultSortBy={active.sort}/>
+                  {filtered.length===0?(
+                    <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
+                      No {active.label} signals right now.
+                    </div>
+                  ):(
+                    <>
+                      <TVCopyPanel stocks={filtered} label={active.label}/>
+                      <BreakoutTable key={breakoutType} stocks={filtered} isMobile={isMobile} visibleRsCols={visibleRsCols}
+                        onChartOpen={setChartSym} defaultSortBy={active.sort}/>
+                    </>
+                  )}
                 </div>
               )
             })()}
 
-            {/* HY/HT Breakout list */}
-            <TVCopyPanel stocks={stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s))} label="HY/HT Breakouts"/>
-            {stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length===0?(
-              <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
-                <div style={{fontSize:42,marginBottom:12}}>💥</div>
-                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No breakouts today</div>
-                <div style={{fontSize:12,marginTop:6,color:C.muted}}>
-                  Stocks need HY/HT volume in last 5 days + price up &gt;1% today
-                </div>
+            {/* HY/HT detail cards — only when that type is selected */}
+            {breakoutType==='hyht'&&stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length>0&&(
+              <div style={{marginBottom:8}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>HY/HT DETAIL CARDS</div>
               </div>
-            ):stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s))
+            )}
+            {breakoutType==='hyht'&&stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s))
               .sort((a,b)=>b.rs-a.rs)
               .map((s,i)=>{
                 const bo=calcHYHTBreakout(s)
@@ -10809,7 +11129,7 @@ export default function App(){
         {/* ══ SECTOR ROTATION ══ */}
         {mainTab==='rotation'&&(()=>{
           const ROTATION_WINDOWS=[{label:'10D',days:10},{label:'1M',days:22},{label:'3M',days:66},{label:'6M',days:126},{label:'1Y',days:252}]
-          const { data, displayData, rolledData, maxAbsMom } = rotationDisplayData
+          const { data, displayData, rolledData } = rotationDisplayData
           const toggleSel=id=>setRotationSelectedIds(prev=>{
             const next=new Set(prev)
             next.has(id)?next.delete(id):next.add(id)
@@ -10825,11 +11145,8 @@ export default function App(){
             return next
           })
           const quadColor=s=>{
-            const leading=(s.level??50)>=50&&(s.momentum||0)>=0
-            const improving=(s.level??50)<50&&(s.momentum||0)>=0
-            const weakening=(s.level??50)>=50&&(s.momentum||0)<0
-            return leading?RRG_QUAD.leading.label:improving?RRG_QUAD.improving.label:
-              weakening?RRG_QUAD.weakening.label:RRG_QUAD.lagging.label
+            const q=s.quadrant||rrgQuadrant(s.rsRatio??s.level,s.rsMom??s.momentum)
+            return RRG_QUAD[q].label
           }
           const goTo=s=>{
             if(rotationScope==='sector'){setSectorFilter(s.id);setMainTab('rs')}
@@ -10838,19 +11155,21 @@ export default function App(){
           }
           const effectiveWlId=rotationWlId??activeWl??watchlists[0]?.id??null
           const effectiveWl=watchlists.find(w=>w.id===effectiveWlId)
-          const maxAvailable=data.length?Math.max(...data.map(s=>s.windowDays||1)):0
+          const maxAvailable=data.length?Math.max(...data.map(s=>s.trailDays||s.windowDays||1)):0
           const requestedWindow=ROTATION_WINDOWS.find(w=>w.days===rotationWindow)
           const scopeLabel=rotationScope==='sector'?'Sector':rotationScope==='index'?'Index':'Watchlist'
-          const levelLabel=rotationScope==='sector'?'avg RS':'RS-TV'
+          const rawLevelLabel=rotationScope==='sector'?'avg RS':'RS-TV'
+          const rrgGroups=rankRrgByQuadrant(rolledData)
           return(
           <div style={{padding:'0 0 20px'}}>
             <div style={{marginBottom:12}}>
-              <div style={{fontWeight:800,fontSize:15,color:C.accent}}>🔄 {scopeLabel} Rotation</div>
+              <div style={{fontWeight:800,fontSize:15,color:C.accent}}>🔄 Relative Rotation Graph — {scopeLabel}</div>
               <div style={{fontSize:12,color:C.muted,marginTop:2}}>
-                Which {rotationScope==='watchlist'?'stocks':scopeLabel.toLowerCase()+'s'} are gaining or losing relative strength, and how fast.
-                {rotationScope==='sector'&&` Click to jump to that sector\u2019s filtered RS list.`}
-                {rotationScope==='index'&&` Click an index to drill into its own stocks, right in this chart.`}
-                {rotationScope==='watchlist'&&' Click a stock to open its chart.'}
+                StockCharts-style RRG: JdK RS-Ratio (X) × JdK RS-Momentum (Y), both centered at 100.
+                Idealized rotation is clockwise: Improving → Leading → Weakening → Lagging.
+                {rotationScope==='sector'&&` Tap a sector to open its RS list.`}
+                {rotationScope==='index'&&` Tap an index to drill into constituents.`}
+                {rotationScope==='watchlist'&&' Tap a stock to open its chart.'}
               </div>
             </div>
 
@@ -10864,7 +11183,7 @@ export default function App(){
                 ))}
               </div>
               <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
-                <span style={{fontSize:11,color:C.muted,fontWeight:600}}>Window:</span>
+                <span style={{fontSize:11,color:C.muted,fontWeight:600}} title="Visible RRG trail length (StockCharts tail)">Trail:</span>
                 {ROTATION_WINDOWS.map(w=>(
                   <button key={w.days} onClick={()=>setRotationWindow(w.days)}
                     style={{padding:'5px 12px',borderRadius:20,border:`1px solid ${rotationWindow===w.days?C.accent:C.border}`,
@@ -10984,8 +11303,7 @@ export default function App(){
                     {loadingConstituentRotation?(
                       <div style={{textAlign:'center',padding:'60px 0',color:C.muted,fontSize:12}}>Loading…</div>
                     ):constituentRolledData&&constituentRolledData.rolledData.some(s=>s.trail?.length>0)?(
-                      <RRGChart rolledData={constituentRolledData.rolledData} maxAbsMom={constituentRolledData.maxAbsMom}
-                        levelLabel="RS-TV" windowLabel={ROTATION_WINDOWS.find(w=>w.days===rotationWindow)?.label||rotationWindow+'d'}
+                      <RRGChart rolledData={constituentRolledData.rolledData}
                         onDotClick={s=>setChartSym(s.id)}/>
                     ):(()=>{
                       const constituents=getIndexConstituents(rotationExpandedId,stocks)||[]
@@ -11006,25 +11324,33 @@ export default function App(){
                   </>
                 ):(
                   <>
-                    {requestedWindow&&maxAvailable>0&&maxAvailable<rotationWindow&&(
+                    {requestedWindow&&maxAvailable>0&&maxAvailable<rotationWindow+JDK_WINDOW+JDK_ROC&&(
                       <div style={{fontSize:11,color:C.yellow,background:C.yellow+'14',border:`1px solid ${C.yellow}33`,
                         borderRadius:8,padding:'8px 12px',marginBottom:12}}>
-                        ⚠ Only {maxAvailable} day{maxAvailable===1?'':'s'} of history available yet — showing the full {maxAvailable}-day window
-                        instead of the requested {requestedWindow.label}. This fills in automatically as more daily snapshots accumulate.
+                        ⚠ Only {maxAvailable} day{maxAvailable===1?'':'s'} of RS history available — JdK needs ~{JDK_WINDOW+JDK_ROC} warmup days
+                        plus your trail. Chart will fill in as more daily snapshots accumulate.
                       </div>
                     )}
-                    <RRGChart rolledData={rolledData} maxAbsMom={maxAbsMom} levelLabel={levelLabel}
-                      windowLabel={requestedWindow?.label||rotationWindow+'d'} onDotClick={goTo}
-                      dotSizing={rotationScope==='sector'}/>
+                    {rolledData.length===0?(
+                      <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:12}}>
+                        Not enough history yet to compute JdK RS-Ratio / RS-Momentum (need ~{JDK_WINDOW+JDK_ROC}+ days).
+                      </div>
+                    ):(
+                      <RRGChart rolledData={rolledData} onDotClick={goTo}
+                        dotSizing={rotationScope==='sector'}/>
+                    )}
                     <div style={{fontSize:10,color:C.muted,marginTop:8}}>
-                      Dot color = which {scopeLabel.toLowerCase()} (matches its label) — position tells you the status below, not the color.
-                      The hollow dot marks where each trail started (oldest day shown) — the arrow marks where it is now and which way it's heading.
+                      Crosshair = benchmark (100, 100). X = JdK RS-Ratio (relative-strength trend), Y = JdK RS-Momentum (its rate of change).
+                      Built from daily {rawLevelLabel} history. Hollow dot = start of trail · filled + arrow = today.
+                      Thicker trails sit farther from the origin (bigger relative move). Window chip = trail length.
                     </div>
                   </>
                 )}
                 <div style={{display:'flex',gap:14,flexWrap:'wrap',marginTop:8,paddingTop:10,borderTop:`1px solid ${C.divider}`}}>
-                  {[['Leading — strong & still improving',RRG_QUAD.leading.label],['Improving — gaining strength',RRG_QUAD.improving.label],
-                    ['Weakening — losing momentum',RRG_QUAD.weakening.label],['Lagging — weak & still falling',RRG_QUAD.lagging.label]].map(([label,color])=>(
+                  {[['Leading (+/+) — Ratio & Momentum > 100',RRG_QUAD.leading.label],
+                    ['Improving (-/+) — Momentum up, Ratio still < 100',RRG_QUAD.improving.label],
+                    ['Weakening (+/-) — Ratio strong, Momentum fading',RRG_QUAD.weakening.label],
+                    ['Lagging (-/-) — both below 100',RRG_QUAD.lagging.label]].map(([label,color])=>(
                     <div key={label} style={{display:'flex',alignItems:'center',gap:6,fontSize:10,color:C.muted}}>
                       <span style={{width:8,height:8,borderRadius:'50%',background:color,display:'inline-block'}}/>{label}
                     </div>
@@ -11045,35 +11371,46 @@ export default function App(){
                 ):null
               })()}
 
-              <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>RANKED LIST</div>
-              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
-                {data.map((s,i)=>(
-                  <div key={s.id} onClick={()=>goTo(s)}
-                    style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,
-                      padding:'11px 14px',borderBottom:i<data.length-1?`1px solid ${C.divider}`:'none',cursor:'pointer'}}>
-                    <div style={{display:'flex',alignItems:'center',gap:10,minWidth:0}}>
-                      <div style={{width:22,height:22,borderRadius:6,background:C.bg,display:'flex',
-                        alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:C.muted,flexShrink:0}}>
-                        {s.rank??'—'}
-                      </div>
-                      <div style={{minWidth:0}}>
-                        <div style={{fontWeight:700,fontSize:13}}>{s.label}</div>
-                        <div style={{fontSize:10,color:C.muted,marginTop:2}}>{s.meta} · {levelLabel} {s.level}</div>
-                      </div>
-                    </div>
-                    <div style={{display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
-                      <div style={{textAlign:'right'}}>
-                        <div style={{fontWeight:800,fontSize:15,color:quadColor(s)}}>{s.level}</div>
-                        {s.rankChange!=null&&(
-                          <div style={{fontSize:10,fontWeight:700,color:s.rankChange>0?C.green:s.rankChange<0?C.red:C.muted}}>
-                            {s.rankChange>0?'▲':s.rankChange<0?'▼':'–'} {s.rankChange!==0?Math.abs(s.rankChange):''}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>
+                RANKED BY QUADRANT — distance from benchmark (100, 100)
               </div>
+              {rrgGroups.length===0?(
+                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'20px',
+                  textAlign:'center',color:C.muted,fontSize:12}}>
+                  No JdK points yet — need more daily history.
+                </div>
+              ):(
+                <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                  {rrgGroups.map(g=>(
+                    <div key={g.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+                      <div style={{padding:'8px 14px',background:g.color+'14',borderBottom:`1px solid ${C.border}`,
+                        display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                        <span style={{fontWeight:800,fontSize:12,color:g.color}}>{g.label}</span>
+                        <span style={{fontSize:10,color:C.muted}}>{g.rows.length}</span>
+                      </div>
+                      {g.rows.map((s,i)=>(
+                        <div key={s.id} onClick={()=>goTo(s)}
+                          style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,
+                            padding:'10px 14px',borderBottom:i<g.rows.length-1?`1px solid ${C.divider}`:'none',cursor:'pointer'}}>
+                          <div style={{minWidth:0}}>
+                            <div style={{fontWeight:700,fontSize:13}}>{s.label}</div>
+                            <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+                              {s.meta||''} · {rawLevelLabel} {s.trail?.[s.trail.length-1]?.rawLevel??s.level}
+                              {' · '}dist {s.dist?.toFixed(1)}
+                            </div>
+                          </div>
+                          <div style={{textAlign:'right',flexShrink:0}}>
+                            <div style={{fontWeight:800,fontSize:13,color:g.color}}>
+                              {s.rsRatio?.toFixed(1)} / {s.rsMom?.toFixed(1)}
+                            </div>
+                            <div style={{fontSize:9,color:C.muted}}>Ratio / Mom</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {rotationScope==='index'&&rotationExpandedId&&(()=>{
                 const constituents=getIndexConstituents(rotationExpandedId,stocks)
@@ -11461,26 +11798,88 @@ export default function App(){
               </div>
             )}
 
-            {announcementsLoading&&announcements.length===0?(
-              <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>Loading…</div>
-            ):announcements.length===0?(
-              <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
-                No announcements yet.
+            {announcementsCategory==='results'&&(
+              <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+                {[
+                  {id:'all',label:'All Ratings',color:C.muted},
+                  {id:'has',label:'Has Numbers',color:C.accent},
+                  {id:'Excellent',label:'⭐ Excellent',color:C.green},
+                  {id:'Good',label:'✓ Good',color:'#7dd3a8'},
+                  {id:'Neutral',label:'– Neutral',color:C.yellow},
+                  {id:'Weak',label:'⚠ Weak',color:C.red},
+                ].map(o=>(
+                  <button key={o.id} onClick={()=>setResultRatingFilterAnn(o.id)}
+                    style={{padding:'5px 10px',borderRadius:14,fontSize:10.5,fontWeight:700,cursor:'pointer',
+                      border:`1px solid ${resultRatingFilterAnn===o.id?o.color:C.border}`,
+                      background:resultRatingFilterAnn===o.id?o.color+'22':'transparent',
+                      color:resultRatingFilterAnn===o.id?o.color:C.muted}}>
+                    {o.label}
+                  </button>
+                ))}
+                {resultRatingsLoading&&(
+                  <span style={{fontSize:10,color:C.muted}}>Loading ratings…</span>
+                )}
               </div>
-            ):(
+            )}
+
+            {(()=>{
+              const visibleAnnouncements=announcements.filter(a=>{
+                if(announcementsCategory!=='results'||resultRatingFilterAnn==='all') return true
+                const sym=String(a.symbol||'').toUpperCase()
+                const rating=resultRatingsMap[sym]
+                  || computeResultRating(resultsHistoryCache[a.symbol]||resultsHistoryCache[sym]||null)
+                if(resultRatingFilterAnn==='has') return !!rating || !!resultRowFor(a.symbol)
+                return rating===resultRatingFilterAnn
+              })
+              if(announcementsLoading&&announcements.length===0){
+                return <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>Loading…</div>
+              }
+              if(announcements.length===0){
+                return (
+                  <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
+                    No announcements yet.
+                  </div>
+                )
+              }
+              if(visibleAnnouncements.length===0){
+                return (
+                  <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
+                    No results match this rating filter on this page.
+                    {resultRatingsLoading?' Ratings still loading…':''}
+                  </div>
+                )
+              }
+              return (
               <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                {announcements.map((a,i)=>{
+                {visibleAnnouncements.map((a,i)=>{
                   const parsed=a.announced_at?new Date(a.announced_at):null
                   const dateStr=(parsed&&!isNaN(parsed))
                     ?parsed.toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})
                     :(a.announced_at||'')
+                  const symU=String(a.symbol||'').toUpperCase()
+                  const rowRating=announcementsCategory==='results'
+                    ? (resultRatingsMap[symU]
+                      || computeResultRating(resultsHistoryCache[a.symbol]||resultsHistoryCache[symU]||null))
+                    : null
+                  const ratingColor=rowRating==='Excellent'?C.green:rowRating==='Good'?'#7dd3a8':
+                    rowRating==='Weak'?C.red:C.yellow
                   return(
                     <div key={`${a.symbol}-${i}`} style={{background:C.card,border:`1px solid ${C.border}`,
                       borderRadius:10,padding:'12px 14px',display:'flex',gap:12,alignItems:'flex-start'}}>
-                      <div onClick={()=>setChartSym(a.symbol)}
-                        style={{fontWeight:800,fontSize:13,color:C.accent,cursor:'pointer',
-                          minWidth:76,textDecoration:'underline',textDecorationColor:C.accent+'55'}}>
-                        {a.symbol}
+                      <div style={{minWidth:76}}>
+                        <div onClick={()=>setChartSym(a.symbol)}
+                          style={{fontWeight:800,fontSize:13,color:C.accent,cursor:'pointer',
+                            textDecoration:'underline',textDecorationColor:C.accent+'55'}}>
+                          {a.symbol}
+                        </div>
+                        {rowRating&&(
+                          <div title="Result quality from Sales/PAT YoY (+ QoQ/OPM checks)"
+                            style={{marginTop:4,fontSize:9,fontWeight:800,color:ratingColor,
+                              background:ratingColor+'22',borderRadius:999,padding:'1px 6px',display:'inline-block'}}>
+                            {rowRating==='Excellent'?'⭐ Excellent':rowRating==='Good'?'✓ Good':
+                              rowRating==='Weak'?'⚠ Weak':'– Neutral'}
+                          </div>
+                        )}
                       </div>
                       <div style={{flex:1,minWidth:0}}>
                         {a.category&&(
@@ -11692,7 +12091,8 @@ export default function App(){
                   )
                 })}
               </div>
-            )}
+              )
+            })()}
 
             <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginTop:16,padding:'10px 0'}}>
               <button onClick={()=>setAnnouncementsPage(p=>Math.max(0,p-1))} disabled={announcementsPage===0}
