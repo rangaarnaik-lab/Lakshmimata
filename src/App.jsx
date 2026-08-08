@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -6278,6 +6278,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
   const [topGainers,setTopGainers]=useState([])
   const [usageStats,setUsageStats]=useState(null) // {uniqueUsers, dailyTrend} | null while loading
   const [publicFeedback,setPublicFeedback]=useState([])
+  const [feedbackStats,setFeedbackStats]=useState(null)
   const slideCount=3
   useEffect(()=>{
     if(paused) return
@@ -6290,6 +6291,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
   useEffect(()=>{
     logPageView().finally(() => fetchUsageStats(14).then(setUsageStats))
     fetchPublicUserFeedback(12).then(setPublicFeedback)
+    fetchUserFeedbackRatingStats().then(setFeedbackStats)
   },[])
 
   const gold='#C9A227', goldSoft='#E8D28A'
@@ -6613,8 +6615,13 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
             What users are saying
           </h2>
           <p style={{color:'#9aa0b0',maxWidth:480,margin:'0 auto 28px',fontSize:14,textAlign:'center',lineHeight:1.65}}>
-            Real feedback from traders using Lakshmimata — sign in to share yours.
+            Real feedback from traders using Lakshmimata — rate us and sign in to share yours.
           </p>
+          {feedbackStats&&feedbackStats.total>0&&(
+            <div style={{maxWidth:420,margin:'0 auto 28px'}}>
+              <UserFeedbackRatingSummary stats={feedbackStats} variant="landing"/>
+            </div>
+          )}
           {publicFeedback.length>0?(
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:14,maxWidth:900,margin:'0 auto'}}>
               {publicFeedback.map(fb=>(
@@ -7355,14 +7362,75 @@ function PaywallScreen({reason,onLogout}){
 }
 
 // ── User feedback (app reviews) ─────────────────────────────────────
-function UserFeedbackStars({rating,size=14}){
+const FEEDBACK_RATING_LABELS=['','Poor','Fair','Good','Very good','Excellent']
+
+function UserFeedbackStars({rating,size=14,accent}){
   const r=Math.max(0,Math.min(5,Number(rating)||0))
+  const starColor=accent||C.yellow
   return(
     <span style={{display:'inline-flex',gap:2,verticalAlign:'middle'}} aria-label={r?`${r} out of 5 stars`:undefined}>
       {[1,2,3,4,5].map(i=>(
-        <span key={i} style={{fontSize:size,color:i<=r?C.yellow:C.border,lineHeight:1}}>★</span>
+        <span key={i} style={{fontSize:size,color:i<=r?starColor:C.border,lineHeight:1}}>★</span>
       ))}
     </span>
+  )
+}
+
+function UserFeedbackRatingSummary({stats,variant}){
+  if(!stats||!stats.total) return null
+  const landing=variant==='landing'
+  const accent=landing?'#E8D28A':C.yellow
+  const max=Math.max(1,...[5,4,3,2,1].map(n=>stats.distribution?.[n]||0))
+  return(
+    <div style={{background:landing?C.card:C.bg,border:`1px solid ${landing?C.border:C.border}`,
+      borderRadius:12,padding:landing?'20px 22px':'16px 18px'}}>
+      <div style={{display:'flex',gap:20,alignItems:'center',flexWrap:'wrap'}}>
+        <div style={{textAlign:'center',minWidth:100}}>
+          <div style={{fontSize:36,fontWeight:800,color:landing?'#fff':C.text,lineHeight:1}}>
+            {stats.average.toFixed(1)}
+          </div>
+          <UserFeedbackStars rating={Math.round(stats.average)} size={16} accent={accent}/>
+          <div style={{fontSize:11,color:C.muted,marginTop:6}}>
+            {stats.total} rating{stats.total===1?'':'s'}
+          </div>
+        </div>
+        <div style={{flex:1,minWidth:180}}>
+          {[5,4,3,2,1].map(n=>{
+            const count=stats.distribution?.[n]||0
+            const pct=max?Math.round((count/max)*100):0
+            return(
+              <div key={n} style={{display:'flex',alignItems:'center',gap:8,marginBottom:5}}>
+                <span style={{fontSize:11,color:C.muted,width:28,textAlign:'right'}}>{n}★</span>
+                <div style={{flex:1,height:8,background:C.divider,borderRadius:99,overflow:'hidden'}}>
+                  <div style={{width:`${pct}%`,height:'100%',background:accent,borderRadius:99,transition:'width 0.3s'}}/>
+                </div>
+                <span style={{fontSize:10,color:C.muted,width:20}}>{count}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function UserFeedbackRatingPicker({rating,onChange}){
+  const r=Number(rating)||0
+  return(
+    <div>
+      <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
+        {[1,2,3,4,5].map(n=>(
+          <button key={n} type="button" onClick={()=>onChange(n)}
+            style={{background:'transparent',border:'none',cursor:'pointer',padding:'6px 4px',fontSize:28,
+              color:n<=r?C.yellow:C.border,lineHeight:1,transition:'transform 0.1s',
+              transform:n===r?'scale(1.08)':'scale(1)'}} aria-label={`${n} stars — ${FEEDBACK_RATING_LABELS[n]}`}>★</button>
+        ))}
+        <span style={{fontSize:13,fontWeight:700,color:r?C.accent:C.muted,marginLeft:6}}>
+          {r?FEEDBACK_RATING_LABELS[r]:'Select a rating *'}
+        </span>
+      </div>
+      <div style={{fontSize:10,color:C.muted,marginTop:4}}>1 = Poor · 3 = Good · 5 = Excellent</div>
+    </div>
   )
 }
 
@@ -7370,10 +7438,14 @@ function UserFeedbackCard({item,compact}){
   const when=item?.created_at
     ? new Date(item.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})
     : ''
+  const r=Number(item?.rating)||0
   return(
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:compact?'16px 18px':'18px 20px',
       display:'flex',flexDirection:'column',gap:8,minHeight:compact?120:undefined}}>
-      {item?.rating>0&&<UserFeedbackStars rating={item.rating} size={compact?13:14}/>}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
+        <UserFeedbackStars rating={r} size={compact?13:14}/>
+        {r>0&&<span style={{fontSize:10,fontWeight:700,color:C.muted}}>{r}/5</span>}
+      </div>
       <div style={{fontSize:compact?13:14,color:C.text,lineHeight:1.65,flex:1,whiteSpace:'pre-wrap'}}>
         “{item?.message}”
       </div>
@@ -7395,25 +7467,33 @@ function feedbackFirstName(user){
 
 function UserFeedbackPanel({session,onExitDemo}){
   const [message,setMessage]=useState('')
-  const [rating,setRating]=useState(5)
+  const [rating,setRating]=useState(0)
   const [isPublic,setIsPublic]=useState(true)
   const [loading,setLoading]=useState(false)
   const [error,setError]=useState('')
   const [info,setInfo]=useState('')
   const [mine,setMine]=useState([])
   const [publicList,setPublicList]=useState([])
+  const [stats,setStats]=useState(null)
 
   const reload=useCallback(()=>{
     if(session) fetchMyUserFeedback(20).then(setMine)
     else setMine([])
     fetchPublicUserFeedback(12).then(setPublicList)
+    fetchUserFeedbackRatingStats().then(setStats)
   },[session])
 
   useEffect(()=>{ reload() },[reload])
 
+  const canSubmit=rating>=1&&rating<=5&&message.trim().length>=5
+
   const handleSubmit=async()=>{
     if(!session){
       setError('Please sign in to submit feedback.')
+      return
+    }
+    if(!canSubmit){
+      setError(rating<1?'Please select a star rating.':'Please write at least 5 characters.')
       return
     }
     setError('');setInfo('');setLoading(true)
@@ -7426,7 +7506,7 @@ function UserFeedbackPanel({session,onExitDemo}){
     setLoading(false)
     if(res.error){ setError(res.error); return }
     setMessage('')
-    setRating(5)
+    setRating(0)
     setInfo('Thank you — your feedback was saved.')
     reload()
   }
@@ -7440,6 +7520,11 @@ function UserFeedbackPanel({session,onExitDemo}){
   if(!session){
     return(
       <div style={{maxWidth:720,margin:'0 auto',padding:'0 16px 32px'}}>
+        {stats&&stats.total>0&&(
+          <div style={{marginBottom:20}}>
+            <UserFeedbackRatingSummary stats={stats}/>
+          </div>
+        )}
         {publicList.length>0&&(
           <div style={{marginBottom:20}}>
             <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>Community feedback</div>
@@ -7470,20 +7555,19 @@ function UserFeedbackPanel({session,onExitDemo}){
 
   return(
     <div style={{maxWidth:720,margin:'0 auto',padding:'0 16px 32px'}}>
+      {stats&&stats.total>0&&(
+        <div style={{marginBottom:20}}>
+          <UserFeedbackRatingSummary stats={stats}/>
+        </div>
+      )}
       <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:24,marginBottom:20}}>
         <div style={{fontWeight:800,fontSize:18,marginBottom:4}}>User Feedback</div>
         <div style={{color:C.muted,fontSize:12,marginBottom:18,lineHeight:1.6}}>
-          Tell us what’s working, what’s missing, or what we should improve. Public feedback may appear on the home page (first name only).
+          Rate Lakshmimata (1–5 stars) and tell us what’s working or what we should improve. Public feedback may appear on the home page (first name only).
         </div>
         <div style={{marginBottom:14}}>
-          <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:8}}>Rating</div>
-          <div style={{display:'flex',gap:6}}>
-            {[1,2,3,4,5].map(n=>(
-              <button key={n} type="button" onClick={()=>setRating(n)}
-                style={{background:'transparent',border:'none',cursor:'pointer',padding:4,fontSize:22,
-                  color:n<=rating?C.yellow:C.border,lineHeight:1}} aria-label={`${n} stars`}>★</button>
-            ))}
-          </div>
+          <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:8}}>Your rating *</div>
+          <UserFeedbackRatingPicker rating={rating} onChange={setRating}/>
         </div>
         <div style={{marginBottom:14}}>
           <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:8}}>Your feedback</div>
@@ -7499,10 +7583,10 @@ function UserFeedbackPanel({session,onExitDemo}){
         </label>
         {error&&<div style={{color:C.red,fontSize:12,marginBottom:10}}>{error}</div>}
         {info&&<div style={{color:C.green,fontSize:12,marginBottom:10}}>{info}</div>}
-        <button type="button" onClick={handleSubmit} disabled={loading||message.trim().length<5}
+        <button type="button" onClick={handleSubmit} disabled={loading||!canSubmit}
           style={{padding:'11px 22px',borderRadius:9,border:'none',cursor:loading?'wait':'pointer',
             background:C.accent,color:'#000',fontWeight:700,fontSize:13,
-            opacity:loading||message.trim().length<5?0.55:1}}>
+            opacity:loading||!canSubmit?0.55:1}}>
           {loading?'Saving…':'Submit feedback'}
         </button>
       </div>
@@ -7514,7 +7598,10 @@ function UserFeedbackPanel({session,onExitDemo}){
             {mine.map(fb=>(
               <div key={fb.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px 16px'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginBottom:6}}>
-                  {fb.rating>0&&<UserFeedbackStars rating={fb.rating} size={12}/>}
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    <UserFeedbackStars rating={fb.rating} size={12}/>
+                    {fb.rating>0&&<span style={{fontSize:10,color:C.muted}}>{FEEDBACK_RATING_LABELS[fb.rating]}</span>}
+                  </div>
                   <span style={{fontSize:10,color:C.muted,marginLeft:'auto'}}>
                     {fb.is_public?'Public':'Private'} · {new Date(fb.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
                   </span>

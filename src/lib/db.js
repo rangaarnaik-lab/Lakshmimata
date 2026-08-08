@@ -1204,6 +1204,52 @@ export async function fetchPublicUserFeedback(limit = 12) {
   return data || []
 }
 
+/** Aggregate star-rating stats for public feedback (home page header). */
+export async function fetchUserFeedbackRatingStats() {
+  const empty = {
+    average: 0,
+    total: 0,
+    distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+  }
+  const { data, error } = await supabase.rpc('get_user_feedback_rating_stats')
+  if (error) {
+    // RPC missing before migration — fall back to client-side from public rows.
+    const { data: rows } = await supabase
+      .from('user_feedback')
+      .select('rating')
+      .eq('is_public', true)
+      .not('rating', 'is', null)
+    if (!rows?.length) return empty
+    const dist = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }
+    let sum = 0
+    for (const row of rows) {
+      const r = Number(row.rating)
+      if (r >= 1 && r <= 5) {
+        dist[r] += 1
+        sum += r
+      }
+    }
+    const total = Object.values(dist).reduce((a, b) => a + b, 0)
+    return {
+      average: total ? Math.round((sum / total) * 10) / 10 : 0,
+      total,
+      distribution: dist,
+    }
+  }
+  const dist = data?.distribution || {}
+  return {
+    average: Number(data?.average) || 0,
+    total: Number(data?.total) || 0,
+    distribution: {
+      5: Number(dist['5']) || 0,
+      4: Number(dist['4']) || 0,
+      3: Number(dist['3']) || 0,
+      2: Number(dist['2']) || 0,
+      1: Number(dist['1']) || 0,
+    },
+  }
+}
+
 /** Signed-in user's past feedback submissions. */
 export async function fetchMyUserFeedback(limit = 20) {
   const { data: { user } } = await supabase.auth.getUser()
@@ -1227,9 +1273,9 @@ export async function submitUserFeedback({ message, rating, isPublic = true, dis
   if (text.length < 5 || text.length > 1000) {
     return { error: 'Please write at least 5 characters (max 1000).' }
   }
-  const r = rating == null || rating === '' ? null : Number(rating)
-  if (r != null && (!Number.isInteger(r) || r < 1 || r > 5)) {
-    return { error: 'Rating must be between 1 and 5 stars.' }
+  const r = Number(rating)
+  if (!Number.isInteger(r) || r < 1 || r > 5) {
+    return { error: 'Please select a star rating (1–5).' }
   }
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Please sign in to submit feedback.' }
