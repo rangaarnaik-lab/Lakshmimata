@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Confirm your Lakshmimata account</title>
+</head>
+<body style="margin:0;padding:0;background:#0b1220;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#e8eefc;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0b1220;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#121a2b;border:1px solid #243049;border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="padding:28px 28px 8px 28px;">
+              <div style="font-size:13px;letter-spacing:0.12em;text-transform:uppercase;color:#7dd3c7;font-weight:700;">Lakshmimata</div>
+              <h1 style="margin:10px 0 0 0;font-size:22px;line-height:1.3;color:#ffffff;">Confirm your email</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 28px 0 28px;font-size:15px;line-height:1.6;color:#c5d0e6;">
+              Welcome! Please confirm
+              <strong style="color:#ffffff;">{{ .Email }}</strong>
+              to finish creating your Lakshmimata account.
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 28px 8px 28px;font-size:15px;line-height:1.7;color:#c5d0e6;">
+              <strong style="color:#ffffff;">What to do next:</strong>
+              <ol style="margin:10px 0 0 18px;padding:0;">
+                <li style="margin-bottom:8px;">Click the button below to verify your email.</li>
+                <li style="margin-bottom:8px;">You will return to Lakshmimata automatically.</li>
+                <li>Then sign in with the email and password you chose.</li>
+              </ol>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:24px 28px;">
+              <a href="{{ .ConfirmationURL }}"
+                 style="display:inline-block;background:linear-gradient(135deg,#2dd4bf,#22c55e);color:#041016;text-decoration:none;font-weight:800;font-size:15px;padding:14px 28px;border-radius:10px;">
+                Confirm my email
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 28px 8px 28px;font-size:13px;line-height:1.6;color:#89a0b5;">
+              If the button does not work, copy and paste this link into your browser:
+              <div style="margin-top:8px;word-break:break-all;color:#7dd3c7;">{{ .ConfirmationURL }}</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 28px 28px 28px;font-size:12px;line-height:1.6;color:#7b879c;border-top:1px solid #243049;">
+              If you did not create a Lakshmimata account, you can ignore this email.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
