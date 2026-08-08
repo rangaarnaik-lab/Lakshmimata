@@ -1,0 +1,38 @@
+name: FII/DII History Backfill (one-time)
+
+# Trigger by pushing .fii-dii-backfill.trigger to main, or run manually.
+on:
+  workflow_dispatch:
+    inputs:
+      backfill_days:
+        description: 'Trading sessions to load'
+        required: false
+        default: '126'
+        type: choice
+        options:
+          - '30'
+          - '126'
+  push:
+    branches: [main]
+    paths:
+      - '.fii-dii-backfill.trigger'
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install requests
+      - name: Backfill FII/DII history to Supabase
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          DAYS="${{ github.event.inputs.backfill_days }}"
+          if [ -z "$DAYS" ]; then DAYS=126; fi
+          python scripts/fetch_fii_dii.py --backfill-days "$DAYS"
