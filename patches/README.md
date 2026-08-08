@@ -7,15 +7,15 @@ Results extraction loop that produced the Railway logs lives in
 
 ## `results-catchup-idle-lookback-7468.patch`
 
-Fixes issues visible in the 2026-08-08 catchup logs (**90-day lookback kept**):
+Fixes for the 2026-08-08 Results catchup logs (**90-day lookback kept**):
 
-1. **Idle log spam** — empty catchup cycles slept 20s and logged every cycle.
-   Now sleeps **30 minutes** when the queue is empty (About-company pattern)
-   and only heartbeats occasionally.
-2. **GREENPANEL YoY/comparison collision** — when Gemini labels the same
-   period as both comparison and YoY, keep YoY only before saving (avoids
-   duplicate rows / bad QoQ%).
-3. Catchup default lookback is **90 days** (same as steady-state).
+1. **Idle backoff** — empty catchup sleeps **30 minutes** (was ~20s spam).
+2. **YoY/comparison dedupe** — when Gemini labels the same period as both
+   comparison and YoY, keep YoY only.
+3. **Company Overview handoff** — when Results catchup is idle (“nothing
+   new”), release `PAUSE_ABOUT_COMPANY` early and populate About /
+   Company Overview every **15 minutes**. If Results finds new work again,
+   About yields back.
 
 ### Apply
 
@@ -23,14 +23,19 @@ Fixes issues visible in the 2026-08-08 catchup logs (**90-day lookback kept**):
 cd lakshmimata-server
 git am /path/to/results-catchup-idle-lookback-7468.patch
 # or: git apply /path/to/results-catchup-idle-lookback-7468.patch
+git push origin main   # then redeploy fundamentals on Railway
 ```
+
+### Env (optional)
+
+| Var | Default | Meaning |
+|---|---|---|
+| `ABOUT_COMPANY_CYCLE_SECONDS` | `900` (after Results idle) | Minutes between About batches |
+| `RESULTS_PDF_CATCHUP_DONE_SECONDS` | `1800` | Results recheck while idle |
+| `RESULTS_PDF_CATCHUP_LOOKBACK_DAYS` / `RESULTS_PDF_LOOKBACK_DAYS` | `90` | Catchup window |
 
 ### Also run in Supabase (Ask-AI warning in logs)
 
 ```bash
-# In Supabase SQL editor:
-# contents of lakshmimata-server/add_stock_ai_asks.sql
+# In Supabase SQL editor: lakshmimata-server/add_stock_ai_asks.sql
 ```
-
-The worker log `💬 Ask-AI: run add_stock_ai_asks.sql` means that migration
-has not been applied yet.
