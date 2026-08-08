@@ -10,11 +10,22 @@ export const PEER_GROUP_OVERRIDES = {
   GRSE: 'Shipping & Defence',
   MAZDOCK: 'Shipping & Defence',
   COCHINSHIP: 'Shipping & Defence',
+  UFBL: 'Leisure - Restaurants',
+  RBA: 'Leisure - Restaurants',
+  COFFEEDAY: 'Leisure - Restaurants',
+  DEVYANI: 'Leisure - Restaurants',
+  JUBLFOOD: 'Leisure - Restaurants',
+  SAPPHIRE: 'Leisure - Restaurants',
+  SPECIALITY: 'Leisure - Restaurants',
+  WESTLIFE: 'Leisure - Restaurants',
+  THELEELA: 'Leisure - Restaurants',
 }
 
 /** Map raw industry strings to a shared peer group when appropriate. */
 const INDUSTRY_PEER_ALIASES = {
   'Ship Building & Allied Services': 'Shipping & Defence',
+  Restaurants: 'Leisure - Restaurants',
+  'Hotels & Resorts': 'Hotels & Resorts',
 }
 
 export function lookupStaticIndustry(sym) {
@@ -47,6 +58,7 @@ export function resolveSector(sym, dbSector = null, resolvedIndustry = null) {
   if (sector && !JUNK_INDUSTRY.test(sector)) return sector
   if (stat?.sector) return stat.sector
   if (resolvedIndustry === 'Shipping & Defence') return 'Defence'
+  if (resolvedIndustry === 'Leisure - Restaurants') return 'Leisure Services'
   return dbSector || null
 }
 
