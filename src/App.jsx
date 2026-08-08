@@ -3332,7 +3332,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
 
   const panelStyle = isMobile
     ? {position:'fixed',inset:0,zIndex:1000,display:'flex',flexDirection:'column',background:C.sidebar}
-    : {position:'relative',flex:customPct!=null?`0 0 ${customPct}%`:(['0 0 25%','0 0 45%','0 0 70%'][wide]||'0 0 25%'),
+    : {position:'relative',flex:customPct!=null?`0 0 ${customPct}%`:(['0 0 35%','0 0 50%','0 0 75%'][wide]||'0 0 35%'),
         height:'100vh',overflow:'hidden',
         display:'flex',flexDirection:'column',background:C.sidebar,
         borderLeft:`1px solid ${C.divider}`,transition:customPct!=null?'none':'flex 0.2s ease'}
@@ -4728,8 +4728,8 @@ function CandlestickChart({sym, isMobile, isIndex}){
 
   // ── Layout constants needed by both the zoom/pan handlers below and
   // the SVG render further down ──
-  const W = 900, H = 420
-  const padL = 8, padR = 54, padT = 10, priceH = 300, volH = 60, gapH = 8
+  const W = 900, H = 480
+  const padL = 8, padR = 54, padT = 10, priceH = 340, volH = 60, gapH = 8
   const chartW = W - padL - padR
 
   // barsToShow/start now driven by zoomBars/panOffset (mouse wheel /
@@ -5855,7 +5855,7 @@ function rankRrgByQuadrant(rolledData){
 // each item's id; sections register themselves via a ref callback.
 function DesktopRow({s,i,onChart,visibleRsCols}){
   const [open,setOpen]=useState(false)
-  const vis=visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,fundRating:true}
+  const vis=visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true}
   // Grid matches computeRsGridCols — expand chevron lives in the Symbol cell
   // (row click opens chart; expand still opens inline StockDetail).
   const COLS=computeRsGridCols(vis)
@@ -8839,9 +8839,18 @@ export default function App(){
     return()=>{cancelled=true;clearInterval(t)}
   },[annAlertsOn,watchlists])
   const [visibleRsCols,setVisibleRsCols]=useState(()=>{
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,fundRating:true,squeeze:false,wl52:false,weakrs:false}
+    const RS_COL_PREFS_VER=2
+    const fundOff={mcap:false,pe:false,roe:false,de:false,prom:false}
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,...fundOff,fundRating:true,squeeze:false,wl52:false,weakrs:false}
     try{
+      const ver=parseInt(localStorage.getItem('lakshmimata-rs-col-ver')||'0',10)
       const saved=JSON.parse(localStorage.getItem('lakshmimata-rs-columns')||'null')
+      if(ver<RS_COL_PREFS_VER){
+        try{localStorage.setItem('lakshmimata-rs-col-ver',String(RS_COL_PREFS_VER))}catch(e){}
+        if(!saved) return defaults
+        // Hide fundamental columns by default — more room for chart + signals.
+        return {...defaults,...saved,...fundOff}
+      }
       return saved?{...defaults,...saved}:defaults
     }catch(e){return defaults}
   })
@@ -8853,9 +8862,12 @@ export default function App(){
     })
   }
   const resetRsCols=()=>{
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:true,pe:true,roe:true,de:true,prom:true,fundRating:true,squeeze:false,wl52:false,weakrs:false}
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true,squeeze:false,wl52:false,weakrs:false}
     setVisibleRsCols(defaults)
-    try{localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(defaults))}catch(e){}
+    try{
+      localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(defaults))
+      localStorage.setItem('lakshmimata-rs-col-ver','2')
+    }catch(e){}
   }
   const [wlSearch,setWlSearch]=useState(''),[wlSigOnly,setWlSigOnly]=useState(false)
   const [weakSearch,setWeakSearch]=useState(''),[weakSigOnly,setWeakSigOnly]=useState(false)
@@ -9506,7 +9518,7 @@ export default function App(){
       <div ref={innerRowRef} style={{flex:1,minWidth:0,display:'flex',flexDirection:'row',userSelect:isDraggingDivider?'none':'auto'}}>
 
       {/* ── Main area ── */}
-      <div style={{flex:(chartSym&&!isMobile)?(chartPanelPct!=null?`0 0 ${100-chartPanelPct}%`:['0 0 75%','0 0 55%','0 0 30%'][chartWide]):1,display:'flex',flexDirection:'column',minWidth:0,overflowX:'hidden',paddingBottom:isMobile?72:0}}>
+      <div style={{flex:(chartSym&&!isMobile)?(chartPanelPct!=null?`0 0 ${100-chartPanelPct}%`:['0 0 65%','0 0 50%','0 0 25%'][chartWide]):1,display:'flex',flexDirection:'column',minWidth:0,overflowX:'hidden',paddingBottom:isMobile?72:0}}>
 
         {/* Top bar */}
         <div style={{borderBottom:`1px solid ${C.divider}`,
