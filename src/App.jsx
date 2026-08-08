@@ -7942,28 +7942,24 @@ export default function App(){
         if(error||!data?.session){
           const msg=((error&&error.message)||'').toLowerCase()
           const code=(error&&(error.code||error.status))||''
-          // Only treat hard session revocation as “signed in elsewhere”.
-          // Network blips should not show the anti-sharing popup.
+          // Hard revoke (e.g. signed in elsewhere) — not a transient network blip.
           const revoked=/session|refresh.?token|not found|expired|revoked|invalid/.test(msg)
             || code==='session_not_found'||code==='session_expired'
             || code===401||code===403
-          if(revoked||!error){
-            markKickedElsewhere()
-          }else{
-            intentionalLogoutRef.current=true
-          }
+            || (!error && !data?.session)
+          if(!revoked) return
+          markKickedElsewhere()
           await supabase.auth.signOut({scope:'local'})
           setSession(null)
           setPasswordRecovery(false)
         }
       }catch(err){
         const msg=String(err?.message||err||'').toLowerCase()
-        if(/session|refresh.?token|not found|expired|revoked|invalid/.test(msg)){
-          markKickedElsewhere()
-          try{ await supabase.auth.signOut({scope:'local'}) }catch(__){}
-          setSession(null)
-          setPasswordRecovery(false)
-        }
+        if(!/session|refresh.?token|not found|expired|revoked|invalid/.test(msg)) return
+        markKickedElsewhere()
+        try{ await supabase.auth.signOut({scope:'local'}) }catch(__){}
+        setSession(null)
+        setPasswordRecovery(false)
       }
     }
     const heartbeat=setInterval(checkSessionStillValid, 60_000)
