@@ -6747,7 +6747,10 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
       if(mode==='forgot'){
         if(!email.trim()) throw new Error('Email is required.')
         const{error:e}=await supabase.auth.resetPasswordForEmail(email,{
-          redirectTo:`${window.location.origin}?reset=true`
+          // Land on a dedicated update-password screen (?reset=1), not the
+          // home dashboard — recovery also emits SIGNED_IN, which used to
+          // skip straight into the app with no UI to set a new password.
+          redirectTo:`${window.location.origin}?reset=1`,
         })
         if(e)throw e
         setInfo('Password reset email sent! Check your inbox.');setMode('login')
@@ -6935,7 +6938,7 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
                     Password <span style={{color:C.red}}>*</span>
                   </label>
                   {mode==='login'&&(
-                    <button onClick={()=>{setMode('forgot');setError('');setInfo('')}}
+                    <button type="button" onClick={()=>{setMode('forgot');setError('');setInfo('')}}
                       style={{fontSize:11,color:C.accent,fontWeight:600,background:'none',border:'none',cursor:'pointer',padding:0}}>
                       Forgot password?
                     </button>
@@ -6981,6 +6984,107 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
               <span>Passwords bcrypt-hashed · Google OAuth 2.0 · Row Level Security · TLS encrypted</span>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Shown after the user clicks the email password-reset link. Supabase
+// has already established a recovery session; we must collect a new
+// password before dropping them into the app.
+function ResetPasswordScreen({session,onDone,onCancel}){
+  const [password,setPassword]=useState('')
+  const [confirm,setConfirm]=useState('')
+  const [error,setError]=useState('')
+  const [info,setInfo]=useState('')
+  const [loading,setLoading]=useState(false)
+
+  const save=async()=>{
+    setError('');setInfo('');setLoading(true)
+    try{
+      if(password.length<10){
+        throw new Error('Password must be at least 10 characters long.')
+      }
+      if(!/[a-zA-Z]/.test(password)||!/[0-9]/.test(password)){
+        throw new Error('Password must contain both letters and numbers.')
+      }
+      if(password!==confirm){
+        throw new Error('Passwords do not match.')
+      }
+      const{data,error:e}=await supabase.auth.updateUser({password})
+      if(e) throw e
+      setInfo('Password updated. Taking you in…')
+      // Drop the ?reset= flag so a refresh doesn't reopen this screen.
+      try{
+        const url=new URL(window.location.href)
+        url.searchParams.delete('reset')
+        window.history.replaceState({},'',url.pathname+url.search+url.hash)
+      }catch(_){}
+      onDone({...session, user:data.user||session.user})
+    }catch(e){ setError(e.message||'Could not update password') }
+    setLoading(false)
+  }
+
+  const fieldInput={
+    width:'100%',padding:'12px 13px',background:C.bg,
+    border:`1px solid ${C.border}`,borderRadius:9,color:C.text,
+    fontSize:14,outline:'none',boxSizing:'border-box',
+  }
+
+  return(
+    <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',
+      justifyContent:'center',padding:20,
+      backgroundImage:`radial-gradient(ellipse at 20% 50%, ${C.accent}08 0%, transparent 50%),radial-gradient(ellipse at 80% 20%, ${C.purple}08 0%, transparent 50%)`}}>
+      <div style={{width:'100%',maxWidth:400,background:C.card,borderRadius:20,
+        border:`1px solid ${C.border}`,padding:28,boxShadow:`0 20px 60px #00000044`}}>
+        <div style={{fontWeight:800,fontSize:18,marginBottom:6}}>Set a new password</div>
+        <div style={{color:C.muted,fontSize:12,marginBottom:18,lineHeight:1.5}}>
+          Choose a new password for <strong style={{color:C.text}}>{session?.user?.email||'your account'}</strong>.
+          At least 10 characters, with both letters and numbers.
+        </div>
+        {error&&(
+          <div style={{background:C.red+'18',border:`1px solid ${C.red}44`,borderRadius:8,
+            padding:'10px 12px',marginBottom:14,fontSize:12,color:C.red,fontWeight:600}}>
+            ❌ {error}
+          </div>
+        )}
+        {info&&(
+          <div style={{background:C.green+'18',border:`1px solid ${C.green}44`,borderRadius:8,
+            padding:'10px 12px',marginBottom:14,fontSize:12,color:C.green,fontWeight:600}}>
+            ✅ {info}
+          </div>
+        )}
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          <div>
+            {reqLabel('New password')}
+            <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
+              placeholder="Min 10 characters, letters + numbers"
+              onKeyDown={e=>e.key==='Enter'&&save()}
+              autoFocus
+              style={fieldInput}/>
+          </div>
+          <div>
+            {reqLabel('Confirm password')}
+            <input type="password" value={confirm} onChange={e=>setConfirm(e.target.value)}
+              placeholder="Re-enter new password"
+              onKeyDown={e=>e.key==='Enter'&&save()}
+              style={fieldInput}/>
+          </div>
+          <button type="button" onClick={save} disabled={loading}
+            style={{width:'100%',padding:'13px',marginTop:4,
+              background:loading?C.border:`linear-gradient(135deg,${C.accent},${C.accent}cc)`,
+              color:loading?C.muted:'#000',border:'none',borderRadius:9,
+              fontWeight:800,fontSize:14,cursor:loading?'not-allowed':'pointer'}}>
+            {loading?'Updating…':'🔐 Update password'}
+          </button>
+          {onCancel&&(
+            <button type="button" onClick={onCancel}
+              style={{width:'100%',padding:'10px',background:'transparent',color:C.muted,
+                border:'none',cursor:'pointer',fontSize:13,fontWeight:600}}>
+              Cancel and sign out
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -7537,6 +7641,12 @@ export default function App(){
   const [showRealtimeUpsell,setShowRealtimeUpsell]=useState(false)
   const [showAuth,setShowAuth]=useState(false)
   const [authMode,setAuthMode]=useState('login')
+  // True while the user arrived via the email password-reset link and
+  // still needs to pick a new password (before entering the app).
+  const [passwordRecovery,setPasswordRecovery]=useState(()=>{
+    try{ return new URLSearchParams(window.location.search).get('reset')==='1'
+      || new URLSearchParams(window.location.search).get('reset')==='true' }catch(e){ return false }
+  })
   const [themeVersion,setThemeVersion]=useState(0)
   const [themeKey,setThemeKey]=useState('dark')
   const ZOOM_LEVELS=[0.8,0.9,1,1.1,1.25,1.5]
@@ -7667,11 +7777,30 @@ export default function App(){
       if(s){
         const{data:td}=await supabase.from('user_tokens').select('upstox_token').eq('user_id',s.user.id).single()
         setSession({user:s.user,token:td?.upstox_token||OWNER_TOKEN})
+        // Recovery links land with a session already established — keep
+        // the update-password gate open if ?reset= is present.
+        try{
+          const q=new URLSearchParams(window.location.search)
+          if(q.get('reset')==='1'||q.get('reset')==='true') setPasswordRecovery(true)
+        }catch(_){}
       }
       setAuthLoading(false)
     })
     const{data:{subscription}}=supabase.auth.onAuthStateChange(async(event,s)=>{
-      if(!s){ setSession(null); return }
+      if(event==='PASSWORD_RECOVERY'){
+        // Email reset link clicked — show Set new password UI instead of
+        // dumping the user onto the home dashboard.
+        setPasswordRecovery(true)
+        if(s){
+          const ownerTok = await fetchOwnerToken()
+          if(ownerTok) OWNER_TOKEN = ownerTok
+          const{data:td}=await supabase.from('user_tokens').select('upstox_token').eq('user_id',s.user.id).single()
+          setSession({user:s.user,token:td?.upstox_token||OWNER_TOKEN})
+        }
+        setAuthLoading(false)
+        return
+      }
+      if(!s){ setSession(null); setPasswordRecovery(false); return }
       // Handle Google OAuth callback and email confirmation
       if(event==='SIGNED_IN'||event==='TOKEN_REFRESHED'){
         // Load owner token fresh
@@ -7680,9 +7809,15 @@ export default function App(){
         // Load user's custom token if any
         const{data:td}=await supabase.from('user_tokens').select('upstox_token').eq('user_id',s.user.id).single()
         setSession({user:s.user,token:td?.upstox_token||OWNER_TOKEN})
+        // If the redirect carried ?reset=, keep the update-password screen
+        // even when Supabase emits SIGNED_IN instead of PASSWORD_RECOVERY.
+        try{
+          const q=new URLSearchParams(window.location.search)
+          if(q.get('reset')==='1'||q.get('reset')==='true') setPasswordRecovery(true)
+        }catch(_){}
         setAuthLoading(false)
       }
-      if(event==='SIGNED_OUT') setSession(null)
+      if(event==='SIGNED_OUT'){ setSession(null); setPasswordRecovery(false) }
     })
     return()=>subscription.unsubscribe()
   },[])
@@ -8683,6 +8818,28 @@ export default function App(){
       <div style={{width:32,height:32,border:`3px solid ${C.accent}`,borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
     </div>
   )
+
+  // Password-reset email link: force the update-password screen before
+  // the home dashboard / profile / paywall gates.
+  if(session && passwordRecovery && !demoMode){
+    return <ResetPasswordScreen
+      session={session}
+      onDone={s=>{ setPasswordRecovery(false); setSession(s) }}
+      onCancel={async()=>{
+        setPasswordRecovery(false)
+        try{
+          const url=new URL(window.location.href)
+          url.searchParams.delete('reset')
+          window.history.replaceState({},'',url.pathname+url.search+url.hash)
+        }catch(_){}
+        await supabase.auth.signOut()
+        setSession(null)
+        setShowAuth(true)
+        setAuthMode('login')
+      }}
+    />
+  }
+
   if(!session && !demoMode){
     if(!showAuth) return <LandingPage
       onEnroll={()=>{setAuthMode('register');setShowAuth(true)}}
