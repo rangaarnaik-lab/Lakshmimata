@@ -2136,6 +2136,208 @@ function FiiDiiDailyPanel({data, isMobile, range, setRange}){
   )
 }
 
+// Key indices shown on Market → Overview tape (matched against index_dashboard names).
+const OVERVIEW_INDEX_TAPE = ['Nifty 50', 'Nifty Bank', 'Bank Nifty', 'IT', 'Private Bank', 'Midcap 150', 'Smallcap 250', 'FMCG', 'Auto']
+function pickTapeIndices(indexData, max = 8) {
+  if (!indexData?.length) return []
+  const byName = Object.fromEntries(indexData.map(i => [i.name, i]))
+  const picked = []
+  for (const name of OVERVIEW_INDEX_TAPE) {
+    if (byName[name] && !picked.includes(byName[name])) picked.push(byName[name])
+    else {
+      const fuzzy = indexData.find(i => i.name.toLowerCase().includes(name.toLowerCase()) && !picked.includes(i))
+      if (fuzzy) picked.push(fuzzy)
+    }
+    if (picked.length >= max) return picked
+  }
+  for (const i of indexData) {
+    if (!picked.includes(i)) { picked.push(i); if (picked.length >= max) break }
+  }
+  return picked
+}
+
+function IndexTapeStrip({indexData, isMobile, onIndexClick, onViewAll}) {
+  const items = pickTapeIndices(indexData)
+  if (!items.length) {
+    return (
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',marginBottom:10}}>
+        <div style={{fontSize:11,color:C.muted}}>Index tape loading…</div>
+      </div>
+    )
+  }
+  return (
+    <div style={{marginBottom:10}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+        <div style={{fontWeight:700,fontSize:12,color:C.text}}>Index Tape</div>
+        {onViewAll&&(
+          <button onClick={onViewAll}
+            style={{marginLeft:'auto',fontSize:10,fontWeight:600,color:C.accent,background:'transparent',
+              border:'none',cursor:'pointer',padding:0}}>
+            All indices →
+          </button>
+        )}
+      </div>
+      <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:4,WebkitOverflowScrolling:'touch'}}>
+        {items.map(idx => {
+          const stageColor = {1:C.yellow,2:C.green,3:C.orange,4:C.red}[idx.stage] || C.muted
+          const shortName = idx.name.replace(/^Nifty /, '').replace('Private Bank', 'Pvt Bank')
+          return (
+            <button key={idx.name} onClick={()=>onIndexClick?.(idx.name)}
+              style={{flex:'0 0 auto',minWidth:isMobile?108:120,background:C.card,
+                border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px',cursor:'pointer',
+                textAlign:'left'}}>
+              <div style={{fontSize:10,fontWeight:700,color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                {shortName}
+              </div>
+              <div style={{fontSize:14,fontWeight:800,color:idx.chgD!=null?chgColor(idx.chgD):C.muted,marginTop:2}}>
+                {fmtChg(idx.chgD)}
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:5,marginTop:4,flexWrap:'wrap'}}>
+                {idx.rsTv!=null&&(
+                  <span style={{fontSize:9,fontWeight:700,color:rsColor(idx.rsTv)}}>RS {idx.rsTv}</span>
+                )}
+                {idx.stageLabel&&(
+                  <span style={{fontSize:8,fontWeight:700,padding:'1px 4px',borderRadius:3,
+                    background:stageColor+'22',color:stageColor}}>{idx.stageLabel}</span>
+                )}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function FiiDiiMiniCard({data, isMobile, onViewDetails}) {
+  const fmtCr = v => v==null?'—':`${v>=0?'+':''}${Number(v).toLocaleString('en-IN',{maximumFractionDigits:0})}`
+  const latest = data?.length ? data[data.length-1] : null
+  return (
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',height:'100%'}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+        <div style={{fontWeight:700,fontSize:12,color:C.text}}>FII / DII (Cash)</div>
+        {onViewDetails&&(
+          <button onClick={onViewDetails}
+            style={{marginLeft:'auto',fontSize:10,fontWeight:600,color:C.accent,background:'transparent',
+              border:'none',cursor:'pointer',padding:0}}>
+            Details →
+          </button>
+        )}
+      </div>
+      {!latest ? (
+        <div style={{fontSize:11,color:C.muted,lineHeight:1.5}}>
+          Daily NSE provisional flows appear after market close once the fetch job runs.
+        </div>
+      ) : (
+        <>
+          <div style={{fontSize:9,color:C.muted,marginBottom:6}}>{latest.trade_date}</div>
+          <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'1fr 1fr',gap:8}}>
+            {[
+              {label:'FII Net', value:latest.fii_net},
+              {label:'DII Net', value:latest.dii_net},
+            ].map(c => (
+              <div key={c.label} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:7,padding:'8px 10px'}}>
+                <div style={{fontSize:9,color:C.muted,fontWeight:700}}>{c.label}</div>
+                <div style={{fontSize:15,fontWeight:800,color:c.value>=0?C.green:C.red,marginTop:2}}>
+                  {fmtCr(c.value)} Cr
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function SectorLeadersLaggards({sectorData, onViewAll}) {
+  if (!sectorData?.length) {
+    return (
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',height:'100%'}}>
+        <div style={{fontWeight:700,fontSize:12,color:C.text,marginBottom:6}}>Sector RS</div>
+        <div style={{fontSize:11,color:C.muted}}>Sector data loading…</div>
+      </div>
+    )
+  }
+  const sorted = [...sectorData].sort((a,b)=>(a.rank??999)-(b.rank??999))
+  const top = sorted.slice(0,3)
+  const bottom = [...sorted].reverse().slice(0,3)
+  const row = (sec, accent) => (
+    <div key={sec.sector} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 0',
+      borderBottom:`1px solid ${C.border}33`}}>
+      <span style={{fontSize:11,fontWeight:600,color:C.text,flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+        {sec.sector}
+      </span>
+      <span style={{fontSize:10,color:C.muted}}>#{sec.rank}</span>
+      <span style={{fontSize:12,fontWeight:800,color:rsColor(sec.avgRS),minWidth:28,textAlign:'right'}}>{sec.avgRS}</span>
+      <span style={{fontSize:8,fontWeight:700,color:accent,width:8}}>●</span>
+    </div>
+  )
+  return (
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',height:'100%'}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+        <div style={{fontWeight:700,fontSize:12,color:C.text}}>Sector RS</div>
+        {onViewAll&&(
+          <button onClick={onViewAll}
+            style={{marginLeft:'auto',fontSize:10,fontWeight:600,color:C.accent,background:'transparent',
+              border:'none',cursor:'pointer',padding:0}}>
+            All sectors →
+          </button>
+        )}
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        <div>
+          <div style={{fontSize:9,fontWeight:700,color:C.green,marginBottom:4,textTransform:'uppercase'}}>Leaders</div>
+          {top.map(s=>row(s,C.green))}
+        </div>
+        <div>
+          <div style={{fontSize:9,fontWeight:700,color:C.red,marginBottom:4,textTransform:'uppercase'}}>Laggards</div>
+          {bottom.map(s=>row(s,C.red))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StageDistributionBar({stocks}) {
+  if (!stocks?.length) return null
+  const stages = [
+    {n:1, label:'S1 Base', color:C.yellow},
+    {n:2, label:'S2 Up', color:C.green},
+    {n:3, label:'S3 Top', color:C.orange},
+    {n:4, label:'S4 Down', color:C.red},
+  ]
+  const counts = stages.map(s => ({
+    ...s,
+    count: stocks.filter(st => calcWeinsteinStage(st).stage === s.n).length,
+  }))
+  const tot = stocks.length
+  return (
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',marginBottom:10}}>
+      <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+        <div style={{fontWeight:700,fontSize:12,color:C.text}}>Weinstein Stage Mix</div>
+        <div style={{fontSize:10,color:C.muted}}>{tot} stocks</div>
+      </div>
+      <div style={{display:'flex',height:10,borderRadius:5,overflow:'hidden',marginBottom:8}}>
+        {counts.map(s => s.count > 0 && (
+          <div key={s.n} title={`${s.label}: ${s.count} (${((s.count/tot)*100).toFixed(1)}%)`}
+            style={{width:`${(s.count/tot)*100}%`,background:s.color,minWidth:s.count>0?2:0}}/>
+        ))}
+      </div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:10}}>
+        {counts.map(s => (
+          <div key={s.n} style={{display:'flex',alignItems:'center',gap:5,fontSize:10}}>
+            <span style={{width:8,height:8,borderRadius:2,background:s.color,flexShrink:0}}/>
+            <span style={{color:C.muted,fontWeight:600}}>{s.label}</span>
+            <span style={{color:C.text,fontWeight:800}}>{s.count}</span>
+            <span style={{color:C.muted}}>({((s.count/tot)*100).toFixed(0)}%)</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── EMA Breadth Table — % of stocks above 9/21/50-day EMA per day,
 // plus daily Stage 2 count (going forward only, see backend notes). ──
 function EmaBreadthTable({data,isMobile,dragProps,rangeLabel}){
@@ -7391,10 +7593,10 @@ export default function App(){
       fetchMarketBreadthHistory(500).then(setBreadthHistory)
       fetchEmaBreadthHistory(500).then(setEmaBreadthHistory)
     }
-    if(mainTab==='market' && marketSubTab==='smartmoney' && fiiDiiHistory.length===0){
+    if(mainTab==='market' && fiiDiiHistory.length===0){
       fetchFiiDiiDailyHistory(180).then(setFiiDiiHistory)
     }
-  },[mainTab, marketSubTab])
+  },[mainTab, fiiDiiHistory.length])
 
   // Load saved theme preference once on mount, before first paint of
   // anything meaningful. themeVersion is a dummy counter — bumping it
@@ -9522,6 +9724,10 @@ export default function App(){
 
               return(
                 <>
+                  <IndexTapeStrip indexData={indexData} isMobile={isMobile}
+                    onIndexClick={name=>setChartSym(name)}
+                    onViewAll={()=>setMarketSubTab('indices')}/>
+
                   {/* Compact verdict: one header row + factor chips */}
                   <div style={{background:verdict.color+'11',border:`1px solid ${verdict.color}44`,
                     borderRadius:10,padding:'10px 12px',marginBottom:10}}>
@@ -9548,6 +9754,17 @@ export default function App(){
                       ))}
                     </div>
                   </div>
+
+                  <div style={{display:'grid',
+                    gridTemplateColumns:isMobile?'1fr':'1fr 1fr',
+                    gap:8,marginBottom:10}}>
+                    <FiiDiiMiniCard data={fiiDiiHistory} isMobile={isMobile}
+                      onViewDetails={()=>setMarketSubTab('smartmoney')}/>
+                    <SectorLeadersLaggards sectorData={sectorData}
+                      onViewAll={()=>setMarketSubTab('sectors')}/>
+                  </div>
+
+                  <StageDistributionBar stocks={stocks}/>
 
                   {/* Breadth header + A/D ratio on one line */}
                   <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:8,flexWrap:'wrap'}}>
