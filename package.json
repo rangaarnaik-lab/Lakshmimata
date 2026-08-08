@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "build:industry-map": "node scripts/build-industry-map.js",
-    "fetch:fii-dii": "python3 scripts/fetch_fii_dii.py"
+    "fetch:fii-dii": "python3 scripts/fetch_fii_dii.py",
+    "backfill:fii-dii:30": "python3 scripts/fetch_fii_dii.py --backfill-days 30",
+    "backfill:fii-dii:6m": "python3 scripts/fetch_fii_dii.py --backfill-days 126"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

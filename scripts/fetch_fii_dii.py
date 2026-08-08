@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
-"""Fetch daily FII/FPI & DII cash-market flows from NSE and upsert to Supabase."""
+"""Fetch daily FII/FPI & DII cash-market flows and upsert to Supabase.
 
+Today's row: NSE fiidiiTradeReact (combined NSE+BSE+MSEI).
+Historical backfill: NSE-sourced archive via history-full JSON (up to ~127 sessions).
+"""
+
+import argparse
 import os
 import sys
 from datetime import datetime
@@ -9,13 +14,15 @@ import requests
 
 NSE_ENDPOINT = 'https://www.nseindia.com/api/fiidiiTradeReact'
 NSE_REFERER = 'https://www.nseindia.com/reports/fii-dii'
+# Public NSE-sourced archive (combined cash-market FII/DII). Used only for backfill.
+HISTORY_ENDPOINT = 'https://fii-diidata.mrchartist.com/api/history-full'
 
 
 def parse_nse_date(value: str) -> str:
     return datetime.strptime(value.strip(), '%d-%b-%Y').date().isoformat()
 
 
-def fetch_nse_fii_dii() -> dict:
+def nse_session() -> requests.Session:
     session = requests.Session()
     session.headers.update({
         'User-Agent': (
@@ -27,6 +34,11 @@ def fetch_nse_fii_dii() -> dict:
         'Referer': NSE_REFERER,
     })
     session.get('https://www.nseindia.com/', timeout=20)
+    return session
+
+
+def fetch_nse_fii_dii() -> dict:
+    session = nse_session()
     response = session.get(NSE_ENDPOINT, timeout=20)
     response.raise_for_status()
     rows = response.json()
@@ -56,13 +68,35 @@ def fetch_nse_fii_dii() -> dict:
     return out
 
 
-def upsert_supabase(row: dict) -> None:
-    supabase_url = os.environ.get('SUPABASE_URL')
-    service_key = os.environ.get('SUPABASE_SERVICE_KEY')
-    if not supabase_url or not service_key:
-        raise RuntimeError('SUPABASE_URL and SUPABASE_SERVICE_KEY are required')
+def fetch_history_backfill(days: int) -> list[dict]:
+    """Load prior sessions from the public NSE-sourced archive."""
+    response = requests.get(HISTORY_ENDPOINT, timeout=30)
+    response.raise_for_status()
+    rows = response.json()
+    if not isinstance(rows, list):
+        raise RuntimeError('Unexpected history payload')
 
-    payload = {
+    out = []
+    for row in rows[:days]:
+        # history-full uses compact keys; history uses long keys
+        date_raw = row.get('d') or row.get('date')
+        if not date_raw:
+            continue
+        trade_date = parse_nse_date(date_raw)
+        out.append({
+            'trade_date': trade_date,
+            'fii_buy': float(row.get('fb') if 'fb' in row else row.get('fii_buy')),
+            'fii_sell': float(row.get('fs') if 'fs' in row else row.get('fii_sell')),
+            'fii_net': float(row.get('fn') if 'fn' in row else row.get('fii_net')),
+            'dii_buy': float(row.get('db') if 'db' in row else row.get('dii_buy')),
+            'dii_sell': float(row.get('ds') if 'ds' in row else row.get('dii_sell')),
+            'dii_net': float(row.get('dn') if 'dn' in row else row.get('dii_net')),
+        })
+    return out
+
+
+def row_to_payload(row: dict, source: str) -> dict:
+    return {
         'trade_date': row['trade_date'],
         'segment': 'combined',
         'fii_buy': row['fii_buy'],
@@ -71,9 +105,19 @@ def upsert_supabase(row: dict) -> None:
         'dii_buy': row['dii_buy'],
         'dii_sell': row['dii_sell'],
         'dii_net': row['dii_net'],
-        'source': 'nse',
+        'source': source,
         'fetched_at': datetime.utcnow().isoformat() + 'Z',
     }
+
+
+def upsert_supabase_rows(rows: list[dict]) -> None:
+    if not rows:
+        return
+    supabase_url = os.environ.get('SUPABASE_URL')
+    service_key = os.environ.get('SUPABASE_SERVICE_KEY')
+    if not supabase_url or not service_key:
+        raise RuntimeError('SUPABASE_URL and SUPABASE_SERVICE_KEY are required')
+
     response = requests.post(
         f'{supabase_url.rstrip("/")}/rest/v1/fii_dii_daily',
         headers={
@@ -83,21 +127,41 @@ def upsert_supabase(row: dict) -> None:
             'Prefer': 'resolution=merge-duplicates',
         },
         params={'on_conflict': 'trade_date'},
-        json=payload,
-        timeout=30,
+        json=rows,
+        timeout=60,
     )
     if response.status_code not in (200, 201, 204):
         raise RuntimeError(f'Supabase upsert failed: {response.status_code} {response.text[:300]}')
 
 
 def main() -> int:
-    row = fetch_nse_fii_dii()
-    print(
-        f"NSE {row['trade_date']}: FII net {row['fii_net']:+.2f} Cr, "
-        f"DII net {row['dii_net']:+.2f} Cr"
+    parser = argparse.ArgumentParser(description='Fetch FII/DII and upsert to Supabase')
+    parser.add_argument(
+        '--backfill-days',
+        type=int,
+        default=0,
+        help='Also load this many prior trading sessions from archive (e.g. 30 or 126 for ~6M)',
     )
-    upsert_supabase(row)
-    print('Upserted to fii_dii_daily')
+    args = parser.parse_args()
+
+    by_date: dict[str, dict] = {}
+
+    if args.backfill_days > 0:
+        history = fetch_history_backfill(args.backfill_days)
+        for row in history:
+            by_date[row['trade_date']] = row_to_payload(row, 'nse-archive')
+        print(f'Loaded {len(history)} archived sessions (requested {args.backfill_days})')
+
+    latest = fetch_nse_fii_dii()
+    by_date[latest['trade_date']] = row_to_payload(latest, 'nse')
+    print(
+        f"NSE {latest['trade_date']}: FII net {latest['fii_net']:+.2f} Cr, "
+        f"DII net {latest['dii_net']:+.2f} Cr"
+    )
+
+    rows = [by_date[k] for k in sorted(by_date)]
+    upsert_supabase_rows(rows)
+    print(f'Upserted {len(rows)} row(s) to fii_dii_daily')
     return 0
 
 

@@ -5,6 +5,16 @@ on:
     # ~6:15 PM IST = 12:45 PM UTC (Mon-Fri, after NSE provisional publish)
     - cron: '45 12 * * 1-5'
   workflow_dispatch:
+    inputs:
+      backfill_days:
+        description: 'Backfill prior sessions (0 = today only, 30 ≈ 1M, 126 ≈ 6M trading days)'
+        required: false
+        default: '0'
+        type: choice
+        options:
+          - '0'
+          - '30'
+          - '126'
 
 jobs:
   fetch-fii-dii:
@@ -21,4 +31,9 @@ jobs:
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: python scripts/fetch_fii_dii.py
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.backfill_days }}" != "" ] && [ "${{ github.event.inputs.backfill_days }}" != "0" ]; then
+            ARGS="--backfill-days ${{ github.event.inputs.backfill_days }}"
+          fi
+          python scripts/fetch_fii_dii.py $ARGS
