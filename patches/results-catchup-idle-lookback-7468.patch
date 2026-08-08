@@ -1,0 +1,123 @@
+From 11c61c56a6720e6568d781ee67428f7f896939e3 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Sat, 8 Aug 2026 09:06:51 +0000
+Subject: [PATCH] fix(results): catchup lookback, idle backoff, YoY/comp dedupe
+
+Catchup was inheriting RESULTS_PDF_LOOKBACK_DAYS (often 90), so the
+boosted loop went idle inside a 90-day window while older filings still
+needed extraction. Use an independent 365-day catchup default.
+
+When the catchup queue is empty, sleep 30m (About-style) instead of
+rescanning every 20s and flooding logs. Drop comparison rows that are
+identical to YoY (GREENPANEL-style dual label) before saving.
+---
+ fundamentals_worker.py | 58 +++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 51 insertions(+), 7 deletions(-)
+
+diff --git a/fundamentals_worker.py b/fundamentals_worker.py
+index 77d3fe6..2dde6f7 100644
+--- a/fundamentals_worker.py
++++ b/fundamentals_worker.py
+@@ -1367,8 +1367,13 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
+             BATCH_SIZE = int(os.getenv('RESULTS_PDF_CATCHUP_BATCH_SIZE', '1'))
+             candidates_limit = int(os.getenv('RESULTS_PDF_CATCHUP_CANDIDATES_LIMIT',
+                                              os.getenv('RESULTS_PDF_CANDIDATES_LIMIT', '12000')))
+-            lookback_days = int(os.getenv('RESULTS_PDF_CATCHUP_LOOKBACK_DAYS',
+-                                          os.getenv('RESULTS_PDF_LOOKBACK_DAYS', '365')))
++            # Catchup lookback must NOT inherit RESULTS_PDF_LOOKBACK_DAYS
++            # (often 90 for steady-state). Confirmed in production logs
++            # (2026-08-08): catchup=True ran with lookback=90d and went
++            # idle ("nothing new") while older filings still needed
++            # extraction — RESULTS_PDF_LOOKBACK_DAYS=90 had overridden
++            # the intended year-long catchup window.
++            lookback_days = int(os.getenv('RESULTS_PDF_CATCHUP_LOOKBACK_DAYS', '365'))
+             pacing = float(os.getenv('RESULTS_PDF_CATCHUP_PACING_SECONDS',
+                                      os.getenv('RESULTS_PDF_PACING_SECONDS', '3')))
+         else:
+@@ -1376,12 +1381,20 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
+             candidates_limit = int(os.getenv('RESULTS_PDF_CANDIDATES_LIMIT', '2000'))
+             lookback_days = int(os.getenv('RESULTS_PDF_LOOKBACK_DAYS', '90'))
+             pacing = float(os.getenv('RESULTS_PDF_PACING_SECONDS', '5'))
+-        if not _key_status_logged or catchup:
++        # Log "active" once at start, and again only when catchup mode
++        # flips or after a long idle — not every 20s empty cycle.
++        if not _key_status_logged:
+             log.info(f"🎙️ Results extraction loop: active "
+                       f"(catchup={catchup}, lookback={lookback_days}d, batch={BATCH_SIZE}, "
+                       f"candidates_limit={candidates_limit}, pacing={pacing}s, "
+                       f"gemini_concurrent={os.getenv('GEMINI_MAX_CONCURRENT', '1')})")
+             _key_status_logged = True
++            _concall_summary_loop._last_catchup = catchup
++        elif catchup != getattr(_concall_summary_loop, '_last_catchup', catchup):
++            log.info(f"🎙️ Results extraction loop: mode change "
++                      f"(catchup={catchup}, lookback={lookback_days}d, batch={BATCH_SIZE}, "
++                      f"candidates_limit={candidates_limit}, pacing={pacing}s)")
++            _concall_summary_loop._last_catchup = catchup
+         try:
+             since = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).isoformat()
+             # DB-level pre-filter on subject/category keywords - confirmed
+@@ -1438,9 +1451,16 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
+                       f"(catchup={catchup}, missing_fr≈{missing_n}, "
+                       f"candidates={len(candidates)}, matched={len(concall_rows)}, "
+                       f"pending={len(pending)}, already={len(already)})")
++            _concall_summary_loop._idle_streak = 0
+         else:
+-            log.info(f"🎙️ Results extraction loop: checked {len(candidates)} announcement(s) "
+-                      f"({len(concall_rows)} matched, already={len(already)}), nothing new")
++            idle_streak = getattr(_concall_summary_loop, '_idle_streak', 0) + 1
++            _concall_summary_loop._idle_streak = idle_streak
++            # First empty cycle (and rare heartbeats) only — avoid the
++            # 2026-08-08 log flood of "nothing new" every ~20s.
++            if idle_streak == 1 or idle_streak % 30 == 0:
++                log.info(f"🎙️ Results extraction loop: checked {len(candidates)} announcement(s) "
++                          f"({len(concall_rows)} matched, already={len(already)}), nothing new"
++                          f"{f' (idle#{idle_streak})' if idle_streak > 1 else ''}")
+         soft_backoff = False
+         for i, row in enumerate(todo):
+             if i > 0:
+@@ -1545,6 +1565,18 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
+             yoy = raw_yoy if yoy_consistent else await _sanity_check_sales_outlier(
+                 session, raw_yoy, row['symbol'], row['attachment_url'])
+ 
++            # Deduplicate: some Standalone-only PDFs expose only current +
++            # YoY columns. Gemini sometimes labels the YoY column as both
++            # comparison and YoY (GREENPANEL 2026-08-08: both came back as
++            # 30-Jun-2025). Saving the same period twice wastes a row and
++            # corrupts QoQ% — keep it as YoY only.
++            if (comp and yoy and comp.get('period_ended') and yoy.get('period_ended')
++                    and str(comp['period_ended']).strip().lower()
++                    == str(yoy['period_ended']).strip().lower()):
++                log.info(f"  ℹ️ {row['symbol']}: comparison period equals YoY "
++                          f"({comp['period_ended']}) — keeping YoY only")
++                comp = None
++
+             # All three periods saved together in ONE batch, not three
+             # separate calls, specifically so compute_results_yoy_qoq
+             # (called inside save_financial_results_to_db) can see all
+@@ -1634,9 +1666,21 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
+         if todo:
+             log.info(f"🎙️ Results extraction loop: batch complete"
+                       f"{' (catchup)' if catchup else ''}")
+-        # Catchup: keep churning; steady-state: polite idle.
++        # Catchup: keep churning while there's work; when the queue is
++        # empty, sleep a long time (About-company pattern) instead of
++        # re-scanning every 20s and flooding logs. Steady-state stays
++        # polite either way.
+         if catchup:
+-            await asyncio.sleep(5 if todo else 20)
++            if todo:
++                await asyncio.sleep(5)
++            else:
++                idle = int(os.getenv('RESULTS_PDF_CATCHUP_DONE_SECONDS', '1800'))  # 30m
++                streak = getattr(_concall_summary_loop, '_idle_streak', 1)
++                if streak == 1:
++                    log.info(f"🎙️ Results extraction loop: catchup idle "
++                              f"(lookback={lookback_days}d, matched={len(concall_rows)}, "
++                              f"already={len(already)}) — sleeping {idle}s until next check")
++                await asyncio.sleep(max(60, idle))
+         else:
+             await asyncio.sleep(120 if todo else 300)
+ 
+-- 
+2.43.0
+
