@@ -5245,9 +5245,9 @@ const HELP_CONTENT = [
     against the whole market. Filter by index, sector, RS trend, or signal chips. Tap a row for its chart and full 
     signal breakdown.`},
   {id:'market', title:'Market', body:`Market-wide health, split into sub-pages (chips under the header):
-    • One chip at a time: Overview, Indices, Sectors, Industries, Breadth, Gaps, Smart Money.
-    • Overview — Verdict + today's breadth stats. Indices / Sectors / Industries — each its own table.
-    • Breadth — A/D chart + EMA breadth. Gaps — ≥2% open gaps. Smart Money — FII/DII + PP/IBV by sector.`},
+    • One chip at a time: Overview, Indices, Sectors, Industries, Gaps, Smart Money.
+    • Overview — Verdict, today's breadth stats, plus A/D and EMA breadth history charts.
+    • Indices / Sectors / Industries — each its own table. Gaps — ≥2% open gaps. Smart Money — FII/DII + PP/IBV by sector.`},
   {id:'rotation', title:'Sector Rotation', body:`A StockCharts-style Relative Rotation Graph (RRG):
     • X-axis = JdK RS-Ratio (trend of relative strength vs the market), Y-axis = JdK RS-Momentum (rate of change of that trend). Both centered at 100.
     • Leading (top-right, +/+) — strong and still improving. Weakening (bottom-right, +/-) — still strong but momentum fading.
@@ -7240,6 +7240,7 @@ export default function App(){
   const [mainTab,setMainTab]=useState('rs')
   useEffect(()=>{
     if(mainTab!=='market') return
+    if(marketSubTab==='breadth') setMarketSubTab('overview')
     try{ window.scrollTo({top:0,behavior:'smooth'}) }catch(_){}
   },[marketSubTab, mainTab])
   const [presetFilter,setPresetFilter]=useState('all')
@@ -8533,7 +8534,7 @@ export default function App(){
               <div style={{fontWeight:600,fontSize:14,color:C.text,lineHeight:1}}>
                 {mainTab==='rs'?'RS Rating':mainTab==='market'?(
                    {overview:'Market · Overview',indices:'Market · Indices',sectors:'Market · Sectors',
-                    industries:'Market · Industries',breadth:'Market · Breadth',
+                    industries:'Market · Industries',
                     gaps:'Market · Gaps',smartmoney:'Market · Smart Money'}[marketSubTab]||'Market'
                  ):
                  mainTab==='squeeze'?'Squeeze & VCP':
@@ -9229,7 +9230,6 @@ export default function App(){
                   {id:'indices',    label:'Indices'},
                   {id:'sectors',    label:'Sectors'},
                   {id:'industries', label:'Industries'},
-                  {id:'breadth',    label:'Breadth'},
                   {id:'gaps',       label:'Gaps'},
                   {id:'smartmoney', label:'Smart Money'},
                 ].map(({id,label})=>(
@@ -9435,6 +9435,25 @@ export default function App(){
                       <Stat key={s.label} label={s.label} value={s.value} total={tot} color={s.color}/>
                     ))}
                   </div>
+
+                  {(()=>{
+                    const days = {'1M':21,'3M':63,'6M':126,'1Y':252,'2Y':504}[breadthRange]
+                    const breadthSlice = breadthHistory.slice(-days)
+                    const emaSlice = emaBreadthHistory.slice(-days)
+                    if(!breadthSlice.length && !emaSlice.length){
+                      return (
+                        <div style={{textAlign:'center',padding:'24px 0',color:C.muted,fontSize:12}}>
+                          Breadth history loading…
+                        </div>
+                      )
+                    }
+                    return <>
+                      <BreadthChart data={breadthSlice} isMobile={isMobile}
+                        breadthRange={breadthRange} setBreadthRange={setBreadthRange}/>
+                      <EmaBreadthTable data={emaSlice} isMobile={isMobile} dragProps={emaBreadthTableDrag}
+                        rangeLabel={{'1M':'Last Month','3M':'Last 3 Months','6M':'Last 6 Months','1Y':'Last Year','2Y':'Last 2 Years'}[breadthRange]}/>
+                    </>
+                  })()}
 
                 </>
               )
@@ -10021,36 +10040,6 @@ export default function App(){
                 </div>
               </>
             )}
-          </div>
-        )}
-
-        {/* ══ BREADTH HISTORY (Market → Breadth History) ══ */}
-        {mainTab==='market'&&marketSubTab==='breadth'&&(
-          <div style={{padding:'0 0 20px'}}>
-            <div style={{marginBottom:12}}>
-              <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>📈 Breadth History</div>
-              <div style={{fontSize:11,color:C.muted}}>
-                Advances vs declines and % of stocks above key EMAs over time
-              </div>
-            </div>
-            {(()=>{
-              const days = {'1M':21,'3M':63,'6M':126,'1Y':252,'2Y':504}[breadthRange]
-              const breadthSlice = breadthHistory.slice(-days)
-              const emaSlice = emaBreadthHistory.slice(-days)
-              if(!breadthSlice.length && !emaSlice.length){
-                return (
-                  <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
-                    Breadth history loading…
-                  </div>
-                )
-              }
-              return <>
-                <BreadthChart data={breadthSlice} isMobile={isMobile}
-                  breadthRange={breadthRange} setBreadthRange={setBreadthRange}/>
-                <EmaBreadthTable data={emaSlice} isMobile={isMobile} dragProps={emaBreadthTableDrag}
-                  rangeLabel={{'1M':'Last Month','3M':'Last 3 Months','6M':'Last 6 Months','1Y':'Last Year','2Y':'Last 2 Years'}[breadthRange]}/>
-              </>
-            })()}
           </div>
         )}
 
