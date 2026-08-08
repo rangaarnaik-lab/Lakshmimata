@@ -3316,7 +3316,7 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
     return null
   }
   return (
-    <div style={{flexShrink:0,maxHeight:compact?(isMobile?'24vh':'20vh'):(isMobile?'42vh':'38vh'),
+    <div style={{flexShrink:0,maxHeight:compact?(isMobile?'18vh':'14vh'):(isMobile?'32vh':'26vh'),
       overflowY:'auto',padding:'8px 14px 14px',borderTop:`1px solid ${C.divider}`,background:C.bg}}>
       <div style={{display:'flex',justifyContent:'flex-end',marginBottom:customizeOpen?8:4}}>
         <button type="button" onClick={()=>setCustomizeOpen(v=>!v)}
@@ -3393,7 +3393,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
         display:'flex',flexDirection:'column',background:C.sidebar,
         borderLeft:`1px solid ${C.divider}`,transition:customPct!=null?'none':'flex 0.2s ease'}
 
-  const chartExpanded=wide>=1||(customPct!=null&&customPct>=50)
+  const chartExpanded=wide>=1||(customPct!=null&&customPct>=45)
 
   return(
     <div style={panelStyle}>
@@ -3501,7 +3501,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
             />
           </>
         ):(
-          <CandlestickChart sym={sym} isMobile={isMobile} isIndex={isIndex}/>
+          <CandlestickChart sym={sym} isMobile={isMobile} isIndex={isIndex} chartExpanded={chartExpanded}/>
         )}
       </div>
       {!isIndex&&(
@@ -4603,7 +4603,7 @@ function ThemesRadarPanel({onOpenSymbol}){
 // seeing our own scanner's signals drawn directly on the chart.
 const RANGE_BARS = {'1D':1,'1M':21,'3M':63,'6M':126,'YTD':null,'1Y':252,'5Y':1260,'All':100000}
 
-function CandlestickChart({sym, isMobile, isIndex}){
+function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [range, setRange] = useState('1Y')
@@ -4769,8 +4769,12 @@ function CandlestickChart({sym, isMobile, isIndex}){
 
   // ── Layout constants needed by both the zoom/pan handlers below and
   // the SVG render further down ──
-  const W = 900, H = 520
-  const padL = 8, padR = 54, padT = 10, priceH = 300, volH = 115, gapH = 6
+  // Volume pane ~40% of candle+volume area (TradingView-like). Taller when chart is maximized.
+  const W = 900
+  const padL = 8, padR = 54, padT = 10, gapH = 8
+  const priceH = chartExpanded ? 220 : 250
+  const volH = chartExpanded ? 240 : 210
+  const H = padT + priceH + gapH + volH + 22
   const chartW = W - padL - padR
 
   // barsToShow/start now driven by zoomBars/panOffset (mouse wheel /
@@ -5026,7 +5030,7 @@ function CandlestickChart({sym, isMobile, isIndex}){
         ) : `${sym} · ${barsToShow} days · tap a candle to pin its data`}
       </div>
 
-      <div style={{flex:1,minHeight:isMobile?280:180,position:'relative'}}>
+      <div style={{flex:1,minHeight:isMobile?300:220,position:'relative'}}>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet"
         style={{
           width:'100%',
@@ -5255,8 +5259,8 @@ function CandlestickChart({sym, isMobile, isIndex}){
       </svg>
       </div>
 
-      {/* Legend */}
-      <div style={{display:'flex',flexWrap:'wrap',gap:10,marginTop:6,fontSize:9,color:C.muted,flexShrink:0}}>
+      {/* Legend — compact single row to leave more room for the chart */}
+      <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:4,fontSize:8,color:C.muted,flexShrink:0,lineHeight:1.3}}>
         <span><span style={{color:TV_VOL_UP}}>■</span> Vol up</span>
         <span><span style={{color:TV_VOL_DN}}>■</span> Vol down</span>
         <span><span style={{color:TV_VOL_MA}}>—</span> Vol MA20</span>
@@ -5278,10 +5282,13 @@ function CandlestickChart({sym, isMobile, isIndex}){
           {cup && <span><span style={{color:C.purple}}>┊</span> Cup{cup.hasHandle?' & Handle':''}</span>}
         </>}
       </div>
-      <div style={{fontSize:8,color:C.muted,marginTop:4}}>
-        Patterns are algorithmic approximations (esp. Cup & Handle) — use as a visual aid, not a precise signal.
-        {showForecast && ' Forecast is a simple straight-line trend projection from recent closes — not a real prediction.'}
+      {(showPatterns||showForecast)&&(
+      <div style={{fontSize:7,color:C.muted,marginTop:2,flexShrink:0}}>
+        {showPatterns&&'Patterns are heuristic — visual aid only.'}
+        {showPatterns&&showForecast&&' '}
+        {showForecast&&'Forecast is a simple trend line — not a prediction.'}
       </div>
+      )}
     </div>
   )
 }
