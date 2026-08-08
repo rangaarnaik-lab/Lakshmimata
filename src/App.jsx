@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -3290,20 +3290,13 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab}){
   )
 }
 
-function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks}){
+function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange}){
   const [loaded, setLoaded] = useState(false)
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
   const [showSectionLayout, setShowSectionLayout] = useState(false)
-  const [sectionOrder, setSectionOrder] = useState(()=>{
-    try{
-      const saved=JSON.parse(localStorage.getItem('lakshmimata-chart-sections')||'null')
-      return normalizeChartSectionOrder(saved)
-    }catch(e){ return [...CHART_SECTION_ORDER_DEFAULT] }
-  })
+  const sectionOrder=normalizeChartSectionOrder(chartSectionOrder)
   const persistSectionOrder=(order)=>{
-    const next=normalizeChartSectionOrder(order)
-    setSectionOrder(next)
-    try{ localStorage.setItem('lakshmimata-chart-sections', JSON.stringify(next)) }catch(e){}
+    onChartSectionOrderChange?.(normalizeChartSectionOrder(order))
   }
   // Peer ranking pills open Results; other navigations reset to About.
   const [detailTab, setDetailTab] = useState('about')
@@ -5415,6 +5408,33 @@ function normalizeChartSectionOrder(order){
     if(!base.includes(k)) base.push(k)
   }
   return base
+}
+
+function loadLocalLayoutSlots(){
+  try{
+    const raw=JSON.parse(localStorage.getItem('lakshmimata-layout-slots')||'null')
+    const slots=[null,null,null]
+    if(Array.isArray(raw)){
+      for(const item of raw){
+        if(item&&item.slot>=1&&item.slot<=MAX_USER_LAYOUTS) slots[item.slot-1]=item
+      }
+    }
+    return slots
+  }catch(e){ return [null,null,null] }
+}
+
+function persistLocalLayoutSlots(slots){
+  try{
+    localStorage.setItem('lakshmimata-layout-slots', JSON.stringify(slots.filter(Boolean)))
+  }catch(e){}
+}
+
+function layoutSlotsFromRows(rows){
+  const slots=[null,null,null]
+  for(const row of rows||[]){
+    if(row?.slot>=1&&row.slot<=MAX_USER_LAYOUTS) slots[row.slot-1]=row
+  }
+  return slots
 }
 
 
@@ -8973,8 +8993,38 @@ export default function App(){
   const persistRsColOrder=(order)=>{
     const next=normalizeRsColOrder(order)
     setRsColOrder(next)
+    setActiveLayoutSlot(null)
     try{ localStorage.setItem('lakshmimata-rs-col-order', JSON.stringify(next)) }catch(e){}
   }
+  const [chartSectionOrder,setChartSectionOrder]=useState(()=>{
+    try{
+      const saved=JSON.parse(localStorage.getItem('lakshmimata-chart-sections')||'null')
+      return normalizeChartSectionOrder(saved)
+    }catch(e){ return [...CHART_SECTION_ORDER_DEFAULT] }
+  })
+  const persistChartSections=(order)=>{
+    const next=normalizeChartSectionOrder(order)
+    setChartSectionOrder(next)
+    setActiveLayoutSlot(null)
+    try{ localStorage.setItem('lakshmimata-chart-sections', JSON.stringify(next)) }catch(e){}
+  }
+  const [layoutSlots,setLayoutSlots]=useState(()=>loadLocalLayoutSlots())
+  const [activeLayoutSlot,setActiveLayoutSlot]=useState(null)
+  const [layoutNameInput,setLayoutNameInput]=useState('')
+  const [layoutMsg,setLayoutMsg]=useState('')
+  useEffect(()=>{
+    let cancelled=false
+    if(session?.user?.id){
+      fetchUserLayouts(session.user.id).then(rows=>{
+        if(cancelled) return
+        setLayoutSlots(layoutSlotsFromRows(rows))
+      })
+    }else{
+      setLayoutSlots(loadLocalLayoutSlots())
+      setActiveLayoutSlot(null)
+    }
+    return()=>{ cancelled=true }
+  },[session?.user?.id])
   const [visibleRsCols,setVisibleRsCols]=useState(()=>{
     const RS_COL_PREFS_VER=2
     const fundOff={mcap:false,pe:false,roe:false,de:false,prom:false}
@@ -8994,19 +9044,73 @@ export default function App(){
   const toggleRsCol=(key)=>{
     setVisibleRsCols(prev=>{
       const next={...prev,[key]:!prev[key]}
+      setActiveLayoutSlot(null)
       try{localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(next))}catch(e){}
       return next
     })
+  }
+  const applyLayout=(layout)=>{
+    if(!layout) return
+    const fundOff={mcap:false,pe:false,roe:false,de:false,prom:false}
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,...fundOff,fundRating:true,squeeze:false,wl52:false,weakrs:false}
+    const cols=layout.columns&&typeof layout.columns==='object'?{...defaults,...layout.columns}:defaults
+    const order=normalizeRsColOrder(layout.col_order||layout.colOrder)
+    const sections=normalizeChartSectionOrder(layout.chart_sections||layout.chartSections)
+    setVisibleRsCols(cols)
+    setRsColOrder(order)
+    setChartSectionOrder(sections)
+    setActiveLayoutSlot(layout.slot??null)
+    try{
+      localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(cols))
+      localStorage.setItem('lakshmimata-rs-col-order',JSON.stringify(order))
+      localStorage.setItem('lakshmimata-chart-sections',JSON.stringify(sections))
+    }catch(e){}
+  }
+  const handleSaveLayoutSlot=async(slot)=>{
+    const s=Number(slot)
+    const name=(layoutNameInput.trim()||`Layout ${s}`).slice(0,40)
+    const payload={slot:s,name,columns:visibleRsCols,colOrder:rsColOrder,chartSections:chartSectionOrder}
+    if(session?.user?.id){
+      const res=await saveUserLayout(session.user.id,payload)
+      if(res.error){ setLayoutMsg(res.error); return }
+      const next=[...layoutSlots]; next[s-1]=res.data
+      setLayoutSlots(next)
+      setActiveLayoutSlot(s)
+      setLayoutMsg(`Saved “${name}” to slot ${s}.`)
+    }else{
+      const item={...payload,columns:visibleRsCols,col_order:rsColOrder,chart_sections:chartSectionOrder}
+      const next=[...layoutSlots]; next[s-1]=item
+      setLayoutSlots(next)
+      persistLocalLayoutSlots(next)
+      setActiveLayoutSlot(s)
+      setLayoutMsg(`Saved “${name}” on this device (slot ${s}). Sign in to sync across devices.`)
+    }
+    setLayoutNameInput('')
+  }
+  const handleDeleteLayoutSlot=async(slot)=>{
+    const s=Number(slot)
+    if(session?.user?.id){
+      const res=await deleteUserLayout(session.user.id,s)
+      if(res.error){ setLayoutMsg(res.error); return }
+    }
+    const next=[...layoutSlots]; next[s-1]=null
+    setLayoutSlots(next)
+    if(!session?.user?.id) persistLocalLayoutSlots(next)
+    if(activeLayoutSlot===s) setActiveLayoutSlot(null)
+    setLayoutMsg(`Cleared slot ${s}.`)
   }
   const resetRsCols=()=>{
     const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true,squeeze:false,wl52:false,weakrs:false}
     const order=[...RS_OPTIONAL_COL_ORDER_DEFAULT]
     setVisibleRsCols(defaults)
     setRsColOrder(order)
+    setChartSectionOrder([...CHART_SECTION_ORDER_DEFAULT])
+    setActiveLayoutSlot(null)
     try{
       localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(defaults))
       localStorage.setItem('lakshmimata-rs-col-ver','2')
       localStorage.setItem('lakshmimata-rs-col-order',JSON.stringify(order))
+      localStorage.setItem('lakshmimata-chart-sections',JSON.stringify(CHART_SECTION_ORDER_DEFAULT))
     }catch(e){}
   }
   const [wlSearch,setWlSearch]=useState(''),[wlSigOnly,setWlSigOnly]=useState(false)
@@ -10018,8 +10122,70 @@ export default function App(){
                         </div>
                       )}
                     />
-                    <div style={{fontSize:10,color:C.muted,marginTop:10}}>
+                    <div style={{fontSize:10,color:C.muted,marginTop:10,marginBottom:14}}>
                       Column visibility and order are saved automatically for your next visit.
+                    </div>
+                    <div style={{borderTop:`1px solid ${C.divider}`,paddingTop:14}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                        <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em'}}>
+                          Saved layouts (max {MAX_USER_LAYOUTS})
+                        </div>
+                        {!session?.user?.id&&(
+                          <span style={{fontSize:10,color:C.muted}}>Sign in to sync across devices</span>
+                        )}
+                      </div>
+                      <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+                        Save column visibility, column order, and chart section order. Each user can keep up to {MAX_USER_LAYOUTS} named presets.
+                      </div>
+                      <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
+                        <input type="text" placeholder="Layout name (optional)…" value={layoutNameInput}
+                          onChange={e=>setLayoutNameInput(e.target.value)}
+                          maxLength={40}
+                          style={{flex:'1 1 160px',minWidth:140,padding:'6px 10px',borderRadius:6,
+                            border:`1px solid ${C.border}`,background:C.bg,color:C.text,fontSize:12}}/>
+                      </div>
+                      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:8}}>
+                        {Array.from({length:MAX_USER_LAYOUTS},(_,i)=>i+1).map(slot=>{
+                          const saved=layoutSlots[slot-1]
+                          const isActive=activeLayoutSlot===slot
+                          return(
+                            <div key={slot} style={{padding:10,borderRadius:8,
+                              border:`1px solid ${isActive?C.accent:C.border}`,
+                              background:isActive?C.accent+'12':C.bg}}>
+                              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                                <span style={{fontSize:11,fontWeight:700,color:C.muted}}>Slot {slot}</span>
+                                {isActive&&<span style={{fontSize:10,fontWeight:700,color:C.accent}}>Active</span>}
+                              </div>
+                              <div style={{fontSize:12,fontWeight:600,color:C.text,marginBottom:8,minHeight:18}}>
+                                {saved?.name||<span style={{color:C.muted,fontWeight:500}}>Empty</span>}
+                              </div>
+                              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                                <button onClick={()=>saved&&applyLayout(saved)} disabled={!saved}
+                                  style={{padding:'5px 10px',borderRadius:6,border:`1px solid ${saved?C.accent:C.border}`,
+                                    background:saved?C.accent+'18':'transparent',color:saved?C.accent:C.muted,
+                                    fontSize:11,fontWeight:700,cursor:saved?'pointer':'default',opacity:saved?1:0.5}}>
+                                  Load
+                                </button>
+                                <button onClick={()=>handleSaveLayoutSlot(slot)}
+                                  style={{padding:'5px 10px',borderRadius:6,border:'none',background:C.accent,
+                                    color:'#0a0a0f',fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                                  {saved?'Overwrite':'Save'}
+                                </button>
+                                {saved&&(
+                                  <button onClick={()=>handleDeleteLayoutSlot(slot)}
+                                    style={{padding:'5px 10px',borderRadius:6,border:`1px solid ${C.border}`,
+                                      background:'transparent',color:C.muted,fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                                    Clear
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {layoutMsg&&(
+                        <div style={{fontSize:11,color:C.accent,marginTop:10}}>{layoutMsg}</div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -13375,6 +13541,8 @@ export default function App(){
         symList={displayedRS.map(s=>s.sym)}
         onNavigate={setChartSym}
         stocks={stocks}
+        chartSectionOrder={chartSectionOrder}
+        onChartSectionOrderChange={persistChartSections}
       />
       </div>
 

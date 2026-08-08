@@ -610,6 +610,67 @@ export async function deleteScanner(scannerId) {
   return { success: true }
 }
 
+export const MAX_USER_LAYOUTS = 3
+
+/** Fetch saved UI layouts for a user (max 3 slots). */
+export async function fetchUserLayouts(userId) {
+  if (!userId) return []
+  const { data, error } = await supabase
+    .from('user_layouts')
+    .select('id,user_id,slot,name,columns,col_order,chart_sections,updated_at')
+    .eq('user_id', userId)
+    .order('slot', { ascending: true })
+  if (error) {
+    console.error('fetchUserLayouts error:', error.message)
+    return []
+  }
+  return data || []
+}
+
+/** Save or overwrite one layout slot (1–3). */
+export async function saveUserLayout(userId, { slot, name, columns, colOrder, chartSections }) {
+  if (!userId) return { error: 'Sign in to save layouts.' }
+  const s = Number(slot)
+  if (!Number.isInteger(s) || s < 1 || s > MAX_USER_LAYOUTS) {
+    return { error: `Choose slot 1–${MAX_USER_LAYOUTS}.` }
+  }
+  const label = (name || '').trim().slice(0, 40) || `Layout ${s}`
+  const payload = {
+    user_id: userId,
+    slot: s,
+    name: label,
+    columns: columns || {},
+    col_order: colOrder || [],
+    chart_sections: chartSections || [],
+    updated_at: new Date().toISOString(),
+  }
+  const { data, error } = await supabase
+    .from('user_layouts')
+    .upsert(payload, { onConflict: 'user_id,slot' })
+    .select('id,user_id,slot,name,columns,col_order,chart_sections,updated_at')
+    .single()
+  if (error) {
+    console.error('saveUserLayout error:', error.message)
+    return { error: error.message || 'Could not save layout' }
+  }
+  return { data }
+}
+
+export async function deleteUserLayout(userId, slot) {
+  if (!userId) return { error: 'Sign in to delete layouts.' }
+  const s = Number(slot)
+  if (!Number.isInteger(s) || s < 1 || s > MAX_USER_LAYOUTS) {
+    return { error: 'Invalid layout slot.' }
+  }
+  const { error } = await supabase
+    .from('user_layouts')
+    .delete()
+    .eq('user_id', userId)
+    .eq('slot', s)
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
 export async function fetchStockFullHistory(sym) {
   const cleanSym = (sym || '').trim()
   // Confirmed via direct Supabase inspection: rows exist with real data
