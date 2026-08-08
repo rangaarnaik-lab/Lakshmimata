@@ -1189,6 +1189,69 @@ export async function clearContentFeedback({ symbol, contentType, sectionKey } =
   return { ok: true }
 }
 
+/** Public testimonials for the landing page (is_public = true). */
+export async function fetchPublicUserFeedback(limit = 12) {
+  const { data, error } = await supabase
+    .from('user_feedback')
+    .select('id,display_name,message,rating,created_at')
+    .eq('is_public', true)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) {
+    console.error('fetchPublicUserFeedback error:', error.message)
+    return []
+  }
+  return data || []
+}
+
+/** Signed-in user's past feedback submissions. */
+export async function fetchMyUserFeedback(limit = 20) {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return []
+  const { data, error } = await supabase
+    .from('user_feedback')
+    .select('id,message,rating,is_public,created_at')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) {
+    console.error('fetchMyUserFeedback error:', error.message)
+    return []
+  }
+  return data || []
+}
+
+/** Submit app feedback (requires sign-in). */
+export async function submitUserFeedback({ message, rating, isPublic = true, displayName } = {}) {
+  const text = (message || '').trim()
+  if (text.length < 5 || text.length > 1000) {
+    return { error: 'Please write at least 5 characters (max 1000).' }
+  }
+  const r = rating == null || rating === '' ? null : Number(rating)
+  if (r != null && (!Number.isInteger(r) || r < 1 || r > 5)) {
+    return { error: 'Rating must be between 1 and 5 stars.' }
+  }
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Please sign in to submit feedback.' }
+  const name = (displayName || '').trim().slice(0, 40) || 'Trader'
+  const { data, error } = await supabase
+    .from('user_feedback')
+    .insert({
+      user_id: user.id,
+      display_name: name,
+      message: text,
+      rating: r,
+      is_public: !!isPublic,
+    })
+    .select('id,display_name,message,rating,is_public,created_at')
+    .single()
+  if (error) {
+    console.error('submitUserFeedback error:', error.message)
+    return { error: error.message || 'Could not save feedback' }
+  }
+  return { feedback: data }
+}
+
 export async function submitStockAiAsk(symbol, question, askMode = 'filings') {
   // Queue a free-form diligence question; fundamentals worker answers via Gemini.
   // askMode: 'filings' (PPT/concall on file only) | 'web' (Google Search + filings)
