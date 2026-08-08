@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo, useContext } from 'react'
 import {
   TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap, ArrowUpRight,
   TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal, Layers,
@@ -3293,6 +3293,18 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab}){
 function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks}){
   const [loaded, setLoaded] = useState(false)
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
+  const [showSectionLayout, setShowSectionLayout] = useState(false)
+  const [sectionOrder, setSectionOrder] = useState(()=>{
+    try{
+      const saved=JSON.parse(localStorage.getItem('lakshmimata-chart-sections')||'null')
+      return normalizeChartSectionOrder(saved)
+    }catch(e){ return [...CHART_SECTION_ORDER_DEFAULT] }
+  })
+  const persistSectionOrder=(order)=>{
+    const next=normalizeChartSectionOrder(order)
+    setSectionOrder(next)
+    try{ localStorage.setItem('lakshmimata-chart-sections', JSON.stringify(next)) }catch(e){}
+  }
   // Peer ranking pills open Results; other navigations reset to About.
   const [detailTab, setDetailTab] = useState('about')
   const openResultsOnNavRef = useRef(false)
@@ -3450,22 +3462,55 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
       {!isIndex&&(
         <div style={{flexShrink:0,maxHeight:isMobile?'42vh':'46vh',overflowY:'auto',
           padding:'8px 14px 14px',borderTop:`1px solid ${C.divider}`}}>
-          {(()=>{
-            const mcapStock = stocks?.find(s=>s.sym===sym)
-            if(mcapStock?.marketCap==null) return null
-            return (
-              <div style={{marginBottom:8,fontSize:12,fontWeight:700,color:C.text}}>
-                Market Cap: <span style={{color:C.muted,fontWeight:600}}>
-                  {mcapStock.marketCap>=100000?`₹${(mcapStock.marketCap/100000).toFixed(1)}L Cr`:`₹${mcapStock.marketCap.toFixed(0)} Cr`}
-                </span>
-              </div>
-            )
-          })()}
-          <StockThemesAfterMcap symbol={sym}/>
-          <MgmtFlagsCard symbol={sym} compact/>
-          <StockDetailTabs sym={sym} stocks={stocks}
-            tab={detailTab} setTab={setDetailTab}
-            onSelectSymbol={(s)=>navigateTo(s,{openResults:true})}/>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,gap:8}}>
+            <span style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>
+              Below chart
+            </span>
+            <button type="button" onClick={()=>setShowSectionLayout(v=>!v)}
+              style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${showSectionLayout?C.accent:C.border}`,
+                background:showSectionLayout?C.accent+'18':'transparent',color:showSectionLayout?C.accent:C.muted,
+                fontSize:10,fontWeight:700,cursor:'pointer'}}>
+              {showSectionLayout?'Done':'Reorder sections'}
+            </button>
+          </div>
+          {showSectionLayout&&(
+            <div style={{marginBottom:12,padding:'10px 12px',borderRadius:10,
+              border:`1px solid ${C.border}`,background:C.bg}}>
+              <ReorderableList
+                items={sectionOrder}
+                onReorder={persistSectionOrder}
+                hint="Drag to change the order of Market Cap, Themes, Mgmt flags, and About/Results tabs."
+                renderItem={(key)=>(
+                  <span style={{fontSize:12,fontWeight:700,color:C.text}}>{CHART_SECTION_LABELS[key]||key}</span>
+                )}
+              />
+            </div>
+          )}
+          {sectionOrder.map(sectionId=>{
+            if(sectionId==='mcap'){
+              const mcapStock=stocks?.find(s=>s.sym===sym)
+              if(mcapStock?.marketCap==null) return null
+              return (
+                <div key={sectionId} style={{marginBottom:8,fontSize:12,fontWeight:700,color:C.text}}>
+                  Market Cap: <span style={{color:C.muted,fontWeight:600}}>
+                    {mcapStock.marketCap>=100000?`₹${(mcapStock.marketCap/100000).toFixed(1)}L Cr`:`₹${mcapStock.marketCap.toFixed(0)} Cr`}
+                  </span>
+                </div>
+              )
+            }
+            if(sectionId==='themes') return <div key={sectionId}><StockThemesAfterMcap symbol={sym}/></div>
+            if(sectionId==='mgmt') return <div key={sectionId}><MgmtFlagsCard symbol={sym} compact/></div>
+            if(sectionId==='details'){
+              return (
+                <div key={sectionId}>
+                  <StockDetailTabs sym={sym} stocks={stocks}
+                    tab={detailTab} setTab={setDetailTab}
+                    onSelectSymbol={(s)=>navigateTo(s,{openResults:true})}/>
+                </div>
+              )
+            }
+            return null
+          })}
         </div>
       )}
       {!isIndex&&<AskAiAgent symbol={sym} isMobile={isMobile}/>}
@@ -5211,22 +5256,167 @@ function SortableHeader({label,sortKey,sortBy,sortDir,onSort,align='left',legend
   )
 }
 
+// ── RS table layout (column order + visibility) ───────────────────────
+const RsLayoutContext = React.createContext({
+  colOrder: ['trend','signals','stage','squeeze','wl52','weakrs','mcap','pe','roe','de','prom','fundRating'],
+  visibleRsCols: {},
+})
+
+const RS_OPTIONAL_COL_ORDER_DEFAULT = ['trend','signals','stage','squeeze','wl52','weakrs','mcap','pe','roe','de','prom','fundRating']
+
+const RS_COL_WIDTH = {
+  trend:'52px', signals:'182px', stage:'140px', squeeze:'170px', wl52:'160px', weakrs:'150px',
+  mcap:'55px', pe:'55px', roe:'48px', de:'48px', prom:'48px', fundRating:'58px',
+}
+
+const RS_COL_LABELS = {
+  trend:'Trend', signals:'10 D Vol / RS 7d', stage:'Stage/Vol', squeeze:'Squeeze/VCP',
+  wl52:'52WL Signal', weakrs:'Weak RS', mcap:'MCap', pe:'P/E', roe:'ROE', de:'D/E',
+  prom:'Prom%', fundRating:'Rating',
+}
+
+function normalizeRsColOrder(order){
+  const base=Array.isArray(order)?order.filter(k=>RS_OPTIONAL_COL_ORDER_DEFAULT.includes(k)):[]
+  for(const k of RS_OPTIONAL_COL_ORDER_DEFAULT){
+    if(!base.includes(k)) base.push(k)
+  }
+  return base
+}
+
+function isRsOptionalColVisible(key, vis){
+  if(key==='signals') return !!(vis.pp10||vis.rs7d)
+  return !!vis[key]
+}
+
+function activeRsOptionalCols(vis, colOrder){
+  return normalizeRsColOrder(colOrder).filter(k=>isRsOptionalColVisible(k, vis||{}))
+}
+
 // Shared between the RS table's header row and DesktopRow so both always
 // compute the exact same grid-column layout from the same visibility
 // state — if they ever drifted out of sync, headers and cells would
-// misalign. Core columns: #, Symbol, RS, Price. Optional via vis.X.
-function computeRsGridCols(vis){
-  const rsCount = 1 + (vis.mid?1:0) + (vis.sml?1:0) + (vis.sec?1:0) // Nifty always shown, others toggleable
-  const cols=[
-    ['32px',true],['130px',true],[`${rsCount*40}px`,true],['52px',vis.trend],
-    ['64px',true],
-    ['182px',vis.pp10||vis.rs7d],['140px',vis.stage],['170px',vis.squeeze],
-    ['160px',vis.wl52],['150px',vis.weakrs],
-    ['55px',vis.mcap],['55px',vis.pe],['48px',vis.roe],['48px',vis.de],['48px',vis.prom],
-    ['58px',vis.fundRating],
-  ]
-  return cols.filter(([,show])=>show).map(([w])=>w).join(' ')
+// misalign. Core columns: #, Symbol, RS, Price (fixed). Optional cols
+// follow in the user's saved order.
+function computeRsGridCols(vis, colOrder=RS_OPTIONAL_COL_ORDER_DEFAULT){
+  const rsCount=1+(vis.mid?1:0)+(vis.sml?1:0)+(vis.sec?1:0)
+  const cols=['32px','130px',`${rsCount*40}px`,'64px']
+  for(const key of activeRsOptionalCols(vis, colOrder)){
+    cols.push(RS_COL_WIDTH[key]||'50px')
+  }
+  return cols.join(' ')
 }
+
+function RsOptionalColHeader({colKey, sortBy, sortDir, handleSort, vis}){
+  if(!isRsOptionalColVisible(colKey, vis)) return null
+  if(colKey==='trend'){
+    return <SortableHeader label="Trend" sortKey="slope" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>
+  }
+  if(colKey==='signals'){
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'center'}}>
+        {vis.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"
+          legend={[{label:'HT',color:C.orange},{label:'HY',color:C.pink},{label:'IBV',color:C.blue},{label:'PP',color:C.green}]}/>}
+        {vis.rs7d&&<span style={{color:C.muted,fontSize:9}}>RS Last 7d</span>}
+      </div>
+    )
+  }
+  if(colKey==='stage'){
+    return <span title="Stage: Weinstein trend stage (S1 Base/S2 Up/S3 Top/S4 Down). Vol: today's volume as % of its recent peak day, not a price." style={{textAlign:'center',color:C.muted,cursor:'help'}}>Stage/Vol</span>
+  }
+  if(colKey==='squeeze') return <span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>
+  if(colKey==='wl52') return <span style={{textAlign:'center',color:C.muted}}>52WL Signal</span>
+  if(colKey==='weakrs') return <span style={{textAlign:'center',color:C.muted}}>Weak RS</span>
+  if(colKey==='mcap'){
+    return <SortableHeader label="MCap" sortKey="marketCap" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>
+  }
+  if(colKey==='pe') return <span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>
+  if(colKey==='roe') return <span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>
+  if(colKey==='de') return <span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>
+  if(colKey==='prom') return <span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>
+  if(colKey==='fundRating'){
+    return <span title="Overall fundamental quality (ROE, growth, debt, margins, ownership) — not the same as Excellent/Good Result under the chart, which is only the latest quarter." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Rating</span>
+  }
+  return null
+}
+
+function RsTableHeaderRow({visibleRsCols, colOrder, sortBy, sortDir, handleSort}){
+  const vis=visibleRsCols||{}
+  const order=normalizeRsColOrder(colOrder)
+  return (
+    <>
+      <span style={{textAlign:'center',color:C.muted}}>#</span>
+      <SortableHeader label="Symbol" sortKey="sym" sortBy={sortBy} sortDir={sortDir} onSort={handleSort}/>
+      <div style={{display:'flex'}}>
+        <span onClick={()=>handleSort('rsTv')} style={{flex:1,textAlign:'center',cursor:'pointer',
+          color:sortBy==='rsTv'?C.accent:C.muted,fontSize:9}}>NIFTY{sortBy==='rsTv'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
+        {vis.mid&&<span onClick={()=>handleSort('rsMidcap')} style={{flex:1,textAlign:'center',cursor:'pointer',
+          color:sortBy==='rsMidcap'?C.accent:C.muted,fontSize:9}}>MID{sortBy==='rsMidcap'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
+        {vis.sml&&<span onClick={()=>handleSort('rsSmallcap')} style={{flex:1,textAlign:'center',cursor:'pointer',
+          color:sortBy==='rsSmallcap'?C.accent:C.muted,fontSize:9}}>SML{sortBy==='rsSmallcap'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
+        {vis.sec&&<span onClick={()=>handleSort('rsSector')} style={{flex:1,textAlign:'center',cursor:'pointer',
+          color:sortBy==='rsSector'?C.accent:C.muted,fontSize:9}}>SEC{sortBy==='rsSector'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
+      </div>
+      <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end'}}>
+        <span onClick={()=>handleSort('last')} style={{cursor:'pointer',fontSize:9,fontWeight:700,
+          color:sortBy==='last'?C.accent:C.muted}}>Price{sortBy==='last'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
+        <span onClick={()=>handleSort('chg')} style={{cursor:'pointer',fontSize:9,fontWeight:700,
+          color:sortBy==='chg'?C.accent:C.muted}}>Chg%{sortBy==='chg'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
+      </div>
+      {order.map(key=>(
+        <RsOptionalColHeader key={key} colKey={key} sortBy={sortBy} sortDir={sortDir} handleSort={handleSort} vis={vis}/>
+      ))}
+    </>
+  )
+}
+
+function ReorderableList({items, onReorder, renderItem, hint}){
+  const dragIdx=useRef(null)
+  const move=(from,to)=>{
+    if(from==null||to==null||from===to||from<0||to<0||from>=items.length||to>=items.length) return
+    const next=[...items]
+    const [item]=next.splice(from,1)
+    next.splice(to,0,item)
+    onReorder(next)
+  }
+  return (
+    <div>
+      {hint&&<div style={{fontSize:10,color:C.muted,marginBottom:8}}>{hint}</div>}
+      {items.map((item,idx)=>(
+        <div key={item}
+          draggable
+          onDragStart={()=>{ dragIdx.current=idx }}
+          onDragOver={e=>e.preventDefault()}
+          onDrop={()=>{ move(dragIdx.current, idx); dragIdx.current=null }}
+          onDragEnd={()=>{ dragIdx.current=null }}
+          style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',marginBottom:6,
+            borderRadius:8,border:`1px solid ${C.border}`,background:C.bg,cursor:'grab'}}>
+          <span style={{color:C.muted,fontSize:14,userSelect:'none'}} title="Drag to reorder">⋮⋮</span>
+          {renderItem(item, idx)}
+          <div style={{marginLeft:'auto',display:'flex',gap:4}}>
+            <button type="button" onClick={()=>move(idx, idx-1)} disabled={idx===0}
+              style={{padding:'2px 8px',borderRadius:6,border:`1px solid ${C.border}`,background:C.card,
+                color:idx===0?C.muted:C.text,cursor:idx===0?'default':'pointer',fontSize:11}}>↑</button>
+            <button type="button" onClick={()=>move(idx, idx+1)} disabled={idx===items.length-1}
+              style={{padding:'2px 8px',borderRadius:6,border:`1px solid ${C.border}`,background:C.card,
+                color:idx===items.length-1?C.muted:C.text,cursor:idx===items.length-1?'default':'pointer',fontSize:11}}>↓</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const CHART_SECTION_ORDER_DEFAULT = ['mcap','themes','mgmt','details']
+const CHART_SECTION_LABELS = {mcap:'Market Cap', themes:'Emerging Themes', mgmt:'Management Flags', details:'About / Results / Concall'}
+
+function normalizeChartSectionOrder(order){
+  const base=Array.isArray(order)?order.filter(k=>CHART_SECTION_ORDER_DEFAULT.includes(k)):[]
+  for(const k of CHART_SECTION_ORDER_DEFAULT){
+    if(!base.includes(k)) base.push(k)
+  }
+  return base
+}
+
 
 // Same sort comparator as the main RS table's rsBase useMemo — extracted so
 // every breakout-style sub-table (R1, 52WH, Weekly, Cup&Handle, Guppy) can
@@ -5269,7 +5459,9 @@ function sortStocksForTable(stocks,sortBy,sortDir){
  * stock list. Each instance has its own independent sort/page state, so
  * sorting the R1 Breakout table doesn't affect the Cup & Handle table.
  */
-function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=25,defaultSortBy='rs'}){
+function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=25,defaultSortBy='rs',rsColOrder}){
+  const layout=useContext(RsLayoutContext)
+  const colOrder=rsColOrder||layout.colOrder
   const [sortBy,setSortBy]=useState(defaultSortBy)
   const [sortDir,setSortDir]=useState('desc')
   const [page,setPage]=useState(0)
@@ -5314,45 +5506,13 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=25,de
       ):(
         <div style={{overflowX:'auto'}}>
         <div style={{minWidth:900}}>
-          <div style={{display:'grid',gridTemplateColumns:computeRsGridCols(visibleRsCols),
+          <div style={{display:'grid',gridTemplateColumns:computeRsGridCols(visibleRsCols, colOrder),
             padding:'7px 10px',borderBottom:`1px solid ${C.border}`,gap:10,
             fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
-            <span style={{textAlign:'center',color:C.muted}}>#</span>
-            <SortableHeader label="Symbol" sortKey="sym" sortBy={sortBy} sortDir={sortDir} onSort={handleSort}/>
-            <div style={{display:'flex'}}>
-              <span onClick={()=>handleSort('rsTv')} style={{flex:1,textAlign:'center',cursor:'pointer',
-                color:sortBy==='rsTv'?C.accent:C.muted,fontSize:9}}>NIFTY{sortBy==='rsTv'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
-              {visibleRsCols.mid&&<span onClick={()=>handleSort('rsMidcap')} style={{flex:1,textAlign:'center',cursor:'pointer',
-                color:sortBy==='rsMidcap'?C.accent:C.muted,fontSize:9}}>MID{sortBy==='rsMidcap'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
-              {visibleRsCols.sml&&<span onClick={()=>handleSort('rsSmallcap')} style={{flex:1,textAlign:'center',cursor:'pointer',
-                color:sortBy==='rsSmallcap'?C.accent:C.muted,fontSize:9}}>SML{sortBy==='rsSmallcap'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
-              {visibleRsCols.sec&&<span onClick={()=>handleSort('rsSector')} style={{flex:1,textAlign:'center',cursor:'pointer',
-                color:sortBy==='rsSector'?C.accent:C.muted,fontSize:9}}>SEC{sortBy==='rsSector'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
-            </div>
-            {visibleRsCols.trend&&<SortableHeader label="Trend" sortKey="slope" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
-            <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end'}}>
-              <span onClick={()=>handleSort('last')} style={{cursor:'pointer',fontSize:9,fontWeight:700,
-                color:sortBy==='last'?C.accent:C.muted}}>Price{sortBy==='last'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
-              <span onClick={()=>handleSort('chg')} style={{cursor:'pointer',fontSize:9,fontWeight:700,
-                color:sortBy==='chg'?C.accent:C.muted}}>Chg%{sortBy==='chg'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
-            </div>
-            {(visibleRsCols.pp10||visibleRsCols.rs7d)&&<div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'center'}}>
-              {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"
-                legend={[{label:'HT',color:C.orange},{label:'HY',color:C.pink},{label:'IBV',color:C.blue},{label:'PP',color:C.green}]}/>}
-              {visibleRsCols.rs7d&&<span style={{color:C.muted,fontSize:9}}>RS Last 7d</span>}
-            </div>}
-            {visibleRsCols.stage&&<span title="Stage: Weinstein trend stage (S1 Base/S2 Up/S3 Top/S4 Down). Vol: today's volume as % of its recent peak day, not a price." style={{textAlign:'center',color:C.muted,cursor:'help'}}>Stage/Vol</span>}
-                    {visibleRsCols.squeeze&&<span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>}
-                    {visibleRsCols.wl52&&<span style={{textAlign:'center',color:C.muted}}>52WL Signal</span>}
-                    {visibleRsCols.weakrs&&<span style={{textAlign:'center',color:C.muted}}>Weak RS</span>}
-            {visibleRsCols.mcap&&<SortableHeader label="MCap" sortKey="marketCap" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>}
-            {visibleRsCols.pe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>}
-            {visibleRsCols.roe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>}
-            {visibleRsCols.de&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>}
-            {visibleRsCols.prom&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>}
-            {visibleRsCols.fundRating&&<span title="Overall fundamental quality (ROE, growth, debt, margins, ownership) — not the same as Excellent/Good Result under the chart, which is only the latest quarter." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Rating</span>}
+            <RsTableHeaderRow visibleRsCols={visibleRsCols} colOrder={colOrder}
+              sortBy={sortBy} sortDir={sortDir} handleSort={handleSort}/>
           </div>
-          {paged.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>onChartOpen(s.sym)} visibleRsCols={visibleRsCols}/>)}
+          {paged.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>onChartOpen(s.sym)} visibleRsCols={visibleRsCols} rsColOrder={colOrder}/>)}
         </div>
         </div>
       )}
@@ -5853,12 +6013,156 @@ function rankRrgByQuadrant(rolledData){
 // scroll straight to a section instead of making people scroll past
 // everything to find it. `refs` is a useRef({}) object whose keys match
 // each item's id; sections register themselves via a ref callback.
-function DesktopRow({s,i,onChart,visibleRsCols}){
+function RsOptionalColCell({colKey, s, vis}){
+  if(!isRsOptionalColVisible(colKey, vis)) return null
+  if(colKey==='trend'){
+    return (
+      <div style={{textAlign:'center'}}>
+        <div style={{fontWeight:700,fontSize:14,color:trendColor(s.rsTrend.trend)}}>{trendIcon(s.rsTrend.trend)}</div>
+        <div style={{fontSize:9,color:C.muted}}>{s.rsTrend.slope>0?'+':''}{s.rsTrend.slope}/d</div>
+      </div>
+    )
+  }
+  if(colKey==='signals'){
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:3,minWidth:0}}>
+        {vis.pp10&&<div style={{display:'flex',alignItems:'center',minWidth:0,overflow:'hidden'}}><MergedSignalDots s={s}/></div>}
+        {vis.rs7d&&<div style={{display:'flex',gap:2,alignItems:'center',minWidth:0,overflow:'hidden'}}>
+          {s.hist.slice(-7).map((v,idx)=>{
+            const color=v===null?C.border:v>=90?C.green:v>=70?C.accent:v>=50?C.yellow:C.red
+            return<div key={idx} style={{flex:'1 1 0',minWidth:0,height:24,borderRadius:4,background:color+'28',
+              border:`1px solid ${color}55`,display:'flex',alignItems:'center',justifyContent:'center',
+              fontSize:9,fontWeight:800,color}}>{v??'—'}</div>
+          })}
+        </div>}
+      </div>
+    )
+  }
+  if(colKey==='stage'){
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'flex-start'}}>
+        <StageBadge stage={calcWeinsteinStage(s)}/>
+        <StrategyBadge kind="canslim" s={s}/>
+        <StrategyBadge kind="pead" s={s}/>
+        {(()=>{const ibv=calcIBV(s);return ibv.isIBV&&(
+          <div style={{padding:'2px 6px',borderRadius:5,fontSize:9,fontWeight:700,
+            background:ibv.color+'22',color:ibv.color,border:`1px solid ${ibv.color}44`}} title={ibv.desc}>
+            🏛️ IBV {ibv.ppCount}d
+          </div>
+        )})()}
+        {(()=>{const bo=calcHYHTBreakout(s);return bo.isBreakout&&(
+          <div style={{padding:'2px 6px',borderRadius:5,fontSize:9,fontWeight:700,
+            background:bo.color+'22',color:bo.color,border:`1px solid ${bo.color}44`}} title={bo.desc}>
+            💥 {bo.strength}
+          </div>
+        )})()}
+        <VolBadge vol={calcVolAnalysis(s)}/>
+      </div>
+    )
+  }
+  if(colKey==='squeeze'){
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'flex-start'}}>
+        {s.squeeze?.squeezeFired&&<div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,background:C.green+'22',color:C.green,whiteSpace:'nowrap'}}>🟢 BB Fired</div>}
+        {s.vcp?.vcpFired&&<div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,background:C.accent+'22',color:C.accent,whiteSpace:'nowrap'}}>🚀 VCP Fired</div>}
+        {s.squeeze?.inSqueeze&&<div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,background:C.blue+'22',color:C.blue,whiteSpace:'nowrap'}}>BB {s.squeeze.squeezeDays}d · {s.squeeze.bbWidthPct}%</div>}
+        {s.vcp?.isVCP&&<div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,background:C.purple+'22',color:C.purple,whiteSpace:'nowrap'}}>VCP {s.vcp.vcpStage} contractions</div>}
+        {s.vcp?.contractions?.length>0&&<div style={{fontSize:8,color:C.muted,whiteSpace:'nowrap'}}>{s.vcp.contractions.map(c=>`${c}%`).join(' → ')}</div>}
+        {!s.squeeze?.inSqueeze&&!s.vcp?.isVCP&&!s.squeeze?.squeezeFired&&!s.vcp?.vcpFired&&<span style={{color:C.border,fontSize:9}}>—</span>}
+      </div>
+    )
+  }
+  if(colKey==='wl52'){
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'flex-start'}}>
+        {s.scanner52wl?.isSignal&&<div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,background:C.pink+'22',color:C.pink,whiteSpace:'nowrap'}}>🎯 Full Signal</div>}
+        {s.scanner52wl?.near52wLow&&<div style={{fontSize:9,color:C.yellow,whiteSpace:'nowrap'}}>52WL +{s.scanner52wl.pctFrom52wLow}%</div>}
+        {s.scanner52wl?.crossedAboveEMA5&&<div style={{fontSize:9,color:C.green,whiteSpace:'nowrap'}}>✅ 5-EMA Cross</div>}
+        {s.scanner52wl?.ppVolume&&<div style={{fontSize:9,color:C.orange,whiteSpace:'nowrap'}}>PP Vol {s.scanner52wl.volRatio}x</div>}
+        {!s.scanner52wl?.near52wLow&&<span style={{color:C.border,fontSize:9}}>—</span>}
+      </div>
+    )
+  }
+  if(colKey==='weakrs'){
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'flex-start'}}>
+        {s.weakRS?.isSignal?(
+          <>
+            <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,background:C.lime+'22',color:C.lime,whiteSpace:'nowrap'}}>🚨 RS{s.rs} +{s.weakRS.chg1d}%</div>
+            <div style={{fontSize:9,color:s.weakRS.chg5d>=0?C.green:C.red,whiteSpace:'nowrap'}}>5d: {s.weakRS.chg5d>=0?'+':''}{s.weakRS.chg5d}%</div>
+            {s.weakRS.isVolSpike&&<div style={{fontSize:9,color:C.orange,whiteSpace:'nowrap'}}>📊 Vol {s.weakRS.volSpike}x</div>}
+          </>
+        ):<span style={{color:C.border,fontSize:9}}>—</span>}
+      </div>
+    )
+  }
+  if(colKey==='mcap'){
+    return (
+      <div style={{textAlign:'right',fontSize:10}}>
+        {s.marketCap!=null?(
+          <span style={{color:C.text}}>
+            {s.marketCap>=100000?`${(s.marketCap/100000).toFixed(1)}L`:s.marketCap>=1000?`${(s.marketCap/1000).toFixed(1)}K`:`${s.marketCap}`}
+          </span>
+        ):<span style={{color:C.muted}}>—</span>}
+        <div style={{fontSize:8,color:C.muted}}>MCap</div>
+      </div>
+    )
+  }
+  if(colKey==='pe'){
+    return (
+      <div title="Price-to-Earnings — years of current profit to earn back the share price. Green <20 (cheap-ish), Yellow 20-40, Red >40 or loss-making. Compare within the same sector, not across sectors." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
+        {s.pe!=null?(<span style={{color:s.pe<20?C.green:s.pe<40?C.yellow:C.red}}>{s.pe.toFixed(1)}</span>):<span style={{color:C.muted}}>—</span>}
+        <div style={{fontSize:8,color:C.muted}}>P/E</div>
+      </div>
+    )
+  }
+  if(colKey==='roe'){
+    return (
+      <div title="Return on Equity — how efficiently the company turns shareholder capital into profit. Green >20% (strong), Yellow 10-20%, Red <10% or negative." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
+        {s.roe!=null?(<span style={{color:s.roe>20?C.green:s.roe>10?C.yellow:C.red}}>{s.roe.toFixed(1)}%</span>):<span style={{color:C.muted}}>—</span>}
+        <div style={{fontSize:8,color:C.muted}}>ROE</div>
+      </div>
+    )
+  }
+  if(colKey==='de'){
+    return (
+      <div title="Debt-to-Equity — how leveraged the company is. Green <0.5 (low debt), Yellow 0.5-1.5, Red >1.5 (highly leveraged — capital-intensive sectors like banks/infra run higher naturally)." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
+        {s.debtEq!=null?(<span style={{color:s.debtEq<0.5?C.green:s.debtEq<1.5?C.yellow:C.red}}>{s.debtEq.toFixed(2)}</span>):<span style={{color:C.muted}}>—</span>}
+        <div style={{fontSize:8,color:C.muted}}>D/E</div>
+      </div>
+    )
+  }
+  if(colKey==='prom'){
+    return (
+      <div title="Promoter shareholding — founders/promoters' stake in the company. Green >55% (high skin in the game), Yellow 35-55%, Red <35%. Watch the TREND more than the level — a falling % or pledged shares matter more than the raw number." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
+        {s.promoter!=null?(<span style={{color:s.promoter>55?C.green:s.promoter>35?C.yellow:C.red}}>{s.promoter.toFixed(1)}%</span>):<span style={{color:C.muted}}>—</span>}
+        <div style={{fontSize:8,color:C.muted}}>Prom</div>
+      </div>
+    )
+  }
+  if(colKey==='fundRating'){
+    return (
+      <div title="Fundamental quality rating from ROE, EPS/Sales growth, debt levels, margin trend, and promoter/FII/DII activity. This is a QUALITY assessment, not a price target — it says nothing about whether the current price is cheap or expensive." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
+        {s.fundamentalLabel?(
+          <span style={{fontWeight:700,color:
+            s.fundamentalLabel==='Excellent'?C.green:
+            s.fundamentalLabel==='Good'?'#7dd3a8':
+            s.fundamentalLabel==='Fair'?C.yellow:C.red}}>
+            {s.fundamentalLabel}
+          </span>
+        ):<span style={{color:C.muted}}>—</span>}
+      </div>
+    )
+  }
+  return null
+}
+
+function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder}){
+  const layout=useContext(RsLayoutContext)
   const [open,setOpen]=useState(false)
-  const vis=visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true}
-  // Grid matches computeRsGridCols — expand chevron lives in the Symbol cell
-  // (row click opens chart; expand still opens inline StockDetail).
-  const COLS=computeRsGridCols(vis)
+  const vis=visibleRsCols||layout.visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true}
+  const order=normalizeRsColOrder(rsColOrder||layout.colOrder)
+  const COLS=computeRsGridCols(vis, order)
   return(
     <div style={{borderBottom:`1px solid ${C.border}22`}}>
       <div onClick={()=>onChart&&onChart(s.sym)}
@@ -5937,194 +6241,16 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
           </div>}
         </div>
 
-        {/* Slope/Trend */}
-        {vis.trend&&<div style={{textAlign:'center'}}>
-          <div style={{fontWeight:700,fontSize:14,color:trendColor(s.rsTrend.trend)}}>{trendIcon(s.rsTrend.trend)}</div>
-          <div style={{fontSize:9,color:C.muted}}>{s.rsTrend.slope>0?'+':''}{s.rsTrend.slope}/d</div>
-        </div>}
-
-        {/* Price + Chg% combined in one column (was 2 separate columns
-            showing the same %change twice) */}
+        {/* Price + Chg% */}
         <div style={{textAlign:'right'}}>
           <div style={{fontWeight:700,fontSize:13}}>{fmtP(s.last)}</div>
           <div style={{fontSize:10,fontWeight:700,color:s.chg>=0?C.green:C.red}}>
             {s.chg>=0?'+':''}{s.chg.toFixed(2)}%</div>
         </div>
 
-        {/* 10 D Vol + RS Last 7d combined into one column, stacked
-            (was 2 separate columns) */}
-        {(vis.pp10||vis.rs7d)&&<div style={{display:'flex',flexDirection:'column',gap:3,minWidth:0}}>
-          {vis.pp10&&<div style={{display:'flex',alignItems:'center',minWidth:0,overflow:'hidden'}}>
-            <MergedSignalDots s={s}/>
-          </div>}
-          {vis.rs7d&&<div style={{display:'flex',gap:2,alignItems:'center',minWidth:0,overflow:'hidden'}}>
-            {s.hist.slice(-7).map((v,idx)=>{
-              const color=v===null?C.border:v>=90?C.green:v>=70?C.accent:v>=50?C.yellow:C.red
-              return<div key={idx} style={{flex:'1 1 0',minWidth:0,height:24,borderRadius:4,background:color+'28',
-                border:`1px solid ${color}55`,display:'flex',alignItems:'center',justifyContent:'center',
-                fontSize:9,fontWeight:800,color}}>{v??'—'}</div>
-            })}
-          </div>}
-        </div>}
-
-        {/* Stage compact */}
-        {vis.stage&&<div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'flex-start'}}>
-          <StageBadge stage={calcWeinsteinStage(s)}/>
-          <StrategyBadge kind="canslim" s={s}/>
-          <StrategyBadge kind="pead" s={s}/>
-          {(()=>{const ibv=calcIBV(s);return ibv.isIBV&&(
-            <div style={{padding:'2px 6px',borderRadius:5,fontSize:9,fontWeight:700,
-              background:ibv.color+'22',color:ibv.color,border:`1px solid ${ibv.color}44`}}
-              title={ibv.desc}>
-              🏛️ IBV {ibv.ppCount}d
-            </div>
-          )})()}
-          {(()=>{const bo=calcHYHTBreakout(s);return bo.isBreakout&&(
-            <div style={{padding:'2px 6px',borderRadius:5,fontSize:9,fontWeight:700,
-              background:bo.color+'22',color:bo.color,border:`1px solid ${bo.color}44`}}
-              title={bo.desc}>
-              💥 {bo.strength}
-            </div>
-          )})()}
-          <VolBadge vol={calcVolAnalysis(s)}/>
-        </div>}
-
-        {/* Squeeze/VCP — same badge style/detail as the original specialized
-            Squeeze-page cards, now available as a toggleable column anywhere.
-            Covers both currently-in-squeeze AND just-fired (broken out)
-            status — a fired stock's inSqueeze is false by definition (it's
-            no longer in the squeeze, it just left one), so both states
-            need their own check or fired stocks would show as empty. */}
-        {vis.squeeze&&<div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'flex-start'}}>
-          {s.squeeze?.squeezeFired&&(
-            <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
-              background:C.green+'22',color:C.green,whiteSpace:'nowrap'}}>
-              🟢 BB Fired
-            </div>
-          )}
-          {s.vcp?.vcpFired&&(
-            <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
-              background:C.accent+'22',color:C.accent,whiteSpace:'nowrap'}}>
-              🚀 VCP Fired
-            </div>
-          )}
-          {s.squeeze?.inSqueeze&&(
-            <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
-              background:C.blue+'22',color:C.blue,whiteSpace:'nowrap'}}>
-              BB {s.squeeze.squeezeDays}d · {s.squeeze.bbWidthPct}%
-            </div>
-          )}
-          {s.vcp?.isVCP&&(
-            <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
-              background:C.purple+'22',color:C.purple,whiteSpace:'nowrap'}}>
-              VCP {s.vcp.vcpStage} contractions
-            </div>
-          )}
-          {s.vcp?.contractions?.length>0&&(
-            <div style={{fontSize:8,color:C.muted,whiteSpace:'nowrap'}}>
-              {s.vcp.contractions.map(c=>`${c}%`).join(' → ')}
-            </div>
-          )}
-          {!s.squeeze?.inSqueeze&&!s.vcp?.isVCP&&!s.squeeze?.squeezeFired&&!s.vcp?.vcpFired&&
-            <span style={{color:C.border,fontSize:9}}>—</span>}
-        </div>}
-
-        {/* 52WL Signal — same detail as the original specialized 52WL cards */}
-        {vis.wl52&&<div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'flex-start'}}>
-          {s.scanner52wl?.isSignal&&(
-            <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
-              background:C.pink+'22',color:C.pink,whiteSpace:'nowrap'}}>🎯 Full Signal</div>
-          )}
-          {s.scanner52wl?.near52wLow&&(
-            <div style={{fontSize:9,color:C.yellow,whiteSpace:'nowrap'}}>
-              52WL +{s.scanner52wl.pctFrom52wLow}%
-            </div>
-          )}
-          {s.scanner52wl?.crossedAboveEMA5&&(
-            <div style={{fontSize:9,color:C.green,whiteSpace:'nowrap'}}>✅ 5-EMA Cross</div>
-          )}
-          {s.scanner52wl?.ppVolume&&(
-            <div style={{fontSize:9,color:C.orange,whiteSpace:'nowrap'}}>PP Vol {s.scanner52wl.volRatio}x</div>
-          )}
-          {!s.scanner52wl?.near52wLow&&<span style={{color:C.border,fontSize:9}}>—</span>}
-        </div>}
-
-        {/* Weak RS — same detail as the original specialized Weak RS cards */}
-        {vis.weakrs&&<div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'flex-start'}}>
-          {s.weakRS?.isSignal?(
-            <>
-              <div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
-                background:C.lime+'22',color:C.lime,whiteSpace:'nowrap'}}>
-                🚨 RS{s.rs} +{s.weakRS.chg1d}%
-              </div>
-              <div style={{fontSize:9,color:s.weakRS.chg5d>=0?C.green:C.red,whiteSpace:'nowrap'}}>
-                5d: {s.weakRS.chg5d>=0?'+':''}{s.weakRS.chg5d}%
-              </div>
-              {s.weakRS.isVolSpike&&(
-                <div style={{fontSize:9,color:C.orange,whiteSpace:'nowrap'}}>📊 Vol {s.weakRS.volSpike}x</div>
-              )}
-            </>
-          ):<span style={{color:C.border,fontSize:9}}>—</span>}
-        </div>}
-
-        {/* Market Cap */}
-        {vis.mcap&&<div style={{textAlign:'right',fontSize:10}}>
-          {s.marketCap!=null?(
-            <span style={{color:C.text}}>
-              {s.marketCap>=100000?`${(s.marketCap/100000).toFixed(1)}L`:
-               s.marketCap>=1000?`${(s.marketCap/1000).toFixed(1)}K`:
-               `${s.marketCap}`}
-            </span>
-          ):<span style={{color:C.muted}}>—</span>}
-          <div style={{fontSize:8,color:C.muted}}>MCap</div>
-        </div>}
-
-        {/* P/E */}
-        {vis.pe&&<div title="Price-to-Earnings — years of current profit to earn back the share price. Green <20 (cheap-ish), Yellow 20-40, Red >40 or loss-making. Compare within the same sector, not across sectors." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
-          {s.pe!=null?(
-            <span style={{color:s.pe<20?C.green:s.pe<40?C.yellow:C.red}}>{s.pe.toFixed(1)}</span>
-          ):<span style={{color:C.muted}}>—</span>}
-          <div style={{fontSize:8,color:C.muted}}>P/E</div>
-        </div>}
-
-        {/* ROE */}
-        {vis.roe&&<div title="Return on Equity — how efficiently the company turns shareholder capital into profit. Green >20% (strong), Yellow 10-20%, Red <10% or negative." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
-          {s.roe!=null?(
-            <span style={{color:s.roe>20?C.green:s.roe>10?C.yellow:C.red}}>{s.roe.toFixed(1)}%</span>
-          ):<span style={{color:C.muted}}>—</span>}
-          <div style={{fontSize:8,color:C.muted}}>ROE</div>
-        </div>}
-
-        {/* Debt/Equity */}
-        {vis.de&&<div title="Debt-to-Equity — how leveraged the company is. Green <0.5 (low debt), Yellow 0.5-1.5, Red >1.5 (highly leveraged — capital-intensive sectors like banks/infra run higher naturally)." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
-          {s.debtEq!=null?(
-            <span style={{color:s.debtEq<0.5?C.green:s.debtEq<1.5?C.yellow:C.red}}>{s.debtEq.toFixed(2)}</span>
-          ):<span style={{color:C.muted}}>—</span>}
-          <div style={{fontSize:8,color:C.muted}}>D/E</div>
-        </div>}
-
-        {/* Promoter % */}
-        {vis.prom&&<div title="Promoter shareholding — founders/promoters' stake in the company. Green >55% (high skin in the game), Yellow 35-55%, Red <35%. Watch the TREND more than the level — a falling % or pledged shares matter more than the raw number." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
-          {s.promoter!=null?(
-            <span style={{color:s.promoter>55?C.green:s.promoter>35?C.yellow:C.red}}>{s.promoter.toFixed(1)}%</span>
-          ):<span style={{color:C.muted}}>—</span>}
-          <div style={{fontSize:8,color:C.muted}}>Prom</div>
-        </div>}
-
-        {/* Fundamental Rating — quality-only assessment (ROE, growth,
-            leverage, ownership trends). Deliberately NOT a price target
-            or buy/sell call — a real fair-value estimate needs proper
-            DCF/comparable-multiple modeling this doesn't attempt. */}
-        {vis.fundRating&&<div title="Fundamental quality rating from ROE, EPS/Sales growth, debt levels, margin trend, and promoter/FII/DII activity. This is a QUALITY assessment, not a price target — it says nothing about whether the current price is cheap or expensive." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
-          {s.fundamentalLabel?(
-            <span style={{fontWeight:700,color:
-              s.fundamentalLabel==='Excellent'?C.green:
-              s.fundamentalLabel==='Good'?'#7dd3a8':
-              s.fundamentalLabel==='Fair'?C.yellow:C.red}}>
-              {s.fundamentalLabel}
-            </span>
-          ):<span style={{color:C.muted}}>—</span>}
-        </div>}
+        {order.map(key=>(
+          <RsOptionalColCell key={key} colKey={key} s={s} vis={vis}/>
+        ))}
 
       </div>
       {open&&<StockDetail s={s}/>}
@@ -8838,6 +8964,17 @@ export default function App(){
     const t=setInterval(check,3*60*1000)
     return()=>{cancelled=true;clearInterval(t)}
   },[annAlertsOn,watchlists])
+  const [rsColOrder,setRsColOrder]=useState(()=>{
+    try{
+      const saved=JSON.parse(localStorage.getItem('lakshmimata-rs-col-order')||'null')
+      return normalizeRsColOrder(saved)
+    }catch(e){ return [...RS_OPTIONAL_COL_ORDER_DEFAULT] }
+  })
+  const persistRsColOrder=(order)=>{
+    const next=normalizeRsColOrder(order)
+    setRsColOrder(next)
+    try{ localStorage.setItem('lakshmimata-rs-col-order', JSON.stringify(next)) }catch(e){}
+  }
   const [visibleRsCols,setVisibleRsCols]=useState(()=>{
     const RS_COL_PREFS_VER=2
     const fundOff={mcap:false,pe:false,roe:false,de:false,prom:false}
@@ -8863,10 +9000,13 @@ export default function App(){
   }
   const resetRsCols=()=>{
     const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true,squeeze:false,wl52:false,weakrs:false}
+    const order=[...RS_OPTIONAL_COL_ORDER_DEFAULT]
     setVisibleRsCols(defaults)
+    setRsColOrder(order)
     try{
       localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(defaults))
       localStorage.setItem('lakshmimata-rs-col-ver','2')
+      localStorage.setItem('lakshmimata-rs-col-order',JSON.stringify(order))
     }catch(e){}
   }
   const [wlSearch,setWlSearch]=useState(''),[wlSigOnly,setWlSigOnly]=useState(false)
@@ -9388,6 +9528,7 @@ export default function App(){
   const scanLabel=activeWlObj?`📋 ${activeWlObj.name} (${activeWlObj.stocks.length})`:({all:'All',nifty50:'Nifty 50',midcap:'Midcap',smallcap:'Smallcap'}[indexFilter])
 
   return withShareNotice(
+    <RsLayoutContext.Provider value={{colOrder:rsColOrder, visibleRsCols}}>
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:"'Inter','SF Pro Display',sans-serif",
       color:C.text,fontSize:13,display:'flex',flexDirection:'row',zoom:zoomLevel}}>
 
@@ -9845,7 +9986,7 @@ export default function App(){
                         style={{fontSize:11,fontWeight:700,color:C.accent,background:'transparent',
                           border:'none',cursor:'pointer'}}>Reset to default</button>
                     </div>
-                    <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:14}}>
                       {[['mid','MID (Midcap RS)'],['sml','SML (Smallcap RS)'],['sec','SEC (Sector RS)'],
                         ['trend','Trend'],['pp10','10 D Vol'],['rs7d','RS Last 7d'],['stage','Stage/Vol'],
                         ['squeeze','Squeeze/VCP'],
@@ -9860,8 +10001,25 @@ export default function App(){
                         </button>
                       ))}
                     </div>
+                    <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',
+                      letterSpacing:'0.06em',marginBottom:8}}>Column order (drag ⋮⋮ or use ↑↓)</div>
+                    <ReorderableList
+                      items={rsColOrder}
+                      onReorder={persistRsColOrder}
+                      hint="Drag to reorder optional columns. #, Symbol, RS, and Price stay fixed on the left."
+                      renderItem={(key)=>(
+                        <div style={{display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}>
+                          <span style={{fontSize:12,fontWeight:700,color:C.text}}>{RS_COL_LABELS[key]||key}</span>
+                          <span style={{fontSize:10,color:C.muted}}>
+                            {key==='signals'
+                              ? (visibleRsCols.pp10||visibleRsCols.rs7d ? 'Visible' : 'Hidden')
+                              : (visibleRsCols[key] ? 'Visible' : 'Hidden')}
+                          </span>
+                        </div>
+                      )}
+                    />
                     <div style={{fontSize:10,color:C.muted,marginTop:10}}>
-                      Your column layout is saved automatically and stays the same next time you visit.
+                      Column visibility and order are saved automatically for your next visit.
                     </div>
                   </div>
                 )}
@@ -10161,45 +10319,13 @@ export default function App(){
                 )}
                 <div ref={rsTableDrag.ref} {...rsTableDrag.handlers}
                   style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflowX:'auto',...rsTableDrag.style}}>
-                  <div style={{display:'grid',gridTemplateColumns:computeRsGridCols(visibleRsCols),
+                  <div style={{display:'grid',gridTemplateColumns:computeRsGridCols(visibleRsCols, rsColOrder),
                     padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:10,
                     fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
-                    <span style={{textAlign:'center',color:C.muted}}>#</span>
-                    <SortableHeader label="Symbol" sortKey="sym" sortBy={sortBy} sortDir={sortDir} onSort={handleSort}/>
-                    <div style={{display:'flex'}}>
-                      <span onClick={()=>handleSort('rsTv')} style={{flex:1,textAlign:'center',cursor:'pointer',
-                        color:sortBy==='rsTv'?C.accent:C.muted,fontSize:9}}>NIFTY{sortBy==='rsTv'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
-                      {visibleRsCols.mid&&<span onClick={()=>handleSort('rsMidcap')} style={{flex:1,textAlign:'center',cursor:'pointer',
-                        color:sortBy==='rsMidcap'?C.accent:C.muted,fontSize:9}}>MID{sortBy==='rsMidcap'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
-                      {visibleRsCols.sml&&<span onClick={()=>handleSort('rsSmallcap')} style={{flex:1,textAlign:'center',cursor:'pointer',
-                        color:sortBy==='rsSmallcap'?C.accent:C.muted,fontSize:9}}>SML{sortBy==='rsSmallcap'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
-                      {visibleRsCols.sec&&<span onClick={()=>handleSort('rsSector')} style={{flex:1,textAlign:'center',cursor:'pointer',
-                        color:sortBy==='rsSector'?C.accent:C.muted,fontSize:9}}>SEC{sortBy==='rsSector'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
-                    </div>
-                    {visibleRsCols.trend&&<SortableHeader label="Trend" sortKey="slope" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"/>}
-                    <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end'}}>
-                      <span onClick={()=>handleSort('last')} style={{cursor:'pointer',fontSize:9,fontWeight:700,
-                        color:sortBy==='last'?C.accent:C.muted}}>Price{sortBy==='last'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
-                      <span onClick={()=>handleSort('chg')} style={{cursor:'pointer',fontSize:9,fontWeight:700,
-                        color:sortBy==='chg'?C.accent:C.muted}}>Chg%{sortBy==='chg'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
-                    </div>
-                    {(visibleRsCols.pp10||visibleRsCols.rs7d)&&<div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'center'}}>
-                      {visibleRsCols.pp10&&<SortableHeader label="10 D Vol" sortKey="pp10" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="center"
-                        legend={[{label:'HT',color:C.orange},{label:'HY',color:C.pink},{label:'IBV',color:C.blue},{label:'PP',color:C.green}]}/>}
-                      {visibleRsCols.rs7d&&<span style={{color:C.muted,fontSize:9}}>RS Last 7d</span>}
-                    </div>}
-                    {visibleRsCols.stage&&<span title="Stage: Weinstein trend stage (S1 Base/S2 Up/S3 Top/S4 Down). Vol: today's volume as % of its recent peak day, not a price." style={{textAlign:'center',color:C.muted,cursor:'help'}}>Stage/Vol</span>}
-                    {visibleRsCols.squeeze&&<span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>}
-                    {visibleRsCols.wl52&&<span style={{textAlign:'center',color:C.muted}}>52WL Signal</span>}
-                    {visibleRsCols.weakrs&&<span style={{textAlign:'center',color:C.muted}}>Weak RS</span>}
-                    {visibleRsCols.mcap&&<SortableHeader label="MCap" sortKey="marketCap" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} align="right"/>}
-                    {visibleRsCols.pe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>}
-                    {visibleRsCols.roe&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>}
-                    {visibleRsCols.de&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>}
-                    {visibleRsCols.prom&&<span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>}
-                    {visibleRsCols.fundRating&&<span title="Overall fundamental quality (ROE, growth, debt, margins, ownership) — not the same as Excellent/Good Result under the chart, which is only the latest quarter." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Rating</span>}
+                    <RsTableHeaderRow visibleRsCols={visibleRsCols} colOrder={rsColOrder}
+                      sortBy={sortBy} sortDir={sortDir} handleSort={handleSort}/>
                   </div>
-                  {pagedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>setChartSym(s.sym)} visibleRsCols={visibleRsCols}/>)}
+                  {pagedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>setChartSym(s.sym)} visibleRsCols={visibleRsCols} rsColOrder={rsColOrder}/>)}
                 </div>
                 </>
               )
@@ -13387,5 +13513,6 @@ export default function App(){
         </>
       )}
     </div>
+    </RsLayoutContext.Provider>
   )
 }
