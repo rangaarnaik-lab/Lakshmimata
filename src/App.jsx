@@ -14,6 +14,7 @@ import {
   detect52WLCrossover, detectWeakRSBigMove, buildSectorRS
 } from './scanners/math'
 import { SECTOR_MAP, NIFTY50, MIDCAP, SMALLCAP, getSector } from './data/sectors'
+import { resolveIndustry, resolveSector, getPeerGroup } from './data/industries'
 import {
   calcSMASeries, findSwingPoints, computeSupportResistance,
   detectInsideBars, detectAccDistDays, detectVCPContractions, detectCupAndHandle,
@@ -2134,10 +2135,12 @@ function mergeFundamentalsOntoStock(base, row){
   if(!row) return base || {}
   const b = base || {}
   const num = (a, db) => (db != null ? db : a)
+  const industry = resolveIndustry(b.sym, row.industry || b.industry, row.sector || b.sector)
+  const sector = resolveSector(b.sym, row.sector || b.sector, industry)
   return {
     ...b,
-    sector: row.sector || b.sector,
-    industry: row.industry || b.industry,
+    sector: sector || b.sector,
+    industry: industry || b.industry,
     marketCap: num(b.marketCap, row.market_cap),
     pe: num(b.pe, row.pe),
     pb: num(b.pb, row.pb),
@@ -3320,15 +3323,17 @@ function ResultsHistoryTable({symbol}){
 const RATING_ORDER = {Excellent:3, Good:2, Neutral:1, Weak:0}
 function SectorRankingPanel({symbol, sector, industry, stocks, onSelectSymbol}){
   const [ranking, setRanking] = useState(undefined) // undefined=loading, null=no peers, array=loaded
-  const groupLabel = industry || sector
+  const peerGroup = getPeerGroup(symbol, industry)
+  const groupLabel = peerGroup || sector
   useEffect(()=>{
     let cancelled = false
     setRanking(undefined)
     if(!symbol || !groupLabel || !stocks?.length){ setRanking(null); return }
     // Prefer industry peers (jewellery ↔ jewellery). Sector-wide ranking
     // incorrectly mixed KALYANKJIL with BLUESTARCO / WHIRLPOOL etc.
-    let peers = industry
-      ? stocks.filter(s=>s.industry===industry && s.sym)
+    // getPeerGroup() also groups shipbuilders (GRSE, MAZDOCK) under Shipping & Defence.
+    let peers = peerGroup
+      ? stocks.filter(s=>getPeerGroup(s.sym, s.industry)===peerGroup && s.sym)
       : stocks.filter(s=>s.sector===sector && s.sym)
     peers = peers
       .sort((a,b)=>(b.marketCap??0)-(a.marketCap??0))
@@ -3347,7 +3352,7 @@ function SectorRankingPanel({symbol, sector, industry, stocks, onSelectSymbol}){
       setRanking(rated.length>=2 ? rated : null)
     })
     return ()=>{cancelled=true}
-  }, [symbol, sector, industry, groupLabel, stocks])
+  }, [symbol, sector, industry, peerGroup, groupLabel, stocks])
 
   if(ranking===undefined) return (
     <div style={{marginTop:8,fontSize:10.5,color:C.muted,padding:'4px 2px'}}>

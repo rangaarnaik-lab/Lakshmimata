@@ -2,6 +2,7 @@
 // Called by App.jsx instead of running live scans in browser
 
 import { supabase } from './supabase'
+import { resolveIndustry, resolveSector } from '../data/industries'
 
 /**
  * Fetch all stocks from Supabase DB (pre-computed by live server)
@@ -278,6 +279,8 @@ export async function fetchStocksFromDB({ indexFilter = 'all', watchlistSyms = n
 // Transform one raw DB row (snake_case, matching the Postgres/R2 snapshot
 // shape) into the camelCase shape the rest of the app expects.
 function transformStockRow(row) {
+  const industry = resolveIndustry(row.sym, row.industry, row.sector)
+  const sector = resolveSector(row.sym, row.sector, industry) || row.sector || 'Other'
   return {
     sym:        row.sym,
     rs:         row.rs || 0,
@@ -297,8 +300,8 @@ function transformStockRow(row) {
     prevClose:  row.prev_close,
     gapPct:     (row.open != null && row.prev_close) ? +(((row.open - row.prev_close) / row.prev_close) * 100).toFixed(2) : null,
     pctFromHigh: row.high_52w ? ((row.last_price - row.high_52w) / row.high_52w * 100) : 0,
-    sector:      row.sector || 'Other',
-    industry:    row.industry || null,
+    sector,
+    industry:    industry || null,
     chgW:        row.chg_w_pct,
     chgM:        row.chg_m_pct,
     inNifty50:   row.in_nifty50   || false,
