@@ -3290,10 +3290,189 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab}){
   )
 }
 
+function loadChartSectionsCollapsed(){
+  try{ return JSON.parse(localStorage.getItem('lakshmimata-chart-sections-collapsed')||'{}') }
+  catch(e){ return {} }
+}
+function persistChartSectionsCollapsed(map){
+  try{ localStorage.setItem('lakshmimata-chart-sections-collapsed', JSON.stringify(map)) }catch(e){}
+}
+
+/** TradingView-style collapsible panel — chevron header, drag handle, thin dividers. */
+function TvSectionPanel({title, subtitle, collapsed, onToggle, children, onDragStart, onDragOver, onDrop, onDragEnd, isDragOver}){
+  return (
+    <div style={{borderBottom:`1px solid ${C.divider}`,
+      background:isDragOver?C.accent+'0c':'transparent'}}>
+      <div
+        draggable
+        onDragStart={onDragStart}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+        onDragEnd={onDragEnd}
+        style={{display:'flex',alignItems:'center',gap:0,height:34,
+          background:collapsed?C.bg:C.card,cursor:'pointer',userSelect:'none'}}>
+        <button type="button" onClick={onToggle}
+          style={{display:'flex',alignItems:'center',gap:6,flex:1,minWidth:0,height:'100%',
+            padding:'0 10px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left'}}>
+          <span style={{fontSize:9,color:C.muted,width:10,flexShrink:0,lineHeight:1}}>
+            {collapsed?'▸':'▾'}
+          </span>
+          <span style={{fontSize:12,fontWeight:600,color:collapsed?C.muted:C.text,
+            overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+            {title}
+          </span>
+          {subtitle&&(
+            <span style={{fontSize:10,fontWeight:500,color:C.muted,marginLeft:4,
+              overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flexShrink:1}}>
+              {subtitle}
+            </span>
+          )}
+        </button>
+        <span title="Drag to reorder"
+          style={{color:C.muted,fontSize:11,cursor:'grab',padding:'0 10px',lineHeight:'34px',
+            borderLeft:`1px solid ${C.divider}`}}>⋮⋮</span>
+      </div>
+      {!collapsed&&(
+        <div style={{padding:'8px 10px 12px',background:C.bg,borderTop:`1px solid ${C.divider}`}}>
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ChartBelowSections({sym, stocks, sectionOrder, onSectionOrderChange, detailTab, setDetailTab, navigateTo, isMobile}){
+  const [collapsed, setCollapsed]=useState(loadChartSectionsCollapsed)
+  const [customizeOpen, setCustomizeOpen]=useState(false)
+  const [dragOverIdx, setDragOverIdx]=useState(null)
+  const dragIdx=useRef(null)
+
+  const toggleCollapsed=(id)=>{
+    setCollapsed(prev=>{
+      const next={...prev, [id]: !prev[id]}
+      persistChartSectionsCollapsed(next)
+      return next
+    })
+  }
+  const setAllCollapsed=(val)=>{
+    const next={}
+    for(const id of sectionOrder) next[id]=val
+    setCollapsed(next)
+    persistChartSectionsCollapsed(next)
+  }
+  const moveSection=(from,to)=>{
+    if(from==null||to==null||from===to||from<0||to<0||from>=sectionOrder.length||to>=sectionOrder.length) return
+    const next=[...sectionOrder]
+    const [item]=next.splice(from,1)
+    next.splice(to,0,item)
+    onSectionOrderChange(next)
+  }
+
+  const mcapStock=stocks?.find(s=>s.sym===sym)
+  const mcapLabel=mcapStock?.marketCap!=null
+    ? (mcapStock.marketCap>=100000
+      ? `₹${(mcapStock.marketCap/100000).toFixed(1)}L Cr`
+      : `₹${mcapStock.marketCap.toFixed(0)} Cr`)
+    : null
+
+  const visibleOrder=sectionOrder.filter(id=>{
+    if(id==='mcap') return mcapLabel!=null
+    return true
+  })
+
+  const renderBody=(sectionId)=>{
+    if(sectionId==='mcap'&&mcapLabel){
+      return (
+        <div style={{fontSize:13,fontWeight:700,color:C.text}}>
+          {mcapLabel}
+        </div>
+      )
+    }
+    if(sectionId==='themes') return <StockThemesAfterMcap symbol={sym}/>
+    if(sectionId==='mgmt') return <MgmtFlagsCard symbol={sym} compact/>
+    if(sectionId==='details'){
+      return (
+        <StockDetailTabs sym={sym} stocks={stocks}
+          tab={detailTab} setTab={setDetailTab}
+          onSelectSymbol={(s)=>navigateTo(s,{openResults:true})}/>
+      )
+    }
+    return null
+  }
+
+  const sectionSubtitle=(sectionId)=>{
+    if(sectionId==='mcap') return mcapLabel
+    if(sectionId==='details'){
+      const tabLabel=STOCK_DETAIL_TABS.find(t=>t.key===detailTab)?.label
+      return tabLabel||null
+    }
+    return null
+  }
+
+  return (
+    <div style={{flexShrink:0,maxHeight:isMobile?'42vh':'46vh',overflowY:'auto',
+      borderTop:`1px solid ${C.divider}`,background:C.bg}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+        padding:'6px 10px',borderBottom:`1px solid ${C.divider}`,
+        background:C.sidebar,position:'sticky',top:0,zIndex:2}}>
+        <span style={{fontSize:10,fontWeight:700,color:C.muted,letterSpacing:'0.06em',textTransform:'uppercase'}}>
+          Panels
+        </span>
+        <div style={{display:'flex',alignItems:'center',gap:4}}>
+          <button type="button" onClick={()=>setAllCollapsed(false)}
+            style={{padding:'2px 8px',borderRadius:4,border:'none',background:'transparent',
+              color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>Expand all</button>
+          <span style={{color:C.divider}}>|</span>
+          <button type="button" onClick={()=>setAllCollapsed(true)}
+            style={{padding:'2px 8px',borderRadius:4,border:'none',background:'transparent',
+              color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>Collapse all</button>
+          <span style={{color:C.divider}}>|</span>
+          <button type="button" onClick={()=>setCustomizeOpen(v=>!v)}
+            title="Customize panel order"
+            style={{padding:'2px 8px',borderRadius:4,border:`1px solid ${customizeOpen?C.accent:C.border}`,
+              background:customizeOpen?C.accent+'18':'transparent',
+              color:customizeOpen?C.accent:C.muted,fontSize:10,fontWeight:700,cursor:'pointer'}}>
+            ⚙
+          </button>
+        </div>
+      </div>
+      {customizeOpen&&(
+        <div style={{padding:'10px 12px',borderBottom:`1px solid ${C.divider}`,background:C.card}}>
+          <ReorderableList
+            items={sectionOrder}
+            onReorder={onSectionOrderChange}
+            hint="Drag panels to match your TradingView layout. Order is saved automatically."
+            renderItem={(key)=>(
+              <span style={{fontSize:12,fontWeight:700,color:C.text}}>{CHART_SECTION_LABELS[key]||key}</span>
+            )}
+          />
+        </div>
+      )}
+      {visibleOrder.map((sectionId,idx)=>{
+        const orderIdx=sectionOrder.indexOf(sectionId)
+        return (
+          <TvSectionPanel
+            key={sectionId}
+            title={CHART_SECTION_LABELS[sectionId]||sectionId}
+            subtitle={sectionSubtitle(sectionId)}
+            collapsed={!!collapsed[sectionId]}
+            onToggle={()=>toggleCollapsed(sectionId)}
+            isDragOver={dragOverIdx===orderIdx}
+            onDragStart={(e)=>{ dragIdx.current=orderIdx; e.dataTransfer.effectAllowed='move' }}
+            onDragOver={(e)=>{ e.preventDefault(); setDragOverIdx(orderIdx) }}
+            onDrop={(e)=>{ e.preventDefault(); moveSection(dragIdx.current, orderIdx); dragIdx.current=null; setDragOverIdx(null) }}
+            onDragEnd={()=>{ dragIdx.current=null; setDragOverIdx(null) }}>
+            {renderBody(sectionId)}
+          </TvSectionPanel>
+        )
+      })}
+    </div>
+  )
+}
+
 function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange}){
   const [loaded, setLoaded] = useState(false)
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
-  const [showSectionLayout, setShowSectionLayout] = useState(false)
   const sectionOrder=normalizeChartSectionOrder(chartSectionOrder)
   const persistSectionOrder=(order)=>{
     onChartSectionOrderChange?.(normalizeChartSectionOrder(order))
@@ -3453,58 +3632,16 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
         )}
       </div>
       {!isIndex&&(
-        <div style={{flexShrink:0,maxHeight:isMobile?'42vh':'46vh',overflowY:'auto',
-          padding:'8px 14px 14px',borderTop:`1px solid ${C.divider}`}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,gap:8}}>
-            <span style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>
-              Below chart
-            </span>
-            <button type="button" onClick={()=>setShowSectionLayout(v=>!v)}
-              style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${showSectionLayout?C.accent:C.border}`,
-                background:showSectionLayout?C.accent+'18':'transparent',color:showSectionLayout?C.accent:C.muted,
-                fontSize:10,fontWeight:700,cursor:'pointer'}}>
-              {showSectionLayout?'Done':'Reorder sections'}
-            </button>
-          </div>
-          {showSectionLayout&&(
-            <div style={{marginBottom:12,padding:'10px 12px',borderRadius:10,
-              border:`1px solid ${C.border}`,background:C.bg}}>
-              <ReorderableList
-                items={sectionOrder}
-                onReorder={persistSectionOrder}
-                hint="Drag to change the order of Market Cap, Themes, Mgmt flags, and About/Results tabs."
-                renderItem={(key)=>(
-                  <span style={{fontSize:12,fontWeight:700,color:C.text}}>{CHART_SECTION_LABELS[key]||key}</span>
-                )}
-              />
-            </div>
-          )}
-          {sectionOrder.map(sectionId=>{
-            if(sectionId==='mcap'){
-              const mcapStock=stocks?.find(s=>s.sym===sym)
-              if(mcapStock?.marketCap==null) return null
-              return (
-                <div key={sectionId} style={{marginBottom:8,fontSize:12,fontWeight:700,color:C.text}}>
-                  Market Cap: <span style={{color:C.muted,fontWeight:600}}>
-                    {mcapStock.marketCap>=100000?`₹${(mcapStock.marketCap/100000).toFixed(1)}L Cr`:`₹${mcapStock.marketCap.toFixed(0)} Cr`}
-                  </span>
-                </div>
-              )
-            }
-            if(sectionId==='themes') return <div key={sectionId}><StockThemesAfterMcap symbol={sym}/></div>
-            if(sectionId==='mgmt') return <div key={sectionId}><MgmtFlagsCard symbol={sym} compact/></div>
-            if(sectionId==='details'){
-              return (
-                <div key={sectionId}>
-                  <StockDetailTabs sym={sym} stocks={stocks}
-                    tab={detailTab} setTab={setDetailTab}
-                    onSelectSymbol={(s)=>navigateTo(s,{openResults:true})}/>
-                </div>
-              )
-            }
-            return null
-          })}
-        </div>
+        <ChartBelowSections
+          sym={sym}
+          stocks={stocks}
+          sectionOrder={sectionOrder}
+          onSectionOrderChange={persistSectionOrder}
+          detailTab={detailTab}
+          setDetailTab={setDetailTab}
+          navigateTo={navigateTo}
+          isMobile={isMobile}
+        />
       )}
       {!isIndex&&<AskAiAgent symbol={sym} isMobile={isMobile}/>}
     </div>
@@ -5408,7 +5545,12 @@ function ReorderableList({items, onReorder, renderItem, hint}){
 }
 
 const CHART_SECTION_ORDER_DEFAULT = ['mcap','themes','mgmt','details']
-const CHART_SECTION_LABELS = {mcap:'Market Cap', themes:'Emerging Themes', mgmt:'Management Flags', details:'About / Results / Concall'}
+const CHART_SECTION_LABELS = {
+  mcap:'Market Cap',
+  themes:'Emerging Themes',
+  mgmt:'Management Flags',
+  details:'Company Details',
+}
 
 function normalizeChartSectionOrder(order){
   const base=Array.isArray(order)?order.filter(k=>CHART_SECTION_ORDER_DEFAULT.includes(k)):[]
