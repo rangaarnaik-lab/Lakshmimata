@@ -6783,7 +6783,13 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
           // skip straight into the app with no UI to set a new password.
           redirectTo:`${window.location.origin}?reset=1`,
         })
-        if(e)throw e
+        if(e){
+          const msg=(e.message||'').toLowerCase()
+          if(msg.includes('rate limit')||msg.includes('email rate')||e.status===429){
+            throw new Error('Too many reset emails sent. Please wait a few minutes (Supabase limits how many password emails can be sent per hour), then try again.')
+          }
+          throw e
+        }
         setInfo('Check your email for a Lakshmimata reset link. Open it, then set a new password on the “Set a new password” screen (10+ characters, letters and numbers).')
         setMode('login')
       } else if(mode==='login'){
