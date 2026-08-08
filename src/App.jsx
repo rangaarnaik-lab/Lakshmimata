@@ -5645,8 +5645,8 @@ const HELP_CONTENT = [
     buy signal by itself.`},
   {id:'bestpicks', title:'AI Picks', body:`Curated best-picks list from the server scan. Treat as a shortlist to 
     research further with RS, Results rating, and Concall/PPT — not automated advice.`},
-  {id:'feedback', title:'User Feedback', body:`Share what you like, what’s missing, or what we should fix. 
-    Public feedback (optional) appears on the home page with your first name only.`},
+  {id:'feedback', title:'User Feedback', body:`Rate Lakshmimata 1–5 stars and leave a short review. 
+    The home page shows the average rating, star breakdown, and public quotes (first name only).`},
   {id:'settings', title:'Account / Settings', body:`Theme, account, and app preferences. Help (?) in the header 
     opens this guide for every page.`},
   {id:'chart', title:'Stock chart & Results', body:`Open any stock for Our Chart plus Results / Concall / PPT under the chart. Result quality (Excellent/Good/Neutral/Weak) is the latest quarter only. Peer pills under Results are clickable.`},
