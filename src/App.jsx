@@ -2,11 +2,11 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap, ArrowUpRight,
   TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal, Layers,
-  ThumbsUp, ThumbsDown
+  ThumbsUp, ThumbsDown, MessageSquare
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -5645,6 +5645,8 @@ const HELP_CONTENT = [
     buy signal by itself.`},
   {id:'bestpicks', title:'AI Picks', body:`Curated best-picks list from the server scan. Treat as a shortlist to 
     research further with RS, Results rating, and Concall/PPT — not automated advice.`},
+  {id:'feedback', title:'User Feedback', body:`Share what you like, what’s missing, or what we should fix. 
+    Public feedback (optional) appears on the home page with your first name only.`},
   {id:'settings', title:'Account / Settings', body:`Theme, account, and app preferences. Help (?) in the header 
     opens this guide for every page.`},
   {id:'chart', title:'Stock chart & Results', body:`Open any stock for Our Chart plus Results / Concall / PPT under the chart. Result quality (Excellent/Good/Neutral/Weak) is the latest quarter only. Peer pills under Results are clickable.`},
@@ -6275,6 +6277,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
   const [paused,setPaused]=useState(false)
   const [topGainers,setTopGainers]=useState([])
   const [usageStats,setUsageStats]=useState(null) // {uniqueUsers, dailyTrend} | null while loading
+  const [publicFeedback,setPublicFeedback]=useState([])
   const slideCount=3
   useEffect(()=>{
     if(paused) return
@@ -6286,6 +6289,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
   },[])
   useEffect(()=>{
     logPageView().finally(() => fetchUsageStats(14).then(setUsageStats))
+    fetchPublicUserFeedback(12).then(setPublicFeedback)
   },[])
 
   const gold='#C9A227', goldSoft='#E8D28A'
@@ -6601,6 +6605,36 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
           </div>
         </section>
 
+        {/* Trader feedback — public quotes from signed-in users */}
+        <section id="user-feedback" style={{padding:'0 0 72px'}}>
+          {smallcaps('Trader feedback',true)}
+          <h2 style={{...serif,fontWeight:600,fontSize:'clamp(22px,2.8vw,30px)',textAlign:'center',
+            maxWidth:520,margin:'0 auto 10px',color:'#fff'}}>
+            What users are saying
+          </h2>
+          <p style={{color:'#9aa0b0',maxWidth:480,margin:'0 auto 28px',fontSize:14,textAlign:'center',lineHeight:1.65}}>
+            Real feedback from traders using Lakshmimata — sign in to share yours.
+          </p>
+          {publicFeedback.length>0?(
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:14,maxWidth:900,margin:'0 auto'}}>
+              {publicFeedback.map(fb=>(
+                <UserFeedbackCard key={fb.id} item={fb} compact/>
+              ))}
+            </div>
+          ):(
+            <div style={{maxWidth:520,margin:'0 auto',textAlign:'center',padding:'28px 20px',
+              background:C.card,border:`1px solid ${C.border}`,borderRadius:8,color:C.muted,fontSize:13}}>
+              No public feedback yet — be the first to share your experience after you sign in.
+            </div>
+          )}
+          <div style={{textAlign:'center',marginTop:22}}>
+            <button onClick={onSignIn} style={{background:'transparent',border:`1px solid ${gold}66`,
+              color:goldSoft,padding:'10px 22px',fontSize:12.5,cursor:'pointer',borderRadius:3,...mono}}>
+              Sign in to leave feedback
+            </button>
+          </div>
+        </section>
+
         {/* Pricing */}
         <section style={{padding:'0 0 88px',textAlign:'center'}}>
           {smallcaps('Pricing',true)}
@@ -6646,6 +6680,10 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
           justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:14,fontSize:11,
           color:C.muted,...mono}}>
           <span>© 2026 LAKSHMIMATA · FOR INFORMATIONAL AND EDUCATIONAL PURPOSES ONLY</span>
+          <button type="button" onClick={()=>document.getElementById('user-feedback')?.scrollIntoView({behavior:'smooth'})}
+            style={{background:'transparent',border:'none',color:goldSoft,cursor:'pointer',...mono,fontSize:11}}>
+            TRADER FEEDBACK
+          </button>
           <span>NOT A SEBI-REGISTERED RESEARCH ANALYST OR INVESTMENT ADVISER</span>
         </footer>
       </div>
@@ -7312,6 +7350,192 @@ function PaywallScreen({reason,onLogout}){
           Sign out
         </button>
       </div>
+    </div>
+  )
+}
+
+// ── User feedback (app reviews) ─────────────────────────────────────
+function UserFeedbackStars({rating,size=14}){
+  const r=Math.max(0,Math.min(5,Number(rating)||0))
+  return(
+    <span style={{display:'inline-flex',gap:2,verticalAlign:'middle'}} aria-label={r?`${r} out of 5 stars`:undefined}>
+      {[1,2,3,4,5].map(i=>(
+        <span key={i} style={{fontSize:size,color:i<=r?C.yellow:C.border,lineHeight:1}}>★</span>
+      ))}
+    </span>
+  )
+}
+
+function UserFeedbackCard({item,compact}){
+  const when=item?.created_at
+    ? new Date(item.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})
+    : ''
+  return(
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:compact?'16px 18px':'18px 20px',
+      display:'flex',flexDirection:'column',gap:8,minHeight:compact?120:undefined}}>
+      {item?.rating>0&&<UserFeedbackStars rating={item.rating} size={compact?13:14}/>}
+      <div style={{fontSize:compact?13:14,color:C.text,lineHeight:1.65,flex:1,whiteSpace:'pre-wrap'}}>
+        “{item?.message}”
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginTop:4}}>
+        <span style={{fontSize:12,fontWeight:700,color:C.accent}}>{item?.display_name||'Trader'}</span>
+        {when&&<span style={{fontSize:10,color:C.muted}}>{when}</span>}
+      </div>
+    </div>
+  )
+}
+
+function feedbackFirstName(user){
+  const meta=user?.user_metadata||{}
+  const raw=(meta.full_name||meta.name||'').trim()
+  if(!raw) return 'Trader'
+  const first=raw.split(/\s+/)[0]
+  return first.length>20?first.slice(0,20):first
+}
+
+function UserFeedbackPanel({session,onExitDemo}){
+  const [message,setMessage]=useState('')
+  const [rating,setRating]=useState(5)
+  const [isPublic,setIsPublic]=useState(true)
+  const [loading,setLoading]=useState(false)
+  const [error,setError]=useState('')
+  const [info,setInfo]=useState('')
+  const [mine,setMine]=useState([])
+  const [publicList,setPublicList]=useState([])
+
+  const reload=useCallback(()=>{
+    if(session) fetchMyUserFeedback(20).then(setMine)
+    else setMine([])
+    fetchPublicUserFeedback(12).then(setPublicList)
+  },[session])
+
+  useEffect(()=>{ reload() },[reload])
+
+  const handleSubmit=async()=>{
+    if(!session){
+      setError('Please sign in to submit feedback.')
+      return
+    }
+    setError('');setInfo('');setLoading(true)
+    const res=await submitUserFeedback({
+      message,
+      rating,
+      isPublic,
+      displayName: feedbackFirstName(session?.user),
+    })
+    setLoading(false)
+    if(res.error){ setError(res.error); return }
+    setMessage('')
+    setRating(5)
+    setInfo('Thank you — your feedback was saved.')
+    reload()
+  }
+
+  const fieldInput={
+    width:'100%',padding:'12px 13px',background:C.bg,
+    border:`1px solid ${C.border}`,borderRadius:9,color:C.text,
+    fontSize:14,outline:'none',boxSizing:'border-box',resize:'vertical',
+  }
+
+  if(!session){
+    return(
+      <div style={{maxWidth:720,margin:'0 auto',padding:'0 16px 32px'}}>
+        {publicList.length>0&&(
+          <div style={{marginBottom:20}}>
+            <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>Community feedback</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:12}}>
+              {publicList.map(fb=>(
+                <UserFeedbackCard key={fb.id} item={fb} compact/>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:24,textAlign:'center'}}>
+          <div style={{fontSize:32,marginBottom:10}}>💬</div>
+          <div style={{fontWeight:800,fontSize:16,marginBottom:6}}>Sign in to leave feedback</div>
+          <div style={{color:C.muted,fontSize:12,marginBottom:20,lineHeight:1.6}}>
+            Share what you think about Lakshmimata. Public reviews can appear on the home page.
+          </div>
+          {onExitDemo&&(
+            <button onClick={onExitDemo}
+              style={{padding:'10px 24px',borderRadius:8,border:'none',cursor:'pointer',
+                background:C.accent,color:'#000',fontWeight:700,fontSize:13}}>
+              Sign Up
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return(
+    <div style={{maxWidth:720,margin:'0 auto',padding:'0 16px 32px'}}>
+      <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:24,marginBottom:20}}>
+        <div style={{fontWeight:800,fontSize:18,marginBottom:4}}>User Feedback</div>
+        <div style={{color:C.muted,fontSize:12,marginBottom:18,lineHeight:1.6}}>
+          Tell us what’s working, what’s missing, or what we should improve. Public feedback may appear on the home page (first name only).
+        </div>
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:8}}>Rating</div>
+          <div style={{display:'flex',gap:6}}>
+            {[1,2,3,4,5].map(n=>(
+              <button key={n} type="button" onClick={()=>setRating(n)}
+                style={{background:'transparent',border:'none',cursor:'pointer',padding:4,fontSize:22,
+                  color:n<=rating?C.yellow:C.border,lineHeight:1}} aria-label={`${n} stars`}>★</button>
+            ))}
+          </div>
+        </div>
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:8}}>Your feedback</div>
+          <textarea value={message} onChange={e=>setMessage(e.target.value)}
+            placeholder="What do you like about Lakshmimata? What should we fix or add?"
+            rows={5} maxLength={1000} style={fieldInput}/>
+          <div style={{fontSize:10,color:C.muted,marginTop:4,textAlign:'right'}}>{message.length}/1000</div>
+        </div>
+        <label style={{display:'flex',alignItems:'flex-start',gap:10,fontSize:12,color:C.muted,marginBottom:16,cursor:'pointer'}}>
+          <input type="checkbox" checked={isPublic} onChange={e=>setIsPublic(e.target.checked)}
+            style={{marginTop:2,accentColor:C.accent}}/>
+          Show on the home page (uses your first name only)
+        </label>
+        {error&&<div style={{color:C.red,fontSize:12,marginBottom:10}}>{error}</div>}
+        {info&&<div style={{color:C.green,fontSize:12,marginBottom:10}}>{info}</div>}
+        <button type="button" onClick={handleSubmit} disabled={loading||message.trim().length<5}
+          style={{padding:'11px 22px',borderRadius:9,border:'none',cursor:loading?'wait':'pointer',
+            background:C.accent,color:'#000',fontWeight:700,fontSize:13,
+            opacity:loading||message.trim().length<5?0.55:1}}>
+          {loading?'Saving…':'Submit feedback'}
+        </button>
+      </div>
+
+      {mine.length>0&&(
+        <div style={{marginBottom:24}}>
+          <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>Your submissions</div>
+          <div style={{display:'flex',flexDirection:'column',gap:10}}>
+            {mine.map(fb=>(
+              <div key={fb.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px 16px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginBottom:6}}>
+                  {fb.rating>0&&<UserFeedbackStars rating={fb.rating} size={12}/>}
+                  <span style={{fontSize:10,color:C.muted,marginLeft:'auto'}}>
+                    {fb.is_public?'Public':'Private'} · {new Date(fb.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
+                  </span>
+                </div>
+                <div style={{fontSize:13,color:C.text,lineHeight:1.6,whiteSpace:'pre-wrap'}}>{fb.message}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {publicList.length>0&&(
+        <div>
+          <div style={{fontWeight:700,fontSize:14,marginBottom:12}}>Recent community feedback</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:12}}>
+            {publicList.map(fb=>(
+              <UserFeedbackCard key={fb.id} item={fb} compact/>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -9101,6 +9325,7 @@ export default function App(){
           {id:'announcements', label:'Announcements',short:'News',     Icon:Megaphone},
           {id:'themes', label:'Emerging Themes', short:'Themes', Icon:Layers},
           {id:'bestpicks', label:'AI Best Picks',    short:'AI Picks', Icon:Target},
+          {id:'feedback',  label:'User Feedback',     short:'Feedback', Icon:MessageSquare},
         ]
         const ITEM_H=52, DIVIDER_H=9 // 1px line + 4px margin top/bottom
         const navAll=[...navTop,...navBottom]
@@ -9222,7 +9447,8 @@ export default function App(){
                  mainTab==='patterns'?'Patterns':
                  mainTab==='watchlist'?'Watchlist':                 mainTab==='announcements'?'Announcements':
                  mainTab==='themes'?'Emerging Themes':
-                 mainTab==='bestpicks'?'AI Best Picks':'Account'}
+                 mainTab==='bestpicks'?'AI Best Picks':
+                 mainTab==='feedback'?'User Feedback':'Account'}
               </div>
               {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1}}>
                 {demoMode?(historyDate?`Real data from ${historyDate} — not live`:'Loading real data…'):`${session?.user?.email} · ${scanLabel}`}
@@ -9358,7 +9584,7 @@ export default function App(){
             Announcements/AI Picks/Watchlist/Settings, which read from
             entirely different tables — showing it there was confusing
             (looked like it might be filtering those too, when it isn't). */}
-        {historyDate&&!['announcements','themes','bestpicks','watchlist','settings'].includes(mainTab)&&(
+        {historyDate&&!['announcements','themes','bestpicks','feedback','watchlist','settings'].includes(mainTab)&&(
           <div style={{background:C.purple+'18',border:`1px solid ${C.purple}55`,borderRadius:10,
             padding:'10px 14px',marginBottom:14,display:'flex',alignItems:'center',
             justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
@@ -12808,6 +13034,11 @@ export default function App(){
             userSubscription={userSubscription}/>
         )}
 
+        {mainTab==='feedback'&&(
+          <UserFeedbackPanel session={session}
+            onExitDemo={()=>{setDemoMode(false);setStocks([]);setAuthMode('register');setShowAuth(true)}}/>
+        )}
+
       </div>
       </div>
 
@@ -13017,10 +13248,10 @@ export default function App(){
               style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <MoreHorizontal size={17} strokeWidth={1.8}
-                color={['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','settings','leaders','patterns'].includes(mainTab)?C.accent:C.muted}/>
+                color={['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders','patterns'].includes(mainTab)?C.accent:C.muted}/>
               <span style={{fontSize:8,fontWeight:600,
-                color:['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','settings','leaders','patterns'].includes(mainTab)?C.accent:C.muted}}>More</span>
-              {['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','settings','leaders','patterns'].includes(mainTab)&&
+                color:['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders','patterns'].includes(mainTab)?C.accent:C.muted}}>More</span>
+              {['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders','patterns'].includes(mainTab)&&
                 <div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           </div>
@@ -13040,7 +13271,7 @@ export default function App(){
                     ['squeeze',Zap,'Squeeze'],['weak',TrendingDown,'Weak'],['leaders',Flag,'Leaders'],['patterns',LineChartIcon,'Patterns'],
                     ['portfolio',Briefcase,'Portfolio'],['compare',GitCompare,'Compare'],['watchlist',Star,'Watchlist'],
                     ['announcements',Megaphone,'Announcements'],['themes',Layers,'Themes'],['bestpicks',Target,'AI Picks'],
-                    ['settings',Settings,'Account'],
+                    ['feedback',MessageSquare,'Feedback'],['settings',Settings,'Account'],
                   ].map(([t,Icon,label])=>(
                     <button key={t} onClick={()=>{setMainTab(t);setShowMoreMenu(false)}}
                       style={{padding:'16px 8px',background:mainTab===t?C.accent+'18':'transparent',
