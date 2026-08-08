@@ -49,15 +49,18 @@ export async function fetchRecentAlerts(limit=100) {
  * (~20 sectors × a handful of days), so this is cheap.
  */
 export async function fetchSectorRotation(days=10) {
+  // Pull extra history so the client can warm up JdK RS-Ratio /
+  // RS-Momentum (needs ~14 SMA + ~10 ROC bars) before the visible trail.
+  const lookback = Math.max(days + 45, 70)
   const { data, error } = await supabase
     .from('sector_history')
     .select('snapshot_date,sector,avg_rs,rank,count')
     .order('snapshot_date', { ascending: false })
-    .limit(days * 40)
+    .limit(lookback * 40)
   if (error) { console.error('fetchSectorRotation error:', error.message); return [] }
   if (!data || data.length === 0) return []
 
-  const recentDates = [...new Set(data.map(r => r.snapshot_date))].sort().slice(-days)
+  const recentDates = [...new Set(data.map(r => r.snapshot_date))].sort().slice(-lookback)
   const dateSet = new Set(recentDates)
 
   const bySector = {}
@@ -79,11 +82,10 @@ export async function fetchSectorRotation(days=10) {
       count:      last.count,
       level:      last.avg_rs,
       rank:       last.rank,
-      windowDays: sorted.length,
-      // Full daily trail (not just first/mid/last) so the quadrant chart
-      // draws a real curved path through every available day, matching
-      // how RRG charts actually look — a handful of sample points reads
-      // as a jagged triangle instead of a trajectory.
+      windowDays: days,
+      trailDays:  sorted.length,
+      // Full daily RS trail (avg_rs) — client converts to JdK RS-Ratio /
+      // RS-Momentum for the StockCharts-style RRG axes.
       trail:      sorted.map(r => ({ level: r.avg_rs, date: r.snapshot_date })),
       momentum:   sorted.length > 1 ? +(last.avg_rs - first.avg_rs).toFixed(1) : 0,
       rankChange: sorted.length > 1 ? (first.rank - last.rank) : 0,
@@ -102,15 +104,16 @@ export async function fetchSectorRotation(days=10) {
  * rather than throwing, same graceful-degradation as the other fetchers.
  */
 export async function fetchIndexRotation(days=10) {
+  const lookback = Math.max(days + 45, 70)
   const { data, error } = await supabase
     .from('index_history')
     .select('snapshot_date,name,rs_tv,rank_d')
     .order('snapshot_date', { ascending: false })
-    .limit(days * 40)
+    .limit(lookback * 40)
   if (error) { console.error('fetchIndexRotation error (index_history table may not exist yet):', error.message); return [] }
   if (!data || data.length === 0) return []
 
-  const recentDates = [...new Set(data.map(r => r.snapshot_date))].sort().slice(-days)
+  const recentDates = [...new Set(data.map(r => r.snapshot_date))].sort().slice(-lookback)
   const dateSet = new Set(recentDates)
 
   const byIndex = {}
@@ -132,7 +135,8 @@ export async function fetchIndexRotation(days=10) {
       meta:       'Index',
       level:      last.rs_tv,
       rank:       last.rank_d,
-      windowDays: sorted.length,
+      windowDays: days,
+      trailDays:  sorted.length,
       trail:      sorted.filter(r => r.rs_tv != null).map(r => ({ level: r.rs_tv, date: r.snapshot_date })),
       momentum:   sorted.length > 1 ? +(last.rs_tv - first.rs_tv).toFixed(1) : 0,
       rankChange: sorted.length > 1 && first.rank_d!=null && last.rank_d!=null ? (first.rank_d - last.rank_d) : 0,
@@ -149,16 +153,17 @@ export async function fetchIndexRotation(days=10) {
  */
 export async function fetchWatchlistRotation(syms=[], days=10) {
   if (!syms || syms.length === 0) return []
+  const lookback = Math.max(days + 45, 70)
   const { data, error } = await supabase
     .from('stock_history')
     .select('snapshot_date,sym,rs_tv,rs,sector')
     .in('sym', syms)
     .order('snapshot_date', { ascending: false })
-    .limit(days * syms.length * 2)
+    .limit(lookback * Math.max(syms.length, 1) * 2)
   if (error) { console.error('fetchWatchlistRotation error:', error.message); return [] }
   if (!data || data.length === 0) return []
 
-  const recentDates = [...new Set(data.map(r => r.snapshot_date))].sort().slice(-days)
+  const recentDates = [...new Set(data.map(r => r.snapshot_date))].sort().slice(-lookback)
   const dateSet = new Set(recentDates)
 
   const bySym = {}
@@ -180,7 +185,8 @@ export async function fetchWatchlistRotation(syms=[], days=10) {
       label:      sym,
       meta:       last.sector || '—',
       level:      last.level,
-      windowDays: sorted.length,
+      windowDays: days,
+      trailDays:  sorted.length,
       trail:      sorted.map(r => ({ level: r.level, date: r.snapshot_date })),
       momentum:   sorted.length > 1 ? +(last.level - first.level).toFixed(1) : 0,
     }
@@ -1507,6 +1513,58 @@ export async function fetchRecentFinancialResults() {
     if (!prev || toDate(row.period_ended) > toDate(prev.period_ended)) bySymbol[sym] = row
   }
   return bySymbol
+}
+
+/**
+ * Bulk financial_results history keyed by symbol (up to 8 periods each),
+ * for computing Excellent/Good/Neutral/Weak result ratings in filters.
+ * Pages through the table — ~1–2k rows today, cheap enough for client use.
+ */
+export async function fetchFinancialResultsGroupedForRatings() {
+  const select = 'symbol,period_ended,result_type,sales,other_income,pbt,exceptional_item,pat,eps,opm_pct,sales_qoq_pct,pat_qoq_pct'
+  const toDate = (s) => {
+    const d = new Date(s)
+    return isNaN(d.getTime()) ? new Date(0) : d
+  }
+  const all = []
+  let from = 0
+  const page = 1000
+  while (from < 8000) {
+    const { data, error } = await supabase
+      .from('financial_results')
+      .select(select)
+      .range(from, from + page - 1)
+    if (error) {
+      console.error('fetchFinancialResultsGroupedForRatings error:', error.message)
+      break
+    }
+    if (!data?.length) break
+    all.push(...data)
+    if (data.length < page) break
+    from += page
+  }
+  const bySym = {}
+  for (const r of all) {
+    const sym = (r.symbol || '').toUpperCase()
+    if (!sym) continue
+    if (!bySym[sym]) bySym[sym] = []
+    bySym[sym].push({ ...r, symbol: sym })
+  }
+  const grouped = {}
+  for (const [sym, rows] of Object.entries(bySym)) {
+    const byPeriod = {}
+    for (const row of rows) {
+      const existing = byPeriod[row.period_ended]
+      const isConsolidated = (row.result_type || '').toLowerCase().includes('consolidated')
+      if (!existing || (isConsolidated && !(existing.result_type || '').toLowerCase().includes('consolidated'))) {
+        byPeriod[row.period_ended] = row
+      }
+    }
+    grouped[sym] = Object.values(byPeriod)
+      .sort((a, b) => toDate(b.period_ended) - toDate(a.period_ended))
+      .slice(0, 8)
+  }
+  return grouped
 }
 
 /**
