@@ -564,6 +564,20 @@ export async function fetchMarketBreadthHistory(days=180) {
   return (data || []).reverse() // chronological order for charting
 }
 
+/** Daily FII/FPI & DII cash-market net flows (₹ Cr) — NSE provisional, post close. */
+export async function fetchFiiDiiDailyHistory(days = 90) {
+  const { data, error } = await supabase
+    .from('fii_dii_daily')
+    .select('trade_date,fii_buy,fii_sell,fii_net,dii_buy,dii_sell,dii_net,fetched_at')
+    .order('trade_date', { ascending: false })
+    .limit(days)
+  if (error) {
+    console.error('fetchFiiDiiDailyHistory error:', error.message)
+    return []
+  }
+  return (data || []).reverse()
+}
+
 export async function fetchSavedScanners(userId) {
   const { data, error } = await supabase
     .from('saved_scanners')
