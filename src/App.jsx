@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -2004,6 +2004,134 @@ function BreadthChart({data,isMobile,breadthRange,setBreadthRange}){
           </text>
         ) : null)}
       </svg>
+    </div>
+  )
+}
+
+// ── Daily FII/FPI & DII cash-market flows (NSE provisional, ₹ Cr) ─────
+function FiiDiiDailyPanel({data, isMobile, range, setRange}){
+  if(!data||data.length===0){
+    return (
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'16px',marginBottom:14}}>
+        <div style={{fontWeight:800,fontSize:13,marginBottom:4}}>💹 Daily FII / DII Flow</div>
+        <div style={{fontSize:11,color:C.muted,lineHeight:1.5}}>
+          NSE publishes provisional cash-market FII/FPI & DII buy/sell/net after market close (~5–6 PM IST).
+          History fills in once the daily fetch job runs — check back after today&apos;s close.
+        </div>
+      </div>
+    )
+  }
+
+  const daysMap = {'1M':21,'3M':63,'6M':126}
+  const slice = data.slice(-(daysMap[range]||21))
+  const latest = slice[slice.length-1]
+  const fmtCr = v => v==null?'—':`${v>=0?'+':''}${Number(v).toLocaleString('en-IN',{maximumFractionDigits:0})}`
+
+  const W=900,H=isMobile?210:240,padL=44,padR=12,padT=14,padB=30
+  const chartW=W-padL-padR,chartH=H-padT-padB
+  const nets = slice.flatMap(d=>[d.fii_net,d.dii_net].map(Number))
+  const maxAbs = Math.max(...nets.map(v=>Math.abs(v||0)), 1)
+  const zeroY = padT + chartH/2
+  const barW = Math.max(4, Math.min(14, chartW / Math.max(slice.length, 1) / 2.6))
+  const xAt = i => padL + ((i + 0.5) / slice.length) * chartW
+  const yAt = v => zeroY - (v / maxAbs) * (chartH/2 - 4)
+
+  return (
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 14px 8px',marginBottom:14}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,flexWrap:'wrap',marginBottom:10}}>
+        <div>
+          <div style={{fontWeight:800,fontSize:13}}>💹 Daily FII / DII Flow (Cash Market)</div>
+          <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+            NSE provisional · combined NSE+BSE+MSEI · ₹ Crore net buy/sell
+          </div>
+        </div>
+        {setRange&&(
+          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            {['1M','3M','6M'].map(label=>(
+              <button key={label} onClick={()=>setRange(label)}
+                style={{padding:'5px 12px',borderRadius:20,cursor:'pointer',fontSize:11,fontWeight:600,
+                  border:`1px solid ${range===label?C.accent:C.border}`,
+                  background:range===label?C.accent+'18':'transparent',
+                  color:range===label?C.accent:C.muted}}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {latest&&(
+        <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:8,marginBottom:12}}>
+          {[
+            {label:'FII Net', value:latest.fii_net, color:latest.fii_net>=0?C.green:C.red},
+            {label:'DII Net', value:latest.dii_net, color:latest.dii_net>=0?C.green:C.red},
+            {label:'FII Buy', value:latest.fii_buy, color:C.text},
+            {label:'DII Buy', value:latest.dii_buy, color:C.text},
+          ].map(c=>(
+            <div key={c.label} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px'}}>
+              <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:'uppercase'}}>{c.label}</div>
+              <div style={{fontSize:15,fontWeight:800,color:c.color,marginTop:2}}>{fmtCr(c.value)} Cr</div>
+              <div style={{fontSize:9,color:C.muted,marginTop:2}}>{latest.trade_date}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{display:'flex',gap:12,fontSize:10,color:C.muted,marginBottom:8}}>
+        <span><span style={{color:C.accent}}>■</span> FII net</span>
+        <span><span style={{color:C.teal}}>■</span> DII net</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:isMobile?170:200,display:'block'}}>
+        <line x1={padL} y1={zeroY} x2={W-padR} y2={zeroY} stroke={C.divider} strokeWidth={1}/>
+        {slice.map((d,i)=>{
+          const fii = Number(d.fii_net)||0
+          const dii = Number(d.dii_net)||0
+          const x = xAt(i)
+          return (
+            <g key={d.trade_date}>
+              <rect x={x-barW-1} y={Math.min(zeroY,yAt(fii))} width={barW} height={Math.max(2,Math.abs(zeroY-yAt(fii)))}
+                fill={fii>=0?C.green:C.red} opacity={0.85}/>
+              <rect x={x+1} y={Math.min(zeroY,yAt(dii))} width={barW} height={Math.max(2,Math.abs(zeroY-yAt(dii)))}
+                fill={dii>=0?C.teal:C.orange} opacity={0.85}/>
+            </g>
+          )
+        })}
+        {slice.map((d,i)=> i===0 || i===slice.length-1 || i%Math.ceil(slice.length/5)===0 ? (
+          <text key={`lbl-${d.trade_date}`} x={xAt(i)} y={H-8} fontSize={8} fill={C.muted} textAnchor="middle">
+            {String(d.trade_date).slice(5)}
+          </text>
+        ) : null)}
+      </svg>
+
+      <div style={{overflowX:'auto',marginTop:8}}>
+        <table style={{width:'100%',borderCollapse:'collapse',minWidth:480,fontSize:11}}>
+          <thead>
+            <tr style={{borderBottom:`1px solid ${C.border}`}}>
+              {['Date','FII Buy','FII Sell','FII Net','DII Buy','DII Sell','DII Net'].map(h=>(
+                <th key={h} style={{textAlign:h==='Date'?'left':'right',padding:'6px 8px',fontSize:9,
+                  color:C.muted,fontWeight:700,textTransform:'uppercase'}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {[...slice].reverse().slice(0,10).map(row=>(
+              <tr key={row.trade_date} style={{borderBottom:`1px solid ${C.border}33`}}>
+                <td style={{padding:'6px 8px',color:C.text}}>{row.trade_date}</td>
+                {['fii_buy','fii_sell','fii_net','dii_buy','dii_sell','dii_net'].map(k=>{
+                  const v = Number(row[k])
+                  const pos = k.endsWith('_net')
+                  return (
+                    <td key={k} style={{textAlign:'right',padding:'6px 8px',
+                      color:pos?(v>=0?C.green:C.red):C.muted,fontWeight:pos?700:500}}>
+                      {fmtCr(v)}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -5247,7 +5375,7 @@ const HELP_CONTENT = [
   {id:'market', title:'Market', body:`Market-wide health, split into sub-pages (chips under the header):
     • One chip at a time: Overview, Indices, Sectors, Industries, Gaps, Smart Money.
     • Overview — Verdict, today's breadth stats, plus A/D and EMA breadth history charts.
-    • Indices / Sectors / Industries — each its own table. Gaps — ≥2% open gaps. Smart Money — FII/DII + PP/IBV by sector.`},
+    • Indices / Sectors / Industries — each its own table. Gaps — ≥2% open gaps. Smart Money — daily FII/DII cash flows + quarterly sector holdings + PP/IBV momentum.`},
   {id:'rotation', title:'Sector Rotation', body:`A StockCharts-style Relative Rotation Graph (RRG):
     • X-axis = JdK RS-Ratio (trend of relative strength vs the market), Y-axis = JdK RS-Momentum (rate of change of that trend). Both centered at 100.
     • Leading (top-right, +/+) — strong and still improving. Weakening (bottom-right, +/-) — still strong but momentum fading.
@@ -7236,6 +7364,8 @@ export default function App(){
   const [helpCenterSection,setHelpCenterSection]=useState(null)
   const [breadthHistory,setBreadthHistory]=useState([])
   const [emaBreadthHistory,setEmaBreadthHistory]=useState([])
+  const [fiiDiiHistory,setFiiDiiHistory]=useState([])
+  const [fiiDiiRange,setFiiDiiRange]=useState('1M')
   const [breadthRange,setBreadthRange]=useState('1M')
   const [mainTab,setMainTab]=useState('rs')
   useEffect(()=>{
@@ -7261,7 +7391,10 @@ export default function App(){
       fetchMarketBreadthHistory(500).then(setBreadthHistory)
       fetchEmaBreadthHistory(500).then(setEmaBreadthHistory)
     }
-  },[mainTab])
+    if(mainTab==='market' && marketSubTab==='smartmoney' && fiiDiiHistory.length===0){
+      fetchFiiDiiDailyHistory(180).then(setFiiDiiHistory)
+    }
+  },[mainTab, marketSubTab])
 
   // Load saved theme preference once on mount, before first paint of
   // anything meaningful. themeVersion is a dummy counter — bumping it
@@ -10145,10 +10278,12 @@ export default function App(){
                   <div style={{marginBottom:12}}>
                     <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>Smart Money</div>
                     <div style={{fontSize:11,color:C.muted}}>
-                      Institutional positioning by sector — holdings (quarterly) and price/volume (daily)
+                      Daily FII/DII cash flows (NSE) plus quarterly sector holdings and price/volume momentum
                     </div>
                   </div>
-                  {smartMoneyBySector.length===0&&volumeSmartMoneyBySector.length===0&&(
+                  <FiiDiiDailyPanel data={fiiDiiHistory} isMobile={isMobile}
+                    range={fiiDiiRange} setRange={setFiiDiiRange}/>
+                  {smartMoneyBySector.length===0&&volumeSmartMoneyBySector.length===0&&fiiDiiHistory.length===0&&(
                     <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
                       Smart money data not available yet.
                     </div>
@@ -10156,10 +10291,10 @@ export default function App(){
                   {smartMoneyBySector.length>0&&(
                     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
                       <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
-                        🏦 Sector Flow (FII/DII)
+                        🏦 Sector Holdings (FII/DII)
                       </div>
                       <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
-                        Avg. change in FII+DII holding % last quarter, by sector — accumulation vs distribution, not intraday flow
+                        Avg. change in FII+DII shareholding % last quarter, by sector — not the same as daily cash flows above
                       </div>
                       <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
                         <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
