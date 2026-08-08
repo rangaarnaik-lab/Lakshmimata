@@ -260,6 +260,8 @@ const PRESETS = [
   {id:'resultNeu', label:'– Neutral',    icon:'📒', desc:'Latest quarter Result quality = Neutral'},
   {id:'resultWeak',label:'⚠ Weak',       icon:'📕', desc:'Latest quarter Result quality = Weak'},
   {id:'resultAny', label:'Has Results',  icon:'📊', desc:'Stock has financial results numbers on file'},
+  {id:'canslim',   label:'CANSLIM',      icon:'🎯', desc:'Passes 5+ of 7 CANSLIM growth criteria (O\'Neil method)'},
+  {id:'pead',      label:'PEAD',         icon:'📈', desc:'Post-Earnings Announcement Drift — reported 3–60 days ago with positive EPS drift'},
 ]
 
 // ── Hooks ─────────────────────────────────────────────────────────────
@@ -317,6 +319,8 @@ const SIGNAL_TOOLTIPS = {
   r1: 'Price just crossed above a significant resistance level it had been held under for a while.',
   cup: 'Price just broke out above a cup-and-handle pattern. Algorithmic — treat as a visual aid, not a precise signal.',
   guppy: 'EMA9 just crossed above EMA50 — a fresh golden-cross-style momentum shift.',
+  canslim: 'William O\'Neil CANSLIM growth checklist — passes 5+ of 7 criteria (earnings, new highs, volume, RS leader, institutional buying, Stage 2).',
+  pead: 'Post-Earnings Announcement Drift — reported within the last 3–60 days, EPS grew, and price/RS still drifting up.',
 }
 
 // Tooltips for the Index Performance Dashboard's column headers.
@@ -1302,6 +1306,33 @@ function LastUpdatedBar({scanMeta,lastRefresh,loading,autoRefresh,setAutoRefresh
   )
 }
 
+// ── Strategy badges (CANSLIM / PEAD) ─────────────────────────────────
+function StrategyBadge({kind, s}){
+  if(kind==='canslim' && s.isCanslim){
+    return(
+      <div title={`${SIGNAL_TOOLTIPS.canslim} (${s.canslimFlags || ''})`}
+        style={{display:'inline-flex',alignItems:'center',
+          padding:'1px 5px',borderRadius:3,fontSize:8,fontWeight:700,
+          background:C.accent+'18',color:C.accent,
+          border:`1px solid ${C.accent}33`,whiteSpace:'nowrap',cursor:'help'}}>
+        🎯 CANSLIM {s.canslimScore}/7
+      </div>
+    )
+  }
+  if(kind==='pead' && s.isPead){
+    return(
+      <div title={`${SIGNAL_TOOLTIPS.pead}${s.daysSinceResults!=null?` (${s.daysSinceResults}d since results)`:''}`}
+        style={{display:'inline-flex',alignItems:'center',
+          padding:'1px 5px',borderRadius:3,fontSize:8,fontWeight:700,
+          background:C.green+'18',color:C.green,
+          border:`1px solid ${C.green}33`,whiteSpace:'nowrap',cursor:'help'}}>
+        📈 PEAD
+      </div>
+    )
+  }
+  return null
+}
+
 // ── Stage Badge ──────────────────────────────────────────────────────
 function StageBadge({stage}){
   return(
@@ -1353,6 +1384,8 @@ function PresetFilterBar({active,setActive,stocks,resultRatingsMap}){
     else if(p.id === 'resultNeu') counts[p.id] = stocks.filter(s=>ratingOf(s)==='Neutral').length
     else if(p.id === 'resultWeak') counts[p.id] = stocks.filter(s=>ratingOf(s)==='Weak').length
     else if(p.id === 'resultAny') counts[p.id] = stocks.filter(s=>!!ratingOf(s)).length
+    else if(p.id === 'canslim')   counts[p.id] = stocks.filter(s=>s.isCanslim).length
+    else if(p.id === 'pead')      counts[p.id] = stocks.filter(s=>s.isPead).length
   })
 
   return(
@@ -5939,6 +5972,8 @@ function DesktopRow({s,i,onChart,visibleRsCols}){
         {/* Stage compact */}
         {vis.stage&&<div style={{display:'flex',flexDirection:'column',gap:2,alignItems:'flex-start'}}>
           <StageBadge stage={calcWeinsteinStage(s)}/>
+          <StrategyBadge kind="canslim" s={s}/>
+          <StrategyBadge kind="pead" s={s}/>
           {(()=>{const ibv=calcIBV(s);return ibv.isIBV&&(
             <div style={{padding:'2px 6px',borderRadius:5,fontSize:9,fontWeight:700,
               background:ibv.color+'22',color:ibv.color,border:`1px solid ${ibv.color}44`}}
@@ -8706,6 +8741,8 @@ export default function App(){
       if(presetFilter==='resultNeu'&&rating!=='Neutral') return false
       if(presetFilter==='resultWeak'&&rating!=='Weak') return false
     }
+    if(presetFilter==='canslim'&&!s.isCanslim) return false
+    if(presetFilter==='pead'&&!s.isPead) return false
     // Breakout type filter (RS Filters panel)
     if(breakoutTypeFilter==='hyht'&&!calcHYHTBreakout(s).isBreakout)return false
     if(breakoutTypeFilter==='r1'&&!s.isResistanceBreakout)return false

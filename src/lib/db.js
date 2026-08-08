@@ -370,6 +370,12 @@ function transformStockRow(row) {
     casa:           row.casa,           // CASA %
     fundamentalScore: row.fundamental_score,  // 0-100, quality-only (not a price target)
     fundamentalLabel: row.fundamental_label,  // 'Excellent' | 'Good' | 'Fair' | 'Poor'
+    isPead:           row.is_pead || false,
+    daysSinceResults: row.days_since_results,
+    lastResultsDate:  row.last_results_date,
+    isCanslim:        row.is_canslim || false,
+    canslimScore:     row.canslim_score,
+    canslimFlags:     row.canslim_flags,
     hist:       row.rs_hist || [],
     rsTrend: {
       trend: row.rs_trend || 'flat',
