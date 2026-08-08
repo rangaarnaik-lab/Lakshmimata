@@ -5,7 +5,7 @@ import {
   ThumbsUp, ThumbsDown
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
-import { supabase, fetchOwnerToken } from './lib/supabase'
+import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
 import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
@@ -6797,6 +6797,8 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
         if(!password) throw new Error('Password is required.')
         const{data,error:e}=await supabase.auth.signInWithPassword({email,password})
         if(e)throw e
+        // New login wins — kick sessions on other phones/browsers.
+        await revokeOtherSessions()
         const{data:decryptedToken}=await supabase.rpc('get_upstox_token')
         onLogin({user:data.user,token:decryptedToken||OWNER_TOKEN})
       } else {
@@ -7862,6 +7864,7 @@ export default function App(){
         // dumping the user onto the home dashboard.
         setPasswordRecovery(true)
         if(s){
+          await revokeOtherSessions()
           const ownerTok = await fetchOwnerToken()
           if(ownerTok) OWNER_TOKEN = ownerTok
           const{data:td}=await supabase.from('user_tokens').select('upstox_token').eq('user_id',s.user.id).single()
@@ -7870,8 +7873,14 @@ export default function App(){
         setAuthLoading(false)
         return
       }
+      if(event==='SIGNED_OUT'){ setSession(null); setPasswordRecovery(false); return }
       if(!s){ setSession(null); setPasswordRecovery(false); return }
-      // Handle Google OAuth callback and email confirmation
+      // Fresh login (email, Google OAuth, email confirm) — not token refresh
+      // or INITIAL_SESSION — so other devices are logged out right away.
+      if(event==='SIGNED_IN'){
+        await revokeOtherSessions()
+      }
+      // Handle Google OAuth callback, email confirmation, and token refresh
       if(event==='SIGNED_IN'||event==='TOKEN_REFRESHED'){
         // Load owner token fresh
         const ownerTok = await fetchOwnerToken()
@@ -7887,9 +7896,38 @@ export default function App(){
         }catch(_){}
         setAuthLoading(false)
       }
-      if(event==='SIGNED_OUT'){ setSession(null); setPasswordRecovery(false) }
     })
-    return()=>subscription.unsubscribe()
+
+    // Old devices only notice a revoked session on refresh. Poll + check on
+    // tab focus so logout after login-elsewhere happens within ~1 min, not
+    // only when the JWT would have expired (often 1h).
+    const checkSessionStillValid=async()=>{
+      try{
+        const{data:{session:cur}}=await supabase.auth.getSession()
+        if(!cur) return
+        const{data,error}=await supabase.auth.refreshSession()
+        if(error||!data?.session){
+          await supabase.auth.signOut({scope:'local'})
+          setSession(null)
+          setPasswordRecovery(false)
+        }
+      }catch(_){
+        try{ await supabase.auth.signOut({scope:'local'}) }catch(__){}
+        setSession(null)
+        setPasswordRecovery(false)
+      }
+    }
+    const heartbeat=setInterval(checkSessionStillValid, 60_000)
+    const onFocus=()=>{ if(document.visibilityState==='visible') checkSessionStillValid() }
+    document.addEventListener('visibilitychange', onFocus)
+    window.addEventListener('focus', onFocus)
+
+    return()=>{
+      subscription.unsubscribe()
+      clearInterval(heartbeat)
+      document.removeEventListener('visibilitychange', onFocus)
+      window.removeEventListener('focus', onFocus)
+    }
   },[])
 
   useEffect(()=>{
