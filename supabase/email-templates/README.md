@@ -6,9 +6,14 @@ in the dashboard. App code cannot change those emails by itself.
 ## Paste these in (2 minutes)
 
 1. Open **Supabase Dashboard** → your project  
-2. **Authentication** → **Email Templates**  
-3. Update each template below  
-4. **Save**
+2. **Authentication** → **Email Templates** → **Reset password**  
+3. **Subject** → set exactly: `Lakshmimata password reset`  
+4. **Body** → paste HTML from [`recovery.html`](./recovery.html)  
+5. Also update **Confirm signup** from [`confirm-signup.html`](./confirm-signup.html)  
+6. **Save**
+
+The “from” name still says Supabase until you add custom SMTP
+(**Authentication → SMTP Settings**) with from name `Lakshmimata`.
 
 Also under **Authentication → URL Configuration**:
 
@@ -27,7 +32,7 @@ is not “from supabase.io” (better deliverability + branding).
 
 **Subject:**
 ```
-Reset your Lakshmimata password
+Lakshmimata password reset
 ```
 
 **Body:** paste the full HTML from [`recovery.html`](./recovery.html)
