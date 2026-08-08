@@ -3290,7 +3290,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab}){
   )
 }
 
-function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, detailTab, setDetailTab, navigateTo, isMobile}){
+function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, detailTab, setDetailTab, navigateTo, isMobile, compact}){
   const [customizeOpen, setCustomizeOpen]=useState(false)
   const mcapStock=stocks?.find(s=>s.sym===sym)
   const mcapLabel=mcapStock?.marketCap!=null
@@ -3316,8 +3316,8 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
     return null
   }
   return (
-    <div style={{flexShrink:0,maxHeight:isMobile?'42vh':'46vh',overflowY:'auto',
-      padding:'8px 14px 14px',borderTop:`1px solid ${C.divider}`,background:C.bg}}>
+    <div style={{flexShrink:0,maxHeight:compact?(isMobile?'24vh':'20vh'):(isMobile?'42vh':'38vh'),
+      overflowY:'auto',padding:'8px 14px 14px',borderTop:`1px solid ${C.divider}`,background:C.bg}}>
       <div style={{display:'flex',justifyContent:'flex-end',marginBottom:customizeOpen?8:4}}>
         <button type="button" onClick={()=>setCustomizeOpen(v=>!v)}
           style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${customizeOpen?C.accent:C.border}`,
@@ -3392,6 +3392,8 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
         height:'100vh',overflow:'hidden',
         display:'flex',flexDirection:'column',background:C.sidebar,
         borderLeft:`1px solid ${C.divider}`,transition:customPct!=null?'none':'flex 0.2s ease'}
+
+  const chartExpanded=wide>=1||(customPct!=null&&customPct>=50)
 
   return(
     <div style={panelStyle}>
@@ -3479,10 +3481,9 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
         </div>
       )}
 
-      {/* Body — minHeight keeps the chart visible when Results/Concall/PPT
-          detail tabs below expand (PPT cards are especially tall). */}
-      <div style={{flex:1,minHeight:isMobile?220:280,position:'relative',
-        overflow:chartTab==='own'?'auto':'hidden'}}>
+      {/* Body — flex child fills remaining height so price + volume scale together */}
+      <div style={{flex:1,minHeight:0,position:'relative',overflow:'hidden',
+        display:'flex',flexDirection:'column'}}>
         {chartTab==='tv'?(
           <>
             {!loaded&&(
@@ -3506,7 +3507,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
       {!isIndex&&(
         <ChartBelowContent sym={sym} stocks={stocks} sectionOrder={sectionOrder}
           onSectionOrderChange={persistSectionOrder} detailTab={detailTab} setDetailTab={setDetailTab}
-          navigateTo={navigateTo} isMobile={isMobile}/>
+          navigateTo={navigateTo} isMobile={isMobile} compact={chartExpanded}/>
       )}
       {!isIndex&&<AskAiAgent symbol={sym} isMobile={isMobile}/>}
     </div>
@@ -4769,7 +4770,7 @@ function CandlestickChart({sym, isMobile, isIndex}){
   // ── Layout constants needed by both the zoom/pan handlers below and
   // the SVG render further down ──
   const W = 900, H = 520
-  const padL = 8, padR = 54, padT = 10, priceH = 320, volH = 95, gapH = 6
+  const padL = 8, padR = 54, padT = 10, priceH = 300, volH = 115, gapH = 6
   const chartW = W - padL - padR
 
   // barsToShow/start now driven by zoomBars/panOffset (mouse wheel /
@@ -4947,10 +4948,17 @@ function CandlestickChart({sym, isMobile, isIndex}){
   const applyRangePreset = (r) => { setZoomBars(zoomBarsForRange(r)); setPanOffset(0) }
 
   return (
-    <div style={{padding:'10px 12px'}}>
+    <div style={{
+      padding:'10px 12px',
+      height:isMobile?undefined:'100%',
+      flex:isMobile?undefined:1,
+      minHeight:isMobile?undefined:0,
+      display:'flex',
+      flexDirection:'column',
+    }}>
       <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
       {/* Controls */}
-      <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8,alignItems:'center'}}>
+      <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8,alignItems:'center',flexShrink:0}}>
         {isLiveUpdating&&(
           <div title="Today's candle is updating from the live price feed (~every 45s during market hours). Prior days are final daily closes."
             style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:6,
@@ -4998,7 +5006,7 @@ function CandlestickChart({sym, isMobile, isIndex}){
       </div>
 
       {/* Hover readout */}
-      <div style={{fontSize:10,color:C.muted,marginBottom:4,minHeight:14}}>
+      <div style={{fontSize:10,color:C.muted,marginBottom:4,minHeight:14,flexShrink:0}}>
         {hover ? (
           <span>
             {pinnedIdx!=null && (
@@ -5018,10 +5026,15 @@ function CandlestickChart({sym, isMobile, isIndex}){
         ) : `${sym} · ${barsToShow} days · tap a candle to pin its data`}
       </div>
 
-      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`}
-        style={isMobile
-          ? {width:'100%',height:430,display:'block',touchAction:'none',cursor:dragRef.current?'grabbing':'grab'}
-          : {width:'100%',aspectRatio:`${W} / ${H}`,display:'block',touchAction:'none',cursor:dragRef.current?'grabbing':'grab'}}
+      <div style={{flex:1,minHeight:isMobile?280:180,position:'relative'}}>
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet"
+        style={{
+          width:'100%',
+          height:'100%',
+          display:'block',
+          touchAction:'none',
+          cursor:dragRef.current?'grabbing':'grab',
+        }}
         onMouseLeave={()=>{setHoverIdx(null);dragRef.current=null}}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
@@ -5240,9 +5253,10 @@ function CandlestickChart({sym, isMobile, isIndex}){
           </text>
         ))}
       </svg>
+      </div>
 
       {/* Legend */}
-      <div style={{display:'flex',flexWrap:'wrap',gap:10,marginTop:6,fontSize:9,color:C.muted}}>
+      <div style={{display:'flex',flexWrap:'wrap',gap:10,marginTop:6,fontSize:9,color:C.muted,flexShrink:0}}>
         <span><span style={{color:TV_VOL_UP}}>■</span> Vol up</span>
         <span><span style={{color:TV_VOL_DN}}>■</span> Vol down</span>
         <span><span style={{color:TV_VOL_MA}}>—</span> Vol MA20</span>
