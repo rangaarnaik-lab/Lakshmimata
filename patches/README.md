@@ -7,18 +7,15 @@ Results extraction loop that produced the Railway logs lives in
 
 ## `results-catchup-idle-lookback-7468.patch`
 
-Fixes three issues visible in the 2026-08-08 catchup logs:
+Fixes issues visible in the 2026-08-08 catchup logs (**90-day lookback kept**):
 
-1. **Catchup lookback stuck at 90d** — catchup was inheriting
-   `RESULTS_PDF_LOOKBACK_DAYS` (often 90 for steady-state), so it went idle
-   (`nothing new`) inside a 90-day window while older filings still needed
-   extraction. Catchup now defaults to **365 days** independently.
-2. **Idle log spam** — empty catchup cycles slept 20s and logged every cycle.
+1. **Idle log spam** — empty catchup cycles slept 20s and logged every cycle.
    Now sleeps **30 minutes** when the queue is empty (About-company pattern)
    and only heartbeats occasionally.
-3. **GREENPANEL YoY/comparison collision** — when Gemini labels the same
+2. **GREENPANEL YoY/comparison collision** — when Gemini labels the same
    period as both comparison and YoY, keep YoY only before saving (avoids
    duplicate rows / bad QoQ%).
+3. Catchup default lookback is **90 days** (same as steady-state).
 
 ### Apply
 
