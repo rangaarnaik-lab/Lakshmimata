@@ -3290,16 +3290,8 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab}){
   )
 }
 
-function loadChartSectionsCollapsed(){
-  try{ return JSON.parse(localStorage.getItem('lakshmimata-chart-sections-collapsed')||'{}') }
-  catch(e){ return {} }
-}
-function persistChartSectionsCollapsed(map){
-  try{ localStorage.setItem('lakshmimata-chart-sections-collapsed', JSON.stringify(map)) }catch(e){}
-}
-
-/** TradingView-style collapsible panel — chevron header, drag handle, thin dividers. */
-function TvSectionPanel({title, subtitle, collapsed, onToggle, children, onDragStart, onDragOver, onDrop, onDragEnd, isDragOver}){
+/** TradingView-style section header + drag handle; content always visible. */
+function TvSectionPanel({title, subtitle, children, onDragStart, onDragOver, onDrop, onDragEnd, isDragOver}){
   return (
     <div style={{borderBottom:`1px solid ${C.divider}`,
       background:isDragOver?C.accent+'0c':'transparent'}}>
@@ -3309,57 +3301,37 @@ function TvSectionPanel({title, subtitle, collapsed, onToggle, children, onDragS
         onDragOver={onDragOver}
         onDrop={onDrop}
         onDragEnd={onDragEnd}
-        style={{display:'flex',alignItems:'center',gap:0,height:34,
-          background:collapsed?C.bg:C.card,cursor:'pointer',userSelect:'none'}}>
-        <button type="button" onClick={onToggle}
-          style={{display:'flex',alignItems:'center',gap:6,flex:1,minWidth:0,height:'100%',
-            padding:'0 10px',border:'none',background:'transparent',cursor:'pointer',textAlign:'left'}}>
-          <span style={{fontSize:9,color:C.muted,width:10,flexShrink:0,lineHeight:1}}>
-            {collapsed?'▸':'▾'}
-          </span>
-          <span style={{fontSize:12,fontWeight:600,color:collapsed?C.muted:C.text,
+        style={{display:'flex',alignItems:'center',gap:0,height:32,
+          background:C.card,userSelect:'none'}}>
+        <div style={{display:'flex',alignItems:'center',gap:6,flex:1,minWidth:0,
+          padding:'0 10px',height:'100%'}}>
+          <span style={{fontSize:12,fontWeight:600,color:C.text,
             overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
             {title}
           </span>
           {subtitle&&(
-            <span style={{fontSize:10,fontWeight:500,color:C.muted,marginLeft:4,
+            <span style={{fontSize:10,fontWeight:500,color:C.muted,
               overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flexShrink:1}}>
               {subtitle}
             </span>
           )}
-        </button>
+        </div>
         <span title="Drag to reorder"
-          style={{color:C.muted,fontSize:11,cursor:'grab',padding:'0 10px',lineHeight:'34px',
+          style={{color:C.muted,fontSize:11,cursor:'grab',padding:'0 10px',lineHeight:'32px',
             borderLeft:`1px solid ${C.divider}`}}>⋮⋮</span>
       </div>
-      {!collapsed&&(
-        <div style={{padding:'8px 10px 12px',background:C.bg,borderTop:`1px solid ${C.divider}`}}>
-          {children}
-        </div>
-      )}
+      <div style={{padding:'8px 10px 12px',background:C.bg}}>
+        {children}
+      </div>
     </div>
   )
 }
 
 function ChartBelowSections({sym, stocks, sectionOrder, onSectionOrderChange, detailTab, setDetailTab, navigateTo, isMobile}){
-  const [collapsed, setCollapsed]=useState(loadChartSectionsCollapsed)
   const [customizeOpen, setCustomizeOpen]=useState(false)
   const [dragOverIdx, setDragOverIdx]=useState(null)
   const dragIdx=useRef(null)
 
-  const toggleCollapsed=(id)=>{
-    setCollapsed(prev=>{
-      const next={...prev, [id]: !prev[id]}
-      persistChartSectionsCollapsed(next)
-      return next
-    })
-  }
-  const setAllCollapsed=(val)=>{
-    const next={}
-    for(const id of sectionOrder) next[id]=val
-    setCollapsed(next)
-    persistChartSectionsCollapsed(next)
-  }
   const moveSection=(from,to)=>{
     if(from==null||to==null||from===to||from<0||to<0||from>=sectionOrder.length||to>=sectionOrder.length) return
     const next=[...sectionOrder]
@@ -3412,29 +3384,14 @@ function ChartBelowSections({sym, stocks, sectionOrder, onSectionOrderChange, de
   return (
     <div style={{flexShrink:0,maxHeight:isMobile?'42vh':'46vh',overflowY:'auto',
       borderTop:`1px solid ${C.divider}`,background:C.bg}}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
-        padding:'6px 10px',borderBottom:`1px solid ${C.divider}`,
-        background:C.sidebar,position:'sticky',top:0,zIndex:2}}>
-        <span style={{fontSize:10,fontWeight:700,color:C.muted,letterSpacing:'0.06em',textTransform:'uppercase'}}>
-          Panels
-        </span>
-        <div style={{display:'flex',alignItems:'center',gap:4}}>
-          <button type="button" onClick={()=>setAllCollapsed(false)}
-            style={{padding:'2px 8px',borderRadius:4,border:'none',background:'transparent',
-              color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>Expand all</button>
-          <span style={{color:C.divider}}>|</span>
-          <button type="button" onClick={()=>setAllCollapsed(true)}
-            style={{padding:'2px 8px',borderRadius:4,border:'none',background:'transparent',
-              color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>Collapse all</button>
-          <span style={{color:C.divider}}>|</span>
-          <button type="button" onClick={()=>setCustomizeOpen(v=>!v)}
-            title="Customize panel order"
-            style={{padding:'2px 8px',borderRadius:4,border:`1px solid ${customizeOpen?C.accent:C.border}`,
-              background:customizeOpen?C.accent+'18':'transparent',
-              color:customizeOpen?C.accent:C.muted,fontSize:10,fontWeight:700,cursor:'pointer'}}>
-            ⚙
-          </button>
-        </div>
+      <div style={{display:'flex',justifyContent:'flex-end',padding:'6px 10px',
+        borderBottom:`1px solid ${C.divider}`,background:C.sidebar}}>
+        <button type="button" onClick={()=>setCustomizeOpen(v=>!v)}
+          style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${customizeOpen?C.accent:C.border}`,
+            background:customizeOpen?C.accent+'18':'transparent',
+            color:customizeOpen?C.accent:C.muted,fontSize:10,fontWeight:700,cursor:'pointer'}}>
+          {customizeOpen?'Done':'Reorder sections'}
+        </button>
       </div>
       {customizeOpen&&(
         <div style={{padding:'10px 12px',borderBottom:`1px solid ${C.divider}`,background:C.card}}>
@@ -3448,15 +3405,13 @@ function ChartBelowSections({sym, stocks, sectionOrder, onSectionOrderChange, de
           />
         </div>
       )}
-      {visibleOrder.map((sectionId,idx)=>{
+      {visibleOrder.map((sectionId)=>{
         const orderIdx=sectionOrder.indexOf(sectionId)
         return (
           <TvSectionPanel
             key={sectionId}
             title={CHART_SECTION_LABELS[sectionId]||sectionId}
             subtitle={sectionSubtitle(sectionId)}
-            collapsed={!!collapsed[sectionId]}
-            onToggle={()=>toggleCollapsed(sectionId)}
             isDragOver={dragOverIdx===orderIdx}
             onDragStart={(e)=>{ dragIdx.current=orderIdx; e.dataTransfer.effectAllowed='move' }}
             onDragOver={(e)=>{ e.preventDefault(); setDragOverIdx(orderIdx) }}
