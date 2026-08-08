@@ -3290,86 +3290,53 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab}){
   )
 }
 
-/** Section header + drag handle; content always visible (no collapse/hide). */
-function TvSectionPanel({title, subtitle, children, onDragStart, onDragOver, onDrop, onDragEnd, isDragOver}){
-  return (
-    <div style={{borderBottom:`1px solid ${C.divider}`,background:isDragOver?C.accent+'0c':'transparent'}}>
-      <div draggable onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd}
-        style={{display:'flex',alignItems:'center',height:32,background:C.card,userSelect:'none'}}>
-        <div style={{display:'flex',alignItems:'center',gap:6,flex:1,minWidth:0,padding:'0 10px'}}>
-          <span style={{fontSize:12,fontWeight:600,color:C.text}}>{title}</span>
-          {subtitle&&<span style={{fontSize:10,color:C.muted}}>{subtitle}</span>}
-        </div>
-        <span title="Drag to reorder" style={{color:C.muted,fontSize:11,cursor:'grab',padding:'0 10px',
-          lineHeight:'32px',borderLeft:`1px solid ${C.divider}`}}>⋮⋮</span>
-      </div>
-      <div style={{padding:'8px 10px 12px',background:C.bg}}>{children}</div>
-    </div>
-  )
-}
-
-function ChartBelowSections({sym, stocks, sectionOrder, onSectionOrderChange, detailTab, setDetailTab, navigateTo, isMobile}){
+function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, detailTab, setDetailTab, navigateTo, isMobile}){
   const [customizeOpen, setCustomizeOpen]=useState(false)
-  const [dragOverIdx, setDragOverIdx]=useState(null)
-  const dragIdx=useRef(null)
-  const moveSection=(from,to)=>{
-    if(from==null||to==null||from===to||from<0||to<0||from>=sectionOrder.length||to>=sectionOrder.length) return
-    const next=[...sectionOrder]
-    const [item]=next.splice(from,1)
-    next.splice(to,0,item)
-    onSectionOrderChange(next)
-  }
   const mcapStock=stocks?.find(s=>s.sym===sym)
   const mcapLabel=mcapStock?.marketCap!=null
     ? (mcapStock.marketCap>=100000?`₹${(mcapStock.marketCap/100000).toFixed(1)}L Cr`:`₹${mcapStock.marketCap.toFixed(0)} Cr`)
     : null
-  const visibleOrder=sectionOrder.filter(id=>id!=='mcap'||mcapLabel!=null)
-  const renderBody=(sectionId)=>{
-    if(sectionId==='mcap') return <div style={{fontSize:13,fontWeight:700,color:C.text}}>{mcapLabel}</div>
-    if(sectionId==='themes') return <StockThemesAfterMcap symbol={sym}/>
-    if(sectionId==='mgmt') return <MgmtFlagsCard symbol={sym} compact/>
-    if(sectionId==='details'){
-      return <StockDetailTabs sym={sym} stocks={stocks} tab={detailTab} setTab={setDetailTab}
-        onSelectSymbol={(s)=>navigateTo(s,{openResults:true})}/>
+  const renderBlock=(sectionId)=>{
+    if(sectionId==='mcap'){
+      if(!mcapLabel) return null
+      return (
+        <div style={{marginBottom:10,fontSize:12,fontWeight:700,color:C.text}}>
+          Market Cap: <span style={{color:C.muted,fontWeight:600}}>{mcapLabel}</span>
+        </div>
+      )
     }
-    return null
-  }
-  const sectionSubtitle=(sectionId)=>{
-    if(sectionId==='mcap') return mcapLabel
-    if(sectionId==='details') return STOCK_DETAIL_TABS.find(t=>t.key===detailTab)?.label||null
+    if(sectionId==='themes') return <div style={{marginBottom:10}}><StockThemesAfterMcap symbol={sym}/></div>
+    if(sectionId==='mgmt') return <div style={{marginBottom:10}}><MgmtFlagsCard symbol={sym} compact/></div>
+    if(sectionId==='details'){
+      return (
+        <StockDetailTabs sym={sym} stocks={stocks} tab={detailTab} setTab={setDetailTab}
+          onSelectSymbol={(s)=>navigateTo(s,{openResults:true})}/>
+      )
+    }
     return null
   }
   return (
     <div style={{flexShrink:0,maxHeight:isMobile?'42vh':'46vh',overflowY:'auto',
-      borderTop:`1px solid ${C.divider}`,background:C.bg}}>
-      <div style={{display:'flex',justifyContent:'flex-end',padding:'6px 10px',
-        borderBottom:`1px solid ${C.divider}`,background:C.sidebar}}>
+      padding:'8px 14px 14px',borderTop:`1px solid ${C.divider}`,background:C.bg}}>
+      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:customizeOpen?8:4}}>
         <button type="button" onClick={()=>setCustomizeOpen(v=>!v)}
           style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${customizeOpen?C.accent:C.border}`,
             background:customizeOpen?C.accent+'18':'transparent',color:customizeOpen?C.accent:C.muted,
             fontSize:10,fontWeight:700,cursor:'pointer'}}>
-          {customizeOpen?'Done':'Reorder sections'}
+          {customizeOpen?'Done':'Reorder blocks'}
         </button>
       </div>
       {customizeOpen&&(
-        <div style={{padding:'10px 12px',borderBottom:`1px solid ${C.divider}`,background:C.card}}>
+        <div style={{marginBottom:12,padding:'10px 12px',borderRadius:10,
+          border:`1px solid ${C.border}`,background:C.card}}>
           <ReorderableList items={sectionOrder} onReorder={onSectionOrderChange}
-            hint="Drag to change section order. Saved automatically."
+            hint="Change the order of content below the chart."
             renderItem={(key)=><span style={{fontSize:12,fontWeight:700,color:C.text}}>{CHART_SECTION_LABELS[key]||key}</span>}/>
         </div>
       )}
-      {visibleOrder.map((sectionId)=>{
-        const orderIdx=sectionOrder.indexOf(sectionId)
-        return (
-          <TvSectionPanel key={sectionId} title={CHART_SECTION_LABELS[sectionId]||sectionId}
-            subtitle={sectionSubtitle(sectionId)} isDragOver={dragOverIdx===orderIdx}
-            onDragStart={(e)=>{ dragIdx.current=orderIdx; e.dataTransfer.effectAllowed='move' }}
-            onDragOver={(e)=>{ e.preventDefault(); setDragOverIdx(orderIdx) }}
-            onDrop={(e)=>{ e.preventDefault(); moveSection(dragIdx.current,orderIdx); dragIdx.current=null; setDragOverIdx(null) }}
-            onDragEnd={()=>{ dragIdx.current=null; setDragOverIdx(null) }}>
-            {renderBody(sectionId)}
-          </TvSectionPanel>
-        )
+      {sectionOrder.map(sectionId=>{
+        const block=renderBlock(sectionId)
+        return block?<React.Fragment key={sectionId}>{block}</React.Fragment>:null
       })}
     </div>
   )
@@ -3537,7 +3504,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
         )}
       </div>
       {!isIndex&&(
-        <ChartBelowSections sym={sym} stocks={stocks} sectionOrder={sectionOrder}
+        <ChartBelowContent sym={sym} stocks={stocks} sectionOrder={sectionOrder}
           onSectionOrderChange={persistSectionOrder} detailTab={detailTab} setDetailTab={setDetailTab}
           navigateTo={navigateTo} isMobile={isMobile}/>
       )}
