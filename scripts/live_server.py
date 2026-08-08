@@ -20,7 +20,8 @@ import math
 import asyncio
 import aiohttp
 import logging
-from datetime import datetime, timezone, timedelta
+import subprocess
+from datetime import datetime, timezone, timedelta, date
 from typing import Optional
 
 # ── Logging ───────────────────────────────────────────────────────────
@@ -653,6 +654,72 @@ async def supabase_upsert(session: aiohttp.ClientSession, table: str, rows: list
         except Exception as e:
             log.error(f"Supabase error: {e}")
 
+# ── FII/DII daily flows (stored in Supabase fii_dii_daily) ───────────
+async def fii_dii_row_count(session: aiohttp.ClientSession) -> int:
+    url = f"{SUPABASE_URL}/rest/v1/fii_dii_daily?select=trade_date&limit=1"
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Prefer": "count=exact",
+    }
+    try:
+        async with session.head(
+            url,
+            headers={**headers, "Range-Unit": "items", "Range": "0-0"},
+            timeout=aiohttp.ClientTimeout(total=15),
+        ) as r:
+            if r.status not in (200, 206):
+                return 0
+            cr = r.headers.get("Content-Range", "")
+            # e.g. "0-0/127" or "*/0"
+            if "/" in cr:
+                total = cr.split("/")[-1]
+                return int(total) if total.isdigit() else 0
+    except Exception as e:
+        log.warning(f"FII/DII count check failed: {e}")
+    return 0
+
+def run_fii_dii_script(backfill_days: int = 0) -> bool:
+    """Sync helper — runs scripts/fetch_fii_dii.py (uses Railway Supabase env)."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    script = os.path.join(root, "scripts", "fetch_fii_dii.py")
+    cmd = [sys.executable, script]
+    if backfill_days > 0:
+        cmd += ["--backfill-days", str(backfill_days)]
+    env = {
+        **os.environ,
+        "SUPABASE_URL": SUPABASE_URL,
+        "SUPABASE_SERVICE_KEY": SUPABASE_KEY,
+    }
+    try:
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
+        if result.stdout:
+            for line in result.stdout.strip().splitlines():
+                log.info(f"FII/DII: {line}")
+        if result.returncode != 0:
+            log.warning(f"FII/DII fetch failed: {result.stderr.strip() or result.stdout.strip()}")
+            return False
+        return True
+    except Exception as e:
+        log.warning(f"FII/DII fetch error: {e}")
+        return False
+
+async def maybe_backfill_fii_dii(session: aiohttp.ClientSession) -> None:
+    """One-time history load on Railway if table is sparse (or FII_DII_BACKFILL_DAYS is set)."""
+    forced = os.environ.get("FII_DII_BACKFILL_DAYS", "").strip()
+    if forced:
+        days = int(forced)
+    else:
+        count = await fii_dii_row_count(session)
+        if count >= 10:
+            log.info(f"FII/DII: {count} rows already in Supabase — skipping backfill")
+            return
+        days = 126
+        log.info(f"FII/DII: only {count} rows — backfilling ~{days} sessions")
+    ok = await asyncio.to_thread(run_fii_dii_script, days)
+    if ok:
+        log.info("✅ FII/DII history backfill complete")
+
 async def supabase_update_meta(session: aiohttp.ClientSession, meta: dict):
     """Update scan metadata."""
     url = f"{SUPABASE_URL}/rest/v1/scan_meta"
@@ -918,11 +985,15 @@ async def main():
         log.info("Loading historical data cache at startup…")
         await load_historical_cache(session)
 
+        # Seed FII/DII history into Supabase (Railway has service-role creds)
+        await maybe_backfill_fii_dii(session)
+
         # Run initial scan
         await run_scan(session, 'batch_morning')
 
         last_scan = time.time()
         scan_count = 0
+        last_fii_dii_fetch: Optional[date] = None
         # Announcements — same cadence as the price scan (60s) for
         # near-real-time updates. NOTE: this is a meaningfully higher
         # hit-rate against NSE than the original 15-min interval — NSE
@@ -961,6 +1032,14 @@ async def main():
                             log.info(f"📢 {len(anns)} announcements upserted")
                     except Exception as e:
                         log.warning(f"Announcements cycle error: {e}")
+
+                # Daily FII/DII after NSE publish (~6:15 PM IST)
+                ist_now = datetime.now(IST)
+                if (ist_now.hour > 18 or (ist_now.hour == 18 and ist_now.minute >= 15)):
+                    if last_fii_dii_fetch != ist_now.date():
+                        if await asyncio.to_thread(run_fii_dii_script, 0):
+                            last_fii_dii_fetch = ist_now.date()
+                            log.info("✅ FII/DII today upserted")
 
                 await asyncio.sleep(5)  # check every 5 seconds
 
