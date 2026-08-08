@@ -4768,8 +4768,8 @@ function CandlestickChart({sym, isMobile, isIndex}){
 
   // ── Layout constants needed by both the zoom/pan handlers below and
   // the SVG render further down ──
-  const W = 900, H = 480
-  const padL = 8, padR = 54, padT = 10, priceH = 340, volH = 60, gapH = 8
+  const W = 900, H = 520
+  const padL = 8, padR = 54, padT = 10, priceH = 320, volH = 95, gapH = 6
   const chartW = W - padL - padR
 
   // barsToShow/start now driven by zoomBars/panOffset (mouse wheel /
@@ -4905,8 +4905,12 @@ function CandlestickChart({sym, isMobile, isIndex}){
     }
   }
 
-  const maxVol = Math.max(...vVol.filter(v=>v!=null), ...vVolEma.filter(v=>v!=null), 1)
+  const maxVol = Math.max(...vVol.filter(v=>v!=null), 1)
   const volToY = v => volTop + volH - (v / maxVol) * volH
+  const volBarW = Math.max(1.5, candleW * 0.82)
+  const TV_VOL_UP = '#26a69a'
+  const TV_VOL_DN = '#ef5350'
+  const TV_VOL_MA = '#5d8cff'
 
   // X-axis labels, TradingView style: show the month abbreviation at
   // month boundaries, just the day number otherwise.
@@ -4927,6 +4931,7 @@ function CandlestickChart({sym, isMobile, isIndex}){
   const hover = (pinnedIdx ?? hoverIdx) != null ? {
     date: vDates[pinnedIdx ?? hoverIdx], open: vOpens[pinnedIdx ?? hoverIdx], high: vHighs[pinnedIdx ?? hoverIdx],
     low: vLows[pinnedIdx ?? hoverIdx], close: vCloses[pinnedIdx ?? hoverIdx], vol: vVol[pinnedIdx ?? hoverIdx],
+    volEma: vVolEma[pinnedIdx ?? hoverIdx],
   } : null
 
   // YTD's bar count is dynamic (depends on today's date vs the data),
@@ -5006,13 +5011,16 @@ function CandlestickChart({sym, isMobile, isIndex}){
             L <span style={{color:C.red}}>{hover.low?.toFixed(2)}</span>{'  '}
             C <span style={{color:C.text,fontWeight:700}}>{hover.close?.toFixed(2)}</span>{'  '}
             Vol <span style={{color:C.text}}>{hover.vol?.toLocaleString('en-IN')}</span>
+            {hover.volEma!=null&&(
+              <span>{'  '}Vol MA <span style={{color:TV_VOL_MA}}>{fmtVol(hover.volEma)}</span></span>
+            )}
           </span>
         ) : `${sym} · ${barsToShow} days · tap a candle to pin its data`}
       </div>
 
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`}
         style={isMobile
-          ? {width:'100%',height:400,display:'block',touchAction:'none',cursor:dragRef.current?'grabbing':'grab'}
+          ? {width:'100%',height:430,display:'block',touchAction:'none',cursor:dragRef.current?'grabbing':'grab'}
           : {width:'100%',aspectRatio:`${W} / ${H}`,display:'block',touchAction:'none',cursor:dragRef.current?'grabbing':'grab'}}
         onMouseLeave={()=>{setHoverIdx(null);dragRef.current=null}}
         onWheel={handleWheel}
@@ -5033,6 +5041,21 @@ function CandlestickChart({sym, isMobile, isIndex}){
             </g>
           )
         })}
+
+        {/* Volume sub-chart — TradingView-style pane with its own grid */}
+        <rect x={padL} y={volTop} width={chartW} height={volH} fill={C.card} opacity={0.4}/>
+        <line x1={padL} y1={volTop} x2={padL+chartW} y2={volTop} stroke={C.border} strokeWidth={1} opacity={0.8}/>
+        {[0,0.5,1].map(f=>{
+          const y = volTop + f*volH
+          const v = maxVol * (1-f)
+          return (
+            <g key={`volgrid-${f}`}>
+              <line x1={padL} y1={y} x2={padL+chartW} y2={y} stroke={C.border} strokeWidth={0.5} opacity={0.35}/>
+              <text x={padL+chartW+4} y={y+3} fontSize={8} fill={C.muted}>{fmtVol(v)}</text>
+            </g>
+          )
+        })}
+        <text x={padL+4} y={volTop+11} fontSize={8} fontWeight={700} fill={C.muted}>Volume</text>
 
         {/* Support/Resistance lines */}
         {showSR && [['r1',sr.r1,C.red],['r2',sr.r2,C.red],['s1',sr.s1,C.green],['s2',sr.s2,C.green]].map(([k,val,color])=>
@@ -5141,20 +5164,6 @@ function CandlestickChart({sym, isMobile, isIndex}){
                 <line x1={x} y1={priceToY(hi)} x2={x} y2={priceToY(lo)} stroke={color} strokeWidth={1}/>
                 <rect x={x-candleW/2} y={bodyTop} width={candleW} height={bodyH} fill={color}/>
               </>}
-              {/* Volume bar — colored per signal, priority order
-                  HT > HY > IBV > PP (highest wins if several fire the
-                  same day). Each gets a distinct color + label, matching
-                  the reference indicator's colored-bar style. */}
-              {vVol[i]!=null && (() => {
-                const signal = vHT[i] ? 'HT' : vHY[i] ? 'HY' : vIBV[i] ? 'IBV' : vPP[i] ? 'PP' : null
-                const signalColor = {HT:C.orange, HY:C.pink, IBV:C.blue, PP:C.green}[signal]
-                const volColor = signalColor || color
-                const barTopY = volToY(vVol[i])
-                return (
-                  <rect x={x-candleW/2} y={barTopY} width={candleW}
-                    height={volTop+volH-barTopY} fill={volColor} opacity={signal?0.85:0.5}/>
-                )
-              })()}
               {/* Pattern markers */}
               {showPatterns && vInsideBars[i] && (
                 <circle cx={x} cy={priceToY(hi)-6} r={2} fill={C.teal}/>
@@ -5182,10 +5191,32 @@ function CandlestickChart({sym, isMobile, isIndex}){
           )
         })}
 
-        {/* Volume EMA20 — average volume trend line on the volume pane */}
+        {/* Volume bars — TradingView-style: teal up / red down, signal tint when Patterns on */}
+        <g>
+          {vCloses.map((c,i)=>{
+            if(vVol[i]==null||c==null) return null
+            const op=vOpens[i]
+            const up=c>=(op??c)
+            const x=idxToX(i)
+            const signal=showPatterns&&(vHT[i]?'HT':vHY[i]?'HY':vIBV[i]?'IBV':vPP[i]?'PP':null)
+            const signalColor={HT:C.orange,HY:C.pink,IBV:C.blue,PP:C.green}[signal]
+            const fill=signal?signalColor:(up?TV_VOL_UP:TV_VOL_DN)
+            const barTopY=volToY(vVol[i])
+            const barH=volTop+volH-barTopY
+            if(barH<0.5) return null
+            return (
+              <rect key={`vol-${i}`} x={x-volBarW/2} y={barTopY} width={volBarW} height={barH}
+                fill={fill} opacity={signal?0.9:0.75}/>
+            )
+          })}
+        </g>
+
+        {/* Volume MA20 overlay */}
         {(() => {
           const pts = vVolEma.map((v,i)=> v!=null ? `${idxToX(i)},${volToY(v)}` : null).filter(Boolean)
-          return pts.length>1 ? <polyline points={pts.join(' ')} fill="none" stroke={C.teal} strokeWidth={1.3} opacity={0.9}/> : null
+          return pts.length>1 ? (
+            <polyline points={pts.join(' ')} fill="none" stroke={TV_VOL_MA} strokeWidth={1.4} opacity={0.95}/>
+          ) : null
         })()}
 
         {/* Forecast — dashed trend projection, clearly separated from
@@ -5212,7 +5243,9 @@ function CandlestickChart({sym, isMobile, isIndex}){
 
       {/* Legend */}
       <div style={{display:'flex',flexWrap:'wrap',gap:10,marginTop:6,fontSize:9,color:C.muted}}>
-        <span><span style={{color:C.teal}}>—</span> Vol EMA20</span>
+        <span><span style={{color:TV_VOL_UP}}>■</span> Vol up</span>
+        <span><span style={{color:TV_VOL_DN}}>■</span> Vol down</span>
+        <span><span style={{color:TV_VOL_MA}}>—</span> Vol MA20</span>
         {showMA && <>
           <span><span style={{color:C.teal}}>■</span> EMA9</span>
           <span><span style={{color:C.blue}}>■</span> MA20</span>
