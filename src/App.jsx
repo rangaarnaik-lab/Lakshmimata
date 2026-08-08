@@ -7346,7 +7346,7 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
     )
   }
 
-  const handleLogout=async()=>{await supabase.auth.signOut();onLogout()}
+  const handleLogout=async()=>{ await onLogout() }
   const meta=session.user.user_metadata||{}
   const displayPhone=meta.phone?String(meta.phone).trim():''
   const displayName=(meta.full_name||meta.name||'').trim()
@@ -7713,6 +7713,21 @@ export default function App(){
   const [showRealtimeUpsell,setShowRealtimeUpsell]=useState(false)
   const [showAuth,setShowAuth]=useState(false)
   const [authMode,setAuthMode]=useState('login')
+  // Shown when this device was logged out because the same account signed
+  // in elsewhere — nudge users not to share credentials.
+  const [sessionTakenOver,setSessionTakenOver]=useState(false)
+  const intentionalLogoutRef=useRef(false)
+  const kickedElsewhereRef=useRef(false)
+  const hadSessionRef=useRef(false)
+  const markLogoutIntentional=()=>{ intentionalLogoutRef.current=true }
+  const markKickedElsewhere=()=>{
+    kickedElsewhereRef.current=true
+    setSessionTakenOver(true)
+    setShowAuth(true)
+    setAuthMode('login')
+    setDemoMode(false)
+    setPasswordRecovery(false)
+  }
   // True while the user arrived via the email password-reset link and
   // still needs to pick a new password (before entering the app).
   const [passwordRecovery,setPasswordRecovery]=useState(()=>{
@@ -7847,6 +7862,7 @@ export default function App(){
 
     supabase.auth.getSession().then(async({data:{session:s}})=>{
       if(s){
+        hadSessionRef.current=true
         const{data:td}=await supabase.from('user_tokens').select('upstox_token').eq('user_id',s.user.id).single()
         setSession({user:s.user,token:td?.upstox_token||OWNER_TOKEN})
         // Recovery links land with a session already established — keep
@@ -7864,6 +7880,7 @@ export default function App(){
         // dumping the user onto the home dashboard.
         setPasswordRecovery(true)
         if(s){
+          hadSessionRef.current=true
           await revokeOtherSessions()
           const ownerTok = await fetchOwnerToken()
           if(ownerTok) OWNER_TOKEN = ownerTok
@@ -7873,7 +7890,22 @@ export default function App(){
         setAuthLoading(false)
         return
       }
-      if(event==='SIGNED_OUT'){ setSession(null); setPasswordRecovery(false); return }
+      if(event==='SIGNED_OUT'){
+        const wasKicked=kickedElsewhereRef.current
+          || (!intentionalLogoutRef.current && hadSessionRef.current)
+        if(wasKicked){
+          setSessionTakenOver(true)
+          setShowAuth(true)
+          setAuthMode('login')
+          setDemoMode(false)
+        }
+        kickedElsewhereRef.current=false
+        intentionalLogoutRef.current=false
+        hadSessionRef.current=false
+        setSession(null)
+        setPasswordRecovery(false)
+        return
+      }
       if(!s){ setSession(null); setPasswordRecovery(false); return }
       // Fresh login (email, Google OAuth, email confirm) — not token refresh
       // or INITIAL_SESSION — so other devices are logged out right away.
@@ -7882,6 +7914,7 @@ export default function App(){
       }
       // Handle Google OAuth callback, email confirmation, and token refresh
       if(event==='SIGNED_IN'||event==='TOKEN_REFRESHED'){
+        hadSessionRef.current=true
         // Load owner token fresh
         const ownerTok = await fetchOwnerToken()
         if(ownerTok) OWNER_TOKEN = ownerTok
@@ -7907,14 +7940,30 @@ export default function App(){
         if(!cur) return
         const{data,error}=await supabase.auth.refreshSession()
         if(error||!data?.session){
+          const msg=((error&&error.message)||'').toLowerCase()
+          const code=(error&&(error.code||error.status))||''
+          // Only treat hard session revocation as “signed in elsewhere”.
+          // Network blips should not show the anti-sharing popup.
+          const revoked=/session|refresh.?token|not found|expired|revoked|invalid/.test(msg)
+            || code==='session_not_found'||code==='session_expired'
+            || code===401||code===403
+          if(revoked||!error){
+            markKickedElsewhere()
+          }else{
+            intentionalLogoutRef.current=true
+          }
           await supabase.auth.signOut({scope:'local'})
           setSession(null)
           setPasswordRecovery(false)
         }
-      }catch(_){
-        try{ await supabase.auth.signOut({scope:'local'}) }catch(__){}
-        setSession(null)
-        setPasswordRecovery(false)
+      }catch(err){
+        const msg=String(err?.message||err||'').toLowerCase()
+        if(/session|refresh.?token|not found|expired|revoked|invalid/.test(msg)){
+          markKickedElsewhere()
+          try{ await supabase.auth.signOut({scope:'local'}) }catch(__){}
+          setSession(null)
+          setPasswordRecovery(false)
+        }
       }
     }
     const heartbeat=setInterval(checkSessionStillValid, 60_000)
@@ -8923,7 +8972,37 @@ export default function App(){
 
   const tabs=[['rs','📊','RS Rating'],['market','🌐','Market'],['squeeze','🌀','Squeeze'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
 
-  if(authLoading)return(
+  const sessionShareNotice=sessionTakenOver?(
+    <div style={{position:'fixed',inset:0,zIndex:5000,background:'rgba(0,0,0,0.72)',
+      display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+      <div role="dialog" aria-modal="true" aria-labelledby="session-share-title"
+        style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,
+          padding:'28px 24px',maxWidth:400,width:'100%',textAlign:'center',
+          boxShadow:'0 20px 50px rgba(0,0,0,0.5)'}}>
+        <div id="session-share-title" style={{fontWeight:800,fontSize:18,marginBottom:10,color:C.text}}>
+          Signed in on another device
+        </div>
+        <div style={{color:C.muted,fontSize:13,lineHeight:1.65,marginBottom:22}}>
+          This account just signed in somewhere else, so you were logged out here.
+          Lakshmimata is for one person per account — please do not share your login
+          or password with anyone.
+        </div>
+        <button type="button" onClick={()=>{
+          setSessionTakenOver(false)
+          setShowAuth(true)
+          setAuthMode('login')
+        }}
+          style={{width:'100%',padding:'12px 0',borderRadius:9,border:'none',cursor:'pointer',
+            background:C.accent,color:'#000',fontWeight:700,fontSize:14}}>
+          OK — sign in again
+        </button>
+      </div>
+    </div>
+  ):null
+
+  const withShareNotice=node=>(<>{node}{sessionShareNotice}</>)
+
+  if(authLoading)return withShareNotice(
     <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center'}}>
       <div style={{width:32,height:32,border:`3px solid ${C.accent}`,borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
     </div>
@@ -8932,7 +9011,7 @@ export default function App(){
   // Password-reset email link: force the update-password screen before
   // the home dashboard / profile / paywall gates.
   if(session && passwordRecovery && !demoMode){
-    return <ResetPasswordScreen
+    return withShareNotice(<ResetPasswordScreen
       session={session}
       onDone={s=>{ setPasswordRecovery(false); setSession(s) }}
       onCancel={async()=>{
@@ -8942,34 +9021,35 @@ export default function App(){
           url.searchParams.delete('reset')
           window.history.replaceState({},'',url.pathname+url.search+url.hash)
         }catch(_){}
+        markLogoutIntentional()
         await supabase.auth.signOut()
         setSession(null)
         setShowAuth(true)
         setAuthMode('login')
       }}
-    />
+    />)
   }
 
   if(!session && !demoMode){
-    if(!showAuth) return <LandingPage
+    if(!showAuth) return withShareNotice(<LandingPage
       onEnroll={()=>{setAuthMode('register');setShowAuth(true)}}
       onSignIn={()=>{setAuthMode('login');setShowAuth(true)}}
       onDemo={()=>setDemoMode(true)}
-    />
-    return <AuthScreen onLogin={s=>setSession(s)} initialMode={authMode} onBack={()=>setShowAuth(false)}/>
+    />)
+    return withShareNotice(<AuthScreen onLogin={s=>setSession(s)} initialMode={authMode} onBack={()=>setShowAuth(false)}/>)
   }
 
   // Name + phone are mandatory. Google (and older email accounts) may
   // be missing them — block the app until the profile is completed.
   if(session && !demoMode && needsProfileDetails(session.user)){
-    return <CompleteProfileScreen
+    return withShareNotice(<CompleteProfileScreen
       session={session}
       onDone={s=>setSession(s)}
-      onLogout={async()=>{await supabase.auth.signOut();setSession(null);setShowAuth(false)}}
-    />
+      onLogout={async()=>{markLogoutIntentional();await supabase.auth.signOut();setSession(null);setShowAuth(false)}}
+    />)
   }
 
-  if(session && !demoMode && subscriptionLoading)return(
+  if(session && !demoMode && subscriptionLoading)return withShareNotice(
     <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center'}}>
       <div style={{width:32,height:32,border:`3px solid ${C.accent}`,borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
     </div>
@@ -8979,8 +9059,8 @@ export default function App(){
     const trialExpired = userSubscription.status==='trialing' && new Date(userSubscription.trial_end) < new Date()
     const inactive = ['cancelled','past_due'].includes(userSubscription.status)
     if(trialExpired || inactive){
-      return <PaywallScreen reason={trialExpired?'trial_expired':userSubscription.status}
-        onLogout={async()=>{await supabase.auth.signOut();setSession(null)}}/>
+      return withShareNotice(<PaywallScreen reason={trialExpired?'trial_expired':userSubscription.status}
+        onLogout={async()=>{markLogoutIntentional();await supabase.auth.signOut();setSession(null)}}/>)
     }
   }
 
@@ -8988,7 +9068,7 @@ export default function App(){
   const activeWlObj=watchlists.find(w=>w.id===activeWl)
   const scanLabel=activeWlObj?`📋 ${activeWlObj.name} (${activeWlObj.stocks.length})`:({all:'All',nifty50:'Nifty 50',midcap:'Midcap',smallcap:'Smallcap'}[indexFilter])
 
-  return(
+  return withShareNotice(
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:"'Inter','SF Pro Display',sans-serif",
       color:C.text,fontSize:13,display:'flex',flexDirection:'row',zoom:zoomLevel}}>
 
@@ -12725,7 +12805,8 @@ export default function App(){
 
         {/* ══ SETTINGS ══ */}
         {mainTab==='settings'&&(
-          <SettingsPanel session={session} onUpdate={s=>setSession(s)} onLogout={()=>{setSession(null);setShowAuth(false)}}
+          <SettingsPanel session={session} onUpdate={s=>setSession(s)}
+            onLogout={async()=>{markLogoutIntentional();await supabase.auth.signOut();setSession(null);setShowAuth(false)}}
             onExitDemo={()=>{setDemoMode(false);setStocks([]);setAuthMode('register');setShowAuth(true)}}
             themeKey={themeKey} switchTheme={switchTheme} ambient={ambient}
             userSubscription={userSubscription}/>
