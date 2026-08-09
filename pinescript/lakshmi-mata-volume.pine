@@ -179,9 +179,14 @@ plot(volume, style=plot.style_columns, color=Volume_color, title="Volume")
 plot(Show_AVG_Volume ? volMA : na, style=plot.style_line, color=color.rgb(20, 20, 20), title="Average Volume")
 plot(0, "Zero line", color.gray)
 
-plotshape(IVDay and Show_IV, title="IBV", style=shape.labelup, location=location.absolute, y=volMid, text="▲", color=color.new(color.white, 100), textcolor=color.rgb(221, 15, 211), size=size.tiny)
-plotshape(isPocketPivot and Show_PP, title="PPV", style=shape.labelup, location=location.absolute, y=volMid, text="★", color=color.new(color.white, 100), textcolor=color.rgb(17, 16, 16), size=size.tiny)
-plotshape(isBullSnort and Show_BullSnort, title="Bull Snort", style=shape.labelup, location=location.absolute, y=volMid, text="🐂", color=color.new(color.white, 100), textcolor=color.rgb(128, 0, 128), size=size.tiny)
+if IVDay and Show_IV
+    label.new(bar_index, volMid, "▲", style=label.style_label_center, color=color.new(color.white, 100), textcolor=color.rgb(221, 15, 211), size=size.tiny)
+
+if isPocketPivot and Show_PP
+    label.new(bar_index, volMid, "★", style=label.style_label_center, color=color.new(color.white, 100), textcolor=color.rgb(17, 16, 16), size=size.tiny)
+
+if isBullSnort and Show_BullSnort
+    label.new(bar_index, volMid, "🐂", style=label.style_label_center, color=color.new(color.white, 100), textcolor=color.rgb(128, 0, 128), size=size.tiny)
 
 alertcondition(IVDay, title="IBV", message="Institutional Buy Volume Alert on {{ticker}} @ {{close}} on {{interval}} Timeframe")
 alertcondition(isPocketPivot, title="PPV", message="Pivot pocket Volume Alert on {{ticker}} @ {{close}} on {{interval}} Timeframe")
