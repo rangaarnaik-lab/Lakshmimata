@@ -44,7 +44,7 @@ jobs:
           for patch in deploy/*.patch; do
             [ -f "$patch" ] || continue
             echo "Applying $patch ..."
-            if git -C server apply "$patch" 2>/dev/null; then
+            if git -C server apply "../$patch" 2>/dev/null; then
               applied=1
               echo "  applied OK"
             else
