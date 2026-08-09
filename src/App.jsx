@@ -5397,21 +5397,22 @@ function SortableHeader({label,sortKey,sortBy,sortDir,onSort,align='left',legend
 
 // ── RS table layout (column order + visibility) ───────────────────────
 const RsLayoutContext = React.createContext({
-  colOrder: ['trend','signals','stage','squeeze','wl52','weakrs','mcap','pe','roe','de','prom','fundRating'],
+  colOrder: ['trend','signals','stage','squeeze','wl52','weakrs','mcap','pe','roe','de','prom','fundRating','resultRating'],
   visibleRsCols: {},
+  resultRatingsMap: {},
 })
 
-const RS_OPTIONAL_COL_ORDER_DEFAULT = ['trend','signals','stage','squeeze','wl52','weakrs','mcap','pe','roe','de','prom','fundRating']
+const RS_OPTIONAL_COL_ORDER_DEFAULT = ['trend','signals','stage','squeeze','wl52','weakrs','mcap','pe','roe','de','prom','fundRating','resultRating']
 
 const RS_COL_WIDTH = {
   trend:'52px', signals:'182px', stage:'140px', squeeze:'170px', wl52:'160px', weakrs:'150px',
-  mcap:'55px', pe:'55px', roe:'48px', de:'48px', prom:'48px', fundRating:'58px',
+  mcap:'55px', pe:'55px', roe:'48px', de:'48px', prom:'48px', fundRating:'58px', resultRating:'72px',
 }
 
 const RS_COL_LABELS = {
   trend:'Trend', signals:'10 D Vol / RS 7d', stage:'Stage/Vol', squeeze:'Squeeze/VCP',
   wl52:'52WL Signal', weakrs:'Weak RS', mcap:'MCap', pe:'P/E', roe:'ROE', de:'D/E',
-  prom:'Prom%', fundRating:'Rating',
+  prom:'Prom%', fundRating:'Rating', resultRating:'Result',
 }
 
 function normalizeRsColOrder(order){
@@ -5473,7 +5474,10 @@ function RsOptionalColHeader({colKey, sortBy, sortDir, handleSort, vis}){
   if(colKey==='de') return <span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>
   if(colKey==='prom') return <span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>
   if(colKey==='fundRating'){
-    return <span title="Overall fundamental quality (ROE, growth, debt, margins, ownership) — not the same as Excellent/Good Result under the chart, which is only the latest quarter." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Rating</span>
+    return <span title="Overall fundamental quality (ROE, growth, debt, margins, ownership) — not the same as Excellent/Good Result (latest quarter only)." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Rating</span>
+  }
+  if(colKey==='resultRating'){
+    return <span title="Latest-quarter Result quality from Sales/PAT YoY (+ OPM/QoQ checks): Excellent / Good / Neutral / Weak. Not the same as overall fundamental Rating." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Result</span>
   }
   return null
 }
@@ -6302,7 +6306,24 @@ function rankRrgByQuadrant(rolledData){
 // scroll straight to a section instead of making people scroll past
 // everything to find it. `refs` is a useRef({}) object whose keys match
 // each item's id; sections register themselves via a ref callback.
+function resultRatingColor(rating){
+  if(rating==='Excellent') return C.green
+  if(rating==='Good') return '#7dd3a8'
+  if(rating==='Weak') return C.red
+  if(rating==='Neutral') return C.yellow
+  return C.muted
+}
+
+function resultRatingShort(rating){
+  if(rating==='Excellent') return '⭐ Exc'
+  if(rating==='Good') return '✓ Good'
+  if(rating==='Weak') return '⚠ Weak'
+  if(rating==='Neutral') return '– Neu'
+  return null
+}
+
 function RsOptionalColCell({colKey, s, vis}){
+  const layout=useContext(RsLayoutContext)
   if(!isRsOptionalColVisible(colKey, vis)) return null
   if(colKey==='trend'){
     return (
@@ -6443,13 +6464,29 @@ function RsOptionalColCell({colKey, s, vis}){
       </div>
     )
   }
+  if(colKey==='resultRating'){
+    const rating=(layout.resultRatingsMap||{})[String(s.sym||'').toUpperCase()]||null
+    const color=resultRatingColor(rating)
+    const label=resultRatingShort(rating)
+    return (
+      <div title="Latest-quarter Result quality (Sales/PAT YoY + OPM/QoQ). Same badge as under the chart Results tab — not overall fundamental Rating."
+        style={{textAlign:'right',fontSize:10,cursor:'help'}}>
+        {label?(
+          <span style={{fontWeight:800,color,background:color+'22',borderRadius:999,padding:'1px 6px',
+            display:'inline-block',whiteSpace:'nowrap'}}>
+            {label}
+          </span>
+        ):<span style={{color:C.muted}}>—</span>}
+      </div>
+    )
+  }
   return null
 }
 
 function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder}){
   const layout=useContext(RsLayoutContext)
   const [open,setOpen]=useState(false)
-  const vis=visibleRsCols||layout.visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true}
+  const vis=visibleRsCols||layout.visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true,resultRating:true}
   const order=normalizeRsColOrder(rsColOrder||layout.colOrder)
   const COLS=computeRsGridCols(vis, order)
   return(
@@ -9161,11 +9198,13 @@ export default function App(){
   useEffect(()=>{ if(announcementsCategory!=='results')setResultRatingFilterAnn('all') },[announcementsCategory])
   useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter,resultRatingFilterAnn,announcementsScope,announcementsDateFilter])
 
-  // Load result ratings when used by RS filters or Announcements → Results.
+  // Load result ratings for RS Result column, Quick Filters, or Announcements → Results.
   const resultRatingsLoadedRef=useRef(false)
   useEffect(()=>{
     const needRatings =
       String(presetFilter||'').startsWith('result')
+      || mainTab==='rs'
+      || mainTab==='breakout'
       || (mainTab==='announcements' && announcementsCategory==='results')
     if(!needRatings || resultRatingsLoadedRef.current) return
     let cancelled=false
@@ -9306,17 +9345,17 @@ export default function App(){
     return()=>{ cancelled=true }
   },[session?.user?.id])
   const [visibleRsCols,setVisibleRsCols]=useState(()=>{
-    const RS_COL_PREFS_VER=2
+    const RS_COL_PREFS_VER=3
     const fundOff={mcap:false,pe:false,roe:false,de:false,prom:false}
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,...fundOff,fundRating:true,squeeze:false,wl52:false,weakrs:false}
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,...fundOff,fundRating:true,resultRating:true,squeeze:false,wl52:false,weakrs:false}
     try{
       const ver=parseInt(localStorage.getItem('lakshmimata-rs-col-ver')||'0',10)
       const saved=JSON.parse(localStorage.getItem('lakshmimata-rs-columns')||'null')
       if(ver<RS_COL_PREFS_VER){
         try{localStorage.setItem('lakshmimata-rs-col-ver',String(RS_COL_PREFS_VER))}catch(e){}
         if(!saved) return defaults
-        // Hide fundamental columns by default — more room for chart + signals.
-        return {...defaults,...saved,...fundOff}
+        // Hide fundamental ratio cols by default; enable Result quality column.
+        return {...defaults,...saved,...fundOff,resultRating:true}
       }
       return saved?{...defaults,...saved}:defaults
     }catch(e){return defaults}
@@ -9332,7 +9371,7 @@ export default function App(){
   const applyLayout=(layout)=>{
     if(!layout) return
     const fundOff={mcap:false,pe:false,roe:false,de:false,prom:false}
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,...fundOff,fundRating:true,squeeze:false,wl52:false,weakrs:false}
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,...fundOff,fundRating:true,resultRating:true,squeeze:false,wl52:false,weakrs:false}
     const cols=layout.columns&&typeof layout.columns==='object'?{...defaults,...layout.columns}:defaults
     const order=normalizeRsColOrder(layout.col_order||layout.colOrder)
     const sections=normalizeChartSectionOrder(layout.chart_sections||layout.chartSections)
@@ -9356,7 +9395,7 @@ export default function App(){
   }
   const applyDefaultLayout=()=>{
     const fundOff={mcap:false,pe:false,roe:false,de:false,prom:false}
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,...fundOff,fundRating:true,squeeze:false,wl52:false,weakrs:false}
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,...fundOff,fundRating:true,resultRating:true,squeeze:false,wl52:false,weakrs:false}
     try{
       const saved=JSON.parse(localStorage.getItem('lakshmimata-rs-columns')||'null')
       const order=JSON.parse(localStorage.getItem('lakshmimata-rs-col-order')||'null')
@@ -9413,7 +9452,7 @@ export default function App(){
     setLayoutMsg(`Cleared slot ${s}.`)
   }
   const resetRsCols=()=>{
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true,squeeze:false,wl52:false,weakrs:false}
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true,resultRating:true,squeeze:false,wl52:false,weakrs:false}
     const order=[...RS_OPTIONAL_COL_ORDER_DEFAULT]
     setVisibleRsCols(defaults)
     setRsColOrder(order)
@@ -9423,7 +9462,7 @@ export default function App(){
     setActiveLayoutSlot(null)
     try{
       localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(defaults))
-      localStorage.setItem('lakshmimata-rs-col-ver','2')
+      localStorage.setItem('lakshmimata-rs-col-ver','3')
       localStorage.setItem('lakshmimata-rs-col-order',JSON.stringify(order))
       localStorage.setItem('lakshmimata-chart-sections',JSON.stringify(CHART_SECTION_ORDER_DEFAULT))
       persistChartPanelAutoSave(0,null)
@@ -9948,7 +9987,7 @@ export default function App(){
   const scanLabel=activeWlObj?`📋 ${activeWlObj.name} (${activeWlObj.stocks.length})`:({all:'All',nifty50:'Nifty 50',midcap:'Midcap',smallcap:'Smallcap'}[indexFilter])
 
   return withShareNotice(
-    <RsLayoutContext.Provider value={{colOrder:rsColOrder, visibleRsCols}}>
+    <RsLayoutContext.Provider value={{colOrder:rsColOrder, visibleRsCols, resultRatingsMap}}>
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:"'Inter','SF Pro Display',sans-serif",
       color:C.text,fontSize:13,display:'flex',flexDirection:'row',zoom:zoomLevel}}>
 
@@ -10424,7 +10463,8 @@ export default function App(){
                         ['trend','Trend'],['pp10','10 D Vol'],['rs7d','RS Last 7d'],['stage','Stage/Vol'],
                         ['squeeze','Squeeze/VCP'],
                         ['wl52','52WL Signal'],['weakrs','Weak RS'],
-                        ['mcap','MCap'],['pe','P/E'],['roe','ROE'],['de','D/E'],['prom','Prom%'],['fundRating','Rating']].map(([key,label])=>(
+                        ['mcap','MCap'],['pe','P/E'],['roe','ROE'],['de','D/E'],['prom','Prom%'],
+                        ['fundRating','Rating'],['resultRating','Result']].map(([key,label])=>(
                         <button key={key} onClick={()=>toggleRsCol(key)}
                           style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:20,
                             border:`1px solid ${visibleRsCols[key]?C.accent:C.border}`,cursor:'pointer',
