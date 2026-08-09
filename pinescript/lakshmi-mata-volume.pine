@@ -17,7 +17,7 @@ lookback_Period_Up_down = input.int(defval=50, minval=5, maxval=500, title="Look
 Show_LowVol_BG = input.bool(true, "Highlight Low Volume Bars", group="Volume", tooltip="Background when today's volume is below 50% of the volume MA.")
 Show_HVT_Labels = input.bool(true, "Show Highest-Volume Labels (IPO/Year/Quarter/Month)", group="Volume")
 Show_BullSnort = input.bool(true, "Show Bull Snort", group="Volume", inline="BS")
-bullSnort_RVol_Mult = input.float(3.0, "Min Rel Vol (× Avg)", minval=2.0, step=0.5, group="Volume", inline="BS", tooltip="Volume ≥ this multiple of average volume (Oliver Kell Bull Snort).")
+bullSnort_RVol_Mult = input.float(3.0, "Min Rel Vol (× 50d Avg)", minval=2.0, step=0.5, group="Volume", inline="BS", tooltip="Volume ≥ this multiple of the fixed 50-day average volume (Oliver Kell Bull Snort).")
 bullSnort_DCR_Min = input.float(65.0, "Min DCR %", minval=50.0, maxval=90.0, group="Volume", inline="BS", tooltip="Close in top portion of day's range.")
 bullSnort_BG_Color = input.color(color.new(color.rgb(186, 130, 220), 82), "Bull Snort BG Color", group="Volume")
 
@@ -59,7 +59,8 @@ for i = 0 to lookback_Period_PP - 1
 AVG_Volume_table = ta.sma(volume, lookback_Period_AVG)
 REL_Volume_table = (volume / AVG_Volume_table) * 100
 
-relVolMult = AVG_Volume_table > 0 ? volume / AVG_Volume_table : na
+bullSnort_AvgVol = ta.sma(volume, 50)
+relVolMult = bullSnort_AvgVol > 0 ? volume / bullSnort_AvgVol : na
 isBullSnort = not na(relVolMult) and relVolMult >= bullSnort_RVol_Mult and close > close[1] and daily_closing_range1 >= bullSnort_DCR_Min
 
 upVol = close > close[1] ? volume : 0.0
