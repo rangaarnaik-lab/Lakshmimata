@@ -76,6 +76,7 @@ Changeinvolume = volume[1] > 0 ? ((volume - volume[1]) / volume[1]) * 100 : na
 Var_Comments = IVDay ? "Institutional Buy Volume" : isBullSnort ? "Bull Snort" : isPocketPivot ? "Pivot Pocket Volume" : "NA"
 
 Volume_color = IVDay ? color.rgb(33, 149, 243, 9) : isPocketPivot ? color.green : close < open ? color.red : color.gray
+volMid = volume * 0.5
 
 // ── Bull Snort / low-volume background ───────────────────────────────────────
 lowVolCondition = volume < volMA * 0.5
@@ -129,10 +130,10 @@ isJanFirst = month == 1 and dayofmonth == 1
 volChangePct1 = volume[1] > 0 ? (volume - volume[1]) / volume[1] * 100 : na
 
 if Show_HVT_Labels and isHVT_IPO
-    label.new(bar_index, -1.15, "🚀HT", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
+    label.new(bar_index, volMid, "🚀HT", style=label.style_label_center, color=color.white, textcolor=color.black, size=size.tiny)
 
 if Show_HVT_Labels and isHVT_Year and not isHVT_IPO and (not isJanFirst or (not na(volChangePct1) and Changeinvolume > 500)) and isPocketPivot
-    label.new(bar_index, -1.15, "HY", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
+    label.new(bar_index, volMid, "🔥HY", style=label.style_label_center, color=color.white, textcolor=color.black, size=size.tiny)
 
 if Show_HVT_Labels and isHVT_Quarter and not isHVT_IPO and not isHVT_Year
     label.new(bar_index, -1.15, "HQ", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
@@ -178,9 +179,9 @@ plot(volume, style=plot.style_columns, color=Volume_color, title="Volume")
 plot(Show_AVG_Volume ? volMA : na, style=plot.style_line, color=color.rgb(20, 20, 20), title="Average Volume")
 plot(0, "Zero line", color.gray)
 
-plotchar(IVDay and Show_IV, title="IBV", char="▲", location=location.bottom, color=color.rgb(221, 15, 211), size=size.tiny)
-plotchar(isPocketPivot and Show_PP, title="PPV", char="★", location=location.bottom, color=color.rgb(17, 16, 16), size=size.tiny)
-plotchar(isBullSnort and Show_BullSnort, title="Bull Snort", char="🐂", location=location.abovebar, color=color.rgb(128, 0, 128), size=size.tiny)
+plotchar(IVDay and Show_IV, title="IBV", char="▲", location=location.absolute, y=volMid, color=color.rgb(221, 15, 211), size=size.tiny)
+plotchar(isPocketPivot and Show_PP, title="PPV", char="★", location=location.absolute, y=volMid, color=color.rgb(17, 16, 16), size=size.tiny)
+plotchar(isBullSnort and Show_BullSnort, title="Bull Snort", char="🐂", location=location.absolute, y=volMid, color=color.rgb(128, 0, 128), size=size.tiny)
 
 alertcondition(IVDay, title="IBV", message="Institutional Buy Volume Alert on {{ticker}} @ {{close}} on {{interval}} Timeframe")
 alertcondition(isPocketPivot, title="PPV", message="Pivot pocket Volume Alert on {{ticker}} @ {{close}} on {{interval}} Timeframe")
