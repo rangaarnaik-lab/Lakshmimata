@@ -783,33 +783,20 @@ function TVCopyPanel({stocks,label,compact}){
   const syms=stocks.map(s=>s.sym)
   const symbolList=syms.map(s=>`NSE:${s}`).join(',')
   const alertStr=syms.map(s=>`NSE:${s}`).join('\n')
-  if(compact){
-    return(
-      <div style={{display:'flex',gap:4}}>
-        <button onClick={()=>copy(symbolList,'symlist')} title="Copy NSE:SYM list — paste into TradingView's watchlist import or symbol search"
-          style={{padding:'5px 10px',borderRadius:6,border:'none',cursor:'pointer',
-            background:copied==='symlist'?C.green:C.teal,color:'#000',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
-          {copied==='symlist'?'✅ Copied':'📋 Copy for TV'} <span style={{background:'#00000033',borderRadius:4,padding:'0 4px',fontSize:10}}>{syms.length}</span>
-        </button>
-      </div>
-    )
-  }
+  // Compact buttons for toolbars — count lives on the Copy button (no separate "TV (n)" row).
   return(
-    <div style={{display:'inline-flex',alignItems:'center',gap:6,flexWrap:'wrap',
-      marginBottom:8,fontSize:11}}>
-      <span style={{color:C.teal,fontWeight:700,whiteSpace:'nowrap',fontSize:11}}>
-        📊 TV ({syms.length})
-      </span>
-      <button onClick={()=>copy(symbolList,'symlist')} title="Copy NSE:SYM list — paste into TradingView's watchlist import or symbol search"
-        style={{padding:'3px 8px',borderRadius:6,border:`1px solid ${C.teal}33`,cursor:'pointer',
-          background:copied==='symlist'?C.teal+'22':'transparent',
-          color:copied==='symlist'?C.teal:C.muted,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>
-        {copied==='symlist'?'✅ Copied':'📋 Copy for TV'}
+    <div style={{display:'inline-flex',alignItems:'center',gap:4,flexShrink:0}}>
+      <button onClick={()=>copy(symbolList,'symlist')}
+        title={`Copy ${syms.length} symbols for TradingView watchlist import (NSE:SYM,…)`}
+        style={{padding:compact?'5px 10px':'6px 10px',borderRadius:8,border:`1px solid ${C.teal}44`,cursor:'pointer',
+          background:copied==='symlist'?C.teal+'33':'transparent',
+          color:copied==='symlist'?C.teal:C.muted,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
+        {copied==='symlist'?'✅ Copied':`📋 TV · ${syms.length}`}
       </button>
-      <button onClick={()=>copy(alertStr,'alert')} title="One symbol per line for alert wizard"
-        style={{padding:'3px 8px',borderRadius:6,border:`1px solid ${C.teal}33`,cursor:'pointer',
+      <button onClick={()=>copy(alertStr,'alert')} title="One symbol per line for TradingView alert wizard"
+        style={{padding:compact?'5px 10px':'6px 10px',borderRadius:8,border:`1px solid ${C.border}`,cursor:'pointer',
           background:copied==='alert'?C.teal+'22':'transparent',
-          color:copied==='alert'?C.teal:C.muted,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>
+          color:copied==='alert'?C.teal:C.muted,fontSize:11,fontWeight:600,whiteSpace:'nowrap'}}>
         {copied==='alert'?'✅ Copied':'🔔 Alerts'}
       </button>
     </div>
@@ -10209,11 +10196,6 @@ export default function App(){
                 </button>
               )}
 
-              {/* Export to TradingView */}
-              {displayedRS&&displayedRS.length>0&&mainTab==='rs'&&(
-                <TVCopyPanel stocks={displayedRS} label={null} compact/>
-              )}
-
               {/* Notification permission toggle */}
               {typeof Notification!=='undefined'&&notifPermission!=='granted'&&(
                 <button onClick={()=>Notification.requestPermission().then(p=>setNotifPermission(p))}
@@ -10359,9 +10341,6 @@ export default function App(){
               </div>
             )}
 
-            {/* TV copy for full RS list — compact, no full-width card */}
-            {displayedRS.length>0&&<TVCopyPanel stocks={displayedRS}/>}
-
             {/* Summary chips */}
             {stocks.length>0&&(
               <div style={{display:'flex',gap:8,marginBottom:12,overflowX:'auto',paddingBottom:4}}>
@@ -10387,12 +10366,12 @@ export default function App(){
               </div>
             )}
 
-            {/* Filters */}
+            {/* Search + Filters + Columns + TradingView copy — one toolbar */}
             {stocks.length>0&&(
               <div style={{marginBottom:12}}>
-                <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+                <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}>
                   <input placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)}
-                    style={{flex:1,minWidth:100,padding:'8px 12px',background:C.card,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:13,outline:'none'}}/>
+                    style={{flex:1,minWidth:140,padding:'8px 12px',background:C.card,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:13,outline:'none'}}/>
                   <button onClick={()=>{setShowFilters(v=>!v);setShowColumns(false)}}
                     style={{padding:'8px 14px',borderRadius:8,border:`1px solid ${showFilters?C.accent:C.border}`,
                       cursor:'pointer',fontSize:12,fontWeight:600,background:showFilters?C.accent+'22':'transparent',
@@ -10401,6 +10380,7 @@ export default function App(){
                     style={{padding:'8px 14px',borderRadius:8,border:`1px solid ${showColumns?C.accent:C.border}`,
                       cursor:'pointer',fontSize:12,fontWeight:600,background:showColumns?C.accent+'22':'transparent',
                       color:showColumns?C.accent:C.muted,whiteSpace:'nowrap'}}>📊 Columns</button>
+                  {displayedRS.length>0&&<TVCopyPanel stocks={displayedRS} compact/>}
                 </div>
                 {showColumns&&(
                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
