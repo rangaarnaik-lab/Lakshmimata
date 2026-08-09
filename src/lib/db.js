@@ -994,11 +994,19 @@ export async function fetchFinancialResultsHistory(symbol) {
   // — fetch enough periods, then prefer Consolidated and sort by date.
   const sym = String(symbol || '').toUpperCase().trim()
   if (!sym) return []
-  const { data, error } = await supabase
+  const baseSelect = 'period_ended,result_type,sales,other_income,pbt,exceptional_item,pat,eps,opm_pct,filed_at,sales_qoq_pct,pat_qoq_pct,sales_yoy_pct,pat_yoy_pct,eps_yoy_pct'
+  let { data, error } = await supabase
     .from('financial_results')
-    .select('period_ended,result_type,sales,other_income,pbt,exceptional_item,pat,eps,opm_pct,filed_at,sales_qoq_pct,pat_qoq_pct,sales_yoy_pct,pat_yoy_pct,eps_yoy_pct')
+    .select(`${baseSelect},result_rating,result_rating_note`)
     .eq('symbol', sym)
     .limit(40)
+  if (error && /result_rating/i.test(error.message || '')) {
+    ;({ data, error } = await supabase
+      .from('financial_results')
+      .select(baseSelect)
+      .eq('symbol', sym)
+      .limit(40))
+  }
   if (error) { console.error('fetchFinancialResultsHistory error:', error.message); return [] }
   // Dedupe to one row per period_ended, preferring Consolidated.
   const byPeriod = {}
@@ -1723,7 +1731,9 @@ export async function fetchRecentFinancialResults() {
  * Pages through the table — ~1–2k rows today, cheap enough for client use.
  */
 export async function fetchFinancialResultsGroupedForRatings() {
-  const select = 'symbol,period_ended,result_type,sales,other_income,pbt,exceptional_item,pat,eps,opm_pct,sales_qoq_pct,pat_qoq_pct'
+  const selectWithRating = 'symbol,period_ended,result_type,sales,other_income,pbt,exceptional_item,pat,eps,opm_pct,sales_qoq_pct,pat_qoq_pct,result_rating,result_rating_note'
+  const selectBase = 'symbol,period_ended,result_type,sales,other_income,pbt,exceptional_item,pat,eps,opm_pct,sales_qoq_pct,pat_qoq_pct'
+  let select = selectWithRating
   const toDate = (s) => {
     const d = new Date(s)
     return isNaN(d.getTime()) ? new Date(0) : d
@@ -1737,6 +1747,12 @@ export async function fetchFinancialResultsGroupedForRatings() {
       .select(select)
       .range(from, from + page - 1)
     if (error) {
+      if (select === selectWithRating && /result_rating/i.test(error.message || '')) {
+        select = selectBase
+        from = 0
+        all.length = 0
+        continue
+      }
       console.error('fetchFinancialResultsGroupedForRatings error:', error.message)
       break
     }

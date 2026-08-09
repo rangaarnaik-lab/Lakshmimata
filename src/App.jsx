@@ -8307,6 +8307,11 @@ function effectiveOpm(row){
  */
 function computeResultRating(hist){
   if(!hist || hist.length===0) return null
+  // Prefer server-written rating (set while Results PDFs / YoY enrichment run).
+  const stored = hist[0]?.result_rating
+  if (stored === 'Excellent' || stored === 'Good' || stored === 'Neutral' || stored === 'Weak') {
+    return stored
+  }
   const tiers = ['Weak','Neutral','Good','Excellent']
   const current = hist[0]
   const prevQtr = hist[1]||null
