@@ -4,6 +4,43 @@ Worker code lives in
 [`rangaarnaik-lab/lakshmimata-server`](https://github.com/rangaarnaik-lab/lakshmimata-server)
 (`fundamentals_worker.py`). Apply patches there, then redeploy on Railway.
 
+## Start Results + About now (Railway env)
+
+Set these on the **fundamentals** service, then **Redeploy**:
+
+```bash
+GEMINI_FOCUS=all
+PAUSE_ABOUT_COMPANY=0
+ABOUT_COMPANY_BATCH_SIZE=3
+ABOUT_COMPANY_CONCURRENCY=1
+ABOUT_COMPANY_CYCLE_SECONDS=300
+GEMINI_ABOUT_MODEL=gemini-2.0-flash-lite
+GEMINI_CONCALL_MODEL=gemini-2.0-flash-lite
+ABOUT_COMPANY_HARD_QUOTA_COOLDOWN_SECONDS=3600
+GEMINI_JOBS_HARD_PAUSE_SECONDS=1800
+```
+
+If the worker was stuck in a 24h pause from earlier 429s, redeploying clears in-memory pause state.
+
+## Supabase SQL (required for Ask AI)
+
+Run in Supabase SQL editor:
+
+`supabase/migrations/009_stock_ai_asks.sql`
+
+Stops the repeating log line: `💬 Ask-AI: run add_stock_ai_asks.sql`
+
+## `gemini-key-rotation-7468.patch` (apply first)
+
+Rotates through **all** `GEMINI_API_KEY*` on 429 instead of stopping after one key:
+
+```bash
+cd lakshmimata-server
+git am /path/to/gemini-key-rotation-7468.patch
+git push origin main
+# Redeploy fundamentals on Railway
+```
+
 ## Log diagnosis (Aug 2026 example)
 
 ### 1. `💬 Ask-AI: run add_stock_ai_asks.sql`
