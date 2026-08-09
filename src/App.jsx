@@ -5479,6 +5479,29 @@ function normalizeChartSectionOrder(order){
   return base
 }
 
+function loadChartPanelAutoSave(){
+  try{
+    const wide=parseInt(localStorage.getItem('lakshmimata-chart-wide')||'0',10)
+    const pctRaw=localStorage.getItem('lakshmimata-chart-panel-pct')
+    const chart_wide=[0,1,2].includes(wide)?wide:0
+    const chart_panel_pct=pctRaw==null||pctRaw===''||pctRaw==='null'
+      ?null
+      :Math.min(80,Math.max(15,parseFloat(pctRaw)))
+    return{
+      chart_wide,
+      chart_panel_pct:Number.isFinite(chart_panel_pct)?chart_panel_pct:null,
+    }
+  }catch(e){ return {chart_wide:0,chart_panel_pct:null} }
+}
+
+function persistChartPanelAutoSave(wide,pct){
+  try{
+    localStorage.setItem('lakshmimata-chart-wide',String(wide??0))
+    if(pct!=null) localStorage.setItem('lakshmimata-chart-panel-pct',String(pct))
+    else localStorage.removeItem('lakshmimata-chart-panel-pct')
+  }catch(e){}
+}
+
 function loadLocalLayoutSlots(){
   try{
     const raw=JSON.parse(localStorage.getItem('lakshmimata-layout-slots')||'null')
@@ -5523,7 +5546,7 @@ function LayoutTopBarMenu({
     : 'Layout'
   return(
     <div ref={ref} style={{position:'relative',flexShrink:0}}>
-      <button type="button" onClick={()=>setOpen(v=>!v)} title="Saved layouts — columns & chart sections"
+      <button type="button" onClick={()=>setOpen(v=>!v)} title="Saved layouts — columns, chart sections & panel size"
         style={{display:'flex',alignItems:'center',gap:5,padding:'5px 10px',borderRadius:6,
           border:`1px solid ${open?C.accent:C.border}`,
           background:open?C.accent+'18':C.bg,color:open?C.accent:C.text,
@@ -8824,14 +8847,22 @@ export default function App(){
     const timer = setInterval(checkAnnouncementAlerts, 60000)
     return ()=>clearInterval(timer)
   },[session,notifPermission])
-  const [chartWide,setChartWide]=useState(0) // 0=normal 1=wide 2=extra-wide
+  const [chartWide,setChartWide]=useState(()=>loadChartPanelAutoSave().chart_wide) // 0=normal 1=wide 2=extra-wide
   // Drag-to-resize divider between the table and chart panel — continuous
   // resize in addition to the existing 3-preset expand button. null means
   // "use the chartWide preset"; once dragged, holds the chart's exact
   // width % and takes over from the preset until the chart is closed.
-  const [chartPanelPct,setChartPanelPct]=useState(null)
+  const [chartPanelPct,setChartPanelPct]=useState(()=>loadChartPanelAutoSave().chart_panel_pct)
   const [isDraggingDivider,setIsDraggingDivider]=useState(false)
   const innerRowRef=useRef(null)
+  const chartWideRef=useRef(chartWide)
+  const chartPanelPctRef=useRef(chartPanelPct)
+  chartWideRef.current=chartWide
+  chartPanelPctRef.current=chartPanelPct
+  const persistChartPanelState=(wide,pct)=>{
+    setActiveLayoutSlot(null)
+    persistChartPanelAutoSave(wide,pct)
+  }
   useEffect(()=>{
     if(!isDraggingDivider)return
     const onMove=(e)=>{
@@ -8841,7 +8872,10 @@ export default function App(){
       const chartPct=((rect.width-relX)/rect.width)*100
       setChartPanelPct(Math.min(80,Math.max(15,chartPct)))
     }
-    const onUp=()=>setIsDraggingDivider(false)
+    const onUp=()=>{
+      setIsDraggingDivider(false)
+      persistChartPanelState(chartWideRef.current,chartPanelPctRef.current)
+    }
     window.addEventListener('mousemove',onMove)
     window.addEventListener('mouseup',onUp)
     return()=>{window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp)}
@@ -9220,20 +9254,50 @@ export default function App(){
     const cols=layout.columns&&typeof layout.columns==='object'?{...defaults,...layout.columns}:defaults
     const order=normalizeRsColOrder(layout.col_order||layout.colOrder)
     const sections=normalizeChartSectionOrder(layout.chart_sections||layout.chartSections)
+    const wideRaw=layout.chart_wide??layout.chartWide
+    const wideNum=Number(wideRaw)
+    const wide=[0,1,2].includes(wideNum)?wideNum:0
+    const pctRaw=layout.chart_panel_pct??layout.chartPanelPct
+    const pct=pctRaw!=null&&pctRaw!==''?Math.min(80,Math.max(15,Number(pctRaw))):null
     setVisibleRsCols(cols)
     setRsColOrder(order)
     setChartSectionOrder(sections)
+    setChartWide(wide)
+    setChartPanelPct(Number.isFinite(pct)?pct:null)
     setActiveLayoutSlot(layout.slot??null)
     try{
       localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(cols))
       localStorage.setItem('lakshmimata-rs-col-order',JSON.stringify(order))
       localStorage.setItem('lakshmimata-chart-sections',JSON.stringify(sections))
+      persistChartPanelAutoSave(wide,Number.isFinite(pct)?pct:null)
     }catch(e){}
+  }
+  const applyDefaultLayout=()=>{
+    const fundOff={mcap:false,pe:false,roe:false,de:false,prom:false}
+    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,...fundOff,fundRating:true,squeeze:false,wl52:false,weakrs:false}
+    try{
+      const saved=JSON.parse(localStorage.getItem('lakshmimata-rs-columns')||'null')
+      const order=JSON.parse(localStorage.getItem('lakshmimata-rs-col-order')||'null')
+      const sections=JSON.parse(localStorage.getItem('lakshmimata-chart-sections')||'null')
+      setVisibleRsCols(saved?{...defaults,...saved,...fundOff}:defaults)
+      if(order) setRsColOrder(normalizeRsColOrder(order))
+      if(sections) setChartSectionOrder(normalizeChartSectionOrder(sections))
+    }catch(e){
+      setVisibleRsCols(defaults)
+    }
+    setChartWide(0)
+    setChartPanelPct(null)
+    persistChartPanelAutoSave(0,null)
+    setActiveLayoutSlot(null)
+    setLayoutMsg('')
   }
   const handleSaveLayoutSlot=async(slot)=>{
     const s=Number(slot)
     const name=(layoutNameInput.trim()||`Layout ${s}`).slice(0,40)
-    const payload={slot:s,name,columns:visibleRsCols,colOrder:rsColOrder,chartSections:chartSectionOrder}
+    const payload={
+      slot:s,name,columns:visibleRsCols,colOrder:rsColOrder,chartSections:chartSectionOrder,
+      chartWide,chartPanelPct,
+    }
     if(session?.user?.id){
       const res=await saveUserLayout(session.user.id,payload)
       if(res.error){ setLayoutMsg(res.error); return }
@@ -9242,7 +9306,10 @@ export default function App(){
       setActiveLayoutSlot(s)
       setLayoutMsg(`Saved “${name}” to slot ${s}.`)
     }else{
-      const item={...payload,columns:visibleRsCols,col_order:rsColOrder,chart_sections:chartSectionOrder}
+      const item={
+        ...payload,columns:visibleRsCols,col_order:rsColOrder,chart_sections:chartSectionOrder,
+        chart_wide:chartWide,chart_panel_pct:chartPanelPct,
+      }
       const next=[...layoutSlots]; next[s-1]=item
       setLayoutSlots(next)
       persistLocalLayoutSlots(next)
@@ -9269,12 +9336,15 @@ export default function App(){
     setVisibleRsCols(defaults)
     setRsColOrder(order)
     setChartSectionOrder([...CHART_SECTION_ORDER_DEFAULT])
+    setChartWide(0)
+    setChartPanelPct(null)
     setActiveLayoutSlot(null)
     try{
       localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(defaults))
       localStorage.setItem('lakshmimata-rs-col-ver','2')
       localStorage.setItem('lakshmimata-rs-col-order',JSON.stringify(order))
       localStorage.setItem('lakshmimata-chart-sections',JSON.stringify(CHART_SECTION_ORDER_DEFAULT))
+      persistChartPanelAutoSave(0,null)
     }catch(e){}
   }
   const [wlSearch,setWlSearch]=useState(''),[wlSigOnly,setWlSigOnly]=useState(false)
@@ -10020,20 +10090,18 @@ export default function App(){
                 </select>
               )}
 
-              {!isMobile&&(
-                <LayoutTopBarMenu
-                  session={session}
-                  layoutSlots={layoutSlots}
-                  activeLayoutSlot={activeLayoutSlot}
-                  layoutNameInput={layoutNameInput}
-                  setLayoutNameInput={setLayoutNameInput}
-                  layoutMsg={layoutMsg}
-                  onApply={applyLayout}
-                  onSave={handleSaveLayoutSlot}
-                  onDelete={handleDeleteLayoutSlot}
-                  onClearActive={()=>setActiveLayoutSlot(null)}
-                />
-              )}
+              <LayoutTopBarMenu
+                session={session}
+                layoutSlots={layoutSlots}
+                activeLayoutSlot={activeLayoutSlot}
+                layoutNameInput={layoutNameInput}
+                setLayoutNameInput={setLayoutNameInput}
+                layoutMsg={layoutMsg}
+                onApply={applyLayout}
+                onSave={handleSaveLayoutSlot}
+                onDelete={handleDeleteLayoutSlot}
+                onClearActive={applyDefaultLayout}
+              />
 
               {/* History date picker */}
               {!isMobile&&(
@@ -13658,7 +13726,14 @@ export default function App(){
         isIndex={indexData.some(idx=>idx.name===chartSym)}
         wide={chartWide}
         customPct={chartPanelPct}
-        onToggleWide={()=>{setChartPanelPct(null);setChartWide(v=>(v+1)%3)}}
+        onToggleWide={()=>{
+          setChartPanelPct(null)
+          setChartWide(v=>{
+            const next=(v+1)%3
+            persistChartPanelState(next,null)
+            return next
+          })
+        }}
         onClose={()=>{setChartSym(null);setChartPanelPct(null)}}
         isMobile={isMobile}
         symList={displayedRS.map(s=>s.sym)}
