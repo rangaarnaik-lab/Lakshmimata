@@ -33,8 +33,9 @@ Var_Text_color = input.color(color.black, title="Text_color", inline="Heading", 
 // ── Core calculations ───────────────────────────────────────────────────────
 greenDay = close > open
 upday = close > close[1]
-daily_closing_range = ((close - low) / (high - low)) * 100 > 50
-daily_closing_range1 = (close - low) / (high - low) * 100
+barRange = high - low
+daily_closing_range1 = barRange > 0 ? (close - low) / barRange * 100 : na
+daily_closing_range = not na(daily_closing_range1) and daily_closing_range1 > 50
 
 volMA = ta.sma(volume, MA_Length)
 highestClose = ta.highest(volume[1], lookback_Period_IV)
@@ -61,7 +62,7 @@ REL_Volume_table = (volume / AVG_Volume_table) * 100
 
 bullSnort_AvgVol = ta.sma(volume, 50)
 relVolMult = bullSnort_AvgVol > 0 ? volume / bullSnort_AvgVol : na
-isBullSnort = not na(relVolMult) and relVolMult >= bullSnort_RVol_Mult and close > close[1] and daily_closing_range1 >= bullSnort_DCR_Min
+isBullSnort = not na(relVolMult) and relVolMult >= bullSnort_RVol_Mult and close > close[1] and not na(daily_closing_range1) and daily_closing_range1 >= bullSnort_DCR_Min
 
 upVol = close > close[1] ? volume : 0.0
 dnVol = close < close[1] ? volume : 0.0
@@ -70,8 +71,10 @@ sumDn = math.sum(dnVol, lookback_Period_Up_down)
 upDnVolRatio = sumDn > 0 ? sumUp / sumDn : na
 
 lookback_Period_Up_down_color = upDnVolRatio < 1 ? color.red : upDnVolRatio < 3 ? color.rgb(113, 170, 103) : color.green
-dcr_color = daily_closing_range1 > 5 ? color.green : color.red
 Changeinvolume = volume[1] > 0 ? ((volume - volume[1]) / volume[1]) * 100 : na
+dcr_color = na(daily_closing_range1) ? color.gray : daily_closing_range1 >= 65 ? color.green : daily_closing_range1 >= 50 ? color.rgb(113, 170, 103) : color.red
+change_color = na(Changeinvolume) ? color.gray : Changeinvolume >= 0 ? color.green : color.red
+rel_vol_color = REL_Volume_table >= 200 ? color.green : REL_Volume_table >= 100 ? color.rgb(113, 170, 103) : color.red
 
 // ── Highest-volume-since tracking ─────────────────────────────────────────────
 var float ipoVolume = na
@@ -115,8 +118,9 @@ isHVT_Month = volume == highestVolThisMonth
 
 isJanFirst = month == 1 and dayofmonth == 1
 volChangePct1 = volume[1] > 0 ? (volume - volume[1]) / volume[1] * 100 : na
+isHYDay = isHVT_Year and not isHVT_IPO and (not isJanFirst or (not na(volChangePct1) and Changeinvolume > 500)) and close > open and volume > highestDownVol and volume > volMA
 
-Var_Comments = IVDay ? "Institutional Buy Volume" : isBullSnort ? "Bull Snort" : isPocketPivot ? "Pivot Pocket Volume" : "NA"
+Var_Comments = isHVT_IPO ? "All-Time High Vol (HT)" : isHYDay ? "Year High Vol (HY)" : IVDay ? "Institutional Buy Volume" : isBullSnort ? "Bull Snort" : isPocketPivot ? "Pivot Pocket Volume" : isHVT_Quarter ? "Quarter High Vol (HQ)" : isHVT_Month ? "Month High Vol (M)" : "NA"
 
 Volume_color = IVDay ? color.rgb(33, 149, 243, 9) : isPocketPivot ? color.green : close < open ? color.red : color.gray
 volMid = volume * 0.5
@@ -133,7 +137,7 @@ if Show_HVT_Labels and isHVT_IPO
     label.new(bar_index, volMid, "🚀", style=label.style_none, textcolor=color.black, size=size.small)
     label.new(bar_index, -1.15, "HT", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
 
-if Show_HVT_Labels and isHVT_Year and not isHVT_IPO and (not isJanFirst or (not na(volChangePct1) and Changeinvolume > 500)) and (close > open and volume > highestDownVol and volume > volMA)
+if Show_HVT_Labels and isHYDay
     label.new(bar_index, volMid, "🔥", style=label.style_none, textcolor=color.black, size=size.small)
     label.new(bar_index, -1.15, "HY", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
 
@@ -154,7 +158,7 @@ if Show_table
     table.cell(ATHtable, 1, 1, str.tostring(AVG_Volume_table, format.volume), text_color=Var_Text_color, text_size=table_text_size)
 
     table.cell(ATHtable, 2, 0, str.tostring(lookback_Period_AVG) + " Bar Rel.Vol", bgcolor=background_color, text_color=Var_text_color, tooltip="Rel.Vol = Current Volume / Average volume of lookback period", text_size=table_text_size)
-    table.cell(ATHtable, 2, 1, str.tostring(math.round(REL_Volume_table)) + "%", text_color=Var_Text_color, text_size=table_text_size)
+    table.cell(ATHtable, 2, 1, str.tostring(math.round(REL_Volume_table)) + "%", text_color=Var_Text_color, bgcolor=rel_vol_color, text_size=table_text_size)
 
     table.cell(ATHtable, 3, 0, str.tostring(lookback_Period_Up_down) + " Bar Up/Down Vol Ratio", bgcolor=background_color, text_color=Var_text_color, tooltip="Total up-day volume divided by total down-day volume over the lookback period.", text_size=table_text_size)
     table.cell(ATHtable, 3, 1, str.tostring(math.round(upDnVolRatio, 2)), text_color=Var_Text_color, bgcolor=lookback_Period_Up_down_color, text_size=table_text_size)
@@ -163,12 +167,12 @@ if Show_table
     table.cell(ATHtable, 4, 1, str.tostring(math.round(daily_closing_range1, 2)) + "%", text_color=Var_Text_color, bgcolor=dcr_color, text_size=table_text_size)
 
     table.cell(ATHtable, 5, 0, "Change%", bgcolor=background_color, text_color=Var_text_color, tooltip="((Present day - Previous day) / Previous day) * 100", text_size=table_text_size)
-    table.cell(ATHtable, 5, 1, str.tostring(math.round(Changeinvolume, 2)) + "%", text_color=Var_Text_color, text_size=table_text_size)
+    table.cell(ATHtable, 5, 1, str.tostring(math.round(Changeinvolume, 2)) + "%", text_color=Var_Text_color, bgcolor=change_color, text_size=table_text_size)
 
     table.cell(ATHtable, 6, 0, "No Of PPV & IBV in last " + str.tostring(lookback_Period_PP) + " bars", bgcolor=background_color, text_color=Var_text_color, tooltip="Pocket Pivot Volume (PPV) count and IBV (Institutional buy volume) count", text_size=table_text_size)
     table.cell(ATHtable, 6, 1, "PPV-" + str.tostring(pivotCount) + " and IBV-" + str.tostring(IBVcount), text_color=Var_Text_color, text_size=table_text_size)
 
-    table.cell(ATHtable, 7, 0, "Comments", bgcolor=background_color, text_color=Var_text_color, tooltip="IBV, Bull Snort, or PPV classification for the current bar.", text_size=table_text_size)
+    table.cell(ATHtable, 7, 0, "Comments", bgcolor=background_color, text_color=Var_text_color, tooltip="HT, HY, IBV, Bull Snort, PPV, HQ, or M for the current bar.", text_size=table_text_size)
     table.cell(ATHtable, 7, 1, Var_Comments, text_color=Var_Text_color, text_size=table_text_size)
 
 // ── Disclaimer ──────────────────────────────────────────────────────────────
