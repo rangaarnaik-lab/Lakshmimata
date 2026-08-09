@@ -20,8 +20,6 @@ Show_BullSnort = input.bool(true, "Show Bull Snort", group="Volume", inline="BS"
 bullSnort_RVol_Mult = input.float(3.0, "Min Rel Vol (× 50d Avg)", minval=2.0, step=0.5, group="Volume", inline="BS", tooltip="Volume ≥ this multiple of the fixed 50-day average volume (Oliver Kell Bull Snort).")
 bullSnort_DCR_Min = input.float(65.0, "Min DCR %", minval=50.0, maxval=90.0, group="Volume", inline="BS", tooltip="Close in top portion of day's range.")
 bullSnort_BG_Color = input.color(color.new(color.rgb(210, 170, 230), 78), "Bull Snort BG Color", group="Volume")
-htBarColor = input.color(color.rgb(155, 89, 182), "HT Color (All-Time High Vol)", group="Volume")
-hyBarColor = input.color(color.rgb(255, 152, 0), "HY Color (Year High Vol)", group="Volume")
 
 showDisclaimer = input.bool(true, title="Show Disclaimer")
 Show_table = input(true, "Show Volume Information Table", group="Volume Information Table")
@@ -117,32 +115,24 @@ isHVT_Month = volume == highestVolThisMonth
 
 isJanFirst = month == 1 and dayofmonth == 1
 volChangePct1 = volume[1] > 0 ? (volume - volume[1]) / volume[1] * 100 : na
-isHYDay = isHVT_Year and not isHVT_IPO and (not isJanFirst or (not na(volChangePct1) and Changeinvolume > 500)) and close > open and volume > highestDownVol and volume > volMA
 
-// ── Display priority: HT → HY → Bull Snort → IBV → PPV ─────────────────────
-showHT = Show_HVT_Labels and isHVT_IPO
-showHY = Show_HVT_Labels and isHYDay and not showHT
-showBullSnortMark = Show_BullSnort and isBullSnort and not showHT and not showHY
-showIBVMark = Show_IV and IVDay and not showHT and not showHY and not showBullSnortMark
-showPPVMark = Show_PP and isPocketPivot and not showHT and not showHY and not showBullSnortMark and not showIBVMark
+Var_Comments = IVDay ? "Institutional Buy Volume" : isBullSnort ? "Bull Snort" : isPocketPivot ? "Pivot Pocket Volume" : "NA"
 
-Var_Comments = showHT ? "All-Time High Volume (HT)" : showHY ? "Year High Volume (HY)" : showBullSnortMark ? "Bull Snort" : showIBVMark ? "Institutional Buy Volume" : showPPVMark ? "Pivot Pocket Volume" : "NA"
-
-Volume_color = showHT ? htBarColor : showHY ? hyBarColor : showIBVMark ? color.rgb(33, 149, 243, 9) : showPPVMark ? color.green : close < open ? color.red : color.gray
+Volume_color = IVDay ? color.rgb(33, 149, 243, 9) : isPocketPivot ? color.green : close < open ? color.red : color.gray
 volMid = volume * 0.5
 
 // ── Bull Snort / low-volume background ───────────────────────────────────────
 lowVolCondition = volume < volMA * 0.5
 bgcolor(
-     showBullSnortMark ? bullSnort_BG_Color :
+     Show_BullSnort and isBullSnort ? bullSnort_BG_Color :
      Show_LowVol_BG and lowVolCondition ? color.rgb(238, 231, 238) :
      na,
      title="Bull Snort / Low Volume Background")
 
-if showHT
+if Show_HVT_Labels and isHVT_IPO
     label.new(bar_index, -1.15, "🚀HT", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
 
-if showHY
+if Show_HVT_Labels and isHVT_Year and not isHVT_IPO and (not isJanFirst or (not na(volChangePct1) and Changeinvolume > 500)) and (close > open and volume > highestDownVol and volume > volMA)
     label.new(bar_index, volMid, "🔥HY", style=label.style_label_center, color=color.white, textcolor=color.black, size=size.tiny)
 
 if Show_HVT_Labels and isHVT_Quarter and not isHVT_IPO and not isHVT_Year
@@ -176,7 +166,7 @@ if Show_table
     table.cell(ATHtable, 6, 0, "No Of PPV & IBV in last " + str.tostring(lookback_Period_PP) + " bars", bgcolor=background_color, text_color=Var_text_color, tooltip="Pocket Pivot Volume (PPV) count and IBV (Institutional buy volume) count", text_size=table_text_size)
     table.cell(ATHtable, 6, 1, "PPV-" + str.tostring(pivotCount) + " and IBV-" + str.tostring(IBVcount), text_color=Var_Text_color, text_size=table_text_size)
 
-    table.cell(ATHtable, 7, 0, "Comments", bgcolor=background_color, text_color=Var_text_color, tooltip="Priority: HT → HY → Bull Snort → IBV → PPV", text_size=table_text_size)
+    table.cell(ATHtable, 7, 0, "Comments", bgcolor=background_color, text_color=Var_text_color, tooltip="IBV, Bull Snort, or PPV classification for the current bar.", text_size=table_text_size)
     table.cell(ATHtable, 7, 1, Var_Comments, text_color=Var_Text_color, text_size=table_text_size)
 
 // ── Disclaimer ──────────────────────────────────────────────────────────────
@@ -189,10 +179,10 @@ plot(volume, style=plot.style_columns, color=Volume_color, title="Volume")
 plot(Show_AVG_Volume ? volMA : na, style=plot.style_line, color=color.rgb(20, 20, 20), title="Average Volume")
 plot(0, "Zero line", color.gray)
 
-plotchar(showIBVMark, title="IBV", char="", location=location.abovebar, color=color.rgb(18, 19, 18), size=size.tiny, text="IBV")
-plotchar(showIBVMark, title="IBV_symbol", char="▲", location=location.bottom, color=color.rgb(221, 15, 211), size=size.tiny)
-plotchar(showPPVMark, title="PPV", char="★", location=location.bottom, color=color.rgb(17, 16, 16), size=size.tiny)
-plotchar(showBullSnortMark, title="Bull Snort", char="🐂", location=location.abovebar, color=color.rgb(128, 0, 128), size=size.tiny)
+plotchar(IVDay and Show_IV, title="IBV", char="", location=location.abovebar, color=color.rgb(18, 19, 18), size=size.tiny, text="IBV")
+plotchar(IVDay and Show_IV, title="IBV_symbol", char="▲", location=location.bottom, color=color.rgb(221, 15, 211), size=size.tiny)
+plotchar(isPocketPivot and Show_PP, title="PPV", char="★", location=location.bottom, color=color.rgb(17, 16, 16), size=size.tiny)
+plotchar(isBullSnort and Show_BullSnort, title="Bull Snort", char="🐂", location=location.abovebar, color=color.rgb(128, 0, 128), size=size.tiny)
 
 alertcondition(IVDay, title="IBV", message="Institutional Buy Volume Alert on {{ticker}} @ {{close}} on {{interval}} Timeframe")
 alertcondition(isPocketPivot, title="PPV", message="Pivot pocket Volume Alert on {{ticker}} @ {{close}} on {{interval}} Timeframe")
