@@ -1,0 +1,7 @@
+{
+  "name": "Lakshmimata + server worker",
+  "repositoryDependencies": [
+    "github.com/rangaarnaik-lab/lakshmimata-server"
+  ],
+  "install": "npm ci && if [ ! -d lakshmimata-server/.git ]; then git clone https://github.com/rangaarnaik-lab/lakshmimata-server.git lakshmimata-server; else git -C lakshmimata-server fetch origin && git -C lakshmimata-server checkout main && git -C lakshmimata-server pull origin main; fi"
+}
