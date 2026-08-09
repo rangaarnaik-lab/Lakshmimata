@@ -1788,36 +1788,3 @@ export async function fetchIndexSymbols(indexFilter) {
   return syms
 }
 
-/** Worker AI backlog — loaded vs pending counts for Results / PPT / Concall / About. */
-export async function fetchWorkerProgressStats() {
-  async function distinctSymbolCount(table, { status } = {}) {
-    let q = supabase.from(table).select('symbol')
-    if (status) q = q.eq('status', status)
-    const { data, error } = await q.limit(8000)
-    if (error) {
-      console.error(`fetchWorkerProgressStats ${table}:`, error.message)
-      return 0
-    }
-    return new Set((data || []).map(r => (r.symbol || '').toUpperCase()).filter(Boolean)).size
-  }
-  const [universeRes, resultsLoaded, pptLoaded, concallLoaded, aboutLoaded, resultsPdfRes] =
-    await Promise.all([
-      supabase.from('stocks').select('sym', { count: 'exact', head: true }),
-      distinctSymbolCount('financial_results'),
-      distinctSymbolCount('ppt_summaries', { status: 'done' }),
-      distinctSymbolCount('transcript_summaries', { status: 'done' }),
-      distinctSymbolCount('company_abouts', { status: 'done' }),
-      supabase.from('concall_summaries').select('symbol', { count: 'exact', head: true }).eq('status', 'done'),
-    ])
-  const universe = universeRes.count || 0
-  const resultsPdfLoaded = resultsPdfRes.count || 0
-  const pending = (loaded) => (universe > 0 ? Math.max(0, universe - loaded) : null)
-  return {
-    universe,
-    results: { loaded: resultsLoaded, pending: pending(resultsLoaded) },
-    resultsPdf: { loaded: resultsPdfLoaded, pending: pending(resultsPdfLoaded) },
-    ppt: { loaded: pptLoaded, pending: pending(pptLoaded) },
-    concall: { loaded: concallLoaded, pending: pending(concallLoaded) },
-    about: { loaded: aboutLoaded, pending: pending(aboutLoaded) },
-  }
-}
