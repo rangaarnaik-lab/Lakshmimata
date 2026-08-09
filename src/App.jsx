@@ -3174,7 +3174,7 @@ function AboutCompanyPanel({symbol, stocks}){
   )
 }
 
-function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab}){
+function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable}){
   // Tab can be controlled by ChartPanel (e.g. peer ranking opens Results).
   const [innerTab, setInnerTab] = useState('about')
   const activeTab = tab ?? innerTab
@@ -3227,8 +3227,9 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab}){
   }
 
   return (
-    <div>
-      <div style={{display:'flex',gap:4,marginBottom:10,borderBottom:`1px solid ${C.border}`,overflowX:'auto'}}>
+    <div style={scrollable?{display:'flex',flexDirection:'column',flex:1,minHeight:0,height:'100%'}:undefined}>
+      <div style={{display:'flex',gap:4,marginBottom:10,borderBottom:`1px solid ${C.border}`,
+        overflowX:'auto',flexShrink:0}}>
         {STOCK_DETAIL_TABS.map(t=>{
           const flag = t.key==='concall'?flags.concall
             : t.key==='ppt'?flags.ppt
@@ -3271,6 +3272,10 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab}){
           )
         })}
       </div>
+      <div style={scrollable?{
+        flex:1,minHeight:0,overflowY:'auto',overflowX:'hidden',
+        paddingRight:4,paddingBottom:8,
+      }:undefined}>
       {activeTab==='about' && <AboutCompanyPanel symbol={sym} stocks={stocks}/>}
       {activeTab==='fundamentals' && <FundamentalsPanel symbol={sym} stocks={stocks}/>}
       {activeTab==='results' && (
@@ -3286,6 +3291,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab}){
       {activeTab==='resultsSummary' && <ResultsFilingSummary symbol={sym}/>}
       {activeTab==='concall' && <TranscriptSummary symbol={sym}/>}
       {activeTab==='ppt' && <PptSummary symbol={sym}/>}
+      </div>
     </div>
   )
 }
@@ -3307,40 +3313,44 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
     }
     if(sectionId==='themes') return <div style={{marginBottom:10}}><StockThemesAfterMcap symbol={sym}/></div>
     if(sectionId==='mgmt') return <div style={{marginBottom:10}}><MgmtFlagsCard symbol={sym} compact/></div>
-    if(sectionId==='details'){
-      return (
-        <StockDetailTabs sym={sym} stocks={stocks} tab={detailTab} setTab={setDetailTab}
-          onSelectSymbol={(s)=>navigateTo(s,{openResults:true})}/>
-      )
-    }
     return null
   }
   const belowFlex=readingMode?'1 1 58%':tableMode?'1 1 52%':'1 1 42%'
   const belowMin=readingMode?(isMobile?300:340):tableMode?(isMobile?260:300):(isMobile?200:220)
-  const belowPad=readingMode?'8px 14px 56px':tableMode?'8px 14px 48px':'8px 14px 14px'
+  const belowPad=readingMode?'8px 14px 14px':tableMode?'8px 14px 14px':'8px 14px 14px'
   return (
-    <div style={{flex:belowFlex,minHeight:belowMin,
-      overflowY:'auto',overflowX:'hidden',padding:belowPad,
+    <div style={{flex:belowFlex,minHeight:belowMin,display:'flex',flexDirection:'column',
+      overflow:'hidden',padding:belowPad,
       borderTop:`1px solid ${C.divider}`,background:C.bg}}>
-      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:customizeOpen?8:4}}>
-        <button type="button" onClick={()=>setCustomizeOpen(v=>!v)}
-          style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${customizeOpen?C.accent:C.border}`,
-            background:customizeOpen?C.accent+'18':'transparent',color:customizeOpen?C.accent:C.muted,
-            fontSize:10,fontWeight:700,cursor:'pointer'}}>
-          {customizeOpen?'Done':'Reorder blocks'}
-        </button>
-      </div>
-      {customizeOpen&&(
-        <div style={{marginBottom:12,padding:'10px 12px',borderRadius:10,
-          border:`1px solid ${C.border}`,background:C.card}}>
-          <ReorderableList items={sectionOrder} onReorder={onSectionOrderChange}
-            hint="Change the order of content below the chart."
-            renderItem={(key)=><span style={{fontSize:12,fontWeight:700,color:C.text}}>{CHART_SECTION_LABELS[key]||key}</span>}/>
+      <div style={{flexShrink:0}}>
+        <div style={{display:'flex',justifyContent:'flex-end',marginBottom:customizeOpen?8:4}}>
+          <button type="button" onClick={()=>setCustomizeOpen(v=>!v)}
+            style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${customizeOpen?C.accent:C.border}`,
+              background:customizeOpen?C.accent+'18':'transparent',color:customizeOpen?C.accent:C.muted,
+              fontSize:10,fontWeight:700,cursor:'pointer'}}>
+            {customizeOpen?'Done':'Reorder blocks'}
+          </button>
         </div>
-      )}
+        {customizeOpen&&(
+          <div style={{marginBottom:12,padding:'10px 12px',borderRadius:10,
+            border:`1px solid ${C.border}`,background:C.card}}>
+            <ReorderableList items={sectionOrder} onReorder={onSectionOrderChange}
+              hint="Change the order of content below the chart."
+              renderItem={(key)=><span style={{fontSize:12,fontWeight:700,color:C.text}}>{CHART_SECTION_LABELS[key]||key}</span>}/>
+          </div>
+        )}
+      </div>
       {sectionOrder.map(sectionId=>{
+        if(sectionId==='details'){
+          return (
+            <div key="details" style={{flex:'1 1 0',minHeight:160,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+              <StockDetailTabs sym={sym} stocks={stocks} tab={detailTab} setTab={setDetailTab}
+                onSelectSymbol={(s)=>navigateTo(s,{openResults:true})} scrollable/>
+            </div>
+          )
+        }
         const block=renderBlock(sectionId)
-        return block?<React.Fragment key={sectionId}>{block}</React.Fragment>:null
+        return block?<div key={sectionId} style={{flexShrink:0}}>{block}</div>:null
       })}
     </div>
   )
