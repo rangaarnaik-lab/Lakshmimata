@@ -68,13 +68,19 @@ Stops the repeating log line: `💬 Ask-AI: run add_stock_ai_asks.sql`
 
 Rotates through **all** `GEMINI_API_KEY*` on 429 for About Company and Results PDF extraction (not just the dedicated About key). Shortens default About hard-stop from 24h → 1h only when **every** key is exhausted.
 
+**Option A — GitHub Actions (recommended)**
+
+1. Lakshmimata repo → **Settings → Secrets → Actions** → add `LAKSHMIMATA_SERVER_PAT` (GitHub PAT with **repo write** on `lakshmimata-server`).
+2. Run [Push worker patch to lakshmimata-server main](https://github.com/rangaarnaik-lab/Lakshmimata/actions/workflows/push-server-worker-patch.yml) → **Run workflow**.
+
+**Option B — manual**
+
 ```bash
 cd lakshmimata-server
 git pull origin main
 git apply /path/to/about-results-key-rotation-7468.patch
-# or: git am /path/to/about-results-key-rotation-7468.patch
 git push origin main
-# Redeploy fundamentals on Railway
+# Railway fundamentals redeploys on push
 ```
 
 After deploy, startup should log:

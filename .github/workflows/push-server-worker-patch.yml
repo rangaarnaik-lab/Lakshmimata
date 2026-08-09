@@ -1,0 +1,51 @@
+name: Push worker patch to lakshmimata-server main
+
+# Applies deploy/about-results-key-rotation-7468.patch to lakshmimata-server
+# and pushes main (Railway fundamentals auto-redeploys on push).
+#
+# One-time setup: Lakshmimata repo → Settings → Secrets → Actions
+#   LAKSHMIMATA_SERVER_PAT = GitHub PAT with repo write on lakshmimata-server
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/about-results-key-rotation-7468.patch'
+      - '.github/workflows/push-server-worker-patch.yml'
+
+jobs:
+  push-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Lakshmimata (patch)
+        uses: actions/checkout@v4
+
+      - name: Checkout lakshmimata-server main
+        uses: actions/checkout@v4
+        with:
+          repository: rangaarnaik-lab/lakshmimata-server
+          path: server
+          ref: main
+          token: ${{ secrets.LAKSHMIMATA_SERVER_PAT }}
+
+      - name: Apply worker patch and push main
+        env:
+          PAT: ${{ secrets.LAKSHMIMATA_SERVER_PAT }}
+        run: |
+          if [ -z "$PAT" ]; then
+            echo "::error::Add LAKSHMIMATA_SERVER_PAT to Lakshmimata secrets — a GitHub PAT with repo write access to rangaarnaik-lab/lakshmimata-server."
+            exit 1
+          fi
+          git -C server apply ../deploy/about-results-key-rotation-7468.patch
+          cd server
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Patch already applied on lakshmimata-server main — nothing to push."
+            exit 0
+          fi
+          git add fundamentals_worker.py
+          git commit -m "Rotate all Gemini keys on 429 for About and Results"
+          git push "https://x-access-token:${PAT}@github.com/rangaarnaik-lab/lakshmimata-server.git" HEAD:main
