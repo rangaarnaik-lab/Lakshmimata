@@ -3274,7 +3274,10 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable})
       </div>
       <div style={scrollable?{
         flex:1,minHeight:0,overflowY:'auto',overflowX:'hidden',
-        paddingRight:4,paddingBottom:8,
+        paddingRight:4,paddingBottom:48,
+        borderTop:`1px solid ${C.border}`,
+        marginTop:2,
+        scrollbarGutter:'stable',
       }:undefined}>
       {activeTab==='about' && <AboutCompanyPanel symbol={sym} stocks={stocks}/>}
       {activeTab==='fundamentals' && <FundamentalsPanel symbol={sym} stocks={stocks}/>}
