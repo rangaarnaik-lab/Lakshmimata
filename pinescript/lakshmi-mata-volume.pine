@@ -179,7 +179,7 @@ plot(0, "Zero line", color.gray)
 
 plotchar(IVDay and Show_IV, title="IBV", char="▲", location=location.bottom, color=color.rgb(221, 15, 211), size=size.tiny)
 plotchar(isPocketPivot and Show_PP, title="PPV", char="★", location=location.bottom, color=color.rgb(17, 16, 16), size=size.tiny)
-plotchar(isBullSnort and Show_BullSnort, title="Bull Snort", char="🐂", location=location.abovebar, color=color.rgb(128, 0, 128), size=size.small)
+plotchar(isBullSnort and Show_BullSnort, title="Bull Snort", char="🐂", location=location.abovebar, color=color.rgb(128, 0, 128), size=size.tiny)
 
 alertcondition(IVDay, title="IBV", message="Institutional Buy Volume Alert on {{ticker}} @ {{close}} on {{interval}} Timeframe")
 alertcondition(isPocketPivot, title="PPV", message="Pivot pocket Volume Alert on {{ticker}} @ {{close}} on {{interval}} Timeframe")
