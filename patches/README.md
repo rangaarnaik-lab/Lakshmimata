@@ -4,6 +4,40 @@ Worker code lives in
 [`rangaarnaik-lab/lakshmimata-server`](https://github.com/rangaarnaik-lab/lakshmimata-server)
 (`fundamentals_worker.py`). Apply patches there, then redeploy on Railway.
 
+## Your 5–6+ Gemini keys (Railway)
+
+**Any** Railway variable whose name starts with `GEMINI_API_KEY` is picked up — no limit.
+
+Example with 6 keys:
+
+```bash
+GEMINI_API_KEY=AIza...          # default / PPT / concall
+GEMINI_API_KEY_ABOUT=AIza...
+GEMINI_API_KEY_RESULTS=AIza...
+GEMINI_API_KEY_THEMES=AIza...
+GEMINI_API_KEY_2=AIza...
+GEMINI_API_KEY_3=AIza...
+GEMINI_API_KEY_4=AIza...
+```
+
+After deploy + patch, startup should log:
+
+```text
+📘 About/Results Gemini pool: 6 unique key(s) from 6 env var(s) — …xxxx, …yyyy, …
+📘 Gemini env vars: GEMINI_API_KEY, GEMINI_API_KEY_2, GEMINI_API_KEY_3, ...
+```
+
+Each request **round-robins** across all keys; on 429 it tries the **next** key before pausing.
+
+**Important:** Keys must be from **different Google AI Studio projects** to get separate free-tier quotas. Six copies of the same project still share one daily limit.
+
+Optional with many keys:
+
+```bash
+GEMINI_MAX_CONCURRENT=2    # 2 parallel calls (each key has its own cap)
+ABOUT_COMPANY_CONCURRENCY=2
+```
+
 ## Start Results + About now (Railway env)
 
 Set these on the **fundamentals** service, then **Redeploy**:

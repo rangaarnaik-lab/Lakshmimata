@@ -1,19 +1,19 @@
-From 2d4581a95f36ecee4c04a2baf12922b874f26cda Mon Sep 17 00:00:00 2001
+From e1ff60cd99a1cd4d2c26c9737bfc9b5dbda464c7 Mon Sep 17 00:00:00 2001
 From: Cursor Agent <cursoragent@cursor.com>
 Date: Sun, 9 Aug 2026 08:07:21 +0000
-Subject: [PATCH] Rotate Gemini keys on 429; run About + Results on free tier
+Subject: [PATCH] Rotate all GEMINI_API_KEY* on 429; round-robin across 5-6+
+ keys
 
-- Try every GEMINI_API_KEY* before pausing About/Results on quota
-- Default About hard pause 1h (was 24h); yield sleep max 30m
-- Lower About batch defaults (3 symbols, concurrency 1)
-- Prefer gemini-2.0-flash-lite for PDF/About on free tier
-- Log full key pool size at worker startup
+- Discover every env var starting with GEMINI_API_KEY (no limit)
+- Round-robin start position per request to spread load before quota hits
+- Ask AI uses full key pool (was only collecting 2-3 keys)
+- Startup logs all env var names + unique key count
 ---
- fundamentals_worker.py | 196 +++++++++++++++++++++++++++++------------
- 1 file changed, 139 insertions(+), 57 deletions(-)
+ fundamentals_worker.py | 234 +++++++++++++++++++++++++++++------------
+ 1 file changed, 168 insertions(+), 66 deletions(-)
 
 diff --git a/fundamentals_worker.py b/fundamentals_worker.py
-index fffbaeb..ae76172 100644
+index fffbaeb..f0b9597 100644
 --- a/fundamentals_worker.py
 +++ b/fundamentals_worker.py
 @@ -201,10 +201,9 @@ def _gemini_quota_exhausted(body_txt: str | None) -> bool:
@@ -30,7 +30,7 @@ index fffbaeb..ae76172 100644
  
  
  def _begin_about_yield_to_results(seconds: int, reason: str):
-@@ -280,6 +279,66 @@ def _gemini_api_key_results() -> str:
+@@ -280,6 +279,88 @@ def _gemini_api_key_results() -> str:
          'VALUATION', 'THEMES', 'FLAGS', 'HIGHLIGHTS')
  
  
@@ -53,12 +53,34 @@ index fffbaeb..ae76172 100644
 +    return keys
 +
 +
++_GEMINI_RR_IDX = 0
++
++
++def _gemini_env_key_var_names() -> list[str]:
++    """Railway env var names that hold a Gemini key (for startup logs)."""
++    return sorted(
++        n for n in os.environ
++        if n.startswith('GEMINI_API_KEY') and (os.environ.get(n) or '').strip()
++    )
++
++
++def _gemini_api_keys_pool_rotated(*features: str) -> list[str]:
++    """Pool with round-robin start — spreads load across 5–6+ keys before any hits quota."""
++    global _GEMINI_RR_IDX
++    pool = _gemini_api_keys_pool(*features)
++    if not pool:
++        return []
++    start = _GEMINI_RR_IDX % len(pool)
++    _GEMINI_RR_IDX += 1
++    return pool[start:] + pool[:start]
++
++
 +async def _gemini_generate_rotating(session: aiohttp.ClientSession, *,
 +                                    features: tuple[str, ...], model: str, body: dict,
 +                                    timeout_s: float, symbol: str, label: str,
 +                                    priority: bool = False):
 +    """Try each API key in the pool before giving up (free-tier daily limits are per-key)."""
-+    keys = _gemini_api_keys_pool(*features)
++    keys = _gemini_api_keys_pool_rotated(*features)
 +    if not keys:
 +        return 0, {}, '', False, None
 +    last_status, last_data, last_body = 0, {}, ''
@@ -97,7 +119,7 @@ index fffbaeb..ae76172 100644
  def _gemini_ask_model() -> str:
      """Prefer free/lite models for interactive Ask AI."""
      return (os.getenv('GEMINI_ASK_MODEL')
-@@ -666,7 +725,7 @@ async def extract_ppt_summary(session: aiohttp.ClientSession, symbol: str, attac
+@@ -666,7 +747,7 @@ async def extract_ppt_summary(session: aiohttp.ClientSession, symbol: str, attac
          },
          "required": ["has_content"],
      }
@@ -106,7 +128,7 @@ index fffbaeb..ae76172 100644
      gemini_timeout = int(os.getenv('GEMINI_PPT_TIMEOUT_SECONDS', '120'))
      try:
          status, data, body = await _gemini_generate(
-@@ -863,7 +922,7 @@ async def extract_transcript_summary(session: aiohttp.ClientSession, symbol: str
+@@ -863,7 +944,7 @@ async def extract_transcript_summary(session: aiohttp.ClientSession, symbol: str
          },
          "required": ["has_content", "overall_summary", "guidance_direction"],
      }
@@ -115,7 +137,7 @@ index fffbaeb..ae76172 100644
      # Separate, more generous default timeout than results PDFs
      # (GEMINI_TIMEOUT_SECONDS) since transcripts run much longer -
      # Gemini needs more time to read and synthesize a 20-page document
-@@ -1096,29 +1155,32 @@ async def extract_results_from_pdf(session: aiohttp.ClientSession, symbol: str,
+@@ -1096,29 +1177,32 @@ async def extract_results_from_pdf(session: aiohttp.ClientSession, symbol: str,
      # gemini-3.1-flash-lite: current actively-supported Lite-tier
      # model as of Aug 2026 (gemini-2.5-flash is being deprecated
      # Oct 16 2026) - cheap, fast, and handles PDF input natively.
@@ -163,7 +185,7 @@ index fffbaeb..ae76172 100644
                              + f": {(body or '')[:180]}")
              else:
                  log.warning(f"⚠️ Gemini results extraction failed for {symbol} ({status}): {(body or '')[:200]}")
-@@ -2162,7 +2224,7 @@ async def ai_extract_fundamentals_metrics(session: aiohttp.ClientSession, sym: s
+@@ -2162,7 +2246,7 @@ async def ai_extract_fundamentals_metrics(session: aiohttp.ClientSession, sym: s
          "properties": {k: num for k in _AI_FUND_ALL},
          "required": [],
      }
@@ -172,7 +194,7 @@ index fffbaeb..ae76172 100644
      try:
          status, data, body = await _gemini_generate(
              session,
-@@ -3898,7 +3960,7 @@ async def extract_about_company(session: aiohttp.ClientSession, symbol: str, ppt
+@@ -3898,7 +3982,7 @@ async def extract_about_company(session: aiohttp.ClientSession, symbol: str, ppt
              "keep the brief shorter if needed.\n"
          )
  
@@ -181,7 +203,7 @@ index fffbaeb..ae76172 100644
      body = {
          "contents": [{"parts": [{"text": prompt}]}],
          "generationConfig": {"temperature": 0.2},
-@@ -3908,28 +3970,40 @@ async def extract_about_company(session: aiohttp.ClientSession, symbol: str, ppt
+@@ -3908,28 +3992,40 @@ async def extract_about_company(session: aiohttp.ClientSession, symbol: str, ppt
          body["tools"] = [{"google_search": {}}]
  
      try:
@@ -243,7 +265,26 @@ index fffbaeb..ae76172 100644
      except Exception as e:
          # Timeouts / connection blips also pause — avoid burning cycles.
          pause = type(e).__name__ in ('TimeoutError', 'ClientConnectorError', 'ServerTimeoutError')
-@@ -4943,7 +5017,7 @@ async def extract_fundamentals_highlights(session: aiohttp.ClientSession, row: d
+@@ -4511,15 +4607,9 @@ async def answer_stock_ai_ask(session: aiohttp.ClientSession, symbol: str, quest
+     answers with free Gemini + clear uncertainty (does not refuse).
+     use_web=True  → Gemini Google Search + local context.
+     Always exempt from batch hard-stops — interactive Q&A must keep working."""
+-    # Prefer ASKS key, else any free-tier Gemini key on the box.
+-    keys = []
+-    for feat in ('ASKS', '', 'ABOUT', 'RESULTS', 'PPT', 'TRANSCRIPT'):
+-        k = _gemini_api_key(feat) if feat else _gemini_api_key('')
+-        if k and k not in keys:
+-            keys.append(k)
+-    extra = _gemini_api_key_any()
+-    if extra and extra not in keys:
+-        keys.append(extra)
++    keys = _gemini_api_keys_pool_rotated(
++        'ASKS', '', 'ABOUT', 'RESULTS', 'PPT', 'TRANSCRIPT',
++        'VALUATION', 'THEMES', 'FLAGS', 'HIGHLIGHTS')
+     if not keys:
+         return None
+     has_context = bool(context and len(context.strip()) >= 80)
+@@ -4943,7 +5033,7 @@ async def extract_fundamentals_highlights(session: aiohttp.ClientSession, row: d
          },
          "required": ["highlights", "key_metrics"],
      }
@@ -252,7 +293,7 @@ index fffbaeb..ae76172 100644
      try:
          status, data, body = await _gemini_generate(
              session,
-@@ -5160,9 +5234,9 @@ async def _about_company_loop(session: aiohttp.ClientSession):
+@@ -5160,9 +5250,9 @@ async def _about_company_loop(session: aiohttp.ClientSession):
                  _key_status_logged = True
              await asyncio.sleep(300)
              continue
@@ -265,7 +306,7 @@ index fffbaeb..ae76172 100644
          # After Results catchup: populate Company Overview every 15 min by default.
          cycle_secs = int(os.getenv(
              'ABOUT_COMPANY_CYCLE_SECONDS',
-@@ -5516,13 +5590,16 @@ async def _about_company_loop(session: aiohttp.ClientSession):
+@@ -5516,13 +5606,16 @@ async def _about_company_loop(session: aiohttp.ClientSession):
              if hit_hard_quota or _ABOUT_GEMINI_HARD_QUOTA:
                  _ABOUT_GEMINI_UNHEALTHY_SINCE = None
                  _ABOUT_GEMINI_HARD_QUOTA = False
@@ -287,7 +328,7 @@ index fffbaeb..ae76172 100644
              else:
                  now = time.monotonic()
                  if _ABOUT_GEMINI_UNHEALTHY_SINCE is None:
-@@ -5544,10 +5621,10 @@ async def _about_company_loop(session: aiohttp.ClientSession):
+@@ -5544,10 +5637,10 @@ async def _about_company_loop(session: aiohttp.ClientSession):
                      # Still failing after retry window → same 24h pause + Results.
                      _ABOUT_GEMINI_UNHEALTHY_SINCE = None
                      _begin_about_yield_to_results(
@@ -300,15 +341,19 @@ index fffbaeb..ae76172 100644
                      _ABOUT_YIELD_TO_RESULTS_UNTIL = None
                      log.info("📘 About-company: hard pause done — resuming About; Results focus ends")
          elif todo:
-@@ -5615,11 +5692,16 @@ async def fundamentals_worker_main():
+@@ -5615,11 +5708,20 @@ async def fundamentals_worker_main():
      else:
          log.warning("  Gemini keys: none configured")
      about_k = _gemini_api_key_about()
 +    pool = _gemini_api_keys_pool('ABOUT', 'RESULTS', '', 'PPT', 'TRANSCRIPT', 'ASKS')
++    key_vars = _gemini_env_key_var_names()
 +    if pool:
-+        log.info(f"  📘 About/Results Gemini pool: {len(pool)} key(s) — "
-+                 f"{', '.join(_gemini_key_fingerprint(k) for k in pool[:8])}"
-+                 + ('…' if len(pool) > 8 else ''))
++        log.info(f"  📘 About/Results Gemini pool: {len(pool)} unique key(s) from "
++                 f"{len(key_vars)} env var(s) — "
++                 f"{', '.join(_gemini_key_fingerprint(k) for k in pool)}")
++        log.info(f"  📘 Gemini env vars: {', '.join(key_vars)}")
++    elif key_vars:
++        log.warning(f"  📘 Gemini env vars present but pool empty: {', '.join(key_vars)}")
      about_src = ('GEMINI_API_KEY_ABOUT'
                   if (os.getenv('GEMINI_API_KEY_ABOUT') or '').strip()
                   else ('any-GEMINI_API_KEY*' if about_k else 'none'))
