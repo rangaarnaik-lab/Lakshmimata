@@ -795,25 +795,23 @@ function TVCopyPanel({stocks,label,compact}){
     )
   }
   return(
-    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',
-      background:C.card,border:`1px solid ${C.teal}33`,borderRadius:8,
-      padding:'6px 12px',marginBottom:10,fontSize:11}}>
-      <span style={{color:C.teal,fontWeight:700,whiteSpace:'nowrap'}}>
+    <div style={{display:'inline-flex',alignItems:'center',gap:6,flexWrap:'wrap',
+      marginBottom:8,fontSize:11}}>
+      <span style={{color:C.teal,fontWeight:700,whiteSpace:'nowrap',fontSize:11}}>
         📊 TV ({syms.length})
       </span>
       <button onClick={()=>copy(symbolList,'symlist')} title="Copy NSE:SYM list — paste into TradingView's watchlist import or symbol search"
-        style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.teal}33`,cursor:'pointer',
+        style={{padding:'3px 8px',borderRadius:6,border:`1px solid ${C.teal}33`,cursor:'pointer',
           background:copied==='symlist'?C.teal+'22':'transparent',
           color:copied==='symlist'?C.teal:C.muted,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>
         {copied==='symlist'?'✅ Copied':'📋 Copy for TV'}
       </button>
       <button onClick={()=>copy(alertStr,'alert')} title="One symbol per line for alert wizard"
-        style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.teal}33`,cursor:'pointer',
+        style={{padding:'3px 8px',borderRadius:6,border:`1px solid ${C.teal}33`,cursor:'pointer',
           background:copied==='alert'?C.teal+'22':'transparent',
           color:copied==='alert'?C.teal:C.muted,fontSize:10,fontWeight:600,whiteSpace:'nowrap'}}>
         {copied==='alert'?'✅ Copied':'🔔 Alerts'}
       </button>
-      {label&&<span style={{color:C.muted,fontSize:10,marginLeft:'auto',whiteSpace:'nowrap'}}>{label}</span>}
     </div>
   )
 }
@@ -10361,21 +10359,8 @@ export default function App(){
               </div>
             )}
 
-            {/* RS methodology legend — compact single line */}
-            {stocks.length>0&&(
-              <details style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
-                padding:'6px 12px',marginBottom:10,fontSize:11,color:C.muted}}>
-                <summary style={{cursor:'pointer',fontWeight:600,color:C.text}}>ℹ️ How RS is calculated — two methods</summary>
-                <div style={{marginTop:6,lineHeight:1.8}}>
-                  <strong style={{color:C.teal}}>RS-TV</strong> = Lakshmi Mata / TradingView formula — benchmark-relative (stock return minus Nifty's return), normalized by this stock's own 252-day min/max. Matches your Pine Script exactly. &nbsp;·&nbsp;
-                  <strong style={{color:C.text}}>MID/SML/SEC</strong> = IBD percentile rank vs that index pool — shown for ALL stocks regardless of index membership, so you can compare any stock against each universe. &nbsp;·&nbsp;
-                  <span style={{color:C.border}}>—</span> = insufficient data
-                </div>
-              </details>
-            )}
-
-            {/* TV copy for full RS list */}
-            {displayedRS.length>0&&<TVCopyPanel stocks={displayedRS} label={`RS Rating — ${scanLabel}`}/>}
+            {/* TV copy for full RS list — compact, no full-width card */}
+            {displayedRS.length>0&&<TVCopyPanel stocks={displayedRS}/>}
 
             {/* Summary chips */}
             {stocks.length>0&&(
