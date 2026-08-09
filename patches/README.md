@@ -1,19 +1,72 @@
-# Server patches (apply in `lakshmimata-server`)
+# Server patches & ops (lakshmimata-server)
 
-This Cloud Agent run was started on the **Lakshmimata** frontend repo, but the
-Results extraction / About Company worker lives in
+Worker code lives in
 [`rangaarnaik-lab/lakshmimata-server`](https://github.com/rangaarnaik-lab/lakshmimata-server)
-(`fundamentals_worker.py`). Write access to that repo was denied from this run.
+(`fundamentals_worker.py`). Apply patches there, then redeploy on Railway.
+
+## Log diagnosis (Aug 2026 example)
+
+### 1. `💬 Ask-AI: run add_stock_ai_asks.sql`
+
+The `stock_ai_asks` table is missing in Supabase. **Fix:** run migration in this repo:
+
+`supabase/migrations/009_stock_ai_asks.sql`
+
+Until that runs, Ask AI in the chart panel cannot queue questions (repeats every ~10 min in logs).
+
+### 2. `429 HARD QUOTA` on About / Results
+
+This is **not** “tokens cost money” — it is **free-tier daily / per-minute limits** per API key / Google Cloud project.
+
+Typical sequence from logs:
+
+| Time | What happened |
+|------|----------------|
+| 02:55 | About batch: 1 ok (VCL), 3× 429 → **24h About pause** until `2026-08-10T02:55Z` |
+| 03:00–03:06 | Results catchup runs, then **2h hard stop** on LUMAXIND 429 until `05:06Z` |
+| 05:06 | 2h stop clears, but `GEMINI_FOCUS=about` keeps **Results paused** while About “has quota” |
+| 05:06–07:45+ | About still in **24h pause** → worker mostly idle (announcements only) |
+
+**Railway env fixes (pick what you need):**
+
+```bash
+# Let Results and About share time instead of About blocking Results for 24h
+GEMINI_FOCUS=all
+
+# Softer About pacing (defaults are aggressive: batch=10, concurrency=3, cycle=60s)
+ABOUT_COMPANY_BATCH_SIZE=3
+ABOUT_COMPANY_CONCURRENCY=1
+ABOUT_COMPANY_CYCLE_SECONDS=300
+
+# Use lite model for About (higher free RPM on many keys)
+GEMINI_ABOUT_MODEL=gemini-2.0-flash-lite
+
+# Shorter pauses after quota (optional — defaults are 24h About / 2h global)
+# GEMINI_ABOUT_HARD_PAUSE_SECONDS=3600
+# GEMINI_JOBS_HARD_PAUSE_SECONDS=1800
+```
+
+**Keys:** You have 4 keys in round-robin, but About was still using **dedicated** `GEMINI_API_KEY_ABOUT` for calls. Apply the patch below so About/Results **fall back to any** `GEMINI_API_KEY*` when the dedicated key is exhausted.
+
+**Billing:** If keys are on **paid** tier but show “check billing”, open [Google AI Studio](https://aistudio.google.com/) → project → Billing / quotas. Free tier resets daily (Pacific); paid tier needs billing enabled.
+
+### 3. `503 UNAVAILABLE` on Results
+
+Temporary Gemini overload — worker already soft-backs off 180s and retries (INDLMETER succeeded after retry).
+
+### 4. `R2 not configured`
+
+Optional — frontend reads announcements from Supabase directly. Safe to ignore unless you want R2 snapshots.
+
+---
 
 ## `results-catchup-idle-lookback-7468.patch`
 
 1. **90d catchup** lookback kept.
 2. **Idle backoff** — empty Results catchup sleeps 30m (less log spam).
 3. **YoY/comparison dedupe** when Gemini dual-labels the same period.
-4. **Company Overview handoff** — when Results catchup is idle, release
-   `PAUSE_ABOUT_COMPANY` and populate About every **15 minutes**.
-5. **Any Gemini key** — About and Results prefer their feature key, then
-   fall back across every `GEMINI_API_KEY*` (same idea as Ask-AI).
+4. **Company Overview handoff** — when Results catchup is idle, populate About every **15 minutes**.
+5. **Any Gemini key** — About and Results prefer their feature key, then fall back across every `GEMINI_API_KEY*`.
 
 ### Apply
 
