@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchWorkerProgressStats, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -3174,6 +3174,47 @@ function AboutCompanyPanel({symbol, stocks}){
   )
 }
 
+function WorkerDataProgress(){
+  const [stats, setStats] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    const load = () => fetchWorkerProgressStats()
+      .then(s => { if (!cancelled) setStats(s) })
+      .catch(() => {})
+    load()
+    const t = setInterval(load, 120000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [])
+  if (!stats?.universe) return null
+  const chip = (label, item) => {
+    if (!item) return null
+    const pending = item.pending != null ? item.pending : '—'
+    return (
+      <span key={label} style={{whiteSpace:'nowrap'}}>
+        <span style={{color:C.muted}}>{label}</span>{' '}
+        <span style={{color:C.text,fontWeight:700}}>{item.loaded}</span>
+        <span style={{color:C.muted}}>/{stats.universe}</span>
+        {item.pending != null && (
+          <span style={{color:C.muted}}> · {pending} pending</span>
+        )}
+      </span>
+    )
+  }
+  return (
+    <div style={{fontSize:10,lineHeight:1.5,color:C.muted,marginBottom:8,padding:'6px 8px',
+      borderRadius:8,border:`1px solid ${C.border}`,background:C.card,flexShrink:0}}>
+      <div style={{fontWeight:700,color:C.text,marginBottom:4,fontSize:10}}>AI data backlog</div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:'8px 14px'}}>
+        {chip('Results', stats.results)}
+        {chip('Results PDF', stats.resultsPdf)}
+        {chip('PPT', stats.ppt)}
+        {chip('Concall', stats.concall)}
+        {chip('About', stats.about)}
+      </div>
+    </div>
+  )
+}
+
 function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable}){
   // Tab can be controlled by ChartPanel (e.g. peer ranking opens Results).
   const [innerTab, setInnerTab] = useState('about')
@@ -3347,6 +3388,7 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
         if(sectionId==='details'){
           return (
             <div key="details" style={{flex:'1 1 0',minHeight:160,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+              <WorkerDataProgress/>
               <StockDetailTabs sym={sym} stocks={stocks} tab={detailTab} setTab={setDetailTab}
                 onSelectSymbol={(s)=>navigateTo(s,{openResults:true})} scrollable/>
             </div>
