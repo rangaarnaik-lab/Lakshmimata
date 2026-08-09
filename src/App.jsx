@@ -784,7 +784,7 @@ function TVCopyPanel({stocks,label,compact}){
   const symbolList=syms.map(s=>`NSE:${s}`).join(',')
   const alertStr=syms.map(s=>`NSE:${s}`).join('\n')
   // Compact buttons for toolbars — count lives on the Copy button (no separate "TV (n)" row).
-  return(
+    return(
     <div style={{display:'inline-flex',alignItems:'center',gap:4,flexShrink:0}}>
       <button onClick={()=>copy(symbolList,'symlist')}
         title={`Copy ${syms.length} symbols for TradingView watchlist import (NSE:SYM,…)`}
@@ -792,7 +792,7 @@ function TVCopyPanel({stocks,label,compact}){
           background:copied==='symlist'?C.teal+'33':'transparent',
           color:copied==='symlist'?C.teal:C.muted,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
         {copied==='symlist'?'✅ Copied':`📋 TV · ${syms.length}`}
-      </button>
+        </button>
       <button onClick={()=>copy(alertStr,'alert')} title="One symbol per line for TradingView alert wizard"
         style={{padding:compact?'5px 10px':'6px 10px',borderRadius:8,border:`1px solid ${C.border}`,cursor:'pointer',
           background:copied==='alert'?C.teal+'22':'transparent',
@@ -1833,13 +1833,13 @@ function StockDetail({s}){
       <div style={{marginTop:14}}>
         <div style={{fontSize:11,fontWeight:800,color:C.teal,marginBottom:8,textTransform:'uppercase'}}>
           💰 Fundamentals
-        </div>
+            </div>
         <MetricCardsGrid cards={mainFundCards}/>
         {bankFundCards.length>0 && (
           <div style={{marginTop:12}}>
             <div style={{fontSize:11,fontWeight:800,color:C.blue,marginBottom:8,textTransform:'uppercase'}}>
               Bank / NBFC ratios
-            </div>
+        </div>
             <MetricCardsGrid cards={bankFundCards}/>
           </div>
         )}
@@ -2599,7 +2599,7 @@ function MgmtFlagsCard({symbol, compact}){
       padding:compact?'9px 11px':'11px 13px',
     }}>
       <div style={{display:'flex',justifyContent:'space-between',gap:8,alignItems:'flex-start',marginBottom:8,flexWrap:'wrap'}}>
-        <div>
+    <div>
           <div style={{fontSize:11,fontWeight:900,color:vColor,textTransform:'uppercase',letterSpacing:'0.04em'}}>
             Flags · Management diligence
           </div>
@@ -2724,7 +2724,7 @@ function AskAiAgent({symbol, isMobile}){
               display:'flex',flexDirection:'column',
               background:C.card,
               border:isMobile?`1px solid ${C.border}`:`1px solid ${C.accent}44`,
-              borderRadius:isMobile:'16px 16px 0 0':16,
+              borderRadius:isMobile?'16px 16px 0 0':16,
               boxShadow:'0 20px 60px rgba(0,0,0,0.55)',
               overflow:'hidden',
             }}>
@@ -3245,12 +3245,12 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
                     ? `${flag.count} report${flag.count>1?'s':''} on file — open to read history`
                     : (flag && flag.count===0 ? `No ${t.label} yet` : undefined)
               } style={{
-                padding:'6px 10px',fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',
+            padding:'6px 10px',fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',
                 color:activeTab===t.key?C.accent:C.muted,
                 borderBottom:activeTab===t.key?`2px solid ${C.accent}`:'2px solid transparent',
                 display:'flex',alignItems:'center',gap:5,
-              }}>
-                {t.label}
+          }}>
+            {t.label}
                 {hasContent && (
                   <span style={{
                     fontSize:9,fontWeight:800,color:C.green,background:C.green+'22',
@@ -3262,10 +3262,10 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
                 {flag && flag.count===0 && (t.key==='concall'||t.key==='ppt'||t.key==='about'||t.key==='fundamentals'||t.key==='resultsSummary') && (
                   <span style={{fontSize:9,fontWeight:600,color:C.muted,opacity:0.7}}>—</span>
                 )}
-              </div>
+          </div>
             )
           })}
-        </div>
+      </div>
         <div style={{flexShrink:0,paddingBottom:5,paddingRight:2}}>
           <AskAiAgent symbol={sym} isMobile={!!isMobile}/>
         </div>
@@ -3549,12 +3549,12 @@ function ResultsFilingSummary({symbol}){
     return () => { cancelled = true }
   }, [symbol])
   if (rows === null) {
-    return (
+            return (
       <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'20px 14px',
         textAlign:'center',color:C.muted,fontSize:12}}>
         Loading results summary…
-      </div>
-    )
+              </div>
+            )
   }
   if (rows.length === 0) {
     return (
@@ -3671,18 +3671,18 @@ function ResultsHistoryTable({symbol}){
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px',overflowX:'auto'}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:6,flexWrap:'wrap'}}>
         <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-          {resultRating&&(
+      {resultRating&&(
             <div title="Quality from Sales/PAT YoY. Capped if headline PAT fell, OPM compressed, or QoQ is flat/soft — strong YoY alone is not Excellent. Not a buy/sell call."
               style={{display:'inline-block',padding:'2px 9px',borderRadius:12,
-                fontSize:10,fontWeight:800,cursor:'help',
-                background:(resultRating==='Excellent'?C.green:resultRating==='Good'?'#7dd3a8':
-                  resultRating==='Weak'?C.red:C.yellow)+'22',
-                color:resultRating==='Excellent'?C.green:resultRating==='Good'?'#7dd3a8':
-                  resultRating==='Weak'?C.red:C.yellow}}>
-              {resultRating==='Excellent'?'⭐ Excellent':resultRating==='Good'?'✓ Good':
-                resultRating==='Weak'?'⚠ Weak':'– Neutral'} Result
-            </div>
-          )}
+            fontSize:10,fontWeight:800,cursor:'help',
+            background:(resultRating==='Excellent'?C.green:resultRating==='Good'?'#7dd3a8':
+              resultRating==='Weak'?C.red:C.yellow)+'22',
+            color:resultRating==='Excellent'?C.green:resultRating==='Good'?'#7dd3a8':
+              resultRating==='Weak'?C.red:C.yellow}}>
+          {resultRating==='Excellent'?'⭐ Excellent':resultRating==='Good'?'✓ Good':
+            resultRating==='Weak'?'⚠ Weak':'– Neutral'} Result
+        </div>
+      )}
           <span style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
             letterSpacing:'0.04em'}}>Results</span>
         </div>
@@ -3812,17 +3812,17 @@ function SectorRankingPanel({symbol, sector, industry, stocks, onSelectSymbol}){
           return (
             <div key={r.sym} title={canOpen ? `${r.rating} — open ${r.sym} Results` : r.rating}
               onClick={()=>{ if(canOpen) onSelectSymbol(r.sym) }}
-              style={{display:'flex',alignItems:'center',gap:4,padding:'2px 7px',borderRadius:10,
+            style={{display:'flex',alignItems:'center',gap:4,padding:'2px 7px',borderRadius:10,
                 fontSize:10,fontWeight:isSelf?800:600,
                 background:ratingColor(r.rating)+(isSelf?'33':'18'),
-                color:ratingColor(r.rating),
+              color:ratingColor(r.rating),
                 border:isSelf?`1px solid ${ratingColor(r.rating)}`:'1px solid transparent',
                 cursor:canOpen?'pointer':'default',
                 textDecoration:canOpen?'underline':'none',
                 textUnderlineOffset:2}}>
-              <span style={{opacity:0.7}}>#{i+1}</span> {r.sym}
-            </div>
-          )
+            <span style={{opacity:0.7}}>#{i+1}</span> {r.sym}
+    </div>
+  )
         })}
       </div>
     </div>
@@ -4422,10 +4422,10 @@ function TranscriptSummary({symbol}){
               <SectionFeedback symbol={symbol} contentType="concall" sectionKey="overall_summary"
                 sectionLabel="Summary"/>
             </div>
-            <div style={{
+          <div style={{
               borderLeft:`3px solid ${C.accent}`,paddingLeft:10,
-              fontSize:12.5,lineHeight:1.6,color:C.text,
-            }}>{latest.overall_summary}</div>
+            fontSize:12.5,lineHeight:1.6,color:C.text,
+          }}>{latest.overall_summary}</div>
           </div>
         )}
         <div style={{display:'flex',flexDirection:'column',gap:7}}>
@@ -4524,10 +4524,10 @@ function PptSummary({symbol}){
               <SectionFeedback symbol={symbol} contentType="ppt" sectionKey="overall_summary"
                 sectionLabel="Summary"/>
             </div>
-            <div style={{
+          <div style={{
               borderLeft:`3px solid ${C.accent}`,paddingLeft:10,
-              fontSize:12.5,lineHeight:1.6,color:C.text,fontStyle:'italic',
-            }}>{latest.overall_summary}</div>
+            fontSize:12.5,lineHeight:1.6,color:C.text,fontStyle:'italic',
+          }}>{latest.overall_summary}</div>
           </div>
         )}
         <div style={{display:'flex',flexDirection:'column',gap:7}}>
@@ -5759,7 +5759,7 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=25,de
             fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
             <RsTableHeaderRow visibleRsCols={visibleRsCols} colOrder={colOrder}
               sortBy={sortBy} sortDir={sortDir} handleSort={handleSort}/>
-          </div>
+            </div>
           {paged.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>onChartOpen(s.sym)} visibleRsCols={visibleRsCols} rsColOrder={colOrder}/>)}
         </div>
         </div>
@@ -6300,8 +6300,8 @@ function RsOptionalColCell({colKey, s, vis}){
               fontSize:9,fontWeight:800,color}}>{v??'—'}</div>
           })}
         </div>}
-      </div>
-    )
+    </div>
+  )
   }
   if(colKey==='stage'){
     return (
@@ -7343,34 +7343,34 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
               name + phone on the Complete Profile / Finish signup screen. */}
           {mode==='login'&&(
             <>
-              <button onClick={handleGoogle} disabled={googleLoading||loading}
-                style={{width:'100%',padding:'13px',borderRadius:12,
-                  border:`1px solid ${C.border}`,cursor:'pointer',
-                  background:'#fff',color:'#1f1f1f',fontWeight:700,fontSize:14,
-                  display:'flex',alignItems:'center',justifyContent:'center',gap:10,
+          <button onClick={handleGoogle} disabled={googleLoading||loading}
+            style={{width:'100%',padding:'13px',borderRadius:12,
+              border:`1px solid ${C.border}`,cursor:'pointer',
+              background:'#fff',color:'#1f1f1f',fontWeight:700,fontSize:14,
+              display:'flex',alignItems:'center',justifyContent:'center',gap:10,
                   marginBottom:12,transition:'all 0.2s',
-                  boxShadow:googleLoading?'none':'0 1px 3px #00000022'}}>
-                {googleLoading?(
-                  <div style={{width:18,height:18,border:'2px solid #4285f4',borderTopColor:'transparent',
-                    borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
-                ):(
-                  <svg width="18" height="18" viewBox="0 0 18 18">
-                    <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
-                    <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
-                    <path fill="#FBBC05" d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"/>
-                    <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.96l3.007 2.332C4.672 5.163 6.656 3.58 9 3.58z"/>
-                  </svg>
-                )}
+              boxShadow:googleLoading?'none':'0 1px 3px #00000022'}}>
+            {googleLoading?(
+              <div style={{width:18,height:18,border:'2px solid #4285f4',borderTopColor:'transparent',
+                borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
+            ):(
+              <svg width="18" height="18" viewBox="0 0 18 18">
+                <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+                <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+                <path fill="#FBBC05" d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"/>
+                <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.96l3.007 2.332C4.672 5.163 6.656 3.58 9 3.58z"/>
+              </svg>
+            )}
                 {googleLoading?'Connecting to Google…':'Sign in with Google'}
-              </button>
+          </button>
               <div style={{fontSize:10,color:C.muted,marginBottom:16,lineHeight:1.5,textAlign:'center'}}>
                 First time with Google? You'll confirm name &amp; phone next — required.
               </div>
-              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
-                <div style={{flex:1,height:1,background:C.border}}/>
-                <span style={{fontSize:11,color:C.muted,fontWeight:600}}>OR</span>
-                <div style={{flex:1,height:1,background:C.border}}/>
-              </div>
+          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
+            <div style={{flex:1,height:1,background:C.border}}/>
+            <span style={{fontSize:11,color:C.muted,fontWeight:600}}>OR</span>
+            <div style={{flex:1,height:1,background:C.border}}/>
+          </div>
             </>
           )}
 
@@ -7380,7 +7380,7 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
               New accounts need <strong style={{color:C.text}}>name</strong> and{' '}
               <strong style={{color:C.text}}>phone</strong> below. Prefer Google?
               Switch to Sign In — you'll finish signup there before using the app.
-            </div>
+          </div>
           )}
 
           {/* Alerts */}
@@ -7401,12 +7401,12 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
           <div style={{display:'flex',flexDirection:'column',gap:12}}>
             {mode==='register'&&(
               <>
-                <div>
+              <div>
                   {reqLabel('Name')}
-                  <input value={name} onChange={e=>setName(e.target.value)}
+                <input value={name} onChange={e=>setName(e.target.value)}
                     placeholder="Your full name" required
                     style={fieldInput}/>
-                </div>
+              </div>
                 <PhoneInput
                   required
                   countryIso={phoneCountry}
@@ -10737,7 +10737,7 @@ export default function App(){
                     fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
                     <RsTableHeaderRow visibleRsCols={visibleRsCols} colOrder={rsColOrder}
                       sortBy={sortBy} sortDir={sortDir} handleSort={handleSort}/>
-                  </div>
+                    </div>
                   {pagedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>setChartSym(s.sym)} visibleRsCols={visibleRsCols} rsColOrder={rsColOrder}/>)}
                 </div>
                 </>
@@ -10773,7 +10773,7 @@ export default function App(){
                   {id:'sectors',    label:'Sectors'},
                   {id:'industries', label:'Industries'},
                   {id:'gaps',       label:'Gaps'},
-                  {id:'smartmoney', label:'Smart Money'},
+                {id:'smartmoney', label:'Smart Money'},
                 ].map(({id,label})=>(
                   <button key={id} onClick={()=>setMarketSubTab(id)}
                     style={{flexShrink:0,padding:'6px 12px',borderRadius:20,
@@ -10960,7 +10960,7 @@ export default function App(){
                         </div>
                       ))}
                     </div>
-                  </div>
+                    </div>
 
                   <div style={{display:'grid',
                     gridTemplateColumns:isMobile?'1fr':'1fr 1fr',
@@ -11001,7 +11001,7 @@ export default function App(){
                       return (
                         <div style={{textAlign:'center',padding:'24px 0',color:C.muted,fontSize:12}}>
                           Breadth history loading…
-                        </div>
+                  </div>
                       )
                     }
                     return <>
@@ -11496,10 +11496,10 @@ export default function App(){
                   }
                   return (
                     <>
-                      {hiddenCount>0&&(
+                        {hiddenCount>0&&(
                         <div style={{fontSize:11,color:C.muted,marginBottom:8}}>
                           {rows.length} industries shown · {hiddenCount} more hidden (&lt;{MIN_INDUSTRY_STOCKS} stocks each)
-                        </div>
+                      </div>
                       )}
                       <div ref={indTableDrag.ref} {...indTableDrag.handlers} style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12,maxHeight:520,overflowY:'auto',...indTableDrag.style}}>
                         <div style={{minWidth:760}}>
@@ -11674,26 +11674,26 @@ export default function App(){
                       No ≥{GAP_THRESH}% gaps right now (or viewing a historical day without open data).
                     </div>
                   )}
-                  {gapUps.length>0&&(
-                    <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
-                        🟢 Gap Up ≥{GAP_THRESH}% ({gapUps.length})
-                      </div>
-                      <TVCopyPanel stocks={gapUps} label="Gap Up"/>
-                      <BreakoutTable stocks={gapUps}
-                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
-                    </div>
-                  )}
-                  {gapDowns.length>0&&(
-                    <div style={{background:C.card,border:`1px solid ${C.red}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.red,marginBottom:8}}>
-                        🔴 Gap Down ≥{GAP_THRESH}% ({gapDowns.length})
-                      </div>
-                      <TVCopyPanel stocks={gapDowns} label="Gap Down"/>
-                      <BreakoutTable stocks={gapDowns}
-                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
-                    </div>
-                  )}
+              {gapUps.length>0&&(
+                <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                  <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
+                    🟢 Gap Up ≥{GAP_THRESH}% ({gapUps.length})
+                  </div>
+                  <TVCopyPanel stocks={gapUps} label="Gap Up"/>
+                  <BreakoutTable stocks={gapUps}
+                    isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                </div>
+              )}
+              {gapDowns.length>0&&(
+                <div style={{background:C.card,border:`1px solid ${C.red}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
+                  <div style={{fontWeight:700,fontSize:13,color:C.red,marginBottom:8}}>
+                    🔴 Gap Down ≥{GAP_THRESH}% ({gapDowns.length})
+                  </div>
+                  <TVCopyPanel stocks={gapDowns} label="Gap Down"/>
+                  <BreakoutTable stocks={gapDowns}
+                    isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                </div>
+              )}
                 </>
               )}
 
@@ -11712,61 +11712,61 @@ export default function App(){
                       Smart money data not available yet.
                     </div>
                   )}
-                  {smartMoneyBySector.length>0&&(
+              {smartMoneyBySector.length>0&&(
                     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
+                  <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
                         🏦 Sector Holdings (FII/DII)
-                      </div>
-                      <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
+                  </div>
+                  <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
                         Avg. change in FII+DII shareholding % last quarter, by sector — not the same as daily cash flows above
-                      </div>
-                      <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>FII pp</div>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>DII pp</div>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Stocks ↑/↓</div>
-                        {smartMoneyBySector.map(b=>(
-                          <React.Fragment key={b.sector}>
-                            <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
-                            <div style={{textAlign:'right',fontWeight:700,color:b.avgFii==null?C.muted:b.avgFii>0?C.green:b.avgFii<0?C.red:C.muted}}>
-                              {b.avgFii==null?'—':`${b.avgFii>0?'+':''}${b.avgFii.toFixed(2)}`}
-                            </div>
-                            <div style={{textAlign:'right',fontWeight:700,color:b.avgDii==null?C.muted:b.avgDii>0?C.green:b.avgDii<0?C.red:C.muted}}>
-                              {b.avgDii==null?'—':`${b.avgDii>0?'+':''}${b.avgDii.toFixed(2)}`}
-                            </div>
-                            <div style={{textAlign:'right',color:C.muted,fontSize:10.5}}>
-                              <span style={{color:C.green}}>{b.accumulating}</span>/<span style={{color:C.red}}>{b.distributing}</span>
-                            </div>
-                          </React.Fragment>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {volumeSmartMoneyBySector.length>0&&(
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>FII pp</div>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>DII pp</div>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Stocks ↑/↓</div>
+                    {smartMoneyBySector.map(b=>(
+                      <React.Fragment key={b.sector}>
+                        <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
+                        <div style={{textAlign:'right',fontWeight:700,color:b.avgFii==null?C.muted:b.avgFii>0?C.green:b.avgFii<0?C.red:C.muted}}>
+                          {b.avgFii==null?'—':`${b.avgFii>0?'+':''}${b.avgFii.toFixed(2)}`}
+                        </div>
+                        <div style={{textAlign:'right',fontWeight:700,color:b.avgDii==null?C.muted:b.avgDii>0?C.green:b.avgDii<0?C.red:C.muted}}>
+                          {b.avgDii==null?'—':`${b.avgDii>0?'+':''}${b.avgDii.toFixed(2)}`}
+                        </div>
+                        <div style={{textAlign:'right',color:C.muted,fontSize:10.5}}>
+                          <span style={{color:C.green}}>{b.accumulating}</span>/<span style={{color:C.red}}>{b.distributing}</span>
+                        </div>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {volumeSmartMoneyBySector.length>0&&(
                     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
+                  <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
                         📊 Momentum — Sector (Price & Volume)
-                      </div>
-                      <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
-                        Avg. institutional-footprint score (Pocket Pivots + RS/trend) — reacts daily, unlike the FII/DII table above
-                      </div>
-                      <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Avg Score</div>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>PP Today</div>
-                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Repeat (≥3/10d)</div>
-                        {volumeSmartMoneyBySector.slice(0,10).map(b=>(
-                          <React.Fragment key={b.sector}>
-                            <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
-                            <div style={{textAlign:'right',fontWeight:700,color:b.avgIbv>=3?C.green:b.avgIbv>=1.5?C.yellow:C.muted}}>
-                              {b.avgIbv.toFixed(2)}
-                            </div>
-                            <div style={{textAlign:'right',color:C.text}}>{b.ppToday}<span style={{color:C.muted}}>/{b.n}</span></div>
-                            <div style={{textAlign:'right',color:C.text}}>{b.ppRepeat}<span style={{color:C.muted}}>/{b.n}</span></div>
-                          </React.Fragment>
-                        ))}
-                      </div>
-                    </div>
+                  </div>
+                  <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
+                    Avg. institutional-footprint score (Pocket Pivots + RS/trend) — reacts daily, unlike the FII/DII table above
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Avg Score</div>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>PP Today</div>
+                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Repeat (≥3/10d)</div>
+                    {volumeSmartMoneyBySector.slice(0,10).map(b=>(
+                      <React.Fragment key={b.sector}>
+                        <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
+                        <div style={{textAlign:'right',fontWeight:700,color:b.avgIbv>=3?C.green:b.avgIbv>=1.5?C.yellow:C.muted}}>
+                          {b.avgIbv.toFixed(2)}
+                        </div>
+                        <div style={{textAlign:'right',color:C.text}}>{b.ppToday}<span style={{color:C.muted}}>/{b.n}</span></div>
+                        <div style={{textAlign:'right',color:C.text}}>{b.ppRepeat}<span style={{color:C.muted}}>/{b.n}</span></div>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
                   )}
                 </>
               )}
@@ -12517,9 +12517,9 @@ export default function App(){
                     </div>
                   ):(
                     <>
-                      <TVCopyPanel stocks={filtered} label={active.label}/>
-                      <BreakoutTable key={breakoutType} stocks={filtered} isMobile={isMobile} visibleRsCols={visibleRsCols}
-                        onChartOpen={setChartSym} defaultSortBy={active.sort}/>
+                  <TVCopyPanel stocks={filtered} label={active.label}/>
+                  <BreakoutTable key={breakoutType} stocks={filtered} isMobile={isMobile} visibleRsCols={visibleRsCols}
+                    onChartOpen={setChartSym} defaultSortBy={active.sort}/>
                     </>
                   )}
                 </div>
@@ -12530,7 +12530,7 @@ export default function App(){
             {breakoutType==='hyht'&&stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length>0&&(
               <div style={{marginBottom:8}}>
                 <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>HY/HT DETAIL CARDS</div>
-              </div>
+                </div>
             )}
             {breakoutType==='hyht'&&stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s))
               .sort((a,b)=>b.rs-a.rs)
@@ -12896,7 +12896,7 @@ export default function App(){
                       </div>
                     ):(
                       <RRGChart rolledData={rolledData} onDotClick={goTo}
-                        dotSizing={rotationScope==='sector'}/>
+                      dotSizing={rotationScope==='sector'}/>
                     )}
                     <div style={{fontSize:10,color:C.muted,marginTop:8}}>
                       Crosshair = benchmark (100, 100). X = JdK RS-Ratio (relative-strength trend), Y = JdK RS-Momentum (its rate of change).
@@ -12948,27 +12948,27 @@ export default function App(){
                         <span style={{fontSize:10,color:C.muted}}>{g.rows.length}</span>
                       </div>
                       {g.rows.map((s,i)=>(
-                        <div key={s.id} onClick={()=>goTo(s)}
-                          style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,
+                  <div key={s.id} onClick={()=>goTo(s)}
+                    style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,
                             padding:'10px 14px',borderBottom:i<g.rows.length-1?`1px solid ${C.divider}`:'none',cursor:'pointer'}}>
-                          <div style={{minWidth:0}}>
-                            <div style={{fontWeight:700,fontSize:13}}>{s.label}</div>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontWeight:700,fontSize:13}}>{s.label}</div>
                             <div style={{fontSize:10,color:C.muted,marginTop:2}}>
                               {s.meta||''} · {rawLevelLabel} {s.trail?.[s.trail.length-1]?.rawLevel??s.level}
                               {' · '}dist {s.dist?.toFixed(1)}
-                            </div>
-                          </div>
+                      </div>
+                    </div>
                           <div style={{textAlign:'right',flexShrink:0}}>
                             <div style={{fontWeight:800,fontSize:13,color:g.color}}>
                               {s.rsRatio?.toFixed(1)} / {s.rsMom?.toFixed(1)}
-                            </div>
-                            <div style={{fontSize:9,color:C.muted}}>Ratio / Mom</div>
                           </div>
-                        </div>
-                      ))}
+                            <div style={{fontSize:9,color:C.muted}}>Ratio / Mom</div>
+                      </div>
                     </div>
-                  ))}
-                </div>
+                      ))}
+                  </div>
+                ))}
+              </div>
               )}
 
               {rotationScope==='index'&&rotationExpandedId&&(()=>{
@@ -13395,9 +13395,9 @@ export default function App(){
               }
               if(announcements.length===0){
                 return (
-                  <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
-                    No announcements yet.
-                  </div>
+              <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
+                No announcements yet.
+              </div>
                 )
               }
               if(visibleAnnouncements.length===0){
@@ -13426,10 +13426,10 @@ export default function App(){
                     <div key={`${a.symbol}-${i}`} style={{background:C.card,border:`1px solid ${C.border}`,
                       borderRadius:10,padding:'12px 14px',display:'flex',gap:12,alignItems:'flex-start'}}>
                       <div style={{minWidth:76}}>
-                        <div onClick={()=>setChartSym(a.symbol)}
-                          style={{fontWeight:800,fontSize:13,color:C.accent,cursor:'pointer',
+                      <div onClick={()=>setChartSym(a.symbol)}
+                        style={{fontWeight:800,fontSize:13,color:C.accent,cursor:'pointer',
                             textDecoration:'underline',textDecorationColor:C.accent+'55'}}>
-                          {a.symbol}
+                        {a.symbol}
                         </div>
                         {rowRating&&(
                           <div title="Result quality from Sales/PAT YoY (+ QoQ/OPM checks)"
