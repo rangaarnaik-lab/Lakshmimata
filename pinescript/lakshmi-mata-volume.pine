@@ -16,7 +16,7 @@ lookback_Period_Up_down = input.int(defval=50, minval=5, maxval=500, title="Look
 
 Show_LowVol_BG = input.bool(true, "Highlight Low Volume Bars", group="Volume", tooltip="Background when today's volume is below 50% of the volume MA.")
 Show_HVT_Labels = input.bool(true, "Show Highest-Volume Labels (IPO/Year/Quarter/Month)", group="Volume")
-Show_BullSnort = input.bool(true, "Show Bull Snort", group="Volume", inline="BS")
+Show_BullSnort = input.bool(true, "Show Bull Snort", group="Volume", inline="BS", tooltip="Bull Snort: Vol >= 3x 50-day avg + up day + DCR >= 65%. Shows lavender BG and bull icon. Ex: 50d avg 80K, vol 280K, DCR 90% = Bull Snort.")
 bullSnort_RVol_Mult = input.float(3.0, "Min Rel Vol (× 50d Avg)", minval=2.0, step=0.5, group="Volume", inline="BS", tooltip="Volume ≥ this multiple of the fixed 50-day average volume (Oliver Kell Bull Snort).")
 bullSnort_DCR_Min = input.float(65.0, "Min DCR %", minval=50.0, maxval=90.0, group="Volume", inline="BS", tooltip="Close in top portion of day's range.")
 bullSnort_BG_Color = input.color(color.new(color.rgb(210, 170, 230), 78), "Bull Snort BG Color", group="Volume")
