@@ -52,9 +52,13 @@ GEMINI_ABOUT_MODEL=gemini-2.0-flash-lite
 GEMINI_CONCALL_MODEL=gemini-2.0-flash-lite
 ABOUT_COMPANY_HARD_QUOTA_COOLDOWN_SECONDS=3600
 GEMINI_JOBS_HARD_PAUSE_SECONDS=1800
+RESULTS_PDF_CATCHUP_BATCH_SIZE=10
+RESULTS_PDF_BATCH_SIZE=10
 ```
 
 If the worker was stuck in a 24h pause from earlier 429s, redeploying clears in-memory pause state.
+
+Logs should show `batch=10` in the Results extraction loop line.
 
 ## Supabase SQL (required for Ask AI)
 
