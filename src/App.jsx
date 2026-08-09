@@ -3290,7 +3290,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab}){
   )
 }
 
-function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, detailTab, setDetailTab, navigateTo, isMobile, compact}){
+function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, detailTab, setDetailTab, navigateTo, isMobile, readingMode, tableMode}){
   const [customizeOpen, setCustomizeOpen]=useState(false)
   const mcapStock=stocks?.find(s=>s.sym===sym)
   const mcapLabel=mcapStock?.marketCap!=null
@@ -3315,10 +3315,13 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
     }
     return null
   }
+  const belowFlex=readingMode?'1 1 58%':tableMode?'1 1 52%':'1 1 42%'
+  const belowMin=readingMode?(isMobile?300:340):tableMode?(isMobile?260:300):(isMobile?200:220)
+  const belowPad=readingMode?'8px 14px 56px':tableMode?'8px 14px 48px':'8px 14px 14px'
   return (
-    <div style={{flexShrink:0,maxHeight:compact?(isMobile?'32vh':'38vh'):(isMobile?'40vh':'44vh'),
-      minHeight:compact?(isMobile?200:220):240,
-      overflowY:'auto',overflowX:'hidden',padding:'8px 14px 14px',borderTop:`1px solid ${C.divider}`,background:C.bg}}>
+    <div style={{flex:belowFlex,minHeight:belowMin,
+      overflowY:'auto',overflowX:'hidden',padding:belowPad,
+      borderTop:`1px solid ${C.divider}`,background:C.bg}}>
       <div style={{display:'flex',justifyContent:'flex-end',marginBottom:customizeOpen?8:4}}>
         <button type="button" onClick={()=>setCustomizeOpen(v=>!v)}
           style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${customizeOpen?C.accent:C.border}`,
@@ -3395,6 +3398,10 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
         borderLeft:`1px solid ${C.divider}`,transition:customPct!=null?'none':'flex 0.2s ease'}
 
   const chartExpanded=wide>=1||(customPct!=null&&customPct>=45)
+  const readingMode=['about','fundamentals','concall','ppt','resultsSummary'].includes(detailTab)
+  const tableMode=detailTab==='results'
+  const chartFlex=readingMode?'0 1 36%':tableMode?'0 1 44%':'1 1 58%'
+  const chartMaxH=readingMode?'40%':tableMode?'46%':undefined
 
   return(
     <div style={panelStyle}>
@@ -3482,8 +3489,9 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
         </div>
       )}
 
-      {/* Body — flex child fills remaining height so price + volume scale together */}
-      <div style={{flex:1,minHeight:0,position:'relative',overflow:'hidden',
+      {/* Body — shares height with the detail panel below; shrinks when reading text */}
+      <div style={{flex:chartFlex,minHeight:readingMode?120:tableMode?140:160,
+        maxHeight:chartMaxH,position:'relative',overflow:'hidden',
         display:'flex',flexDirection:'column'}}>
         {chartTab==='tv'?(
           <>
@@ -3508,7 +3516,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
       {!isIndex&&(
         <ChartBelowContent sym={sym} stocks={stocks} sectionOrder={sectionOrder}
           onSectionOrderChange={persistSectionOrder} detailTab={detailTab} setDetailTab={setDetailTab}
-          navigateTo={navigateTo} isMobile={isMobile} compact={chartExpanded}/>
+          navigateTo={navigateTo} isMobile={isMobile} readingMode={readingMode} tableMode={tableMode}/>
       )}
       {!isIndex&&<AskAiAgent symbol={sym} isMobile={isMobile}/>}
     </div>
@@ -3720,7 +3728,7 @@ function ResultsHistoryTable({symbol}){
               {cols.map((c,i)=>{
                 const v = m.get(c.row)
                 return (
-                  <td key={i} style={{textAlign:'right',padding:'4px 6px',color:C.text}}>
+                  <td key={i} style={{textAlign:'right',padding:'4px 6px',color:C.text,fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>
                     {v==null?'—':m.isPct?`${v.toFixed(1)}%`:v.toLocaleString('en-IN',{maximumFractionDigits:2})}
                   </td>
                 )
