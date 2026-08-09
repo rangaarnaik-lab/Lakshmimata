@@ -141,6 +141,15 @@ if Show_HVT_Labels and isHVT_Quarter and not isHVT_IPO and not isHVT_Year
 if Show_HVT_Labels and isHVT_Month and not isHVT_IPO and not isHVT_Year and not isHVT_Quarter
     label.new(bar_index, -1.05, "M", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
 
+if IVDay and Show_IV
+    label.new(bar_index, volMid, "▲", style=label.style_label_center, color=color.new(color.white, 100), textcolor=color.rgb(221, 15, 211), size=size.tiny)
+
+if isPocketPivot and Show_PP
+    label.new(bar_index, volMid, "★", style=label.style_label_center, color=color.new(color.white, 100), textcolor=color.rgb(17, 16, 16), size=size.tiny)
+
+if isBullSnort and Show_BullSnort
+    label.new(bar_index, volMid, "🐂", style=label.style_label_center, color=color.new(color.white, 100), textcolor=color.rgb(128, 0, 128), size=size.tiny)
+
 // ── Volume information table ──────────────────────────────────────────────────
 var table ATHtable = table.new(tableposition, 8, 2, frame_color=color.gray, bgcolor=Var_table_color, border_width=1, frame_width=1, border_color=color.black)
 
@@ -178,15 +187,6 @@ if showDisclaimer
 plot(volume, style=plot.style_columns, color=Volume_color, title="Volume")
 plot(Show_AVG_Volume ? volMA : na, style=plot.style_line, color=color.rgb(20, 20, 20), title="Average Volume")
 plot(0, "Zero line", color.gray)
-
-if IVDay and Show_IV
-    label.new(bar_index, volMid, "▲", style=label.style_label_center, color=color.new(color.white, 100), textcolor=color.rgb(221, 15, 211), size=size.tiny)
-
-if isPocketPivot and Show_PP
-    label.new(bar_index, volMid, "★", style=label.style_label_center, color=color.new(color.white, 100), textcolor=color.rgb(17, 16, 16), size=size.tiny)
-
-if isBullSnort and Show_BullSnort
-    label.new(bar_index, volMid, "🐂", style=label.style_label_center, color=color.new(color.white, 100), textcolor=color.rgb(128, 0, 128), size=size.tiny)
 
 alertcondition(IVDay, title="IBV", message="Institutional Buy Volume Alert on {{ticker}} @ {{close}} on {{interval}} Timeframe")
 alertcondition(isPocketPivot, title="PPV", message="Pivot pocket Volume Alert on {{ticker}} @ {{close}} on {{interval}} Timeframe")
