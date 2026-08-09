@@ -60,6 +60,24 @@ If the worker was stuck in a 24h pause from earlier 429s, redeploying clears in-
 
 Logs should show `batch=10` in the Results extraction loop line.
 
+## PPT + concall after Results (auto)
+
+Once Results catchup goes **idle**, PPT presentations and concall/transcripts run in catchup mode:
+
+- **10 per batch**, **365d lookback**, **3s pacing** between PDFs
+- Paused while Results catchup is still busy
+
+Optional Railway overrides:
+
+```bash
+PPT_TRANSCRIPT_CATCHUP=1
+PPT_CATCHUP_BATCH_SIZE=10
+TRANSCRIPT_CATCHUP_BATCH_SIZE=10
+PPT_CATCHUP_LOOKBACK_DAYS=365
+TRANSCRIPT_CATCHUP_LOOKBACK_DAYS=365
+GEMINI_FOCUS=all
+```
+
 ## Supabase SQL (required for Ask AI)
 
 Run in Supabase SQL editor:
