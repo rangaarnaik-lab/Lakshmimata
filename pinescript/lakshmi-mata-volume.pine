@@ -130,10 +130,12 @@ bgcolor(
      title="Bull Snort / Low Volume Background")
 
 if Show_HVT_Labels and isHVT_IPO
-    label.new(bar_index, -1.15, "🚀HT", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
+    label.new(bar_index, volMid, "🚀", style=label.style_label_center, color=color.white, textcolor=color.black, size=size.tiny)
+    label.new(bar_index, -1.15, "HT", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
 
 if Show_HVT_Labels and isHVT_Year and not isHVT_IPO and (not isJanFirst or (not na(volChangePct1) and Changeinvolume > 500)) and (close > open and volume > highestDownVol and volume > volMA)
-    label.new(bar_index, volMid, "🔥HY", style=label.style_label_center, color=color.white, textcolor=color.black, size=size.tiny)
+    label.new(bar_index, volMid, "🔥", style=label.style_label_center, color=color.white, textcolor=color.black, size=size.tiny)
+    label.new(bar_index, -1.15, "HY", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
 
 if Show_HVT_Labels and isHVT_Quarter and not isHVT_IPO and not isHVT_Year
     label.new(bar_index, -1.15, "HQ", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
