@@ -1,0 +1,173 @@
+//@version=5
+indicator(title='Lakshmi Mata:Volume', shorttitle='Lakshmi Mata-Volume', format=format.volume, precision=2)
+
+// ── Inputs ──────────────────────────────────────────────────────────────────
+Show_IV = input(true, "Show Institutional Volume(IV)", group="Volume", inline="IV")
+lookback_Period_IV = input.int(defval=10, minval=5, maxval=500, title="; Lookback Period to find IV", group="Volume", inline="IV")
+
+Show_PP = input(true, "Show Pivot Pocket Volume", group="Volume", inline="PP")
+lookback_Period_PP = input.int(defval=10, minval=5, maxval=500, title=";Lookback Period to find PP", group="Volume", inline="PP", tooltip="Pocket Pivot Volumes (PPV): an up-day volume greater than the highest down-day volume of the last N down-days. Bullish signal — not necessarily a buy signal.")
+
+Show_AVG_Volume = input(true, "Draw Average Volume", group="Volume", inline="Average Volume")
+MA_Length = input.int(defval=10, minval=5, maxval=500, title="; MA Length", group="Volume", inline="Average Volume")
+
+lookback_Period_AVG = input.int(defval=50, minval=5, maxval=500, title="Lookback Period to calculate Avg.Volume , Relative Volume", group="Volume", inline="Lookback Period to calculate IV")
+lookback_Period_Up_down = input.int(defval=50, minval=5, maxval=500, title="Lookback Period to calculate U/D Ratio", group="Volume", inline="Lookback Period to calculate IV", tooltip="The Up/Down Volume Ratio is a tool utilized by investors.com. A 50-day ratio derived by dividing total volume on up days by total volume on down days. A ratio greater than 1.0 implies positive demand.")
+
+Show_LowVol_BG = input.bool(true, "Highlight Low Volume Bars", group="Volume", tooltip="Background when today's volume is below 50% of the volume MA.")
+Show_HVT_Labels = input.bool(true, "Show Highest-Volume Labels (IPO/Year/Quarter/Month)", group="Volume")
+
+showDisclaimer = input.bool(true, title="Show Disclaimer")
+Show_table = input(true, "Show Volume Information Table", group="Volume Information Table")
+tableposition = input.string(defval=position.top_center, title="Table Position", inline="Heading", options=[position.top_left, position.top_center, position.top_right, position.middle_left, position.middle_right], group="Volume Information Table")
+table_text_size = input.string(defval=size.auto, title="Table Text Size", inline="Heading", options=[size.auto, size.tiny, size.small], group="Volume Information Table")
+Var_table_color = input.color(color.white, title="Table_color", inline="Heading", group="Volume Information Table")
+background_color = input.color(color.teal, title="Heading_Background_color", inline="Heading", group="Volume Information Table")
+Var_text_color = input.color(color.white, title="Heading_Text_color", inline="Heading", group="Volume Information Table")
+Var_Text_color = input.color(color.black, title="Text_color", inline="Heading", group="Volume Information Table")
+
+// ── Core calculations ───────────────────────────────────────────────────────
+greenDay = close > open
+upday = close > close[1]
+daily_closing_range = ((close - low) / (high - low)) * 100 > 50
+daily_closing_range1 = (close - low) / (high - low) * 100
+
+volMA = ta.sma(volume, MA_Length)
+highestClose = ta.highest(volume[1], lookback_Period_IV)
+
+// Highest down-day volume within lookback (red candles: close < open)
+highestDownVol = 0.0
+for i = 1 to lookback_Period_PP
+    if close[i] < open[i]
+        highestDownVol := math.max(highestDownVol, volume[i])
+
+IVDay = volume >= (2 * highestClose) and greenDay and upday and daily_closing_range
+isPocketPivot = close > open and volume > highestDownVol and volume > volMA and not IVDay
+
+// ── Count pocket pivots & IBV in lookback window ────────────────────────────
+pivotCount = 0
+IBVcount = 0
+for i = 0 to lookback_Period_PP - 1
+    pivotCount += isPocketPivot[i] ? 1 : 0
+    IBVcount += IVDay[i] ? 1 : 0
+
+// ── Table metrics ───────────────────────────────────────────────────────────
+AVG_Volume_table = ta.sma(volume, lookback_Period_AVG)
+REL_Volume_table = (volume / AVG_Volume_table) * 100
+
+upVol = close > close[1] ? volume : 0.0
+dnVol = close < close[1] ? volume : 0.0
+sumUp = ta.sum(upVol, lookback_Period_Up_down)
+sumDn = ta.sum(dnVol, lookback_Period_Up_down)
+upDnVolRatio = sumDn > 0 ? sumUp / sumDn : na
+
+lookback_Period_Up_down_color = upDnVolRatio < 1 ? color.red : upDnVolRatio < 3 ? color.rgb(113, 170, 103) : color.green
+dcr_color = daily_closing_range1 > 5 ? color.green : color.red
+Changeinvolume = volume[1] > 0 ? ((volume - volume[1]) / volume[1]) * 100 : na
+
+Var_Comments = IVDay ? "Institutional Buy Volume" : isPocketPivot ? "Pivot Pocket Volume" : "NA"
+
+Volume_color = IVDay ? color.rgb(33, 149, 243, 9) : isPocketPivot ? color.green : close < open ? color.red : color.gray
+
+// ── Low-volume dry-up highlight ─────────────────────────────────────────────
+lowVolCondition = volume < volMA * 0.5
+bgcolor(Show_LowVol_BG and lowVolCondition ? color.rgb(238, 231, 238) : na, title="Low Volume Background")
+
+// ── Highest-volume-since labels ─────────────────────────────────────────────
+var float ipoVolume = na
+var int ipoBarIndex = na
+if barstate.isfirst
+    ipoVolume := volume
+    ipoBarIndex := bar_index
+
+var float highestVolSinceIPO = na
+if bar_index >= ipoBarIndex
+    highestVolSinceIPO := na(highestVolSinceIPO) ? volume : math.max(highestVolSinceIPO, volume)
+isHVT_IPO = volume == highestVolSinceIPO
+
+var int currentYear = na
+var float highestVolThisYear = na
+if na(currentYear) or year != currentYear
+    currentYear := year
+    highestVolThisYear := volume
+else
+    highestVolThisYear := math.max(highestVolThisYear, volume)
+isHVT_Year = volume == highestVolThisYear
+
+quarter = math.ceil(month / 3.0)
+var int currentQuarter = na
+var float highestVolThisQuarter = na
+if na(currentQuarter) or quarter != currentQuarter or year != currentYear
+    currentQuarter := quarter
+    highestVolThisQuarter := volume
+else
+    highestVolThisQuarter := math.max(highestVolThisQuarter, volume)
+isHVT_Quarter = volume == highestVolThisQuarter
+
+var int currentMonth = na
+var float highestVolThisMonth = na
+if na(currentMonth) or month != currentMonth or year != currentYear
+    currentMonth := month
+    highestVolThisMonth := volume
+else
+    highestVolThisMonth := math.max(highestVolThisMonth, volume)
+isHVT_Month = volume == highestVolThisMonth
+
+isJanFirst = month == 1 and dayofmonth == 1
+volChangePct1 = volume[1] > 0 ? (volume - volume[1]) / volume[1] * 100 : na
+
+if Show_HVT_Labels and isHVT_IPO
+    label.new(bar_index, -1.15, "🚀HT", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
+
+if Show_HVT_Labels and isHVT_Year and not isHVT_IPO and (not isJanFirst or (not na(volChangePct1) and Changeinvolume > 500)) and isPocketPivot
+    label.new(bar_index, -1.15, "HY", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
+
+if Show_HVT_Labels and isHVT_Quarter and not isHVT_IPO and not isHVT_Year
+    label.new(bar_index, -1.15, "HQ", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
+
+if Show_HVT_Labels and isHVT_Month and not isHVT_IPO and not isHVT_Year and not isHVT_Quarter
+    label.new(bar_index, -1.05, "M", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
+
+// ── Volume information table ──────────────────────────────────────────────────
+var table ATHtable = table.new(tableposition, 8, 2, frame_color=color.gray, bgcolor=Var_table_color, border_width=1, frame_width=1, border_color=color.black)
+
+if Show_table
+    table.cell(ATHtable, 0, 0, "Volume", bgcolor=background_color, text_color=Var_text_color, text_size=table_text_size)
+    table.cell(ATHtable, 0, 1, str.tostring(volume, format.volume), text_color=Var_Text_color, text_size=table_text_size)
+
+    table.cell(ATHtable, 1, 0, str.tostring(lookback_Period_AVG) + " Bar Avg.Vol", bgcolor=background_color, text_color=Var_text_color, text_size=table_text_size)
+    table.cell(ATHtable, 1, 1, str.tostring(AVG_Volume_table, format.volume), text_color=Var_Text_color, text_size=table_text_size)
+
+    table.cell(ATHtable, 2, 0, str.tostring(lookback_Period_AVG) + " Bar Rel.Vol", bgcolor=background_color, text_color=Var_text_color, tooltip="Rel.Vol = Current Volume / Average volume of lookback period", text_size=table_text_size)
+    table.cell(ATHtable, 2, 1, str.tostring(math.round(REL_Volume_table)) + "%", text_color=Var_Text_color, text_size=table_text_size)
+
+    table.cell(ATHtable, 3, 0, str.tostring(lookback_Period_Up_down) + " Bar Up/Down Vol Ratio", bgcolor=background_color, text_color=Var_text_color, tooltip="Total up-day volume divided by total down-day volume over the lookback period.", text_size=table_text_size)
+    table.cell(ATHtable, 3, 1, str.tostring(math.round(upDnVolRatio, 2)), text_color=Var_Text_color, bgcolor=lookback_Period_Up_down_color, text_size=table_text_size)
+
+    table.cell(ATHtable, 4, 0, "DCR%", bgcolor=background_color, text_color=Var_text_color, tooltip="(Close - Low) / (High - Low) * 100", text_size=table_text_size)
+    table.cell(ATHtable, 4, 1, str.tostring(math.round(daily_closing_range1, 2)) + "%", text_color=Var_Text_color, bgcolor=dcr_color, text_size=table_text_size)
+
+    table.cell(ATHtable, 5, 0, "Change%", bgcolor=background_color, text_color=Var_text_color, tooltip="((Present day - Previous day) / Previous day) * 100", text_size=table_text_size)
+    table.cell(ATHtable, 5, 1, str.tostring(math.round(Changeinvolume, 2)) + "%", text_color=Var_Text_color, text_size=table_text_size)
+
+    table.cell(ATHtable, 6, 0, "No Of PPV & IBV in last " + str.tostring(lookback_Period_PP) + " bars", bgcolor=background_color, text_color=Var_text_color, tooltip="Pocket Pivot Volume (PPV) count and IBV (Institutional buy volume) count", text_size=table_text_size)
+    table.cell(ATHtable, 6, 1, "PPV-" + str.tostring(pivotCount) + " and IBV-" + str.tostring(IBVcount), text_color=Var_Text_color, text_size=table_text_size)
+
+    table.cell(ATHtable, 7, 0, "Comments", bgcolor=background_color, text_color=Var_text_color, tooltip="PPV or IBV classification for the current bar.", text_size=table_text_size)
+    table.cell(ATHtable, 7, 1, Var_Comments, text_color=Var_Text_color, text_size=table_text_size)
+
+// ── Disclaimer ──────────────────────────────────────────────────────────────
+var table disclaimerTable = table.new(position.bottom_left, 1, 1, border_width=1)
+if showDisclaimer
+    table.cell(disclaimerTable, 0, 0, "⚠️ This script is for educational purposes only. It does not constitute financial advice. Use at your own risk.", text_color=color.white, bgcolor=color.black)
+
+// ── Plots ─────────────────────────────────────────────────────────────────────
+plot(volume, style=plot.style_columns, color=Volume_color, title="Volume")
+plot(Show_AVG_Volume ? volMA : na, style=plot.style_line, color=color.rgb(20, 20, 20), title="Average Volume")
+plot(0, "Zero line", color.gray)
+
+plotchar(IVDay and Show_IV, title="IBV", char="▲", location=location.bottom, color=color.rgb(221, 15, 211), size=size.tiny)
+plotchar(isPocketPivot and Show_PP, title="PPV", char="★", location=location.bottom, color=color.rgb(17, 16, 16), size=size.tiny)
+
+alertcondition(IVDay, title="IBV", message="Institutional Buy Volume Alert on {{ticker}} @ {{close}} on {{interval}} Timeframe")
+alertcondition(isPocketPivot, title="PPV", message="Pivot pocket Volume Alert on {{ticker}} @ {{close}} on {{interval}} Timeframe")
