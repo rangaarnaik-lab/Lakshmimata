@@ -30,6 +30,12 @@ background_color = input.color(color.teal, title="Heading_Background_color", inl
 Var_text_color = input.color(color.white, title="Heading_Text_color", inline="Heading", group="Volume Information Table")
 Var_Text_color = input.color(color.black, title="Text_color", inline="Heading", group="Volume Information Table")
 
+Show_Notes = input.bool(true, "Show Signal Notes Panel", group="Signal Notes")
+notes_position = input.string(defval=position.bottom_right, title="Notes Position", options=[position.top_left, position.top_center, position.top_right, position.middle_left, position.middle_right, position.bottom_left, position.bottom_center, position.bottom_right], group="Signal Notes")
+notes_text_size = input.string(defval=size.small, title="Notes Text Size", options=[size.tiny, size.small, size.auto], group="Signal Notes")
+notes_header_color = input.color(color.teal, title="Notes Header Color", group="Signal Notes")
+notes_bg_color = input.color(color.new(color.white, 10), title="Notes Background", group="Signal Notes")
+
 // ── Core calculations ───────────────────────────────────────────────────────
 greenDay = close > open
 upday = close > close[1]
@@ -174,6 +180,34 @@ if Show_table
 
     table.cell(ATHtable, 7, 0, "Comments", bgcolor=background_color, text_color=Var_text_color, tooltip="HT, HY, IBV, Bull Snort, PPV, HQ, or M for the current bar.", text_size=table_text_size)
     table.cell(ATHtable, 7, 1, Var_Comments, text_color=Var_Text_color, text_size=table_text_size)
+
+// ── Signal notes panel ────────────────────────────────────────────────────────
+var table notesTable = table.new(notes_position, 2, 7, frame_color=color.gray, bgcolor=notes_bg_color, border_width=1, frame_width=1, border_color=color.black)
+
+if Show_Notes
+    table.cell(notesTable, 0, 0, "Signal", bgcolor=notes_header_color, text_color=color.white, text_size=notes_text_size)
+    table.cell(notesTable, 1, 0, "Guide & Example", bgcolor=notes_header_color, text_color=color.white, text_size=notes_text_size)
+
+    table.cell(notesTable, 0, 1, "Rel Vol (" + str.tostring(lookback_Period_AVG) + "d)", text_color=Var_Text_color, text_size=notes_text_size, tooltip="Today's volume vs N-day average in the main table.")
+    table.cell(notesTable, 1, 1, "<100% = quiet day\n100% = average\n>100% = active\n≥200% = strong\nEx: Avg 1L, today 64K → 64%", text_color=Var_Text_color, text_size=notes_text_size)
+
+    table.cell(notesTable, 0, 2, "Bull Snort 🐂", text_color=Var_Text_color, text_size=notes_text_size)
+    table.cell(notesTable, 1, 2, "Vol ≥ " + str.tostring(bullSnort_RVol_Mult, "#.#") + "× 50d avg + up day + DCR ≥ " + str.tostring(bullSnort_DCR_Min, "#") + "%\nEx: 50d avg 80K, vol 280K, DCR 90% → Bull Snort", text_color=Var_Text_color, text_size=notes_text_size)
+
+    table.cell(notesTable, 0, 3, "HT 🚀", text_color=Var_Text_color, text_size=notes_text_size)
+    table.cell(notesTable, 1, 3, "Highest volume since IPO / listing\nEx: Past max 5M, today 6.2M → HT", text_color=Var_Text_color, text_size=notes_text_size)
+
+    table.cell(notesTable, 0, 4, "HY 🔥", text_color=Var_Text_color, text_size=notes_text_size)
+    table.cell(notesTable, 1, 4, "Highest volume this calendar year\n+ green day + vol > down-day high + vol MA\nEx: 2026 high was 3M, today 3.8M green → HY", text_color=Var_Text_color, text_size=notes_text_size)
+
+    table.cell(notesTable, 0, 5, "Today", bgcolor=notes_header_color, text_color=color.white, text_size=notes_text_size)
+    table.cell(notesTable, 1, 5, "Live Values", bgcolor=notes_header_color, text_color=color.white, text_size=notes_text_size)
+
+    todayRelVol = str.tostring(math.round(REL_Volume_table)) + "% " + str.tostring(lookback_Period_AVG) + "d Rel"
+    today50d = not na(relVolMult) ? str.tostring(relVolMult, "#.#") + "× 50d avg" : "50d n/a"
+    todayDcr = not na(daily_closing_range1) ? "DCR " + str.tostring(math.round(daily_closing_range1, 1)) + "%" : "DCR n/a"
+    table.cell(notesTable, 0, 6, Var_Comments, text_color=Var_Text_color, bgcolor=Var_Comments != "NA" ? color.new(color.green, 85) : notes_bg_color, text_size=notes_text_size)
+    table.cell(notesTable, 1, 6, todayRelVol + " | " + today50d + " | " + todayDcr, text_color=Var_Text_color, text_size=notes_text_size)
 
 // ── Disclaimer ──────────────────────────────────────────────────────────────
 var table disclaimerTable = table.new(position.bottom_left, 1, 1, border_width=1)
