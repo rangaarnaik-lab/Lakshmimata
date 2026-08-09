@@ -28,7 +28,6 @@ jobs:
           repository: rangaarnaik-lab/lakshmimata-server
           path: server
           ref: main
-          token: ${{ secrets.LAKSHMIMATA_SERVER_PAT }}
 
       - name: Apply worker patch and push main
         env:
