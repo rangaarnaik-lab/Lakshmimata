@@ -3316,8 +3316,9 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
     return null
   }
   return (
-    <div style={{flexShrink:0,maxHeight:compact?(isMobile?'18vh':'14vh'):(isMobile?'32vh':'26vh'),
-      overflowY:'auto',padding:'8px 14px 14px',borderTop:`1px solid ${C.divider}`,background:C.bg}}>
+    <div style={{flexShrink:0,maxHeight:compact?(isMobile?'32vh':'38vh'):(isMobile?'40vh':'44vh'),
+      minHeight:compact?(isMobile?200:220):240,
+      overflowY:'auto',overflowX:'hidden',padding:'8px 14px 14px',borderTop:`1px solid ${C.divider}`,background:C.bg}}>
       <div style={{display:'flex',justifyContent:'flex-end',marginBottom:customizeOpen?8:4}}>
         <button type="button" onClick={()=>setCustomizeOpen(v=>!v)}
           style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${customizeOpen?C.accent:C.border}`,
@@ -3589,6 +3590,13 @@ function ResultsFilingSummary({symbol}){
   )
 }
 
+function fmtResultPeriod(label){
+  if(!label||label==='—') return '—'
+  const d=new Date(label)
+  if(isNaN(d.getTime())) return String(label).length>12?String(label).slice(0,12)+'…':String(label)
+  return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'})
+}
+
 function ResultsHistoryTable({symbol}){
   const [hist, setHist] = useState(undefined) // undefined=loading, []=no data, array=loaded
   useEffect(() => {
@@ -3617,9 +3625,9 @@ function ResultsHistoryTable({symbol}){
     return yearsBack===1 && dayDiff<=20
   }) || null
   const cols = [
-    {label:current.period_ended, row:current},
-    {label:prevQtr?prevQtr.period_ended:'—', row:prevQtr},
-    {label:yoyRow?yoyRow.period_ended:'—', row:yoyRow},
+    {label:fmtResultPeriod(current.period_ended), title:current.period_ended, row:current},
+    {label:prevQtr?fmtResultPeriod(prevQtr.period_ended):'—', title:prevQtr?.period_ended, row:prevQtr},
+    {label:yoyRow?fmtResultPeriod(yoyRow.period_ended):'—', title:yoyRow?.period_ended, row:yoyRow},
   ]
   const pct=(now,then)=>(now==null||then==null||then===0)?null:((now-then)/Math.abs(then)*100)
   const opm = effectiveOpm
@@ -3671,14 +3679,25 @@ function ResultsHistoryTable({symbol}){
           ⚠ Other income jumped vs last quarter — check OPM% for the real operating trend
         </div>
       )}
-      <table style={{width:'100%',fontSize:10.5,borderCollapse:'collapse',minWidth:280}}>
+      <table style={{width:'100%',fontSize:10.5,borderCollapse:'collapse',tableLayout:'fixed',minWidth:360}}>
+        <colgroup>
+          <col style={{width:'24%'}}/>
+          <col style={{width:'11%'}}/>
+          <col style={{width:'11%'}}/>
+          <col style={{width:'18%'}}/>
+          <col style={{width:'18%'}}/>
+          <col style={{width:'18%'}}/>
+        </colgroup>
         <thead>
           <tr>
-            <td></td>
-            <td style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px'}}>YoY</td>
-            <td style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px'}}>QoQ</td>
+            <th style={{textAlign:'left',fontWeight:700,color:C.muted,padding:'2px 6px'}}>Metric</th>
+            <th style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px'}}>YoY</th>
+            <th style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px'}}>QoQ</th>
             {cols.map((c,i)=>(
-              <td key={i} style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px',whiteSpace:'nowrap'}}>{c.label}</td>
+              <th key={i} title={c.title||c.label}
+                style={{textAlign:'right',fontWeight:700,color:C.muted,padding:'2px 6px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                {c.label}
+              </th>
             ))}
           </tr>
         </thead>
@@ -3686,10 +3705,10 @@ function ResultsHistoryTable({symbol}){
           {metrics.map(m=>(
             <tr key={m.label} style={m.label==='Other Income (₹Cr)'&&otherIncomeSpike?
               {background:C.yellow+'0d'}:undefined}>
-              <td style={{color:m.label==='Other Income (₹Cr)'&&otherIncomeSpike?C.yellow:C.text,
-                fontWeight:600,padding:'4px 6px'}}>
+              <th scope="row" style={{textAlign:'left',color:m.label==='Other Income (₹Cr)'&&otherIncomeSpike?C.yellow:C.text,
+                fontWeight:600,padding:'4px 6px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
                 {m.label==='Other Income (₹Cr)'&&otherIncomeSpike?'⚠ ':''}{m.label}
-              </td>
+              </th>
               <td style={{textAlign:'right',padding:'4px 6px',fontWeight:700,
                 color:m.yoyPct==null?C.muted:m.yoyPct>=0?C.green:C.red}}>
                 {m.yoyPct==null?'—':`${m.yoyPct>=0?'▲':'▼'} ${Math.abs(m.yoyPct).toFixed(0)}%`}
