@@ -1,7 +1,7 @@
 name: Push worker patch to lakshmimata-server main
 
-# Applies deploy/about-results-key-rotation-7468.patch to lakshmimata-server
-# and pushes main (Railway fundamentals auto-redeploys on push).
+# Applies deploy/*.patch files to lakshmimata-server and pushes main.
+# Railway fundamentals auto-redeploys on push.
 #
 # One-time setup: Lakshmimata repo → Settings → Secrets → Actions
 #   LAKSHMIMATA_SERVER_PAT = classic GitHub PAT (repo scope) for rangaarnaik-lab
@@ -11,7 +11,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'deploy/about-results-key-rotation-7468.patch'
+      - 'deploy/*.patch'
       - '.github/workflows/push-server-worker-patch.yml'
 
 jobs:
@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout Lakshmimata (patch)
+      - name: Checkout Lakshmimata (patches)
         uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -32,7 +32,7 @@ jobs:
           ref: main
           persist-credentials: false
 
-      - name: Apply worker patch and push main
+      - name: Apply server patches and push main
         env:
           PAT: ${{ secrets.LAKSHMIMATA_SERVER_PAT }}
         run: |
@@ -40,17 +40,27 @@ jobs:
             echo "::error::Add LAKSHMIMATA_SERVER_PAT to Lakshmimata secrets — a classic GitHub PAT with repo scope (write access to lakshmimata-server)."
             exit 1
           fi
-          git -C server apply ../deploy/about-results-key-rotation-7468.patch
+          applied=0
+          for patch in deploy/*.patch; do
+            [ -f "$patch" ] || continue
+            echo "Applying $patch ..."
+            if git -C server apply --check "$patch" 2>/dev/null; then
+              git -C server apply "$patch"
+              applied=1
+            else
+              echo "  (already applied or not applicable — skipping)"
+            fi
+          done
           cd server
-          git config user.name "rangaarnaik-lab"
-          git config user.email "41898282+rangaarnaik-lab@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           if git diff --quiet && git diff --cached --quiet; then
-            echo "Patch already applied on lakshmimata-server main — nothing to push."
+            echo "No server changes to push."
             exit 0
           fi
-          git add fundamentals_worker.py
-          git commit -m "Rotate all Gemini keys on 429 for About and Results"
-          # Force push via PAT — do not use github-actions[bot] GITHUB_TOKEN from checkout.
+          git add -A
+          git commit -m "Apply server patches from Lakshmimata deploy/"
           git -c credential.helper= remote set-url origin \
             "https://x-access-token:${PAT}@github.com/rangaarnaik-lab/lakshmimata-server.git"
           git -c credential.helper= push origin HEAD:main
+          echo "Pushed lakshmimata-server main (applied_patches=$applied)"

@@ -1,0 +1,27 @@
+From 9a9c270b5a4c7d015d61d6ffcc25d585a419511a Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Sun, 9 Aug 2026 13:27:28 +0000
+Subject: [PATCH] Results extraction: default batch size 10 per cycle
+
+Catchup and steady-state now process up to 10 stocks per loop by default.
+Override with RESULTS_PDF_CATCHUP_BATCH_SIZE / RESULTS_PDF_BATCH_SIZE on Railway.
+---
+ fundamentals_worker.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/fundamentals_worker.py b/fundamentals_worker.py
+index 2ee422f..ff7ac21 100644
+--- a/fundamentals_worker.py
++++ b/fundamentals_worker.py
+@@ -1628,7 +1628,7 @@ async def _concall_summary_loop(session: aiohttp.ClientSession):
+             pacing = float(os.getenv('RESULTS_PDF_CATCHUP_PACING_SECONDS',
+                                      os.getenv('RESULTS_PDF_PACING_SECONDS', '3')))
+         else:
+-            BATCH_SIZE = int(os.getenv('RESULTS_PDF_BATCH_SIZE', '1'))
++            BATCH_SIZE = int(os.getenv('RESULTS_PDF_BATCH_SIZE', '10'))
+             candidates_limit = int(os.getenv('RESULTS_PDF_CANDIDATES_LIMIT', '2000'))
+             lookback_days = int(os.getenv('RESULTS_PDF_LOOKBACK_DAYS', '90'))
+             pacing = float(os.getenv('RESULTS_PDF_PACING_SECONDS', '5'))
+-- 
+2.43.0
+
