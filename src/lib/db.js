@@ -622,7 +622,7 @@ export async function fetchUserLayouts(userId) {
   if (!userId) return []
   const { data, error } = await supabase
     .from('user_layouts')
-    .select('id,user_id,slot,name,columns,col_order,chart_sections,updated_at')
+    .select('id,user_id,slot,name,columns,col_order,chart_sections,chart_wide,chart_panel_pct,updated_at')
     .eq('user_id', userId)
     .order('slot', { ascending: true })
   if (error) {
@@ -633,13 +633,15 @@ export async function fetchUserLayouts(userId) {
 }
 
 /** Save or overwrite one layout slot (1–3). */
-export async function saveUserLayout(userId, { slot, name, columns, colOrder, chartSections }) {
+export async function saveUserLayout(userId, { slot, name, columns, colOrder, chartSections, chartWide, chartPanelPct }) {
   if (!userId) return { error: 'Sign in to save layouts.' }
   const s = Number(slot)
   if (!Number.isInteger(s) || s < 1 || s > MAX_USER_LAYOUTS) {
     return { error: `Choose slot 1–${MAX_USER_LAYOUTS}.` }
   }
   const label = (name || '').trim().slice(0, 40) || `Layout ${s}`
+  const wide = Number(chartWide)
+  const pct = chartPanelPct != null ? Number(chartPanelPct) : null
   const payload = {
     user_id: userId,
     slot: s,
@@ -647,12 +649,14 @@ export async function saveUserLayout(userId, { slot, name, columns, colOrder, ch
     columns: columns || {},
     col_order: colOrder || [],
     chart_sections: chartSections || [],
+    chart_wide: [0, 1, 2].includes(wide) ? wide : 0,
+    chart_panel_pct: pct != null && Number.isFinite(pct) ? pct : null,
     updated_at: new Date().toISOString(),
   }
   const { data, error } = await supabase
     .from('user_layouts')
     .upsert(payload, { onConflict: 'user_id,slot' })
-    .select('id,user_id,slot,name,columns,col_order,chart_sections,updated_at')
+    .select('id,user_id,slot,name,columns,col_order,chart_sections,chart_wide,chart_panel_pct,updated_at')
     .single()
   if (error) {
     console.error('saveUserLayout error:', error.message)
