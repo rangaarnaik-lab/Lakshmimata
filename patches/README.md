@@ -64,16 +64,30 @@ Run in Supabase SQL editor:
 
 Stops the repeating log line: `💬 Ask-AI: run add_stock_ai_asks.sql`
 
-## `gemini-key-rotation-7468.patch` (apply first)
+## `about-results-key-rotation-7468.patch` (apply now)
 
-Rotates through **all** `GEMINI_API_KEY*` on 429 instead of stopping after one key:
+Rotates through **all** `GEMINI_API_KEY*` on 429 for About Company and Results PDF extraction (not just the dedicated About key). Shortens default About hard-stop from 24h → 1h only when **every** key is exhausted.
 
 ```bash
 cd lakshmimata-server
-git am /path/to/gemini-key-rotation-7468.patch
+git pull origin main
+git apply /path/to/about-results-key-rotation-7468.patch
+# or: git am /path/to/about-results-key-rotation-7468.patch
 git push origin main
 # Redeploy fundamentals on Railway
 ```
+
+After deploy, startup should log:
+
+```text
+📘 About/Results/PPT/concall Gemini pool: round-robin×6 (…)
+📘 Gemini env vars: GEMINI_API_KEY, GEMINI_API_KEY_2, ...
+📘 About prefers Key1 …xxxx (rotates all keys on 429)
+```
+
+## `gemini-key-rotation-7468.patch` (superseded)
+
+Use `about-results-key-rotation-7468.patch` instead — it applies on current `main` (Aug 2026).
 
 ## Log diagnosis (Aug 2026 example)
 
