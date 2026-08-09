@@ -2648,7 +2648,7 @@ const ASK_AI_SUGGESTIONS = [
 ]
 
 function AskAiAgent({symbol, isMobile}){
-  // Floating agent popup — not a chart tab section.
+  // Inline control in the detail tab row — never a floating FAB over tabs.
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
@@ -2708,31 +2708,38 @@ function AskAiAgent({symbol, isMobile}){
       {!open&&(
         <button type="button" onClick={()=>setOpen(true)} title="Ask AI agent"
           style={{
-            position:'absolute',right:14,bottom:isMobile?18:16,zIndex:40,
-            display:'flex',alignItems:'center',gap:8,
-            padding:'11px 16px',borderRadius:999,cursor:'pointer',
+            flexShrink:0,
+            display:'inline-flex',alignItems:'center',gap:isMobile?4:6,
+            padding:isMobile?'5px 10px':'6px 12px',borderRadius:999,cursor:'pointer',
             border:`1px solid ${C.accent}66`,
             background:`linear-gradient(135deg, ${C.accent}, ${C.teal||C.accent})`,
-            color:'#0a0e14',fontSize:13,fontWeight:900,
-            boxShadow:`0 8px 28px ${C.accent}55`,
+            color:'#0a0e14',fontSize:isMobile?11:12,fontWeight:900,
+            whiteSpace:'nowrap',
           }}>
-          <span style={{fontSize:15}}>✦</span> Ask AI
+          <span style={{fontSize:isMobile?12:13}}>✦</span>{isMobile?'Ask':'Ask AI'}
         </button>
       )}
 
       {open&&(
-        <div style={{position:'absolute',inset:0,zIndex:50,display:'flex',alignItems:'flex-end',justifyContent:'flex-end',
-          padding:isMobile?0:14,background:isMobile?'rgba(0,0,0,0.45)':'transparent'}}
+        <div style={{
+          position:'fixed',inset:0,zIndex:2200,
+          display:'flex',alignItems:isMobile?'flex-end':'center',justifyContent:'center',
+          padding:isMobile
+            ? '0 0 env(safe-area-inset-bottom, 0px)'
+            : 'max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px))',
+          background:'rgba(0,0,0,0.55)',
+        }}
           onClick={()=>!busy&&setOpen(false)}>
           <div onClick={e=>e.stopPropagation()}
             style={{
-              width:isMobile?'100%':400,maxWidth:'100%',
-              height:isMobile?'78vh':Math.min(560, (typeof window!=='undefined'?window.innerHeight:700)-40),
-              maxHeight:isMobile?'78vh':'calc(100% - 8px)',
+              width:isMobile?'100%':'min(420px, 100%)',
+              maxWidth:'100%',
+              height:isMobile?'min(82dvh, 82vh)':'min(560px, calc(100dvh - 32px))',
+              maxHeight:isMobile?'min(82dvh, 82vh)':'min(560px, calc(100dvh - 32px))',
               display:'flex',flexDirection:'column',
               background:C.card,
               border:isMobile?`1px solid ${C.border}`:`1px solid ${C.accent}44`,
-              borderRadius:isMobile?'16px 16px 0 0':16,
+              borderRadius:isMobile:'16px 16px 0 0':16,
               boxShadow:'0 20px 60px rgba(0,0,0,0.55)',
               overflow:'hidden',
             }}>
@@ -3174,7 +3181,7 @@ function AboutCompanyPanel({symbol, stocks}){
   )
 }
 
-function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable}){
+function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, isMobile}){
   // Tab can be controlled by ChartPanel (e.g. peer ranking opens Results).
   const [innerTab, setInnerTab] = useState('about')
   const activeTab = tab ?? innerTab
@@ -3228,53 +3235,59 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable})
 
   return (
     <div style={scrollable?{display:'flex',flexDirection:'column',flex:1,minHeight:0,height:'100%'}:undefined}>
-      <div style={{display:'flex',gap:4,marginBottom:10,borderBottom:`1px solid ${C.border}`,
-        overflowX:'auto',flexShrink:0}}>
-        {STOCK_DETAIL_TABS.map(t=>{
-          const flag = t.key==='concall'?flags.concall
-            : t.key==='ppt'?flags.ppt
-            : t.key==='about'?flags.about
-            : t.key==='fundamentals'?flags.fundamentals
-            : t.key==='resultsSummary'?flags.resultsSummary
-            : null
-          const hasContent = flag && flag.count > 0
-          const dateHint = hasContent ? fmtFlagDate(flag.latestAt) : null
-          return (
-            <div key={t.key} onClick={()=>changeTab(t.key)} title={
-              t.key==='about'
-                ? (hasContent ? 'AI company brief from web + filings' : 'Brief generates after worker cycles')
-                : t.key==='fundamentals'
-                  ? (hasContent ? 'Ratios + AI takeaways' : 'Waiting for fundamentals scrape / AI fill')
-                : t.key==='resultsSummary'
-                  ? (hasContent ? 'AI summary of results PDF filing' : 'Waiting for results-PDF AI summary')
-                : hasContent
-                  ? `${flag.count} report${flag.count>1?'s':''} on file — open to read history`
-                  : (flag && flag.count===0 ? `No ${t.label} yet` : undefined)
-            } style={{
-              padding:'6px 10px',fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',
-              color:activeTab===t.key?C.accent:C.muted,
-              borderBottom:activeTab===t.key?`2px solid ${C.accent}`:'2px solid transparent',
-              display:'flex',alignItems:'center',gap:5,
-            }}>
-              {t.label}
-              {hasContent && (
-                <span style={{
-                  fontSize:9,fontWeight:800,color:C.green,background:C.green+'22',
-                  border:`1px solid ${C.green}55`,borderRadius:999,padding:'1px 6px',
-                }}>
-                  {(t.key==='about'||t.key==='fundamentals') ? (dateHint || 'Ready') : (flag.count>1 ? `${flag.count} · ${dateHint}` : dateHint || 'Ready')}
-                </span>
-              )}
-              {flag && flag.count===0 && (t.key==='concall'||t.key==='ppt'||t.key==='about'||t.key==='fundamentals'||t.key==='resultsSummary') && (
-                <span style={{fontSize:9,fontWeight:600,color:C.muted,opacity:0.7}}>—</span>
-              )}
-            </div>
-          )
-        })}
+      <div style={{display:'flex',alignItems:'flex-end',gap:8,marginBottom:10,
+        borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+        <div style={{display:'flex',gap:4,overflowX:'auto',flex:1,minWidth:0,
+          WebkitOverflowScrolling:'touch'}}>
+          {STOCK_DETAIL_TABS.map(t=>{
+            const flag = t.key==='concall'?flags.concall
+              : t.key==='ppt'?flags.ppt
+              : t.key==='about'?flags.about
+              : t.key==='fundamentals'?flags.fundamentals
+              : t.key==='resultsSummary'?flags.resultsSummary
+              : null
+            const hasContent = flag && flag.count > 0
+            const dateHint = hasContent ? fmtFlagDate(flag.latestAt) : null
+            return (
+              <div key={t.key} onClick={()=>changeTab(t.key)} title={
+                t.key==='about'
+                  ? (hasContent ? 'AI company brief from web + filings' : 'Brief generates after worker cycles')
+                  : t.key==='fundamentals'
+                    ? (hasContent ? 'Ratios + AI takeaways' : 'Waiting for fundamentals scrape / AI fill')
+                  : t.key==='resultsSummary'
+                    ? (hasContent ? 'AI summary of results PDF filing' : 'Waiting for results-PDF AI summary')
+                  : hasContent
+                    ? `${flag.count} report${flag.count>1?'s':''} on file — open to read history`
+                    : (flag && flag.count===0 ? `No ${t.label} yet` : undefined)
+              } style={{
+                padding:'6px 10px',fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',
+                color:activeTab===t.key?C.accent:C.muted,
+                borderBottom:activeTab===t.key?`2px solid ${C.accent}`:'2px solid transparent',
+                display:'flex',alignItems:'center',gap:5,
+              }}>
+                {t.label}
+                {hasContent && (
+                  <span style={{
+                    fontSize:9,fontWeight:800,color:C.green,background:C.green+'22',
+                    border:`1px solid ${C.green}55`,borderRadius:999,padding:'1px 6px',
+                  }}>
+                    {(t.key==='about'||t.key==='fundamentals') ? (dateHint || 'Ready') : (flag.count>1 ? `${flag.count} · ${dateHint}` : dateHint || 'Ready')}
+                  </span>
+                )}
+                {flag && flag.count===0 && (t.key==='concall'||t.key==='ppt'||t.key==='about'||t.key==='fundamentals'||t.key==='resultsSummary') && (
+                  <span style={{fontSize:9,fontWeight:600,color:C.muted,opacity:0.7}}>—</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        <div style={{flexShrink:0,paddingBottom:5,paddingRight:2}}>
+          <AskAiAgent symbol={sym} isMobile={!!isMobile}/>
+        </div>
       </div>
       <div style={scrollable?{
         flex:1,minHeight:0,overflowY:'auto',overflowX:'hidden',
-        paddingRight:4,paddingBottom:48,
+        paddingRight:4,paddingBottom:16,
         borderTop:`1px solid ${C.border}`,
         marginTop:2,
         scrollbarGutter:'stable',
@@ -3348,7 +3361,7 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
           return (
             <div key="details" style={{flex:'1 1 0',minHeight:160,display:'flex',flexDirection:'column',overflow:'hidden'}}>
               <StockDetailTabs sym={sym} stocks={stocks} tab={detailTab} setTab={setDetailTab}
-                onSelectSymbol={(s)=>navigateTo(s,{openResults:true})} scrollable/>
+                onSelectSymbol={(s)=>navigateTo(s,{openResults:true})} scrollable isMobile={isMobile}/>
             </div>
           )
         }
@@ -3531,7 +3544,6 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
           onSectionOrderChange={persistSectionOrder} detailTab={detailTab} setDetailTab={setDetailTab}
           navigateTo={navigateTo} isMobile={isMobile} readingMode={readingMode} tableMode={tableMode}/>
       )}
-      {!isIndex&&<AskAiAgent symbol={sym} isMobile={isMobile}/>}
     </div>
   )
 }
