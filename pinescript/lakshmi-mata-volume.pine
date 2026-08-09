@@ -30,7 +30,7 @@ background_color = input.color(color.teal, title="Heading_Background_color", inl
 Var_text_color = input.color(color.white, title="Heading_Text_color", inline="Heading", group="Volume Information Table")
 Var_Text_color = input.color(color.black, title="Text_color", inline="Heading", group="Volume Information Table")
 
-Show_Notes = input.bool(true, "Show Signal Notes Panel", group="Signal Notes")
+Show_Notes = input.bool(false, "Show Signal Notes Panel", group="Signal Notes")
 notes_position = input.string(defval=position.bottom_right, title="Notes Position", options=[position.top_left, position.top_center, position.top_right, position.middle_left, position.middle_right, position.bottom_left, position.bottom_center, position.bottom_right], group="Signal Notes")
 notes_text_size = input.string(defval=size.small, title="Notes Text Size", options=[size.tiny, size.small, size.auto], group="Signal Notes")
 notes_header_color = input.color(color.teal, title="Notes Header Color", group="Signal Notes")
