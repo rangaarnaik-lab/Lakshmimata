@@ -77,6 +77,8 @@ Var_Comments = IVDay ? "Institutional Buy Volume" : isBullSnort ? "Bull Snort" :
 
 Volume_color = IVDay ? color.rgb(33, 149, 243, 9) : isPocketPivot ? color.green : close < open ? color.red : color.gray
 volMid = volume * 0.5
+volHi = volume * 0.72
+volLo = volume * 0.28
 
 // ── Bull Snort / low-volume background ───────────────────────────────────────
 lowVolCondition = volume < volMA * 0.5
@@ -130,25 +132,26 @@ isJanFirst = month == 1 and dayofmonth == 1
 volChangePct1 = volume[1] > 0 ? (volume - volume[1]) / volume[1] * 100 : na
 
 if Show_HVT_Labels and isHVT_IPO
-    label.new(bar_index, volMid, "🚀HT", style=label.style_label_center, color=color.white, textcolor=color.black, size=size.tiny)
+    label.new(bar_index, volHi, "🚀HT", style=label.style_label_center, color=color.white, textcolor=color.black, size=size.small)
 
 if Show_HVT_Labels and isHVT_Year and not isHVT_IPO and (not isJanFirst or (not na(volChangePct1) and Changeinvolume > 500)) and isPocketPivot
-    label.new(bar_index, volMid, "🔥HY", style=label.style_label_center, color=color.white, textcolor=color.black, size=size.tiny)
+    label.new(bar_index, volHi, "🔥HY", style=label.style_label_center, color=color.white, textcolor=color.black, size=size.small)
 
 if Show_HVT_Labels and isHVT_Quarter and not isHVT_IPO and not isHVT_Year
-    label.new(bar_index, -1.15, "HQ", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
+    label.new(bar_index, -1.15, "HQ", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.small)
 
 if Show_HVT_Labels and isHVT_Month and not isHVT_IPO and not isHVT_Year and not isHVT_Quarter
-    label.new(bar_index, -1.05, "M", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.tiny)
+    label.new(bar_index, -1.05, "M", style=label.style_label_up, color=color.white, textcolor=color.black, size=size.small)
 
 if IVDay and Show_IV
-    label.new(bar_index, volMid, "▲", style=label.style_label_center, color=color.new(color.white, 100), textcolor=color.rgb(221, 15, 211), size=size.tiny)
+    label.new(bar_index, volMid, "▲ IBV", style=label.style_label_center, color=color.white, textcolor=color.rgb(221, 15, 211), size=size.small)
 
-if isPocketPivot and Show_PP
-    label.new(bar_index, volMid, "★", style=label.style_label_center, color=color.new(color.white, 100), textcolor=color.rgb(17, 16, 16), size=size.tiny)
+if isBullSnort and Show_BullSnort and not IVDay
+    label.new(bar_index, volMid, "🐂", style=label.style_label_center, color=color.white, textcolor=color.rgb(128, 0, 128), size=size.small)
 
-if isBullSnort and Show_BullSnort
-    label.new(bar_index, volMid, "🐂", style=label.style_label_center, color=color.new(color.white, 100), textcolor=color.rgb(128, 0, 128), size=size.tiny)
+if isPocketPivot and Show_PP and not IVDay
+    ppvY = isBullSnort and Show_BullSnort ? volLo : volMid
+    label.new(bar_index, ppvY, "★ PPV", style=label.style_label_center, color=color.white, textcolor=color.rgb(17, 16, 16), size=size.small)
 
 // ── Volume information table ──────────────────────────────────────────────────
 var table ATHtable = table.new(tableposition, 8, 2, frame_color=color.gray, bgcolor=Var_table_color, border_width=1, frame_width=1, border_color=color.black)
