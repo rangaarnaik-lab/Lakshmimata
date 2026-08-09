@@ -5506,71 +5506,96 @@ function layoutSlotsFromRows(rows){
   return slots
 }
 
-function SavedLayoutsPanel({
+function LayoutTopBarMenu({
   session, layoutSlots, activeLayoutSlot, layoutNameInput, setLayoutNameInput, layoutMsg,
-  onApply, onSave, onDelete,
+  onApply, onSave, onDelete, onClearActive,
 }){
-  return (
-    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:14,marginBottom:12}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-        <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em'}}>
-          Saved layouts (max {MAX_USER_LAYOUTS})
-        </div>
-        {!session?.user?.id&&(
-          <span style={{fontSize:10,color:C.muted}}>Sign in to sync across devices</span>
-        )}
-      </div>
-      <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
-        Save RS column visibility, column order, and chart section order. Up to {MAX_USER_LAYOUTS} named presets per user.
-      </div>
-      <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
-        <input type="text" placeholder="Layout name (optional)…" value={layoutNameInput}
-          onChange={e=>setLayoutNameInput(e.target.value)}
-          maxLength={40}
-          style={{flex:'1 1 160px',minWidth:140,padding:'6px 10px',borderRadius:6,
-            border:`1px solid ${C.border}`,background:C.bg,color:C.text,fontSize:12}}/>
-      </div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:8}}>
-        {Array.from({length:MAX_USER_LAYOUTS},(_,i)=>i+1).map(slot=>{
-          const saved=layoutSlots[slot-1]
-          const isActive=activeLayoutSlot===slot
-          return(
-            <div key={slot} style={{padding:10,borderRadius:8,
-              border:`1px solid ${isActive?C.accent:C.border}`,
-              background:isActive?C.accent+'12':C.bg}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                <span style={{fontSize:11,fontWeight:700,color:C.muted}}>Slot {slot}</span>
-                {isActive&&<span style={{fontSize:10,fontWeight:700,color:C.accent}}>Active</span>}
-              </div>
-              <div style={{fontSize:12,fontWeight:600,color:C.text,marginBottom:8,minHeight:18}}>
-                {saved?.name||<span style={{color:C.muted,fontWeight:500}}>Empty</span>}
-              </div>
-              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                <button onClick={()=>saved&&onApply(saved)} disabled={!saved}
-                  style={{padding:'5px 10px',borderRadius:6,border:`1px solid ${saved?C.accent:C.border}`,
-                    background:saved?C.accent+'18':'transparent',color:saved?C.accent:C.muted,
-                    fontSize:11,fontWeight:700,cursor:saved?'pointer':'default',opacity:saved?1:0.5}}>
-                  Load
+  const [open,setOpen]=useState(false)
+  const ref=useRef(null)
+  useEffect(()=>{
+    if(!open) return
+    const close=(e)=>{ if(!ref.current?.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown',close)
+    return()=>document.removeEventListener('mousedown',close)
+  },[open])
+  const currentLabel=activeLayoutSlot&&layoutSlots[activeLayoutSlot-1]
+    ? layoutSlots[activeLayoutSlot-1].name
+    : 'Layout'
+  return(
+    <div ref={ref} style={{position:'relative',flexShrink:0}}>
+      <button type="button" onClick={()=>setOpen(v=>!v)} title="Saved layouts — columns & chart sections"
+        style={{display:'flex',alignItems:'center',gap:5,padding:'5px 10px',borderRadius:6,
+          border:`1px solid ${open?C.accent:C.border}`,
+          background:open?C.accent+'18':C.bg,color:open?C.accent:C.text,
+          fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',maxWidth:160}}>
+        <Layers size={14} strokeWidth={2}/>
+        <span style={{overflow:'hidden',textOverflow:'ellipsis',maxWidth:88}}>{currentLabel}</span>
+        <span style={{fontSize:8,color:C.muted}}>▼</span>
+      </button>
+      {open&&(
+        <div style={{position:'absolute',top:'calc(100% + 6px)',right:0,zIndex:120,minWidth:280,
+          background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
+          boxShadow:'0 8px 28px rgba(0,0,0,0.45)',padding:12}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
+            letterSpacing:'0.06em',marginBottom:8}}>
+            Saved layouts ({MAX_USER_LAYOUTS} max)
+          </div>
+          {!session?.user?.id&&(
+            <div style={{fontSize:10,color:C.muted,marginBottom:8}}>Sign in to sync across devices</div>
+          )}
+          <div style={{display:'flex',flexDirection:'column',gap:4,marginBottom:10}}>
+            <button type="button" onClick={()=>{ onClearActive(); setOpen(false) }}
+              style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 10px',
+                borderRadius:6,border:`1px solid ${!activeLayoutSlot?C.accent:C.border}`,
+                background:!activeLayoutSlot?C.accent+'12':'transparent',
+                color:C.text,fontSize:12,fontWeight:600,cursor:'pointer',textAlign:'left'}}>
+              <span>Default (auto-saved)</span>
+              {!activeLayoutSlot&&<span style={{fontSize:10,color:C.accent}}>Active</span>}
+            </button>
+            {Array.from({length:MAX_USER_LAYOUTS},(_,i)=>i+1).map(slot=>{
+              const saved=layoutSlots[slot-1]
+              const isActive=activeLayoutSlot===slot
+              return(
+                <button key={slot} type="button" disabled={!saved}
+                  onClick={()=>{ if(saved){ onApply(saved); setOpen(false) } }}
+                  style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 10px',
+                    borderRadius:6,border:`1px solid ${isActive?C.accent:C.border}`,
+                    background:isActive?C.accent+'12':'transparent',
+                    color:saved?C.text:C.muted,fontSize:12,fontWeight:600,
+                    cursor:saved?'pointer':'default',textAlign:'left',opacity:saved?1:0.55}}>
+                  <span>{saved?.name||`Slot ${slot} — empty`}</span>
+                  {isActive&&<span style={{fontSize:10,color:C.accent}}>Active</span>}
                 </button>
-                <button onClick={()=>onSave(slot)}
-                  style={{padding:'5px 10px',borderRadius:6,border:'none',background:C.accent,
-                    color:'#0a0a0f',fontSize:11,fontWeight:700,cursor:'pointer'}}>
-                  {saved?'Overwrite':'Save'}
+              )
+            })}
+          </div>
+          <div style={{borderTop:`1px solid ${C.divider}`,paddingTop:10}}>
+            <input type="text" placeholder="Name for save…" value={layoutNameInput}
+              onChange={e=>setLayoutNameInput(e.target.value)} maxLength={40}
+              style={{width:'100%',boxSizing:'border-box',padding:'6px 10px',borderRadius:6,marginBottom:8,
+                border:`1px solid ${C.border}`,background:C.bg,color:C.text,fontSize:12}}/>
+            <div style={{display:'flex',gap:6}}>
+              {Array.from({length:MAX_USER_LAYOUTS},(_,i)=>i+1).map(slot=>(
+                <button key={slot} type="button" onClick={()=>onSave(slot)}
+                  style={{flex:1,padding:'6px 0',borderRadius:6,border:'none',background:C.accent,
+                    color:'#0a0a0f',fontSize:10,fontWeight:700,cursor:'pointer'}}>
+                  Save {slot}
                 </button>
-                {saved&&(
-                  <button onClick={()=>onDelete(slot)}
-                    style={{padding:'5px 10px',borderRadius:6,border:`1px solid ${C.border}`,
-                      background:'transparent',color:C.muted,fontSize:11,fontWeight:700,cursor:'pointer'}}>
-                    Clear
-                  </button>
-                )}
-              </div>
+              ))}
             </div>
-          )
-        })}
-      </div>
-      {layoutMsg&&(
-        <div style={{fontSize:11,color:C.accent,marginTop:10}}>{layoutMsg}</div>
+            {activeLayoutSlot&&layoutSlots[activeLayoutSlot-1]&&(
+              <button type="button" onClick={()=>onDelete(activeLayoutSlot)}
+                style={{width:'100%',marginTop:8,padding:'6px 0',borderRadius:6,
+                  border:`1px solid ${C.border}`,background:'transparent',color:C.muted,
+                  fontSize:10,fontWeight:700,cursor:'pointer'}}>
+                Clear active slot
+              </button>
+            )}
+          </div>
+          {layoutMsg&&(
+            <div style={{fontSize:10,color:C.accent,marginTop:8}}>{layoutMsg}</div>
+          )}
+        </div>
       )}
     </div>
   )
@@ -8870,7 +8895,6 @@ export default function App(){
   // same as before). Persisted to localStorage as the user's saved
   // layout, so it survives reloads.
   const [showColumns,setShowColumns]=useState(false)
-  const [showLayouts,setShowLayouts]=useState(false)
   // Which breakout type is shown on the Breakout tab — one table with
   // clickable filter chips instead of 5 always-stacked sections.
   const [breakoutType,setBreakoutType]=useState('hyht')
@@ -9996,6 +10020,21 @@ export default function App(){
                 </select>
               )}
 
+              {!isMobile&&(
+                <LayoutTopBarMenu
+                  session={session}
+                  layoutSlots={layoutSlots}
+                  activeLayoutSlot={activeLayoutSlot}
+                  layoutNameInput={layoutNameInput}
+                  setLayoutNameInput={setLayoutNameInput}
+                  layoutMsg={layoutMsg}
+                  onApply={applyLayout}
+                  onSave={handleSaveLayoutSlot}
+                  onDelete={handleDeleteLayoutSlot}
+                  onClearActive={()=>setActiveLayoutSlot(null)}
+                />
+              )}
+
               {/* History date picker */}
               {!isMobile&&(
                 <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
@@ -10210,32 +10249,15 @@ export default function App(){
                 <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>
                   <input placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)}
                     style={{flex:1,minWidth:100,padding:'8px 12px',background:C.card,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:13,outline:'none'}}/>
-                  <button onClick={()=>{setShowFilters(v=>!v);setShowColumns(false);setShowLayouts(false)}}
+                  <button onClick={()=>{setShowFilters(v=>!v);setShowColumns(false)}}
                     style={{padding:'8px 14px',borderRadius:8,border:`1px solid ${showFilters?C.accent:C.border}`,
                       cursor:'pointer',fontSize:12,fontWeight:600,background:showFilters?C.accent+'22':'transparent',
                       color:showFilters?C.accent:C.muted,whiteSpace:'nowrap'}}>⚙ Filters</button>
-                  <button onClick={()=>{setShowColumns(v=>!v);setShowFilters(false);setShowLayouts(false)}}
+                  <button onClick={()=>{setShowColumns(v=>!v);setShowFilters(false)}}
                     style={{padding:'8px 14px',borderRadius:8,border:`1px solid ${showColumns?C.accent:C.border}`,
                       cursor:'pointer',fontSize:12,fontWeight:600,background:showColumns?C.accent+'22':'transparent',
                       color:showColumns?C.accent:C.muted,whiteSpace:'nowrap'}}>📊 Columns</button>
-                  <button onClick={()=>{setShowLayouts(v=>!v);setShowFilters(false);setShowColumns(false)}}
-                    style={{padding:'8px 14px',borderRadius:8,border:`1px solid ${showLayouts?C.accent:C.border}`,
-                      cursor:'pointer',fontSize:12,fontWeight:600,background:showLayouts?C.accent+'22':'transparent',
-                      color:showLayouts?C.accent:C.muted,whiteSpace:'nowrap'}}>💾 Layouts</button>
                 </div>
-                {showLayouts&&(
-                  <SavedLayoutsPanel
-                    session={session}
-                    layoutSlots={layoutSlots}
-                    activeLayoutSlot={activeLayoutSlot}
-                    layoutNameInput={layoutNameInput}
-                    setLayoutNameInput={setLayoutNameInput}
-                    layoutMsg={layoutMsg}
-                    onApply={applyLayout}
-                    onSave={handleSaveLayoutSlot}
-                    onDelete={handleDeleteLayoutSlot}
-                  />
-                )}
                 {showColumns&&(
                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
                     padding:14,marginBottom:12}}>
