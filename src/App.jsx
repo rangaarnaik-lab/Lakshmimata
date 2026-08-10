@@ -1235,11 +1235,14 @@ function HistoryCalendarPicker({historyDate, setHistoryDate, availableDates, isM
   )
 }
 
-// Browser-notification prefs — enable/disable each signal type.
+// Browser-notification prefs — enable/disable each signal type + alert sound.
 const ALERT_PREF_KEY='lakshmimata-alert-prefs'
 const DEFAULT_ALERT_PREFS={
   hy:true, ht:true, pp:true, squeeze:true, stage2:true, guppy:true, rs70:true, announcements:true,
   watchlistOnly:false,
+  soundEnabled:true,
+  soundId:'ping',
+  soundVolume:0.7,
 }
 const ALERT_PREF_OPTIONS=[
   {key:'watchlistOnly', label:'Watchlist only', icon:'📋'},
@@ -1252,6 +1255,21 @@ const ALERT_PREF_OPTIONS=[
   {key:'rs70', label:'RS Rating > 70', icon:'⭐'},
   {key:'announcements', label:'Announcements', icon:'📢'},
 ]
+/** TradingView-style alert sounds — synthesized with Web Audio (no asset files). */
+const ALERT_SOUND_OPTIONS=[
+  {id:'ping', label:'Ping'},
+  {id:'beep', label:'Beep'},
+  {id:'bell', label:'Bell'},
+  {id:'chime', label:'Chime'},
+  {id:'ding', label:'Ding'},
+  {id:'note', label:'Note'},
+  {id:'pop', label:'Pop'},
+  {id:'sonar', label:'Sonar'},
+  {id:'alarm', label:'Alarm'},
+  {id:'horn', label:'Horn'},
+  {id:'glass', label:'Glass'},
+  {id:'synth', label:'Synth'},
+]
 function alertPrefsStorageKey(userId){
   return userId ? `${ALERT_PREF_KEY}:${userId}` : ALERT_PREF_KEY
 }
@@ -1262,7 +1280,7 @@ function loadAlertPrefs(userId){
     const legacy=!userId?null:localStorage.getItem(ALERT_PREF_KEY)
     const raw=JSON.parse(keyed||legacy||'null')
     if(!raw||typeof raw!=='object') return {...DEFAULT_ALERT_PREFS}
-    return {...DEFAULT_ALERT_PREFS, ...raw}
+    return normalizeAlertPrefs(raw)
   }catch{ return {...DEFAULT_ALERT_PREFS} }
 }
 function persistAlertPrefsLocal(prefs, userId){
@@ -1270,7 +1288,12 @@ function persistAlertPrefsLocal(prefs, userId){
 }
 function normalizeAlertPrefs(raw){
   if(!raw||typeof raw!=='object') return {...DEFAULT_ALERT_PREFS}
-  return {...DEFAULT_ALERT_PREFS, ...raw}
+  const next={...DEFAULT_ALERT_PREFS, ...raw}
+  if(!ALERT_SOUND_OPTIONS.some(s=>s.id===next.soundId)) next.soundId=DEFAULT_ALERT_PREFS.soundId
+  const vol=Number(next.soundVolume)
+  next.soundVolume=Number.isFinite(vol)?Math.min(1,Math.max(0,vol)):DEFAULT_ALERT_PREFS.soundVolume
+  next.soundEnabled=next.soundEnabled!==false
+  return next
 }
 /** Map squeeze_alerts.fire_type → which pref keys it matches. */
 function alertPrefKeysForFireType(fireType){
@@ -1311,8 +1334,9 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
     return prefs[o.key]!==false
   }).length
   const applyPrefs=next=>{
-    setPrefs(next)
-    onPersist?.(next)
+    const normalized=normalizeAlertPrefs(next)
+    setPrefs(normalized)
+    onPersist?.(normalized)
   }
   const toggle=key=>{
     // watchlistOnly defaults false — flip boolean explicitly
@@ -1322,6 +1346,9 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
     }
     applyPrefs({...prefs,[key]:prefs[key]===false})
   }
+  const soundOn=prefs.soundEnabled!==false
+  const soundId=prefs.soundId||DEFAULT_ALERT_PREFS.soundId
+  const soundVolume=Number.isFinite(Number(prefs.soundVolume))?Number(prefs.soundVolume):DEFAULT_ALERT_PREFS.soundVolume
   if(typeof Notification==='undefined') return null
   if(notifPermission!=='granted'){
     return(
@@ -1342,16 +1369,65 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
           border:`1px solid ${open?C.accent:C.green}33`,
           background:open?C.accent+'18':C.green+'11',
           color:open?C.accent:C.green,fontSize:10,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>
-        🔔 Alerts {enabledCount}/{ALERT_PREF_OPTIONS.length} ▾
+        🔔 Alerts {enabledCount}/{ALERT_PREF_OPTIONS.length}{soundOn?' 🔊':''} ▾
       </button>
       {open&&(
         <>
           <div onClick={()=>setOpen(false)} style={{position:'fixed',inset:0,zIndex:80}}/>
-          <div style={{position:'absolute',top:34,right:0,zIndex:81,width:250,
+          <div style={{position:'absolute',top:34,right:0,zIndex:81,width:280,maxHeight:'min(70vh,520px)',overflowY:'auto',
             background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
             padding:10,boxShadow:'0 12px 32px rgba(0,0,0,0.4)'}}>
+            {/* Sound — TradingView-style picker */}
             <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
-              letterSpacing:'0.05em',marginBottom:4}}>Alert types</div>
+              letterSpacing:'0.05em',marginBottom:6}}>Alert sound</div>
+            <label style={{display:'flex',alignItems:'center',gap:8,padding:'4px 2px',cursor:'pointer',marginBottom:6}}>
+              <input type="checkbox" checked={soundOn}
+                onChange={()=>{
+                  const next=!soundOn
+                  applyPrefs({...prefs, soundEnabled:next})
+                  if(next) playAlertSound(soundId, soundVolume)
+                }}
+                style={{accentColor:C.accent,width:14,height:14,cursor:'pointer'}}/>
+              <span style={{fontSize:11,color:soundOn?C.text:C.muted}}>Play sound on alert</span>
+            </label>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,opacity:soundOn?1:0.45,pointerEvents:soundOn?'auto':'none'}}>
+              {ALERT_SOUND_OPTIONS.map(({id,label})=>(
+                <button key={id} type="button"
+                  onClick={()=>{
+                    applyPrefs({...prefs, soundId:id, soundEnabled:true})
+                    playAlertSound(id, soundVolume)
+                  }}
+                  style={{
+                    padding:'6px 8px',borderRadius:6,cursor:'pointer',textAlign:'left',
+                    border:`1px solid ${soundId===id?C.accent:C.border}`,
+                    background:soundId===id?C.accent+'22':'transparent',
+                    color:soundId===id?C.accent:C.muted,fontSize:10,fontWeight:700,
+                  }}>
+                  {soundId===id?'▶ ':''}{label}
+                </button>
+              ))}
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginTop:8,marginBottom:10,
+              opacity:soundOn?1:0.45,pointerEvents:soundOn?'auto':'none'}}>
+              <span style={{fontSize:9,color:C.muted,fontWeight:700,minWidth:42}}>Volume</span>
+              <input type="range" min={0} max={1} step={0.05} value={soundVolume}
+                onChange={e=>{
+                  const v=Number(e.target.value)
+                  applyPrefs({...prefs, soundVolume:v})
+                }}
+                onMouseUp={e=>playAlertSound(soundId, Number(e.target.value))}
+                onTouchEnd={e=>playAlertSound(soundId, Number(e.target.value))}
+                style={{flex:1,accentColor:C.accent}}/>
+              <button type="button" title="Preview sound"
+                onClick={()=>playAlertSound(soundId, soundVolume)}
+                style={{padding:'4px 8px',borderRadius:6,border:`1px solid ${C.border}`,
+                  background:'transparent',color:C.muted,fontSize:10,fontWeight:700,cursor:'pointer'}}>
+                Test
+              </button>
+            </div>
+
+            <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
+              letterSpacing:'0.05em',marginBottom:4,borderTop:`1px solid ${C.divider}`,paddingTop:10}}>Alert types</div>
             <div style={{fontSize:9,color:C.muted,marginBottom:8}}>
               {cloudSynced?'Saved to your account — follows you across devices.':'Sign in to sync these across devices.'}
             </div>
@@ -1378,13 +1454,20 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
             )})}
             <div style={{display:'flex',gap:6,marginTop:8}}>
               <button type="button"
-                onClick={()=>applyPrefs({...DEFAULT_ALERT_PREFS})}
+                onClick={()=>applyPrefs({
+                  ...prefs,
+                  ...Object.fromEntries(ALERT_PREF_OPTIONS.filter(o=>o.key!=='watchlistOnly').map(o=>[o.key,true])),
+                  watchlistOnly:false,
+                })}
                 style={{flex:1,padding:'5px 0',borderRadius:6,border:`1px solid ${C.border}`,
                   background:'transparent',color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
                 All on
               </button>
               <button type="button"
-                onClick={()=>applyPrefs(Object.fromEntries(ALERT_PREF_OPTIONS.map(o=>[o.key,false])))}
+                onClick={()=>applyPrefs({
+                  ...prefs,
+                  ...Object.fromEntries(ALERT_PREF_OPTIONS.map(o=>[o.key,false])),
+                })}
                 style={{flex:1,padding:'5px 0',borderRadius:6,border:`1px solid ${C.border}`,
                   background:'transparent',color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
                 All off
@@ -8666,27 +8749,82 @@ const WL_KEY='pocketrs_watchlists'
 function loadWatchlists(){try{return JSON.parse(localStorage.getItem(WL_KEY)||'[]')}catch{return[]}}
 function saveWatchlists(wls){localStorage.setItem(WL_KEY,JSON.stringify(wls))}
 
-// ── Watchlist announcement alert beep ────────────────────────────────
-// Two quick rising tones via Web Audio — no audio file needed, works
-// offline, and unlike an <audio> asset can't 404. Created lazily on
-// first use because AudioContext must start from a user gesture anyway
-// (the alerts toggle click counts as one).
+// ── Alert sounds (TradingView-style options via Web Audio) ───────────
+// No audio files — synthesized tones. AudioContext is created lazily;
+// a prefs click / Test button unlocks it for later background alerts.
 let _alertAudioCtx=null
-function playAnnouncementBeep(){
+function getAlertAudioCtx(){
+  _alertAudioCtx=_alertAudioCtx||new (window.AudioContext||window.webkitAudioContext)()
+  if(_alertAudioCtx.state==='suspended') _alertAudioCtx.resume()
+  return _alertAudioCtx
+}
+function _tone(ctx, {freq, type='sine', start=0, dur=0.25, peak=0.28, attack=0.02, detune=0}){
+  const osc=ctx.createOscillator(), gain=ctx.createGain()
+  osc.type=type
+  osc.frequency.value=freq
+  if(detune) osc.detune.value=detune
+  const t0=ctx.currentTime+start
+  gain.gain.setValueAtTime(0.0001, t0)
+  gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak), t0+attack)
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0+dur)
+  osc.connect(gain); gain.connect(ctx.destination)
+  osc.start(t0); osc.stop(t0+dur+0.02)
+}
+function playAlertSound(soundId='ping', volume=0.7){
   try{
-    _alertAudioCtx=_alertAudioCtx||new (window.AudioContext||window.webkitAudioContext)()
-    const ctx=_alertAudioCtx
-    if(ctx.state==='suspended')ctx.resume()
-    ;[[880,0],[1320,0.18]].forEach(([freq,delay])=>{
-      const osc=ctx.createOscillator(),gain=ctx.createGain()
-      osc.type='sine';osc.frequency.value=freq
-      gain.gain.setValueAtTime(0.0001,ctx.currentTime+delay)
-      gain.gain.exponentialRampToValueAtTime(0.28,ctx.currentTime+delay+0.02)
-      gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+delay+0.28)
-      osc.connect(gain);gain.connect(ctx.destination)
-      osc.start(ctx.currentTime+delay);osc.stop(ctx.currentTime+delay+0.3)
-    })
+    const ctx=getAlertAudioCtx()
+    const v=Math.min(1, Math.max(0, Number(volume)||0.7))
+    const id=ALERT_SOUND_OPTIONS.some(s=>s.id===soundId)?soundId:'ping'
+    if(id==='ping'){
+      _tone(ctx,{freq:880,start:0,dur:0.18,peak:0.22*v})
+      _tone(ctx,{freq:1320,start:0.14,dur:0.22,peak:0.26*v})
+    }else if(id==='beep'){
+      _tone(ctx,{freq:740,type:'square',dur:0.12,peak:0.12*v,attack:0.005})
+      _tone(ctx,{freq:740,type:'square',start:0.16,dur:0.12,peak:0.12*v,attack:0.005})
+    }else if(id==='bell'){
+      _tone(ctx,{freq:660,type:'sine',dur:0.9,peak:0.28*v,attack:0.01})
+      _tone(ctx,{freq:990,type:'sine',dur:0.7,peak:0.12*v,attack:0.01})
+      _tone(ctx,{freq:1320,type:'sine',dur:0.5,peak:0.08*v,attack:0.01})
+    }else if(id==='chime'){
+      ;[523.25,659.25,783.99,1046.5].forEach((f,i)=>_tone(ctx,{freq:f,start:i*0.12,dur:0.55,peak:(0.22-i*0.03)*v}))
+    }else if(id==='ding'){
+      _tone(ctx,{freq:1046.5,type:'triangle',dur:0.45,peak:0.3*v,attack:0.008})
+      _tone(ctx,{freq:1568,type:'sine',dur:0.35,peak:0.1*v,attack:0.008})
+    }else if(id==='note'){
+      _tone(ctx,{freq:392,type:'triangle',dur:0.35,peak:0.22*v})
+      _tone(ctx,{freq:523.25,type:'triangle',start:0.2,dur:0.45,peak:0.24*v})
+    }else if(id==='pop'){
+      _tone(ctx,{freq:220,type:'sine',dur:0.08,peak:0.35*v,attack:0.002})
+      _tone(ctx,{freq:440,type:'sine',start:0.02,dur:0.1,peak:0.18*v,attack:0.002})
+    }else if(id==='sonar'){
+      for(let i=0;i<3;i++){
+        _tone(ctx,{freq:480+i*40,type:'sine',start:i*0.35,dur:0.55,peak:0.2*v,attack:0.05})
+      }
+    }else if(id==='alarm'){
+      for(let i=0;i<4;i++){
+        _tone(ctx,{freq:i%2?880:1175,type:'square',start:i*0.18,dur:0.14,peak:0.1*v,attack:0.005})
+      }
+    }else if(id==='horn'){
+      _tone(ctx,{freq:196,type:'sawtooth',dur:0.55,peak:0.12*v,attack:0.04})
+      _tone(ctx,{freq:246.94,type:'sawtooth',dur:0.55,peak:0.1*v,attack:0.04,detune:8})
+    }else if(id==='glass'){
+      _tone(ctx,{freq:2093,type:'sine',dur:0.7,peak:0.18*v,attack:0.004})
+      _tone(ctx,{freq:3136,type:'sine',dur:0.5,peak:0.1*v,attack:0.004})
+      _tone(ctx,{freq:4186,type:'sine',dur:0.35,peak:0.06*v,attack:0.004})
+    }else if(id==='synth'){
+      _tone(ctx,{freq:330,type:'sawtooth',dur:0.2,peak:0.1*v,attack:0.01})
+      _tone(ctx,{freq:440,type:'sawtooth',start:0.12,dur:0.22,peak:0.12*v,attack:0.01})
+      _tone(ctx,{freq:554,type:'sawtooth',start:0.26,dur:0.35,peak:0.14*v,attack:0.01})
+    }
   }catch(e){/* audio blocked — notification still shows */}
+}
+/** @deprecated use playAlertSound — kept as alias for older call sites */
+function playAnnouncementBeep(){
+  playAlertSound('ping', 0.7)
+}
+function playAlertSoundFromPrefs(prefs){
+  if(!prefs || prefs.soundEnabled===false) return
+  playAlertSound(prefs.soundId||'ping', prefs.soundVolume)
 }
 
 
@@ -9395,6 +9533,7 @@ export default function App(){
           const prefs=alertPrefsRef.current
           const wlOnly=prefs.watchlistOnly===true
           const wlSyms=watchlistAlertSymsRef.current
+          let playedSound=false
           data.forEach(alert=>{
             if(typeof Notification==='undefined' || Notification.permission!=='granted') return
             if(!isAlertTypeEnabled(alert.fire_type, prefs)) return
@@ -9402,6 +9541,7 @@ export default function App(){
               const sym=String(alert.sym||'').toUpperCase()
               if(!sym || !wlSyms.has(sym)) return
             }
+            if(!playedSound){ playAlertSoundFromPrefs(prefs); playedSound=true }
             const ft=String(alert.fire_type||'')
             const goSqueeze=/Squeeze|VCP/i.test(ft)
             const goBreakout=/Stage\s*2|Guppy/i.test(ft)
@@ -9412,6 +9552,7 @@ export default function App(){
                 icon: '/favicon.ico',
                 tag: `alert-${alert.sym}-${alert.fire_type}`,
                 requireInteraction: false,
+                silent: prefs.soundEnabled!==false, // we play our own TV-style sound
               }
             )
             n.onclick = ()=>{
@@ -9458,12 +9599,14 @@ export default function App(){
           if(prefs.announcements===false) return
           const wlOnly=prefs.watchlistOnly===true
           const wlSyms=watchlistAlertSymsRef.current
+          let playedSound=false
           data.forEach(ann=>{
             if(typeof Notification==='undefined' || Notification.permission!=='granted') return
             if(wlOnly){
               const sym=String(ann.symbol||'').toUpperCase()
               if(!sym || !wlSyms.has(sym)) return
             }
+            if(!playedSound){ playAlertSoundFromPrefs(prefs); playedSound=true }
             const n = new Notification(
               `📢 ${ann.symbol} — New Announcement`,
               {
@@ -9471,6 +9614,7 @@ export default function App(){
                 icon: '/favicon.ico',
                 tag: `announcement-${ann.symbol}-${ann.id}`,
                 requireInteraction: false,
+                silent: prefs.soundEnabled!==false,
               }
             )
             n.onclick = ()=>{
@@ -9794,7 +9938,7 @@ export default function App(){
     setAnnAlertsOn(next)
     try{ localStorage.setItem('lm-ann-alerts',next?'on':'off') }catch(e){}
     if(next){
-      playAnnouncementBeep() // audible confirmation + unlocks AudioContext
+      playAlertSoundFromPrefs(alertPrefsRef.current) // confirmation + unlocks AudioContext
       if(typeof Notification!=='undefined'&&Notification.permission==='default')
         Notification.requestPermission()
     }
@@ -9812,12 +9956,14 @@ export default function App(){
       if(cancelled) return
       try{ localStorage.setItem('lm-ann-last-seen',new Date().toISOString()) }catch(e){}
       if(rows.length===0) return
-      playAnnouncementBeep()
+      const prefs=alertPrefsRef.current
+      playAlertSoundFromPrefs(prefs)
       if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
         rows.slice(0,3).forEach(a=>{
           try{
             new Notification(`📢 ${a.symbol}${a.ai_rating?` · ${a.ai_rating}`:''}`,
-              {body:(a.subject||a.category||'New announcement').slice(0,140),tag:`ann-${a.symbol}-${a.announced_at}`})
+              {body:(a.subject||a.category||'New announcement').slice(0,140),tag:`ann-${a.symbol}-${a.announced_at}`,
+                silent: prefs.soundEnabled!==false})
           }catch(e){}
         })
       }
