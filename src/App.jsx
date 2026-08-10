@@ -3907,7 +3907,7 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
   )
 }
 
-function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, detailFirst=false, onMoveTile, stackLayout=false, stackOrder=0}){
+function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, detailFirst=false, onMoveTile, stackLayout=false, chartStackOrder=2, detailStackOrder=4}){
   const [loaded, setLoaded] = useState(false)
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
   const sectionOrder=normalizeChartSectionOrder(chartSectionOrder)
@@ -3969,15 +3969,24 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
 
   const panelStyle = isMobile
     ? {position:'fixed',inset:0,zIndex:1000,display:'flex',flexDirection:'column',background:C.sidebar}
-    : stackLayout
-      ? {position:'relative',flex:expandCol?1:'1 1 50%',minHeight:200,alignSelf:'stretch',overflow:'hidden',
-          display:'flex',flexDirection:'column',background:C.sidebar,
-          borderTop:`1px solid ${C.divider}`,order:stackOrder??0}
-      : {position:'relative',flex:expandCol?1:(customPct!=null?`0 0 ${customPct}%`:(['0 0 35%','0 0 50%','0 0 75%'][wide]||'0 0 35%')),
+    : {position:'relative',flex:expandCol?1:(customPct!=null?`0 0 ${customPct}%`:(['0 0 35%','0 0 50%','0 0 75%'][wide]||'0 0 35%')),
         height:'100%',alignSelf:'stretch',overflow:'hidden',
         display:'flex',flexDirection:'column',background:C.sidebar,
-        borderLeft:`1px solid ${C.divider}`,transition:customPct!=null||expandCol?'none':'flex 0.2s ease',
-        order:stackOrder??0}
+        borderLeft:`1px solid ${C.divider}`,transition:customPct!=null||expandCol?'none':'flex 0.2s ease'}
+  // In stack mode, Chart and Details are independent flex siblings of the RS table
+  // (so Overview can sit directly under the RS rating table).
+  const stackTileStyle=(order, flexGrow)=>({
+    position:'relative',
+    flex: flexGrow,
+    minHeight: 180,
+    alignSelf:'stretch',
+    overflow:'hidden',
+    display:'flex',
+    flexDirection:'column',
+    background:C.sidebar,
+    borderTop:`1px solid ${C.divider}`,
+    order,
+  })
 
   const chartExpanded=wide>=1||(customPct!=null&&customPct>=45)
   const readingMode=['about','fundamentals','concall','ppt','resultsSummary'].includes(detailTab)
@@ -4145,7 +4154,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
     if(patch.open===false&&!winChart.open) onClose?.()
   }
 
-  const chartWin=(
+  const chartWin=(bundled)=>(
     chartDocked?(
       <PanelWindow
         key="chart-dock"
@@ -4160,10 +4169,11 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
         onMoveUp={onMoveTile?()=>onMoveTile('chart',-1):null}
         onMoveDown={onMoveTile?()=>onMoveTile('chart',1):null}
         dockStyle={{
-          flex:detailDocked?chartFlex:1,
+          flex: bundled && detailDocked ? chartFlex : 1,
           minHeight:readingMode?120:tableMode?140:160,
-          maxHeight:detailDocked?chartMaxH:undefined,
+          maxHeight: bundled && detailDocked ? chartMaxH : undefined,
           border:'none',borderRadius:0,background:C.sidebar,
+          height: bundled ? undefined : '100%',
         }}
         zIndex={40}
       >
@@ -4171,7 +4181,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
       </PanelWindow>
     ):null
   )
-  const detailWin=(
+  const detailWin=(bundled)=>(
     detailDocked?(
       <PanelWindow
         key="detail-dock"
@@ -4185,11 +4195,12 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
         onMoveUp={onMoveTile?()=>onMoveTile('detail',-1):null}
         onMoveDown={onMoveTile?()=>onMoveTile('detail',1):null}
         dockStyle={{
-          flex:chartDocked?belowFlex:1,
+          flex: bundled && chartDocked ? belowFlex : 1,
           minHeight:belowMin,
           border:'none',borderRadius:0,background:C.bg,
-          borderTop:(chartDocked&&!detailFirst)?`1px solid ${C.divider}`:'none',
-          borderBottom:(chartDocked&&detailFirst)?`1px solid ${C.divider}`:'none',
+          borderTop:(bundled&&chartDocked&&!detailFirst)?`1px solid ${C.divider}`:'none',
+          borderBottom:(bundled&&chartDocked&&detailFirst)?`1px solid ${C.divider}`:'none',
+          height: bundled ? undefined : '100%',
         }}
         zIndex={41}
       >
@@ -4200,9 +4211,23 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
 
   return(
     <>
-      {anyDocked&&(
+      {anyDocked&&stackLayout&&(
+        <>
+          {chartDocked&&(
+            <div style={stackTileStyle(chartStackOrder, '1 1 38%')}>
+              {chartWin(false)}
+            </div>
+          )}
+          {detailDocked&&(
+            <div style={stackTileStyle(detailStackOrder, '1 1 42%')}>
+              {detailWin(false)}
+            </div>
+          )}
+        </>
+      )}
+      {anyDocked&&!stackLayout&&(
         <div style={panelStyle}>
-          {detailFirst ? <>{detailWin}{chartWin}</> : <>{chartWin}{detailWin}</>}
+          {detailFirst ? <>{detailWin(true)}{chartWin(true)}</> : <>{chartWin(true)}{detailWin(true)}</>}
         </div>
       )}
       {winChart.open&&!winChart.minimized&&winChart.float&&(
@@ -9767,10 +9792,13 @@ export default function App(){
     persistDockLayout(normalized)
   }
   const moveTile=(id,dir)=>{
-    applyDockLayout({...dockLayout, order: moveDockTile(dockLayout.order, id, dir)})
+    // Reordering only has effect in stack mode — switch automatically.
+    applyDockLayout({
+      mode:'stack',
+      order: moveDockTile(dockLayout.order, id, dir),
+    })
   }
   const detailFirst=dockLayout.order.indexOf('detail') < dockLayout.order.indexOf('chart')
-  const screenerBeforeChart=dockLayout.order.indexOf('screener') <= dockLayout.order.indexOf('chart')
   const dockStack=dockLayout.mode==='stack'
   const prevChartSymRef=useRef(null)
   useEffect(()=>{
@@ -11393,22 +11421,48 @@ export default function App(){
                         ))}
                         <div style={{display:'flex',flexDirection:'column',gap:4,marginTop:10}}>
                           <button type="button"
-                            onClick={()=>{applyDockLayout({mode:'stack',order:['chart','screener','detail']});setDockLayoutMenuOpen(false)}}
+                            onClick={()=>{
+                              applyDockLayout({mode:'stack',order:['chart','screener','detail']})
+                              setDockLayoutMenuOpen(false)
+                            }}
                             style={{padding:'6px 8px',borderRadius:6,border:`1px solid ${C.border}`,textAlign:'left',
                               background:'transparent',color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
-                            Preset: Chart → RS table
+                            Preset: Chart → RS table → Overview
                           </button>
                           <button type="button"
-                            onClick={()=>{applyDockLayout({mode:'stack',order:['screener','detail','chart']});setDockLayoutMenuOpen(false)}}
+                            onClick={()=>{
+                              applyDockLayout({mode:'stack',order:['screener','detail','chart']})
+                              // Park chart so Overview sits directly under the RS table
+                              patchPanel('chart',{minimized:true,open:true})
+                              patchPanel('detail',{open:true,minimized:false,float:null})
+                              patchPanel('screener',{open:true,minimized:false,float:null})
+                              setDockLayoutMenuOpen(false)
+                            }}
                             style={{padding:'6px 8px',borderRadius:6,border:`1px solid ${C.border}`,textAlign:'left',
                               background:'transparent',color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
-                            Preset: RS table → Overview
+                            Preset: RS table → Overview (below)
                           </button>
                           <button type="button"
-                            onClick={()=>{applyDockLayout({...DEFAULT_DOCK_LAYOUT,order:[...DEFAULT_DOCK_LAYOUT.order]});setDockLayoutMenuOpen(false)}}
+                            onClick={()=>{
+                              applyDockLayout({mode:'stack',order:['screener','chart','detail']})
+                              patchPanel('chart',{open:true,minimized:false,float:null})
+                              patchPanel('detail',{open:true,minimized:false,float:null})
+                              setDockLayoutMenuOpen(false)
+                            }}
                             style={{padding:'6px 8px',borderRadius:6,border:`1px solid ${C.border}`,textAlign:'left',
                               background:'transparent',color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
-                            Reset: RS | Chart+Overview
+                            Preset: RS → Chart → Overview
+                          </button>
+                          <button type="button"
+                            onClick={()=>{
+                              applyDockLayout({...DEFAULT_DOCK_LAYOUT,order:[...DEFAULT_DOCK_LAYOUT.order]})
+                              patchPanel('chart',{open:true,minimized:false})
+                              patchPanel('detail',{open:true,minimized:false})
+                              setDockLayoutMenuOpen(false)
+                            }}
+                            style={{padding:'6px 8px',borderRadius:6,border:`1px solid ${C.border}`,textAlign:'left',
+                              background:'transparent',color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
+                            Reset: RS | Chart+Overview (side)
                           </button>
                         </div>
                       </div>
@@ -15231,7 +15285,8 @@ export default function App(){
         detailFirst={detailFirst}
         onMoveTile={!isMobile?moveTile:null}
         stackLayout={!isMobile&&dockStack}
-        stackOrder={Math.min(dockLayout.order.indexOf('chart'), dockLayout.order.indexOf('detail')) * 2}
+        chartStackOrder={dockLayout.order.indexOf('chart') * 2}
+        detailStackOrder={dockLayout.order.indexOf('detail') * 2}
       />
       </div>{/* end innerRow: screener | chart */}
       </div>{/* end main column under sidebar */}
