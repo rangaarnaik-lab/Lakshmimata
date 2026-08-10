@@ -14672,8 +14672,8 @@ export default function App(){
             {(()=>{
               const counts=aiCatchup?.counts||{results:0,ppt:0,concall:0,total:0}
               const rows=(aiCatchup&&aiCatchup[aiCatchupTab])||[]
-              const statusLabel={queued:'Waiting',pending:'In progress',failed:'Failed',skipped:'Skipped'}
-              const statusColor={queued:C.yellow,pending:C.accent,failed:C.red,skipped:C.muted}
+              const statusLabel={queued:'Waiting',pending:'In progress',failed:'Failed'}
+              const statusColor={queued:C.yellow,pending:C.accent,failed:C.red}
               return (
                 <div style={{marginBottom:14,border:`1px solid ${C.border}`,borderRadius:10,background:C.card,overflow:'hidden'}}>
                   <button type="button" onClick={()=>setAiCatchupOpen(v=>!v)}
@@ -14693,7 +14693,7 @@ export default function App(){
                     <div style={{padding:'0 12px 12px'}}>
                       <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,flexWrap:'wrap'}}>
                         <div style={{fontSize:10,color:C.muted,flex:1,minWidth:180}}>
-                          Recent filings with a PDF that the worker has not summarized yet (last {aiCatchup?.days||45} days). Tap a row to open the AI tab.
+                          Still waiting on AI (last {aiCatchup?.days||45} days). Skipped/already-loaded Results are hidden. Tap a row to open the AI tab.
                         </div>
                         <button type="button" onClick={loadAiCatchup} disabled={aiCatchupLoading}
                           style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.border}`,

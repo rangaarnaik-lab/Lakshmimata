@@ -1842,7 +1842,11 @@ export async function fetchIndexSymbols(indexFilter) {
 /**
  * Filings that still need an AI summary (Results PDF / PPT / Concall transcript).
  * Compares recent corporate_announcements (with PDF links) against summary
- * tables — rows with no summary yet, or status pending/failed/skipped.
+ * tables — only rows with no summary yet, or status pending/failed.
+ *
+ * Excludes status=skipped (worker already decided no usable content) and
+ * Results symbols that already have a done AI summary or financial_results
+ * numbers in the lookback window — those look "populated" in the UI.
  */
 export async function fetchMissedAiFilings({ days = 45, limitPerType = 80 } = {}) {
   const since = new Date(Date.now() - days * 86400000).toISOString()
@@ -1853,7 +1857,7 @@ export async function fetchMissedAiFilings({ days = 45, limitPerType = 80 } = {}
       table: 'concall_summaries',
       detailTab: 'resultsSummary',
       keywords: ['financial result', 'quarterly result', 'results for the quarter', 'unaudited results', 'audited results'],
-      exclude: ['newspaper publication', 'newspaper advertisement', 'transcript', 'press release', 'investor presentation', 'clarification'],
+      exclude: ['newspaper publication', 'newspaper advertisement', 'transcript', 'press release', 'investor presentation', 'clarification', 'corrigendum'],
     },
     {
       key: 'ppt',
@@ -1906,33 +1910,59 @@ export async function fetchMissedAiFilings({ days = 45, limitPerType = 80 } = {}
       .limit(2000)
     if (error) {
       console.error(`fetchMissedAiFilings ${table}:`, error.message)
-      return new Map()
+      return { byUrl: new Map(), doneSymbols: new Set() }
     }
-    const map = new Map()
+    const byUrl = new Map()
+    const doneSymbols = new Set()
     for (const row of data || []) {
-      if (!row.attachment_url) continue
-      map.set(row.attachment_url, row)
+      if (row.attachment_url) byUrl.set(row.attachment_url, row)
+      if (row.status === 'done' && row.symbol) doneSymbols.add(row.symbol)
     }
-    return map
+    return { byUrl, doneSymbols }
+  }
+
+  const fetchSymbolsWithResultsNumbers = async () => {
+    const { data, error } = await supabase
+      .from('financial_results')
+      .select('symbol,filed_at')
+      .gte('filed_at', since)
+      .limit(3000)
+    if (error) {
+      console.error('fetchMissedAiFilings financial_results:', error.message)
+      return new Set()
+    }
+    return new Set((data || []).map(r => r.symbol).filter(Boolean))
   }
 
   const out = { days, results: [], ppt: [], concall: [], counts: { results: 0, ppt: 0, concall: 0, total: 0 } }
 
-  await Promise.all(types.map(async (type) => {
-    const [cands, processed] = await Promise.all([
-      fetchCandidates(type),
-      fetchProcessed(type.table),
-    ])
+  const [typeResults, symbolsWithNumbers] = await Promise.all([
+    Promise.all(types.map(async (type) => {
+      const [cands, processed] = await Promise.all([
+        fetchCandidates(type),
+        fetchProcessed(type.table),
+      ])
+      return { type, cands, processed }
+    })),
+    fetchSymbolsWithResultsNumbers(),
+  ])
+
+  for (const { type, cands, processed } of typeResults) {
     const missed = []
     const seenUrl = new Set()
     for (const ann of cands) {
       const url = ann.attachment_url
       if (!url || seenUrl.has(url)) continue
       seenUrl.add(url)
-      const row = processed.get(url)
+      const row = processed.byUrl.get(url)
       const status = row?.status || null
-      // Fully summarized — skip
-      if (status === 'done') continue
+      // Already handled — don't list as catch-up
+      if (status === 'done' || status === 'skipped') continue
+      // Results: another filing for this symbol already has AI summary or numbers
+      if (type.key === 'results') {
+        if (processed.doneSymbols.has(ann.symbol)) continue
+        if (symbolsWithNumbers.has(ann.symbol)) continue
+      }
       missed.push({
         symbol: ann.symbol,
         subject: ann.subject,
@@ -1949,7 +1979,7 @@ export async function fetchMissedAiFilings({ days = 45, limitPerType = 80 } = {}
     }
     out[type.key] = missed
     out.counts[type.key] = missed.length
-  }))
+  }
 
   out.counts.total = out.counts.results + out.counts.ppt + out.counts.concall
   return out
