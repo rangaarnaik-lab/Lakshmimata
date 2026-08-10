@@ -14693,7 +14693,7 @@ export default function App(){
                     <div style={{padding:'0 12px 12px'}}>
                       <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,flexWrap:'wrap'}}>
                         <div style={{fontSize:10,color:C.muted,flex:1,minWidth:180}}>
-                          Still waiting on AI (last {aiCatchup?.days||45} days). Skipped/already-loaded Results are hidden. Tap a row to open the AI tab.
+                          Filings with no AI summary yet, or pending/failed (last {aiCatchup?.days||45} days). Done and skipped are excluded. Tap a row to open the AI tab.
                         </div>
                         <button type="button" onClick={loadAiCatchup} disabled={aiCatchupLoading}
                           style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.border}`,
