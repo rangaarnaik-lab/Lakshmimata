@@ -276,18 +276,43 @@ function useDragScroll(){
   const ref = useRef(null)
   const stateRef = useRef(null)
   const lastMovedRef = useRef(false)
+  const [dragging, setDragging] = useState(false)
   const onMouseDown = (e) => {
-    if (!ref.current) return
+    if (!ref.current || e.button !== 0) return
+    // Don't steal text selection / native controls
+    if (e.target.closest('button,a,input,select,textarea,label')) return
     stateRef.current = { startX: e.clientX, startScroll: ref.current.scrollLeft, moved: false }
+    setDragging(true)
+    const onMove = (ev) => {
+      const st = stateRef.current
+      if (!st || !ref.current) return
+      const delta = ev.clientX - st.startX
+      if (Math.abs(delta) > 3) st.moved = true
+      ref.current.scrollLeft = st.startScroll - delta
+    }
+    const onUp = () => {
+      lastMovedRef.current = stateRef.current?.moved || false
+      stateRef.current = null
+      setDragging(false)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
   }
-  const onMouseMove = (e) => {
+  const onTouchStart = (e) => {
+    if (!ref.current || e.touches.length !== 1) return
+    const t = e.touches[0]
+    stateRef.current = { startX: t.clientX, startScroll: ref.current.scrollLeft, moved: false }
+  }
+  const onTouchMove = (e) => {
     const st = stateRef.current
-    if (!st || !ref.current) return
-    const delta = e.clientX - st.startX
+    if (!st || !ref.current || e.touches.length !== 1) return
+    const delta = e.touches[0].clientX - st.startX
     if (Math.abs(delta) > 3) st.moved = true
     ref.current.scrollLeft = st.startScroll - delta
   }
-  const endDrag = () => {
+  const onTouchEnd = () => {
     lastMovedRef.current = stateRef.current?.moved || false
     stateRef.current = null
   }
@@ -299,8 +324,14 @@ function useDragScroll(){
   }
   return {
     ref,
-    style: { cursor: 'grab' },
-    handlers: { onMouseDown, onMouseMove, onMouseUp: endDrag, onMouseLeave: endDrag, onClickCapture },
+    style: {
+      cursor: dragging ? 'grabbing' : 'grab',
+      userSelect: dragging ? 'none' : undefined,
+      WebkitOverflowScrolling: 'touch',
+      overflowX: 'auto',
+      overflowY: 'hidden',
+    },
+    handlers: { onMouseDown, onTouchStart, onTouchMove, onTouchEnd, onClickCapture },
   }
 }
 
@@ -1275,7 +1306,10 @@ function alertNotificationTitle(alert){
 
 function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestPermission, colors:C, cloudSynced}){
   const [open,setOpen]=useState(false)
-  const enabledCount=ALERT_PREF_OPTIONS.filter(o=>prefs[o.key]!==false).length
+  const enabledCount=ALERT_PREF_OPTIONS.filter(o=>{
+    if(o.key==='watchlistOnly') return prefs.watchlistOnly===true
+    return prefs[o.key]!==false
+  }).length
   const applyPrefs=next=>{
     setPrefs(next)
     onPersist?.(next)
@@ -5770,6 +5804,18 @@ function computeRsGridCols(vis, colOrder=RS_OPTIONAL_COL_ORDER_DEFAULT){
   return cols.join(' ')
 }
 
+/** Pixel min-width so the RS grid scrolls horizontally instead of squashing columns. */
+function computeRsGridMinWidth(vis, colOrder=RS_OPTIONAL_COL_ORDER_DEFAULT){
+  const tracks=computeRsGridCols(vis, colOrder).split(/\s+/).filter(Boolean)
+  let w=0
+  for(const t of tracks){
+    const n=parseInt(t,10)
+    if(Number.isFinite(n)) w+=n
+  }
+  // column gaps (10px) + horizontal padding (~28px)
+  return w + Math.max(0, tracks.length-1)*10 + 28
+}
+
 function RsOptionalColHeader({colKey, sortBy, sortDir, handleSort, vis}){
   if(!isRsOptionalColVisible(colKey, vis)) return null
   if(colKey==='trend'){
@@ -6121,9 +6167,10 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=25,de
       {isMobile?(
         paged.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={onChartOpen}/>)
       ):(
-        <div style={{overflowX:'auto'}}>
-        <div style={{minWidth:900}}>
+        <div style={{overflowX:'auto',maxWidth:'100%',WebkitOverflowScrolling:'touch',scrollbarWidth:'thin',cursor:'grab'}}>
+        <div style={{minWidth:computeRsGridMinWidth(visibleRsCols, colOrder)}}>
           <div style={{display:'grid',gridTemplateColumns:computeRsGridCols(visibleRsCols, colOrder),
+            minWidth:computeRsGridMinWidth(visibleRsCols, colOrder),
             padding:'7px 10px',borderBottom:`1px solid ${C.border}`,gap:10,
             fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
             <RsTableHeaderRow visibleRsCols={visibleRsCols} colOrder={colOrder}
@@ -6813,10 +6860,11 @@ function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder}){
   const vis=visibleRsCols||layout.visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true,resultRating:true}
   const order=normalizeRsColOrder(rsColOrder||layout.colOrder)
   const COLS=computeRsGridCols(vis, order)
+  const minW=computeRsGridMinWidth(vis, order)
   return(
-    <div style={{borderBottom:`1px solid ${C.border}22`}}>
+    <div style={{borderBottom:`1px solid ${C.border}22`,minWidth:minW}}>
       <div onClick={()=>onChart&&onChart(s.sym)}
-        style={{display:'grid',gridTemplateColumns:COLS,
+        style={{display:'grid',gridTemplateColumns:COLS,minWidth:minW,width:'100%',
           padding:'5px 12px',alignItems:'center',cursor:'pointer',gap:10,
           borderBottom:`1px solid ${C.divider}`,
           background:open?C.active:'transparent'}}
@@ -11234,16 +11282,18 @@ export default function App(){
             {displayedRS.length>0&&(
               isMobile?pagedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={setChartSym}/>):(
                 <>
-                {chartSym&&(
-                  <div style={{fontSize:10,color:C.accent,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
-                    ↔ Table can scroll — drag left/right (or use the scrollbar below) to see all columns while the chart is open
-                  </div>
-                )}
+                <div style={{fontSize:10,color:C.muted,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
+                  ↔ Drag the table left/right (or use the scrollbar) to see all columns
+                </div>
                 <div ref={rsTableDrag.ref} {...rsTableDrag.handlers}
-                  style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflowX:'auto',...rsTableDrag.style}}>
-                  <div style={{display:'grid',gridTemplateColumns:computeRsGridCols(visibleRsCols, rsColOrder),
+                  style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,
+                    maxWidth:'100%',scrollbarWidth:'thin',...rsTableDrag.style}}>
+                  <div style={{display:'grid',
+                    gridTemplateColumns:computeRsGridCols(visibleRsCols, rsColOrder),
+                    minWidth:computeRsGridMinWidth(visibleRsCols, rsColOrder),
                     padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:10,
-                    fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
+                    fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em',
+                    position:'sticky',top:0,zIndex:2,background:C.card}}>
                     <RsTableHeaderRow visibleRsCols={visibleRsCols} colOrder={rsColOrder}
                       sortBy={sortBy} sortDir={sortDir} handleSort={handleSort}/>
                     </div>
