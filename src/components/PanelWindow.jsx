@@ -265,40 +265,123 @@ export function ScreenerFrame({
   )
 }
 
-/** Bottom taskbar chips for minimized / closed-restorable panels */
+const TASKBAR_POS_KEY = 'lakshmimata-taskbar-chip-pos'
+
+function loadTaskbarChipPos() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(TASKBAR_POS_KEY) || '{}')
+    return raw && typeof raw === 'object' ? raw : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveTaskbarChipPos(map) {
+  try {
+    localStorage.setItem(TASKBAR_POS_KEY, JSON.stringify(map))
+  } catch { /* ignore */ }
+}
+
+function defaultChipPos(index) {
+  const w = typeof window !== 'undefined' ? window.innerWidth : 1200
+  const h = typeof window !== 'undefined' ? window.innerHeight : 800
+  // Stack from bottom-left, offset so chips don't overlap.
+  return {
+    x: Math.min(w - 160, 68 + (index % 4) * 150),
+    y: Math.max(48, h - 52 - Math.floor(index / 4) * 40),
+  }
+}
+
+/** Movable chips for minimized / closed-restorable panels (drag to reposition, click to restore). */
 export function PanelTaskbar({ items, colors: C }) {
+  const [posMap, setPosMap] = useState(loadTaskbarChipPos)
+  const dragRef = useRef(null)
+
+  useEffect(() => () => {
+    if (dragRef.current) {
+      window.removeEventListener('mousemove', dragRef.current.onMove)
+      window.removeEventListener('mouseup', dragRef.current.onUp)
+    }
+  }, [])
+
   if (!items?.length) return null
+
+  const startChipDrag = (e, id, index) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startY = e.clientY
+    const cur = posMap[id] || defaultChipPos(index)
+    let moved = false
+    const onMove = (ev) => {
+      const dx = ev.clientX - startX
+      const dy = ev.clientY - startY
+      if (!moved && Math.hypot(dx, dy) < 5) return
+      moved = true
+      const next = {
+        x: Math.max(8, Math.min(window.innerWidth - 80, cur.x + dx)),
+        y: Math.max(8, Math.min(window.innerHeight - 36, cur.y + dy)),
+      }
+      setPosMap((prev) => {
+        const map = { ...prev, [id]: next }
+        saveTaskbarChipPos(map)
+        return map
+      })
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      dragRef.current = null
+      // Click without drag → restore panel
+      if (!moved) items.find((it) => it.id === id)?.onRestore?.()
+    }
+    dragRef.current = { onMove, onUp }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
   return (
-    <div style={{
-      position: 'fixed', left: 60, right: 12, bottom: 10, zIndex: 90,
-      display: 'flex', gap: 8, flexWrap: 'wrap', pointerEvents: 'none',
-    }}>
-      {items.map((it) => (
-        <button
-          key={it.id}
-          type="button"
-          onClick={it.onRestore}
-          title={it.title}
-          style={{
-            pointerEvents: 'auto',
-            padding: '6px 12px',
-            borderRadius: 8,
-            border: `1px solid ${C.border}`,
-            background: C.card,
-            color: C.text,
-            fontSize: 11,
-            fontWeight: 700,
-            cursor: 'pointer',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
-            maxWidth: 220,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {it.minimized ? '▢ ' : ''}{it.title}
-        </button>
-      ))}
-    </div>
+    <>
+      {items.map((it, index) => {
+        const pos = posMap[it.id] || defaultChipPos(index)
+        return (
+          <button
+            key={it.id}
+            type="button"
+            onMouseDown={(e) => startChipDrag(e, it.id, index)}
+            title={`${it.title} — drag to move, click to restore`}
+            style={{
+              position: 'fixed',
+              left: pos.x,
+              top: pos.y,
+              zIndex: 90,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '7px 12px',
+              borderRadius: 8,
+              border: `1px solid ${C.border}`,
+              background: C.card,
+              color: C.text,
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: 'grab',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+              maxWidth: 240,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              userSelect: 'none',
+            }}
+          >
+            <span style={{ fontSize: 10, color: C.muted, letterSpacing: 0.4 }}>⋮⋮</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {it.minimized ? '▢ ' : ''}{it.title}
+            </span>
+          </button>
+        )
+      })}
+    </>
   )
 }
