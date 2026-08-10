@@ -10898,13 +10898,31 @@ export default function App(){
   // so the app doesn't start on an empty panel. Only fires once per
   // session (autoOpenedRef) — later refreshes shouldn't yank the chart
   // open again if the person already closed it or picked a different stock.
+  // Skip when landing on Market — Chart/About are optional there.
   useEffect(()=>{
-    if(!autoOpenedRef.current && stocks.length>0 && !chartSym){
+    if(!autoOpenedRef.current && stocks.length>0 && !chartSym && mainTab!=='market'){
       autoOpenedRef.current = true
       const top = [...stocks].sort((a,b)=>(b.rsTv??b.rs??0)-(a.rsTv??a.rs??0))[0]
       if(top) setChartSym(top.sym)
     }
-  },[stocks,chartSym])
+  },[stocks,chartSym,mainTab])
+
+  // Market page is tables-first: Chart + About Company are not required.
+  // Entering Market minimizes them so Overview/Indices get full width;
+  // tap a stock/index (or taskbar) to bring Chart/About back.
+  const prevMainTabForPanelsRef=useRef(mainTab)
+  useEffect(()=>{
+    const prev=prevMainTabForPanelsRef.current
+    prevMainTabForPanelsRef.current=mainTab
+    if(isMobile) return
+    if(mainTab==='market' && prev!=='market'){
+      setPanelWins(w=>({
+        ...w,
+        chart:{...w.chart, minimized:true},
+        detail:{...w.detail, minimized:true},
+      }))
+    }
+  },[mainTab,isMobile])
 
   // Load from DB on mount, whenever the selected history date changes,
   // and whenever the scope dropdown (index / watchlist) changes — the
