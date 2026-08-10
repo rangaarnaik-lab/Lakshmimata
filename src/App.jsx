@@ -2977,6 +2977,78 @@ function fundLabelColor(label){
   return C.muted
 }
 
+/** Mirror of live_scan.compute_fundamental_score — client fallback when
+ *  stocks.fundamental_score is null but ratios are already on the row. */
+function computeFundamentalScore(row){
+  if(!row) return null
+  const n = (a,b)=>{ const v=row[a]??row[b]; return typeof v==='number'&&!Number.isNaN(v)?v:null }
+  const t = (a,b)=>{ const v=row[a]??row[b]; return typeof v==='string'?v:null }
+  let score = 0
+  const roe = n('roe','roe')
+  if(roe!=null){
+    if(roe>=20) score += 20
+    else if(roe>=15) score += 15
+    else if(roe>=10) score += 8
+    else if(roe<0) score -= 15
+  }
+  const epsQoq = n('epsQoq','eps_qoq'), epsYoy = n('epsYoy','eps_yoy')
+  if(epsQoq!=null && epsYoy!=null){
+    if(epsQoq>0 && epsYoy>0) score += 18
+    else if(epsYoy>0) score += 8
+    else if(epsYoy<-10) score -= 12
+  }
+  const salesQoq = n('salesQoq','sales_qoq'), salesYoy = n('salesYoy','sales_yoy')
+  if(salesQoq!=null && salesYoy!=null){
+    if(salesQoq>0 && salesYoy>0) score += 14
+    else if(salesYoy>0) score += 6
+    else if(salesYoy<-10) score -= 10
+  }
+  const debtEq = n('debtEq','debt_eq')
+  if(debtEq!=null){
+    if(debtEq<0.3) score += 12
+    else if(debtEq<1) score += 6
+    else if(debtEq>2) score -= 15
+    else if(debtEq>1.5) score -= 8
+  }
+  const opmTrend = t('opmTrend','opm_trend')
+  if(opmTrend==='increasing') score += 10
+  else if(opmTrend==='decreasing') score -= 8
+  const promoterTrend = t('promoterTrend','promoter_trend')
+  if(promoterTrend==='increasing') score += 8
+  else if(promoterTrend==='decreasing') score -= 12
+  if(t('fiiTrend','fii_trend')==='increasing' || t('diiTrend','dii_trend')==='increasing') score += 6
+  const peg = n('pegRatio','peg_ratio')
+  if(peg!=null){
+    if(peg>0 && peg<=1) score += 8
+    else if(peg>3) score -= 6
+  }
+  const streak = n('epsGrowthStreak','eps_growth_streak')
+  if(streak!=null && streak>=3) score += 4
+  // Need at least one real input — don't invent Fair·50 from an empty row
+  const hasSignal = [roe,epsYoy,salesYoy,debtEq,opmTrend,promoterTrend,peg].some(v=>v!=null)
+  if(!hasSignal) return null
+  return Math.round(Math.max(0, Math.min(100, score + 50)) * 10) / 10
+}
+
+function fundamentalScoreLabel(score){
+  if(score==null) return null
+  if(score>=75) return 'Excellent'
+  if(score>=58) return 'Good'
+  if(score>=40) return 'Fair'
+  return 'Poor'
+}
+
+/** Prefer stored scan score; else compute instantly from ratios on hand. */
+function ensureFundamentalQuality(row){
+  if(!row) return {score:null, label:null}
+  let score = row.fundamentalScore ?? row.fundamental_score
+  if(typeof score!=='number' || Number.isNaN(score)) score = computeFundamentalScore(row)
+  let label = row.fundamentalLabel || row.fundamental_label || null
+  if(score!=null && !label) label = fundamentalScoreLabel(score)
+  if(score==null) label = null
+  return {score, label}
+}
+
 function buildFundamentalMetricCards(s){
   // Shared metric definitions for Fundamentals tab + expand panel.
   const cards = [
@@ -3496,7 +3568,7 @@ function FundamentalsPanel({symbol, stocks}){
   const importantSet = new Set(importantCards.map(c=>c.key))
   const restCards = allCards.filter(c=>!importantSet.has(c.key))
   const highlights = normalizeBullets(fundRow?.ai_highlights)
-  const label = s.fundamentalLabel
+  const {score: fundScore, label} = ensureFundamentalQuality(s)
   const labelCol = fundLabelColor(label)
   const updated = fundRow?.ai_highlights_at || fundRow?.fetched_at
   const updatedLabel = updated
@@ -3519,7 +3591,7 @@ function FundamentalsPanel({symbol, stocks}){
               <span title="Overall fundamental quality (ROE, growth, debt, margins, ownership) — not the same as Excellent/Good Result (latest quarter only)."
                 style={{fontSize:10,fontWeight:800,color:labelCol,background:labelCol+'22',
                   border:`1px solid ${labelCol}55`,borderRadius:999,padding:'3px 9px',cursor:'help'}}>
-                {label}{s.fundamentalScore!=null?` · ${Math.round(s.fundamentalScore)}`:''}
+                {label}{fundScore!=null?` · ${Math.round(fundScore)}`:''}
               </span>
             )}
             {updatedLabel&&(
@@ -3728,6 +3800,10 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
     concall: undefined, ppt: undefined, about: undefined,
     fundamentals: undefined, resultsSummary: undefined,
   })
+  const [quickResultRating, setQuickResultRating] = useState(null)
+  const scanRow = stocks?.find(x=>x.sym===sym) || null
+  const fundQ = ensureFundamentalQuality(scanRow)
+
   useEffect(() => {
     let cancelled = false
     // Only reset locally when uncontrolled — controlled parent sets tab on navigate.
@@ -3736,6 +3812,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
       concall: undefined, ppt: undefined, about: undefined,
       fundamentals: undefined, resultsSummary: undefined,
     })
+    setQuickResultRating(null)
     if (!sym) return
     Promise.all([
       fetchTranscriptSummaries(sym),
@@ -3743,33 +3820,69 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
       fetchCompanyAbout(sym),
       fetchStockFundamentals(sym),
       fetchConcallSummaries(sym),
-    ]).then(([t, p, about, fund, rs]) => {
+      fetchFinancialResultsHistory(sym),
+    ]).then(([t, p, about, fund, rs, hist]) => {
       if (cancelled) return
       const fundReady = !!(fund && (
         fund.ai_highlights?.length
         || fund.pe != null || fund.roe != null || fund.pb != null || fund.cfo != null
-        || fund.fundamental_label
-      ))
+      )) || !!(scanRow && (scanRow.pe!=null || scanRow.roe!=null || fundQ.label))
       setFlags({
         concall: {count: t?.length || 0, latestAt: t?.[0]?.announced_at || null},
         ppt: {count: p?.length || 0, latestAt: p?.[0]?.announced_at || null},
         about: about ? {count: 1, latestAt: about.source_announced_at || about.updated_at || null} : {count: 0, latestAt: null},
         fundamentals: fundReady
-          ? {count: 1, latestAt: fund.ai_highlights_at || fund.fetched_at || null}
+          ? {count: 1, latestAt: fund?.ai_highlights_at || fund?.fetched_at || null}
           : {count: 0, latestAt: null},
         resultsSummary: {count: rs?.length || 0, latestAt: rs?.[0]?.announced_at || null},
       })
+      setQuickResultRating(computeResultRating(hist) || null)
     })
     return () => { cancelled = true }
-  }, [sym])
+  }, [sym]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fmtFlagDate = (iso) => {
     if (!iso) return null
     return new Date(iso).toLocaleDateString('en-IN', {day: 'numeric', month: 'short'})
   }
 
+  const resultCol = resultRatingColor(quickResultRating)
+
   return (
     <div style={scrollable?{display:'flex',flexDirection:'column',flex:1,minHeight:0,height:'100%'}:undefined}>
+      {/* Always-visible quality strip — Fund score + latest Result rating */}
+      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',
+        marginBottom:8,flexShrink:0}}>
+        {fundQ.label?(
+          <button type="button" onClick={()=>changeTab('fundamentals')}
+            title="Overall fundamental quality — open Fundamentals"
+            style={{fontSize:11,fontWeight:800,color:fundLabelColor(fundQ.label),
+              background:fundLabelColor(fundQ.label)+'22',
+              border:`1px solid ${fundLabelColor(fundQ.label)}55`,borderRadius:999,
+              padding:'4px 10px',cursor:'pointer'}}>
+            Fund {fundQ.label}{fundQ.score!=null?` · ${Math.round(fundQ.score)}`:''}
+          </button>
+        ):(
+          <span style={{fontSize:10,fontWeight:700,color:C.muted,
+            border:`1px dashed ${C.border}`,borderRadius:999,padding:'4px 10px'}}>
+            Fund —
+          </span>
+        )}
+        {quickResultRating?(
+          <button type="button" onClick={()=>changeTab('results')}
+            title="Latest-quarter Result quality — open Results"
+            style={{fontSize:11,fontWeight:800,color:resultCol,
+              background:resultCol+'22',border:`1px solid ${resultCol}55`,
+              borderRadius:999,padding:'4px 10px',cursor:'pointer'}}>
+            {resultRatingShort(quickResultRating)} Result
+          </button>
+        ):(
+          <span style={{fontSize:10,fontWeight:700,color:C.muted,
+            border:`1px dashed ${C.border}`,borderRadius:999,padding:'4px 10px'}}>
+            Result —
+          </span>
+        )}
+      </div>
       <div style={{display:'flex',alignItems:'flex-end',gap:8,marginBottom:10,
         borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
         <div style={{display:'flex',gap:4,overflowX:'auto',flex:1,minWidth:0,
@@ -7328,14 +7441,12 @@ function RsOptionalColCell({colKey, s, vis}){
     )
   }
   if(colKey==='fundRating'){
+    const fq=ensureFundamentalQuality(s)
     return (
       <div title="Fundamental quality rating from ROE, EPS/Sales growth, debt levels, margin trend, and promoter/FII/DII activity. This is a QUALITY assessment, not a price target — it says nothing about whether the current price is cheap or expensive." style={{textAlign:'right',fontSize:10,cursor:'help'}}>
-        {s.fundamentalLabel?(
-          <span style={{fontWeight:700,color:
-            s.fundamentalLabel==='Excellent'?C.green:
-            s.fundamentalLabel==='Good'?'#7dd3a8':
-            s.fundamentalLabel==='Fair'?C.yellow:C.red}}>
-            {s.fundamentalLabel}
+        {fq.label?(
+          <span style={{fontWeight:700,color:fundLabelColor(fq.label)}}>
+            {fq.label}
           </span>
         ):<span style={{color:C.muted}}>—</span>}
       </div>

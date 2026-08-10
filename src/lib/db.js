@@ -1140,30 +1140,30 @@ export async function fetchStockFundamentals(symbol) {
   // Full fundamentals snapshot for the Fundamentals tab — includes AI
   // takeaways (ai_highlights / ai_key_metrics) that may not be on the
   // live scan CDN payload yet.
+  // Note: fundamental_score / fundamental_label live on `stocks` (scan),
+  // not stock_fundamentals — never select them here (PGRST204).
   if (!symbol) return null
+  const core = 'sym,market_cap,pe,pb,roe,roce,eps,debt_eq,promoter,peg_ratio,industry_pe,'
+    + 'div_yield,cfo,fcf,cfo_pat,nim,gnpa,nnpa,car,casa,'
+    + 'eps_qoq,eps_yoy,sales_qoq,sales_yoy,opm_pct,opm_trend,eps_growth_streak,'
+    + 'fii_pct,fii_trend,dii_pct,dii_trend,promoter_trend,'
+    + 'industry,sector,fetched_at'
+  const full = core + ','
+    + 'ai_highlights,ai_key_metrics,ai_highlights_at,'
+    + 'emerging_themes,theme_evidence,theme_intensity,themes_source,'
+    + 'themes_at,themes_announced_at,'
+    + 'mgmt_verdict,mgmt_summary,mgmt_flags,mgmt_flags_at'
   const { data, error } = await supabase
     .from('stock_fundamentals')
-    .select('sym,market_cap,pe,pb,roe,roce,eps,debt_eq,promoter,peg_ratio,industry_pe,'
-      + 'div_yield,cfo,fcf,cfo_pat,nim,gnpa,nnpa,car,casa,'
-      + 'eps_qoq,eps_yoy,sales_qoq,sales_yoy,opm_pct,opm_trend,eps_growth_streak,'
-      + 'fii_pct,fii_trend,dii_pct,dii_trend,promoter_trend,'
-      + 'fundamental_score,fundamental_label,industry,sector,'
-      + 'ai_highlights,ai_key_metrics,ai_highlights_at,fetched_at,'
-      + 'emerging_themes,theme_evidence,theme_intensity,themes_source,'
-      + 'themes_at,themes_announced_at,'
-      + 'mgmt_verdict,mgmt_summary,mgmt_flags,mgmt_flags_at')
+    .select(full)
     .eq('sym', symbol)
     .maybeSingle()
   if (error) {
-    // Older DBs may lack ai_* / theme / mgmt columns — retry without them
+    // Older DBs may lack ai_* / theme / mgmt columns — retry core only
     if (/ai_highlights|ai_key_metrics|ai_highlights_at|emerging_themes|theme_|mgmt_/i.test(error.message || '')) {
       const { data: d2, error: e2 } = await supabase
         .from('stock_fundamentals')
-        .select('sym,market_cap,pe,pb,roe,roce,eps,debt_eq,promoter,peg_ratio,industry_pe,'
-          + 'div_yield,cfo,fcf,cfo_pat,nim,gnpa,nnpa,car,casa,'
-          + 'eps_qoq,eps_yoy,sales_qoq,sales_yoy,opm_pct,opm_trend,eps_growth_streak,'
-          + 'fii_pct,fii_trend,dii_pct,dii_trend,promoter_trend,'
-          + 'fundamental_score,fundamental_label,industry,sector,fetched_at')
+        .select(core)
         .eq('sym', symbol)
         .maybeSingle()
       if (e2) { console.error('fetchStockFundamentals error:', e2.message); return null }
