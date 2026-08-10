@@ -100,6 +100,36 @@ export function detectBullSnortDays(highs, lows, closes, volumes, opens) {
   return flags
 }
 
+/** Aggregate daily OHLCV into coarser bars using a period key (UTC). */
+function aggregateByKey(dates, opens, highs, lows, closes, volumes, keyFn) {
+  const bars = []
+  let cur = null
+  for (let i = 0; i < dates.length; i++) {
+    const key = keyFn(dates[i])
+    const o = opens?.[i] ?? closes[i]
+    const h = highs[i], l = lows[i], c = closes[i], v = volumes[i] || 0
+    if (!cur || cur.key !== key) {
+      if (cur) bars.push(cur)
+      cur = { key, date: dates[i], open: o, high: h, low: l, close: c, volume: v }
+    } else {
+      if (h != null) cur.high = Math.max(cur.high ?? h, h)
+      if (l != null) cur.low = Math.min(cur.low ?? l, l)
+      cur.close = c
+      cur.date = dates[i]
+      cur.volume += v
+    }
+  }
+  if (cur) bars.push(cur)
+  return {
+    dates: bars.map(b => b.date),
+    opens: bars.map(b => b.open),
+    highs: bars.map(b => b.high),
+    lows: bars.map(b => b.low),
+    closes: bars.map(b => b.close),
+    volumes: bars.map(b => b.volume),
+  }
+}
+
 /** Aggregate daily OHLCV into weekly bars (Mon–Sun weeks, UTC date keys). */
 export function aggregateToWeekly(dates, opens, highs, lows, closes, volumes) {
   const weekKey = (d) => {
@@ -111,32 +141,17 @@ export function aggregateToWeekly(dates, opens, highs, lows, closes, volumes) {
     monday.setUTCDate(dt.getUTCDate() - mondayOffset)
     return monday.toISOString().slice(0, 10)
   }
-  const weeks = []
-  let cur = null
-  for (let i = 0; i < dates.length; i++) {
-    const key = weekKey(dates[i])
-    const o = opens?.[i] ?? closes[i]
-    const h = highs[i], l = lows[i], c = closes[i], v = volumes[i] || 0
-    if (!cur || cur.key !== key) {
-      if (cur) weeks.push(cur)
-      cur = { key, date: dates[i], open: o, high: h, low: l, close: c, volume: v }
-    } else {
-      if (h != null) cur.high = Math.max(cur.high ?? h, h)
-      if (l != null) cur.low = Math.min(cur.low ?? l, l)
-      cur.close = c
-      cur.date = dates[i]
-      cur.volume += v
-    }
-  }
-  if (cur) weeks.push(cur)
-  return {
-    dates: weeks.map(w => w.date),
-    opens: weeks.map(w => w.open),
-    highs: weeks.map(w => w.high),
-    lows: weeks.map(w => w.low),
-    closes: weeks.map(w => w.close),
-    volumes: weeks.map(w => w.volume),
-  }
+  return aggregateByKey(dates, opens, highs, lows, closes, volumes, weekKey)
+}
+
+/** Aggregate daily OHLCV into calendar-month bars (UTC YYYY-MM). */
+export function aggregateToMonthly(dates, opens, highs, lows, closes, volumes) {
+  return aggregateByKey(dates, opens, highs, lows, closes, volumes, (d) => String(d).slice(0, 7))
+}
+
+/** Aggregate daily OHLCV into calendar-year bars (UTC YYYY). */
+export function aggregateToYearly(dates, opens, highs, lows, closes, volumes) {
+  return aggregateByKey(dates, opens, highs, lows, closes, volumes, (d) => String(d).slice(0, 4))
 }
 
 /** EMA series (exponential moving average) — null until enough data. */

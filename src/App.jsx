@@ -20,7 +20,7 @@ import {
   calcSMASeries, findSwingPoints, computeSupportResistance,
   detectInsideBars, detectAccDistDays, detectVCPContractions, detectCupAndHandle,
   detectPPDays, detectHYDays, detectHTDays, detectIBVDays, detectNearEMA9Days,
-  detectBullSnortDays, aggregateToWeekly
+  detectBullSnortDays, aggregateToWeekly, aggregateToMonthly, aggregateToYearly
 } from './scanners/chartAnalysis'
 
 // ─────────────────────────────────────────────────────────────────────
@@ -4969,20 +4969,30 @@ function ThemesRadarPanel({onOpenSymbol}){
 // alongside the TradingView embed as a second tab, not a replacement —
 // useful for stocks TradingView's free embed can't resolve, and for
 // seeing our own scanner's signals drawn directly on the chart.
-// History length presets (how much to show). Candle size is separate: 1D vs 1W.
-const RANGE_BARS_D = {'1M':21,'3M':63,'6M':126,'YTD':null,'1Y':252,'5Y':1260,'All':100000}
-const RANGE_BARS_W = {'1M':4,'3M':13,'6M':26,'YTD':null,'1Y':52,'5Y':260,'All':100000}
+// History length presets (how much to show). Candle size is separate: 1D / 1W / 1M / 1Y.
+const RANGE_BARS_BY_INTERVAL = {
+  D: {'1M':21,'3M':63,'6M':126,'YTD':null,'1Y':252,'5Y':1260,'All':100000},
+  W: {'1M':4,'3M':13,'6M':26,'YTD':null,'1Y':52,'5Y':260,'All':100000},
+  M: {'1M':1,'3M':3,'6M':6,'YTD':null,'1Y':12,'5Y':60,'All':100000},
+  Y: {'1M':1,'3M':1,'6M':1,'YTD':null,'1Y':1,'5Y':5,'All':100000},
+}
+const BAR_INTERVAL_META = {
+  D: { label:'1D', unit:'days',   minBars:30, minZoom:10, swing:5 },
+  W: { label:'1W', unit:'weeks',  minBars:8,  minZoom:4,  swing:3 },
+  M: { label:'1M', unit:'months', minBars:6,  minZoom:3,  swing:2 },
+  Y: { label:'1Y', unit:'years',  minBars:3,  minZoom:2,  swing:1 },
+}
 const BULL_SNORT_COLOR = '#f59e0b'
 
 function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [range, setRange] = useState('1Y')
-  const [barInterval, setBarInterval] = useState('D') // 'D' = 1D candles | 'W' = 1W candles
-  const [zoomBars, setZoomBars] = useState(RANGE_BARS_D['1Y'])
+  const [barInterval, setBarInterval] = useState('D') // D/W/M/Y candle size
+  const [zoomBars, setZoomBars] = useState(RANGE_BARS_BY_INTERVAL.D['1Y'])
   const [panOffset, setPanOffset] = useState(0) // bars back from the most recent
   const [showMA, setShowMA] = useState(true)
-  const [chartStyle, setChartStyle] = useState('candle') // 'candle' | 'line' — available for both 1D and 1W
+  const [chartStyle, setChartStyle] = useState('candle') // candle | line — all intervals
   const [showSR, setShowSR] = useState(true)
   const [showPatterns, setShowPatterns] = useState(true)
   const [showBullSnort, setShowBullSnort] = useState(true)
@@ -4995,7 +5005,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const chartWrapRef = useRef(null)
   const plotRef = useRef(null)
   const rafRef = useRef(null)
-  const rangeBars = barInterval==='W' ? RANGE_BARS_W : RANGE_BARS_D
+  const rangeBars = RANGE_BARS_BY_INTERVAL[barInterval] || RANGE_BARS_BY_INTERVAL.D
+  const intervalMeta = BAR_INTERVAL_META[barInterval] || BAR_INTERVAL_META.D
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
 
   // Measure the plot pane only (not toolbar/legend) so the SVG fills the device panel.
@@ -5013,7 +5024,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
     return ()=>ro.disconnect()
   },[loading, sym, chartExpanded, barInterval])
 
-  // Daily series (+ optional weekly aggregate). Analysis runs on this.
+  // Daily series (+ optional weekly/monthly/yearly aggregate). Analysis runs on this.
   const seriesData = useMemo(() => {
     if (!data || data.error || !data.prices || data.prices.length < 5) return null
     let dates = data.dates
@@ -5024,9 +5035,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
     let opens = (data.opens && data.opens.length === closes.length)
       ? data.opens
       : closes.map((c,i)=> i>0 ? closes[i-1] : c)
-    if (barInterval === 'W') {
-      return aggregateToWeekly(dates, opens, highs, lows, closes, volumes)
-    }
+    if (barInterval === 'W') return aggregateToWeekly(dates, opens, highs, lows, closes, volumes)
+    if (barInterval === 'M') return aggregateToMonthly(dates, opens, highs, lows, closes, volumes)
+    if (barInterval === 'Y') return aggregateToYearly(dates, opens, highs, lows, closes, volumes)
     return { dates, opens, highs, lows, closes, volumes }
   }, [data, barInterval])
 
@@ -5043,12 +5054,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   // order, every render) — so it checks data validity internally
   // instead of relying on the component having already bailed out.
   const analysis = useMemo(() => {
-    // Weekly needs fewer bars to start drawing; MAs simply stay null until enough history.
-    const minBars = barInterval==='W' ? 8 : 30
+    // Coarser intervals need fewer bars to start drawing; MAs stay null until enough history.
+    const minBars = intervalMeta.minBars
     if (!seriesData || !seriesData.closes || seriesData.closes.length < minBars) return null
     const closes = seriesData.closes, highs = seriesData.highs, lows = seriesData.lows
     const volumes = seriesData.volumes, opens = seriesData.opens
-    const _swings = findSwingPoints(highs, lows, barInterval==='W' ? 3 : 5)
+    const _swings = findSwingPoints(highs, lows, intervalMeta.swing)
     return {
       ma20: calcSMASeries(closes, 20),
       ma50: calcSMASeries(closes, 50),
@@ -5067,12 +5078,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       vcp: detectVCPContractions(_swings),
       cup: detectCupAndHandle(closes, highs, lows),
     }
-  }, [seriesData, barInterval])
+  }, [seriesData, barInterval, intervalMeta])
 
   useEffect(() => {
     let cancelled = false
     setLoading(true); setData(null)
-    setZoomBars(RANGE_BARS_D['1Y']); setPanOffset(0) // reset zoom/pan for the new symbol
+    setZoomBars(RANGE_BARS_BY_INTERVAL.D['1Y']); setPanOffset(0) // reset zoom/pan for the new symbol
     setPinnedIdx(null)
     setBarInterval('D')
     if (isIndex) setChartStyle('line') // no real OHLC exists for indices, only a close-price series
@@ -5085,10 +5096,15 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   }, [sym, isIndex])
 
   useEffect(()=>{
-    // Switching D/W resets zoom to the current range preset in that unit.
-    const bars = range==='YTD' ? null : rangeBars[range]
-    if(bars!=null) setZoomBars(bars)
-    else setZoomBars(rangeBars['1Y'])
+    // Switching candle size resets zoom to the current range preset in that unit.
+    // Prefer a useful default on coarse intervals (yearly 1M is only 1 bar).
+    let nextRange = range
+    if (barInterval === 'Y' && ['1M','3M','6M','1Y'].includes(range)) nextRange = '5Y'
+    else if (barInterval === 'M' && range === '1M') nextRange = '1Y'
+    if (nextRange !== range) setRange(nextRange)
+    const bars = nextRange==='YTD' ? null : rangeBars[nextRange]
+    if(bars!=null) setZoomBars(Math.max(intervalMeta.minZoom, bars))
+    else setZoomBars(rangeBars['1Y'] ?? RANGE_BARS_BY_INTERVAL.D['1Y'])
     setPanOffset(0)
   },[barInterval]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -5154,12 +5170,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       </div>
     )
   }
-  const minBarsNeeded = barInterval==='W' ? 8 : 30
+  const minBarsNeeded = intervalMeta.minBars
   if(!seriesData || !seriesData.closes || seriesData.closes.length < minBarsNeeded || !analysis){
     return fillShell(
       <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted,textAlign:'center',padding:20}}>
-        Not enough price history yet for {sym} to draw a {barInterval==='W'?'1W':'1D'} chart
-        {data?.prices ? ` (only ${barInterval==='W'?(seriesData?.closes?.length||0):data.prices.length} bars, need ${minBarsNeeded}+).` : '.'}
+        Not enough price history yet for {sym} to draw a {intervalMeta.label} chart
+        {data?.prices ? ` (only ${barInterval==='D'?data.prices.length:(seriesData?.closes?.length||0)} bars, need ${minBarsNeeded}+).` : '.'}
       </div>
     )
   }
@@ -5206,7 +5222,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   // barsToShow/start now driven by zoomBars/panOffset (mouse wheel /
   // pinch to zoom, drag to pan) rather than only the fixed range preset
   // buttons — those buttons just set zoomBars to a starting point.
-  const minZoom = barInterval==='W' ? 4 : 10
+  const minZoom = intervalMeta.minZoom
   const barsToShow = Math.max(minZoom, Math.min(zoomBars, n))
   const maxPanOffset = Math.max(0, n - barsToShow)
   const clampedPanOffset = Math.min(panOffset, maxPanOffset)
@@ -5402,9 +5418,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
             <span style={{fontSize:9,fontWeight:800,color:C.red,letterSpacing:'0.04em'}}>LIVE</span>
           </div>
         )}
-        {/* Candle size: 1D (daily) / 1W (weekly) — Candle style works for both */}
+        {/* Candle size: 1D / 1W / 1M / 1Y — Candle style works for all */}
         <div style={{display:'flex',gap:3}}>
-          {[['1D','D','Daily candlesticks'],['1W','W','Weekly candlesticks']].map(([label,val,title])=>(
+          {[['1D','D','Daily candlesticks'],['1W','W','Weekly candlesticks'],
+            ['1M','M','Monthly candlesticks'],['1Y','Y','Yearly candlesticks']].map(([label,val,title])=>(
             <button key={val} type="button" title={title}
               onClick={()=>{
                 setBarInterval(val)
@@ -5419,7 +5436,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
         {/* History length */}
         <div style={{display:'flex',gap:3}}>
           {Object.keys(rangeBars).map(r=>(
-            <button key={r} type="button" onClick={()=>{setRange(r);applyRangePreset(r)}}
+            <button key={r} type="button" title={`Show last ${r} of ${intervalMeta.label} bars`}
+              onClick={()=>{setRange(r);applyRangePreset(r)}}
               style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${range===r?C.accent:C.border}`,
                 background:range===r?C.accent+'22':'transparent',color:range===r?C.accent:C.muted,
                 fontSize:10,fontWeight:700,cursor:'pointer'}}>{r}</button>
@@ -5430,7 +5448,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           <button key={val} type="button"
             onClick={()=>setChartStyle(val)}
             disabled={isIndex && val==='candle'}
-            title={isIndex && val==='candle' ? 'Indices have close-only history — use Line' : `${label} chart (${barInterval==='W'?'1W':'1D'})`}
+            title={isIndex && val==='candle' ? 'Indices have close-only history — use Line' : `${label} chart (${intervalMeta.label})`}
             style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${chartStyle===val?C.accent:C.border}`,
               background:chartStyle===val?C.accent+'1c':'transparent',
               color:chartStyle===val?C.accent:C.muted,
@@ -5480,7 +5498,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
               <span>{'  '}Vol MA <span style={{color:TV_VOL_MA}}>{fmtVol(hover.volEma)}</span></span>
             )}
           </span>
-        ) : `${sym} · ${barsToShow} ${barInterval==='W'?'weeks':'days'} · tap a candle to pin`}
+        ) : `${sym} · ${barsToShow} ${intervalMeta.unit} · tap a candle to pin`}
       </div>
 
       <div ref={plotRef} style={{flex:1,minHeight:0,position:'relative',width:'100%'}}>
