@@ -9873,7 +9873,6 @@ export default function App(){
   )
   const [alertPrefs,setAlertPrefs]=useState(()=>loadAlertPrefs(null))
   const [notifHistory,setNotifHistory]=useState(()=>loadNotifHistory())
-  const [annHistoryOpen,setAnnHistoryOpen]=useState(true)
   const [aiCatchupOpen,setAiCatchupOpen]=useState(true)
   const [aiCatchupTab,setAiCatchupTab]=useState('results') // results|ppt|concall
   const [aiCatchup,setAiCatchup]=useState(null)
@@ -14761,41 +14760,6 @@ export default function App(){
                           ))}
                         </div>
                       )}
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-
-            {/* Subsection: notification history for announcement alerts */}
-            {(()=>{
-              const annHist=notifHistory.filter(h=>h.kind==='announcement')
-              return (
-                <div style={{marginBottom:14,border:`1px solid ${C.border}`,borderRadius:10,background:C.card,overflow:'hidden'}}>
-                  <button type="button" onClick={()=>setAnnHistoryOpen(v=>!v)}
-                    style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,
-                      padding:'10px 12px',border:'none',background:'transparent',cursor:'pointer',color:C.text}}>
-                    <span style={{fontSize:12,fontWeight:800}}>
-                      🔔 Notification history
-                      <span style={{marginLeft:8,fontSize:10,fontWeight:700,color:C.muted}}>
-                        {annHist.length?`${annHist.length} alert${annHist.length===1?'':'s'}`:'none yet'}
-                      </span>
-                    </span>
-                    <span style={{fontSize:11,color:C.muted}}>{annHistoryOpen?'▾':'▸'}</span>
-                  </button>
-                  {annHistoryOpen&&(
-                    <div style={{padding:'0 12px 12px'}}>
-                      <div style={{fontSize:10,color:C.muted,marginBottom:8}}>
-                        Alerts fired while the app was open (Results, Orders, Concall, …). Tap a row to open the chart.
-                      </div>
-                      <NotifHistoryList
-                        items={annHist}
-                        colors={C}
-                        maxShow={30}
-                        emptyText="No announcement notifications yet. Enable Alerts and pick filing types under 🔔 Alerts."
-                        onClear={()=>clearNotifHistory('announcement')}
-                        onItemClick={h=>{ if(h?.sym) setChartSym(h.sym) }}
-                      />
                     </div>
                   )}
                 </div>
