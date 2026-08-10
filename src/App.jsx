@@ -1208,8 +1208,10 @@ function HistoryCalendarPicker({historyDate, setHistoryDate, availableDates, isM
 const ALERT_PREF_KEY='lakshmimata-alert-prefs'
 const DEFAULT_ALERT_PREFS={
   hy:true, ht:true, pp:true, squeeze:true, stage2:true, guppy:true, rs70:true, announcements:true,
+  watchlistOnly:false,
 }
 const ALERT_PREF_OPTIONS=[
+  {key:'watchlistOnly', label:'Watchlist only', icon:'📋'},
   {key:'hy', label:'HY (High Yield vol)', icon:'📊'},
   {key:'ht', label:'HT (High Turnover)', icon:'🚀'},
   {key:'pp', label:'PP (Power Play)', icon:'🔥'},
@@ -1279,6 +1281,11 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
     onPersist?.(next)
   }
   const toggle=key=>{
+    // watchlistOnly defaults false — flip boolean explicitly
+    if(key==='watchlistOnly'){
+      applyPrefs({...prefs, watchlistOnly: prefs.watchlistOnly!==true})
+      return
+    }
     applyPrefs({...prefs,[key]:prefs[key]===false})
   }
   if(typeof Notification==='undefined') return null
@@ -1314,18 +1321,27 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
             <div style={{fontSize:9,color:C.muted,marginBottom:8}}>
               {cloudSynced?'Saved to your account — follows you across devices.':'Sign in to sync these across devices.'}
             </div>
-            {ALERT_PREF_OPTIONS.map(({key,label,icon})=>(
+            {ALERT_PREF_OPTIONS.map(({key,label,icon})=>{
+              const on=key==='watchlistOnly' ? prefs[key]===true : prefs[key]!==false
+              return (
               <label key={key}
                 style={{display:'flex',alignItems:'center',gap:8,padding:'6px 4px',
-                  cursor:'pointer',borderRadius:6}}>
-                <input type="checkbox" checked={prefs[key]!==false}
+                  cursor:'pointer',borderRadius:6,
+                  borderBottom:key==='watchlistOnly'?`1px solid ${C.divider}`:'none',
+                  marginBottom:key==='watchlistOnly'?4:0}}>
+                <input type="checkbox" checked={on}
                   onChange={()=>toggle(key)}
                   style={{accentColor:C.accent,width:14,height:14,cursor:'pointer'}}/>
-                <span style={{fontSize:11,color:prefs[key]!==false?C.text:C.muted}}>
+                <span style={{fontSize:11,color:on?C.text:C.muted}}>
                   {icon} {label}
+                  {key==='watchlistOnly'&&(
+                    <span style={{display:'block',fontSize:9,color:C.muted,fontWeight:500}}>
+                      Only notify for symbols in any of your watchlists
+                    </span>
+                  )}
                 </span>
               </label>
-            ))}
+            )})}
             <div style={{display:'flex',gap:6,marginTop:8}}>
               <button type="button"
                 onClick={()=>applyPrefs({...DEFAULT_ALERT_PREFS})}
@@ -9184,6 +9200,11 @@ export default function App(){
   const [alertPrefs,setAlertPrefs]=useState(()=>loadAlertPrefs(null))
   const alertPrefsRef=useRef(alertPrefs)
   alertPrefsRef.current=alertPrefs
+  // All symbols across every watchlist — used when "Watchlist only" alerts are on.
+  const watchlistAlertSymsRef=useRef(new Set())
+  watchlistAlertSymsRef.current=new Set(
+    (watchlists||[]).flatMap(w=>w.stocks||[]).map(s=>String(s).toUpperCase())
+  )
   const alertPrefsSaveTimer=useRef(null)
   const persistUserAlertPrefs=useCallback((prefs)=>{
     const uid=session?.user?.id
@@ -9245,9 +9266,16 @@ export default function App(){
         lastAlertCheck.current = new Date().toISOString()
 
         if(data && data.length > 0){
+          const prefs=alertPrefsRef.current
+          const wlOnly=prefs.watchlistOnly===true
+          const wlSyms=watchlistAlertSymsRef.current
           data.forEach(alert=>{
             if(typeof Notification==='undefined' || Notification.permission!=='granted') return
-            if(!isAlertTypeEnabled(alert.fire_type, alertPrefsRef.current)) return
+            if(!isAlertTypeEnabled(alert.fire_type, prefs)) return
+            if(wlOnly){
+              const sym=String(alert.sym||'').toUpperCase()
+              if(!sym || !wlSyms.has(sym)) return
+            }
             const ft=String(alert.fire_type||'')
             const goSqueeze=/Squeeze|VCP/i.test(ft)
             const goBreakout=/Stage\s*2|Guppy/i.test(ft)
@@ -9300,24 +9328,30 @@ export default function App(){
         lastAnnouncementCheck.current = new Date().toISOString()
 
         if(data && data.length > 0){
-          if(alertPrefsRef.current.announcements===false) return
+          const prefs=alertPrefsRef.current
+          if(prefs.announcements===false) return
+          const wlOnly=prefs.watchlistOnly===true
+          const wlSyms=watchlistAlertSymsRef.current
           data.forEach(ann=>{
-            if(typeof Notification!=='undefined' && Notification.permission==='granted'){
-              const n = new Notification(
-                `📢 ${ann.symbol} — New Announcement`,
-                {
-                  body: ann.subject.length>110 ? ann.subject.slice(0,107)+'…' : ann.subject,
-                  icon: '/favicon.ico',
-                  tag: `announcement-${ann.symbol}-${ann.id}`,
-                  requireInteraction: false,
-                }
-              )
-              n.onclick = ()=>{
-                window.focus()
-                setMainTab('announcements')
-              }
-              setTimeout(()=>n.close(), 8000)
+            if(typeof Notification==='undefined' || Notification.permission!=='granted') return
+            if(wlOnly){
+              const sym=String(ann.symbol||'').toUpperCase()
+              if(!sym || !wlSyms.has(sym)) return
             }
+            const n = new Notification(
+              `📢 ${ann.symbol} — New Announcement`,
+              {
+                body: ann.subject.length>110 ? ann.subject.slice(0,107)+'…' : ann.subject,
+                icon: '/favicon.ico',
+                tag: `announcement-${ann.symbol}-${ann.id}`,
+                requireInteraction: false,
+              }
+            )
+            n.onclick = ()=>{
+              window.focus()
+              setMainTab('announcements')
+            }
+            setTimeout(()=>n.close(), 8000)
           })
         }
       }catch(e){
