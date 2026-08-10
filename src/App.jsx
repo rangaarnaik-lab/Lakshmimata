@@ -1236,24 +1236,30 @@ function HistoryCalendarPicker({historyDate, setHistoryDate, availableDates, isM
 }
 
 // Announcement tab categories + alert sub-filters (same keyword matching).
+// Order matters for classifyAnnouncementAlert: PPT before Concall (so
+// "Investor Presentation" is not swallowed by the concall "investor" keyword).
 const ANNOUNCEMENT_CATEGORIES=[
   {id:'all',    label:'All',         keyword:null},
-  {id:'results', label:'Results',    keyword:['financial result','quarterly result','results for the quarter','unaudited results','audited results'], exclude:['newspaper publication','newspaper advertisement','transcript','press release','investor meet','con. call','con call','conference call','clarification']},
-  {id:'concall', label:'Concall',    keyword:['con call','con-call','concall','conference call','investor','analyst meet'], exclude:['transcript']},
+  {id:'results', label:'Results',    keyword:['financial result','quarterly result','results for the quarter','unaudited results','audited results'], exclude:['newspaper publication','newspaper advertisement','transcript','press release','investor meet','investor presentation','con. call','con call','conference call','clarification']},
+  {id:'ppt', label:'PPT', keyword:['investor presentation','analyst presentation','corporate presentation','earnings presentation','presentation'], exclude:['transcript']},
+  {id:'concall', label:'Concall',    keyword:['con call','con-call','concall','conference call','investor meet','analyst meet','earnings call'], exclude:['transcript','presentation']},
   {id:'transcript', label:'Transcript', keyword:['transcript']},
   {id:'orders', label:'Order Book',  keyword:['award of order','work order','purchase order','order received from','bagged','bagging','receiving of order','receipt of order','receiving of contract','receipt of contract','secures order','wins order','letter of intent','order worth','order valued'], exclude:['cancellation of order','cancellation of work order','cancellation of purchase order','order cancelled','work order cancelled','purchase order cancelled','cancellation of contract','contract cancelled','termination of contract','contract terminated','termination of work order','work order terminated','rescission of','order rescinded','contract rescinded','order withdrawn','withdrawal of order','loss of order','order lost']},
   {id:'board',  label:'Board Meeting', keyword:'board meeting'},
   {id:'div',    label:'Dividend',    keyword:'dividend'},
   {id:'other',  label:'Other',       keyword:null},
 ]
+/** AI-readable filing types (Results PDF / PPT / Concall / Transcript). */
+const ANN_ALERT_READ_CATS=['annResults','annPpt','annConcall','annTranscript']
 const ANN_ALERT_CAT_OPTIONS=[
-  {key:'annResults', id:'results', label:'Results', icon:'📊'},
-  {key:'annOrders', id:'orders', label:'Order Book', icon:'📦'},
-  {key:'annConcall', id:'concall', label:'Concall', icon:'📞'},
-  {key:'annTranscript', id:'transcript', label:'Transcript', icon:'📝'},
-  {key:'annBoard', id:'board', label:'Board Meeting', icon:'🏛️'},
-  {key:'annDiv', id:'div', label:'Dividend', icon:'💰'},
-  {key:'annOther', id:'other', label:'Other', icon:'📎'},
+  {key:'annResults', id:'results', label:'Results', icon:'📊', group:'read'},
+  {key:'annPpt', id:'ppt', label:'PPT', icon:'📑', group:'read'},
+  {key:'annConcall', id:'concall', label:'Concall', icon:'📞', group:'read'},
+  {key:'annTranscript', id:'transcript', label:'Transcript', icon:'📝', group:'read'},
+  {key:'annOrders', id:'orders', label:'Order Book', icon:'📦', group:'other'},
+  {key:'annBoard', id:'board', label:'Board Meeting', icon:'🏛️', group:'other'},
+  {key:'annDiv', id:'div', label:'Dividend', icon:'💰', group:'other'},
+  {key:'annOther', id:'other', label:'Other', icon:'📎', group:'other'},
 ]
 
 // Browser-notification prefs — enable/disable each signal type + alert sound.
@@ -1264,8 +1270,8 @@ const DEFAULT_ALERT_PREFS={
   soundEnabled:true,
   soundId:'ping',
   soundVolume:0.7,
-  annResults:true, annOrders:true, annConcall:true, annTranscript:true,
-  annBoard:true, annDiv:true, annOther:true,
+  annResults:true, annPpt:true, annConcall:true, annTranscript:true,
+  annOrders:true, annBoard:true, annDiv:true, annOther:true,
 }
 const ALERT_PREF_OPTIONS=[
   {key:'watchlistOnly', label:'Watchlist only', icon:'📋'},
@@ -1336,11 +1342,15 @@ function isAlertTypeEnabled(fireType, prefs){
   if(!keys.length) return true // unknown types still notify
   return keys.some(k=>prefs[k]!==false)
 }
-/** Classify an announcement into Results / Orders / … using tab keywords. */
+/** Classify an announcement into Results / PPT / Concall / … using tab keywords. */
 function classifyAnnouncementAlert(ann){
   const text=((ann?.category||'')+' '+(ann?.subject||'')).toLowerCase()
-  for(const opt of ANN_ALERT_CAT_OPTIONS){
-    if(opt.id==='other') continue
+  // Prefer AI-readable types (Results → PPT → Concall → Transcript) before Orders/etc.
+  const ordered=[
+    ...ANN_ALERT_CAT_OPTIONS.filter(o=>o.group==='read'),
+    ...ANN_ALERT_CAT_OPTIONS.filter(o=>o.group!=='read' && o.id!=='other'),
+  ]
+  for(const opt of ordered){
     const cat=ANNOUNCEMENT_CATEGORIES.find(c=>c.id===opt.id)
     if(!cat?.keyword) continue
     const keywords=Array.isArray(cat.keyword)?cat.keyword:[cat.keyword]
@@ -1620,9 +1630,24 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
                 <div style={{margin:'2px 0 8px 22px',padding:'6px 8px',borderRadius:8,
                   border:`1px solid ${C.border}`,background:C.bg}}>
                   <div style={{fontSize:9,color:C.muted,marginBottom:4,fontWeight:700}}>
-                    Filing types
+                    AI-read filings (Results · PPT · Concall · Transcript)
                   </div>
-                  {ANN_ALERT_CAT_OPTIONS.map(({key:ak,label:al,icon:ai})=>{
+                  {ANN_ALERT_CAT_OPTIONS.filter(o=>o.group==='read').map(({key:ak,label:al,icon:ai})=>{
+                    const aOn=prefs[ak]!==false
+                    return (
+                      <label key={ak}
+                        style={{display:'flex',alignItems:'center',gap:6,padding:'3px 2px',cursor:'pointer'}}>
+                        <input type="checkbox" checked={aOn}
+                          onChange={()=>applyPrefs({...prefs,[ak]:prefs[ak]===false})}
+                          style={{accentColor:C.accent,width:13,height:13,cursor:'pointer'}}/>
+                        <span style={{fontSize:10,color:aOn?C.text:C.muted}}>{ai} {al}</span>
+                      </label>
+                    )
+                  })}
+                  <div style={{fontSize:9,color:C.muted,margin:'8px 0 4px',fontWeight:700}}>
+                    Other filings
+                  </div>
+                  {ANN_ALERT_CAT_OPTIONS.filter(o=>o.group!=='read').map(({key:ak,label:al,icon:ai})=>{
                     const aOn=prefs[ak]!==false
                     return (
                       <label key={ak}
@@ -1635,6 +1660,15 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
                     )
                   })}
                   <div style={{display:'flex',gap:4,marginTop:4}}>
+                    <button type="button"
+                      onClick={()=>applyPrefs({
+                        ...prefs,
+                        ...Object.fromEntries(ANN_ALERT_READ_CATS.map(k=>[k,true])),
+                      })}
+                      style={{flex:1,padding:'3px 0',borderRadius:5,border:`1px solid ${C.border}`,
+                        background:'transparent',color:C.muted,fontSize:9,fontWeight:600,cursor:'pointer'}}>
+                      All AI-read
+                    </button>
                     <button type="button"
                       onClick={()=>applyPrefs({
                         ...prefs,
@@ -11178,7 +11212,14 @@ export default function App(){
                 notifHistory={notifHistory}
                 onClearHistory={(kind)=>clearNotifHistory(kind||null)}
                 onHistoryClick={(h)=>{
-                  if(h?.kind==='announcement') setMainTab('announcements')
+                  if(h?.kind==='announcement'){
+                    setMainTab('announcements')
+                    const cat=String(h.category||'').toLowerCase()
+                    if(cat.includes('result')) setAnnouncementsCategory('results')
+                    else if(cat==='ppt'||cat.includes('presentation')) setAnnouncementsCategory('ppt')
+                    else if(cat.includes('concall')) setAnnouncementsCategory('concall')
+                    else if(cat.includes('transcript')) setAnnouncementsCategory('transcript')
+                  }
                   else if(/Squeeze|VCP/i.test(h?.fireType||'')) setMainTab('squeeze')
                   else if(/Stage\s*2|Guppy/i.test(h?.fireType||'')) setMainTab('breakout')
                   else setMainTab('rs')
