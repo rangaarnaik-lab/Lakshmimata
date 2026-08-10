@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -3907,18 +3907,29 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
   )
 }
 
-function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false}){
+function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint}){
   const [loaded, setLoaded] = useState(false)
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
   const sectionOrder=normalizeChartSectionOrder(chartSectionOrder)
   const persistSectionOrder=(order)=>{
     onChartSectionOrderChange?.(normalizeChartSectionOrder(order))
   }
-  // Peer ranking pills open Results; other navigations reset to About.
+  // Peer ranking pills open Results; catch-up / history can open PPT/Concall/Results Summary.
   const [detailTab, setDetailTab] = useState('about')
   const openResultsOnNavRef = useRef(false)
+  const pendingDetailTabRef = useRef(null)
   useEffect(()=>{ if(isIndex) setChartTab('own') },[isIndex])
   useEffect(()=>{
+    if(detailTabHint){
+      setDetailTab(detailTabHint)
+      onConsumeDetailTabHint?.()
+      return
+    }
+    if(pendingDetailTabRef.current){
+      setDetailTab(pendingDetailTabRef.current)
+      pendingDetailTabRef.current = null
+      return
+    }
     if(openResultsOnNavRef.current){
       setDetailTab('results')
       // Delay clear so React Strict Mode's double-effect still sees the flag.
@@ -3926,11 +3937,16 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
     } else {
       setDetailTab('about')
     }
-  },[sym])
-  const navigateTo = (nextSym, {openResults=false}={})=>{
+  },[sym, detailTabHint]) // eslint-disable-line react-hooks/exhaustive-deps
+  const navigateTo = (nextSym, {openResults=false, openTab=null}={})=>{
     if(!nextSym || !onNavigate) return
-    openResultsOnNavRef.current = !!openResults
-    if(openResults) setDetailTab('results')
+    if(openTab){
+      pendingDetailTabRef.current = openTab
+      setDetailTab(openTab)
+    } else {
+      openResultsOnNavRef.current = !!openResults
+      if(openResults) setDetailTab('results')
+    }
     onNavigate(nextSym)
   }
   // is the default: NSE restricted its symbols in TradingView's embeddable
@@ -9686,6 +9702,7 @@ export default function App(){
 
   // PP filters per tab
   const [chartSym,setChartSym]=useState(null)
+  const [chartDetailTabHint,setChartDetailTabHint]=useState(null) // resultsSummary|ppt|concall|…
   // Window chrome for the 3 main panels (screener / chart / details):
   // drag title bar to float, minimize to taskbar, close to hide (restore from taskbar).
   const defaultPanelWin=()=>({open:true,minimized:false,float:null})
@@ -9721,6 +9738,23 @@ export default function App(){
   const [alertPrefs,setAlertPrefs]=useState(()=>loadAlertPrefs(null))
   const [notifHistory,setNotifHistory]=useState(()=>loadNotifHistory())
   const [annHistoryOpen,setAnnHistoryOpen]=useState(true)
+  const [aiCatchupOpen,setAiCatchupOpen]=useState(true)
+  const [aiCatchupTab,setAiCatchupTab]=useState('results') // results|ppt|concall
+  const [aiCatchup,setAiCatchup]=useState(null)
+  const [aiCatchupLoading,setAiCatchupLoading]=useState(false)
+  const loadAiCatchup=useCallback(()=>{
+    setAiCatchupLoading(true)
+    fetchMissedAiFilings({ days:45, limitPerType:60 })
+      .then(setAiCatchup)
+      .catch(()=>setAiCatchup(null))
+      .finally(()=>setAiCatchupLoading(false))
+  },[])
+  useEffect(()=>{
+    if(mainTab!=='announcements' || !aiCatchupOpen) return
+    loadAiCatchup()
+    const t=setInterval(loadAiCatchup, 5*60*1000)
+    return()=>clearInterval(t)
+  },[mainTab, aiCatchupOpen, loadAiCatchup])
   const alertPrefsRef=useRef(alertPrefs)
   alertPrefsRef.current=alertPrefs
   useEffect(()=>{
@@ -14379,6 +14413,104 @@ export default function App(){
               </button>
             </div>
 
+            {/* Subsection: AI summary catch-up (Results / PPT / Concall not yet read) */}
+            {(()=>{
+              const counts=aiCatchup?.counts||{results:0,ppt:0,concall:0,total:0}
+              const rows=(aiCatchup&&aiCatchup[aiCatchupTab])||[]
+              const statusLabel={queued:'Waiting',pending:'In progress',failed:'Failed',skipped:'Skipped'}
+              const statusColor={queued:C.yellow,pending:C.accent,failed:C.red,skipped:C.muted}
+              return (
+                <div style={{marginBottom:14,border:`1px solid ${C.border}`,borderRadius:10,background:C.card,overflow:'hidden'}}>
+                  <button type="button" onClick={()=>setAiCatchupOpen(v=>!v)}
+                    style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,
+                      padding:'10px 12px',border:'none',background:'transparent',cursor:'pointer',color:C.text}}>
+                    <span style={{fontSize:12,fontWeight:800}}>
+                      📄 AI summary catch-up
+                      <span style={{marginLeft:8,fontSize:10,fontWeight:700,color:counts.total?C.yellow:C.muted}}>
+                        {aiCatchupLoading&&!aiCatchup?'loading…'
+                          : counts.total?`${counts.total} unread · Results ${counts.results} · PPT ${counts.ppt} · Call ${counts.concall}`
+                          : 'all caught up'}
+                      </span>
+                    </span>
+                    <span style={{fontSize:11,color:C.muted}}>{aiCatchupOpen?'▾':'▸'}</span>
+                  </button>
+                  {aiCatchupOpen&&(
+                    <div style={{padding:'0 12px 12px'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,flexWrap:'wrap'}}>
+                        <div style={{fontSize:10,color:C.muted,flex:1,minWidth:180}}>
+                          Recent filings with a PDF that the worker has not summarized yet (last {aiCatchup?.days||45} days). Tap a row to open the AI tab.
+                        </div>
+                        <button type="button" onClick={loadAiCatchup} disabled={aiCatchupLoading}
+                          style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.border}`,
+                            background:'transparent',color:C.muted,fontSize:10,fontWeight:700,cursor:'pointer'}}>
+                          {aiCatchupLoading?'Refreshing…':'Refresh'}
+                        </button>
+                      </div>
+                      <div style={{display:'flex',gap:4,marginBottom:8}}>
+                        {[['results','Results',counts.results],['ppt','PPT',counts.ppt],['concall','Concall',counts.concall]].map(([id,label,n])=>(
+                          <button key={id} type="button" onClick={()=>setAiCatchupTab(id)}
+                            style={{flex:1,padding:'5px 0',borderRadius:6,
+                              border:`1px solid ${aiCatchupTab===id?C.accent:C.border}`,
+                              background:aiCatchupTab===id?C.accent+'18':'transparent',
+                              color:aiCatchupTab===id?C.accent:C.muted,fontSize:10,fontWeight:700,cursor:'pointer'}}>
+                            {label}{n?` (${n})`:''}
+                          </button>
+                        ))}
+                      </div>
+                      {aiCatchupLoading&&!rows.length?(
+                        <div style={{fontSize:11,color:C.muted,padding:'12px 4px'}}>Scanning filings…</div>
+                      ):!rows.length?(
+                        <div style={{fontSize:11,color:C.muted,padding:'12px 4px'}}>
+                          No unread {aiCatchupTab==='results'?'Results PDF':aiCatchupTab==='ppt'?'PPT':'Concall/transcript'} filings in this window.
+                        </div>
+                      ):(
+                        <div style={{display:'flex',flexDirection:'column',gap:6,maxHeight:260,overflowY:'auto'}}>
+                          {rows.map(r=>(
+                            <div key={`${r.kind}-${r.attachment_url}`}
+                              style={{display:'flex',gap:8,alignItems:'flex-start',padding:'8px 10px',
+                                borderRadius:8,border:`1px solid ${C.border}`,background:C.bg}}>
+                              <button type="button"
+                                onClick={()=>{
+                                  setChartDetailTabHint(r.detailTab)
+                                  setChartSym(r.symbol)
+                                }}
+                                style={{flex:1,textAlign:'left',border:'none',background:'transparent',
+                                  cursor:'pointer',padding:0,color:C.text}}>
+                                <div style={{display:'flex',justifyContent:'space-between',gap:8,alignItems:'baseline'}}>
+                                  <span style={{fontSize:12,fontWeight:800}}>{r.symbol}</span>
+                                  <span style={{fontSize:9,color:C.muted,whiteSpace:'nowrap'}}>
+                                    {formatNotifHistoryTime(r.announced_at)}
+                                  </span>
+                                </div>
+                                <div style={{fontSize:10,color:C.muted,marginTop:2,lineHeight:1.35,
+                                  overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>
+                                  {r.subject||r.category||'Filing'}
+                                </div>
+                                <div style={{marginTop:4,display:'flex',gap:6,alignItems:'center'}}>
+                                  <span style={{fontSize:9,fontWeight:700,color:statusColor[r.status]||C.muted,
+                                    padding:'1px 6px',borderRadius:4,background:(statusColor[r.status]||C.muted)+'22'}}>
+                                    {statusLabel[r.status]||r.status}
+                                  </span>
+                                  {r.sector&&<span style={{fontSize:9,color:C.muted}}>{r.sector}</span>}
+                                </div>
+                              </button>
+                              {r.attachment_url&&(
+                                <a href={r.attachment_url} target="_blank" rel="noreferrer"
+                                  title="Open original PDF"
+                                  style={{flexShrink:0,fontSize:10,fontWeight:700,color:C.accent,paddingTop:2}}>
+                                  PDF ↗
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
             {/* Subsection: notification history for announcement alerts */}
             {(()=>{
               const annHist=notifHistory.filter(h=>h.kind==='announcement')
@@ -14935,7 +15067,7 @@ export default function App(){
             return next
           })
         }}
-        onClose={()=>{setChartSym(null);setChartPanelPct(null)}}
+        onClose={()=>{setChartSym(null);setChartPanelPct(null);setChartDetailTabHint(null)}}
         isMobile={isMobile}
         symList={displayedRS.map(s=>s.sym)}
         onNavigate={setChartSym}
@@ -14947,6 +15079,8 @@ export default function App(){
         onPanelChart={patch=>patchPanel('chart',patch)}
         onPanelDetail={patch=>patchPanel('detail',patch)}
         expandCol={!isMobile&&!(panelWins.screener.open&&!panelWins.screener.minimized&&!panelWins.screener.float)}
+        detailTabHint={chartDetailTabHint}
+        onConsumeDetailTabHint={()=>setChartDetailTabHint(null)}
       />
       </div>{/* end innerRow: screener | chart */}
       </div>{/* end main column under sidebar */}

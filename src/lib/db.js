@@ -1839,3 +1839,119 @@ export async function fetchIndexSymbols(indexFilter) {
   return syms
 }
 
+/**
+ * Filings that still need an AI summary (Results PDF / PPT / Concall transcript).
+ * Compares recent corporate_announcements (with PDF links) against summary
+ * tables — rows with no summary yet, or status pending/failed/skipped.
+ */
+export async function fetchMissedAiFilings({ days = 45, limitPerType = 80 } = {}) {
+  const since = new Date(Date.now() - days * 86400000).toISOString()
+  const types = [
+    {
+      key: 'results',
+      label: 'Results',
+      table: 'concall_summaries',
+      detailTab: 'resultsSummary',
+      keywords: ['financial result', 'quarterly result', 'results for the quarter', 'unaudited results', 'audited results'],
+      exclude: ['newspaper publication', 'newspaper advertisement', 'transcript', 'press release', 'investor presentation', 'clarification'],
+    },
+    {
+      key: 'ppt',
+      label: 'PPT',
+      table: 'ppt_summaries',
+      detailTab: 'ppt',
+      keywords: ['investor presentation', 'analyst presentation', 'corporate presentation', 'earnings presentation', 'presentation'],
+      exclude: ['transcript'],
+    },
+    {
+      key: 'concall',
+      label: 'Concall',
+      table: 'transcript_summaries',
+      detailTab: 'concall',
+      keywords: ['transcript', 'con call', 'con-call', 'concall', 'conference call', 'earnings call'],
+      exclude: ['presentation', 'schedule of', 'intimation of'],
+    },
+  ]
+
+  const fetchCandidates = async (type) => {
+    const orFilter = type.keywords
+      .flatMap(k => [`category.ilike.%${k}%`, `subject.ilike.%${k}%`])
+      .join(',')
+    let q = supabase
+      .from('corporate_announcements')
+      .select('symbol,category,subject,attachment_url,announced_at,sector')
+      .not('attachment_url', 'is', null)
+      .neq('attachment_url', '')
+      .gte('announced_at', since)
+      .or(orFilter)
+      .order('announced_at', { ascending: false })
+      .limit(Math.min(300, limitPerType * 3))
+    for (const k of type.exclude || []) {
+      q = q.not('category', 'ilike', `%${k}%`).not('subject', 'ilike', `%${k}%`)
+    }
+    const { data, error } = await q
+    if (error) {
+      console.error(`fetchMissedAiFilings announcements(${type.key}):`, error.message)
+      return []
+    }
+    return data || []
+  }
+
+  const fetchProcessed = async (table) => {
+    const { data, error } = await supabase
+      .from(table)
+      .select('symbol,attachment_url,status,announced_at')
+      .gte('announced_at', since)
+      .order('announced_at', { ascending: false })
+      .limit(2000)
+    if (error) {
+      console.error(`fetchMissedAiFilings ${table}:`, error.message)
+      return new Map()
+    }
+    const map = new Map()
+    for (const row of data || []) {
+      if (!row.attachment_url) continue
+      map.set(row.attachment_url, row)
+    }
+    return map
+  }
+
+  const out = { days, results: [], ppt: [], concall: [], counts: { results: 0, ppt: 0, concall: 0, total: 0 } }
+
+  await Promise.all(types.map(async (type) => {
+    const [cands, processed] = await Promise.all([
+      fetchCandidates(type),
+      fetchProcessed(type.table),
+    ])
+    const missed = []
+    const seenUrl = new Set()
+    for (const ann of cands) {
+      const url = ann.attachment_url
+      if (!url || seenUrl.has(url)) continue
+      seenUrl.add(url)
+      const row = processed.get(url)
+      const status = row?.status || null
+      // Fully summarized — skip
+      if (status === 'done') continue
+      missed.push({
+        symbol: ann.symbol,
+        subject: ann.subject,
+        category: ann.category,
+        announced_at: ann.announced_at,
+        attachment_url: url,
+        sector: ann.sector || null,
+        kind: type.key,
+        label: type.label,
+        detailTab: type.detailTab,
+        status: status || 'queued', // queued = announcement seen, AI not started
+      })
+      if (missed.length >= limitPerType) break
+    }
+    out[type.key] = missed
+    out.counts[type.key] = missed.length
+  }))
+
+  out.counts.total = out.counts.results + out.counts.ppt + out.counts.concall
+  return out
+}
+
