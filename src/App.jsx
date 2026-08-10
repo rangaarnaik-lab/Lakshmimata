@@ -9973,12 +9973,24 @@ export default function App(){
   }
   const detailFirst=dockLayout.order.indexOf('detail') < dockLayout.order.indexOf('chart')
   const dockStack=dockLayout.mode==='stack'
+  // User (or alert) picked a symbol — show Chart; Details/About only for
+  // stocks (ChartPanel already hides Details for indices).
+  const openChart=useCallback((sym)=>{
+    if(!sym) return
+    setChartSym(sym)
+    if(isMobile) return
+    setPanelWins(w=>({
+      ...w,
+      chart:{...w.chart,open:true,minimized:false},
+      detail:{...w.detail,open:true,minimized:false},
+    }))
+  },[isMobile])
   const prevChartSymRef=useRef(null)
   useEffect(()=>{
-    // Only force-open chart/detail when opening a symbol from none —
-    // keep minimize/close state when flipping prev/next.
+    // First pick from null (e.g. auto-open on RS) — open panels.
+    // Later prev/next keep minimize/close. openChart() always opens.
     if(!chartSym){ prevChartSymRef.current=null; return }
-    if(prevChartSymRef.current==null){
+    if(prevChartSymRef.current==null && mainTab!=='market'){
       setPanelWins(w=>({
         ...w,
         chart:{...w.chart,open:true,minimized:false},
@@ -9986,7 +9998,7 @@ export default function App(){
       }))
     }
     prevChartSymRef.current=chartSym
-  },[chartSym])
+  },[chartSym,mainTab])
   const autoOpenedRef=useRef(false)
   const rsTableDrag=useDragScroll()
   const idxTableDrag=useDragScroll()
@@ -10129,7 +10141,7 @@ export default function App(){
             n.onclick = ()=>{
               window.focus()
               setMainTab(goSqueeze ? 'squeeze' : goBreakout ? 'breakout' : 'rs')
-              if(alert.sym) setChartSym(alert.sym)
+              if(alert.sym) openChart(alert.sym)
             }
             setTimeout(()=>n.close(), 8000)
           })
@@ -10203,7 +10215,7 @@ export default function App(){
             n.onclick = ()=>{
               window.focus()
               setMainTab('announcements')
-              if(ann.symbol) setChartSym(ann.symbol)
+              if(ann.symbol) openChart(ann.symbol)
             }
             setTimeout(()=>n.close(), 8000)
           })
@@ -10894,11 +10906,7 @@ export default function App(){
     return()=>clearInterval(refreshTimer.current)
   },[autoRefresh,refreshInterval,runDBScan,historyDate,demoMode])
 
-  // Auto-open the #1 RS-ranked stock's chart the first time stocks load,
-  // so the app doesn't start on an empty panel. Only fires once per
-  // session (autoOpenedRef) — later refreshes shouldn't yank the chart
-  // open again if the person already closed it or picked a different stock.
-  // Skip when landing on Market — Chart/About are optional there.
+  // Auto-open #1 RS stock once on RS (and similar) — not on Market.
   useEffect(()=>{
     if(!autoOpenedRef.current && stocks.length>0 && !chartSym && mainTab!=='market'){
       autoOpenedRef.current = true
@@ -10907,9 +10915,10 @@ export default function App(){
     }
   },[stocks,chartSym,mainTab])
 
-  // Market page is tables-first: Chart + About Company are not required.
-  // Entering Market minimizes them so Overview/Indices get full width;
-  // tap a stock/index (or taskbar) to bring Chart/About back.
+  // Market = tables first. Chart + About are optional:
+  //  - enter Market → hide Chart/Details (full-width Overview/Indices)
+  //  - leave Market → show them again if a symbol is still selected
+  //  - tap a stock/index on Market → openChart() brings them back
   const prevMainTabForPanelsRef=useRef(mainTab)
   useEffect(()=>{
     const prev=prevMainTabForPanelsRef.current
@@ -10918,11 +10927,17 @@ export default function App(){
     if(mainTab==='market' && prev!=='market'){
       setPanelWins(w=>({
         ...w,
-        chart:{...w.chart, minimized:true},
-        detail:{...w.detail, minimized:true},
+        chart:{open:false,minimized:false,float:null},
+        detail:{open:false,minimized:false,float:null},
+      }))
+    } else if(prev==='market' && mainTab!=='market' && chartSym){
+      setPanelWins(w=>({
+        ...w,
+        chart:{...w.chart,open:true,minimized:false},
+        detail:{...w.detail,open:true,minimized:false},
       }))
     }
-  },[mainTab,isMobile])
+  },[mainTab,isMobile,chartSym])
 
   // Load from DB on mount, whenever the selected history date changes,
   // and whenever the scope dropdown (index / watchlist) changes — the
@@ -11541,7 +11556,7 @@ export default function App(){
                   else if(/Squeeze|VCP/i.test(h?.fireType||'')) setMainTab('squeeze')
                   else if(/Stage\s*2|Guppy/i.test(h?.fireType||'')) setMainTab('breakout')
                   else setMainTab('rs')
-                  if(h?.sym) setChartSym(h.sym)
+                  if(h?.sym) openChart(h.sym)
                 }}
                 onRequestPermission={()=>{
                   playAlertSoundFromPrefs(alertPrefsRef.current) // unlock AudioContext for later alerts
@@ -11706,7 +11721,7 @@ export default function App(){
 
         <div style={{flexShrink:0}}>
           <TickerBanner stocks={topMovers} indices={indexData}
-            onSelect={setChartSym} onSelectIndex={setChartSym}/>
+            onSelect={openChart} onSelectIndex={openChart}/>
         </div>
 
         {/* Below header: screener table | chart — or stacked up/down via Layout menu */}
@@ -12244,7 +12259,7 @@ export default function App(){
               </div>
             )}
             {displayedRS.length>0&&(
-              isMobile?pagedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={setChartSym}/>):(
+              isMobile?pagedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={openChart}/>):(
                 <>
                 <div style={{fontSize:10,color:C.muted,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
                   ↔ Drag the table left/right (or use the scrollbar) to see all columns
@@ -12261,7 +12276,7 @@ export default function App(){
                     <RsTableHeaderRow visibleRsCols={visibleRsCols} colOrder={rsColOrder}
                       sortBy={sortBy} sortDir={sortDir} handleSort={handleSort}/>
                     </div>
-                  {pagedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>setChartSym(s.sym)} visibleRsCols={visibleRsCols} rsColOrder={rsColOrder}/>)}
+                  {pagedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>openChart(s.sym)} visibleRsCols={visibleRsCols} rsColOrder={rsColOrder}/>)}
                 </div>
                 </>
               )
@@ -12455,7 +12470,7 @@ export default function App(){
               return(
                 <>
                   <IndexTapeStrip indexData={indexData} isMobile={isMobile}
-                    onIndexClick={name=>setChartSym(name)}
+                    onIndexClick={name=>openChart(name)}
                     onViewAll={()=>setMarketSubTab('indices')}/>
 
                   {/* Compact verdict: one header row + factor chips */}
@@ -12676,7 +12691,7 @@ export default function App(){
                           <div style={{...cellStyle,position:'sticky',left:0,
                             background:isExpanded?C.active:(i%2===0?C.card:C.bg),zIndex:1,paddingRight:8}}>
                             <div style={{fontWeight:700,fontSize:12,color:C.text,display:'flex',alignItems:'center',gap:4}}>
-                              <span onClick={e=>{e.stopPropagation();setChartSym(idx.name)}}
+                              <span onClick={e=>{e.stopPropagation();openChart(idx.name)}}
                                 style={{color:C.accent,cursor:'pointer',textDecoration:'underline',
                                   textDecorationColor:C.accent+'55',textUnderlineOffset:'2px'}}
                                 title={`Open ${idx.name} chart · official index series (not sector Avg RS)`}>
@@ -12831,7 +12846,7 @@ export default function App(){
                                   <TVCopyPanel stocks={filteredConstituents} label={`${idx.name} Constituents`}/>
                                   <BreakoutTable key={`${idx.name}-${activeIndustry}-${activeRsMin}`}
                                     stocks={filteredConstituents} isMobile={isMobile}
-                                    visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                                    visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
                                 </>
                               )}
                             </div>
@@ -12999,7 +13014,7 @@ export default function App(){
                                     <TVCopyPanel stocks={filteredSecStocks} label={`${sec.sector} Stocks`}/>
                                     <BreakoutTable key={`${sec.sector}-${secActiveIndustry}-${secActiveRsMin}`}
                                       stocks={filteredSecStocks} isMobile={isMobile}
-                                      visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                                      visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
                                   </div>
                                 )
                               })()}
@@ -13113,7 +13128,7 @@ export default function App(){
                                     <TVCopyPanel stocks={filteredIndMembers} label={`${ind.name} Stocks`}/>
                                     <BreakoutTable key={`${ind.name}-${indActiveRsMin}`}
                                       stocks={filteredIndMembers} isMobile={isMobile}
-                                      visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                                      visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
                                   </div>
                                   )
                                 })()}
@@ -13215,7 +13230,7 @@ export default function App(){
                   </div>
                   <TVCopyPanel stocks={gapUps} label="Gap Up"/>
                   <BreakoutTable stocks={gapUps}
-                    isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                    isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
                 </div>
               )}
               {gapDowns.length>0&&(
@@ -13225,7 +13240,7 @@ export default function App(){
                   </div>
                   <TVCopyPanel stocks={gapDowns} label="Gap Down"/>
                   <BreakoutTable stocks={gapDowns}
-                    isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                    isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
                 </div>
               )}
                 </>
@@ -13337,7 +13352,7 @@ export default function App(){
                       </div>
                       <TVCopyPanel stocks={stocks.filter(s=>s.rsLineNewHigh)} label="RS Line New Highs"/>
                       <BreakoutTable stocks={stocks.filter(s=>s.rsLineNewHigh)}
-                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
                     </div>
                   )}
 
@@ -13349,7 +13364,7 @@ export default function App(){
                       </div>
                       <TVCopyPanel stocks={stocks.filter(s=>s.isS2NewEntry)} label="New Stage 2 Entries"/>
                       <BreakoutTable stocks={stocks.filter(s=>s.isS2NewEntry)}
-                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
                     </div>
                   )}
                   {stocks.filter(s=>s.rsLineNewHigh).length===0&&stocks.filter(s=>s.isS2NewEntry).length===0&&(
@@ -13481,7 +13496,7 @@ export default function App(){
                         </div>
                         <TVCopyPanel stocks={matches} label={label}/>
                         <BreakoutTable stocks={matches}
-                          isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                          isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
                       </div>
                     )
                   })}
@@ -13664,7 +13679,7 @@ export default function App(){
                           <div>
                             <div style={{fontWeight:700,fontSize:14,color:C.accent,
                               cursor:'pointer'}}
-                              onClick={()=>s&&setChartSym(s.sym)}>{h.sym}</div>
+                              onClick={()=>s&&openChart(s.sym)}>{h.sym}</div>
                             <div style={{fontSize:10,color:C.muted,marginTop:2}}>
                               {s?.sector||'—'}{h.entryPrice?` · Entry ${fmtP(h.entryPrice)}${h.qty?` × ${h.qty}`:''}`:''}
                             </div>
@@ -13812,7 +13827,7 @@ export default function App(){
                       <div style={{padding:'12px 14px',borderBottom:`1px solid ${C.divider}`,
                         display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                         <span style={{fontWeight:700,fontSize:14,color:C.accent,cursor:'pointer'}}
-                          onClick={()=>setChartSym(sym)}>{sym}</span>
+                          onClick={()=>openChart(sym)}>{sym}</span>
                         <button onClick={()=>setCompareSyms(s=>s.filter(x=>x!==sym))}
                           style={{background:'transparent',border:'none',color:C.muted,
                             fontSize:14,cursor:'pointer'}}>×</button>
@@ -13926,7 +13941,7 @@ export default function App(){
                   <>
                     <TVCopyPanel stocks={inSqueeze} label="In Squeeze"/>
                     <BreakoutTable stocks={inSqueeze} isMobile={isMobile}
-                      visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={setChartSym}/>
+                      visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={openChart}/>
                   </>
                 )
               })()}
@@ -13953,7 +13968,7 @@ export default function App(){
                   <>
                     <TVCopyPanel stocks={fired} label="Squeeze Fired"/>
                     <BreakoutTable stocks={fired} isMobile={isMobile}
-                      visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={setChartSym}/>
+                      visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={openChart}/>
                   </>
                 )
               })()}
@@ -14057,7 +14072,7 @@ export default function App(){
                     <>
                   <TVCopyPanel stocks={filtered} label={active.label}/>
                   <BreakoutTable key={breakoutType} stocks={filtered} isMobile={isMobile} visibleRsCols={visibleRsCols}
-                    onChartOpen={setChartSym} defaultSortBy={active.sort}/>
+                    onChartOpen={openChart} defaultSortBy={active.sort}/>
                     </>
                   )}
                 </div>
@@ -14077,7 +14092,7 @@ export default function App(){
                 const ibv=calcIBV(s)
                 const stage=calcWeinsteinStage(s)
                 return(
-                  <div key={s.sym} onClick={()=>setChartSym(s.sym)} style={{background:C.card,
+                  <div key={s.sym} onClick={()=>openChart(s.sym)} style={{background:C.card,
                     border:`2px solid ${bo.color}55`,cursor:'pointer',
                     borderRadius:12,marginBottom:10,padding:'14px'}}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
@@ -14178,7 +14193,7 @@ export default function App(){
               </>
             )}
             <BreakoutTable stocks={displayed52WL} isMobile={isMobile}
-              visibleRsCols={{...visibleRsCols,wl52:true}} onChartOpen={setChartSym}/>
+              visibleRsCols={{...visibleRsCols,wl52:true}} onChartOpen={openChart}/>
           </div>
         )}
 
@@ -14223,7 +14238,7 @@ export default function App(){
                 ppCount={weakBase.filter(s=>s.pp.isPP).length} total={displayedWeak.length}/>
             )}
             <BreakoutTable stocks={displayedWeak} isMobile={isMobile}
-              visibleRsCols={{...visibleRsCols,weakrs:true}} onChartOpen={setChartSym}/>
+              visibleRsCols={{...visibleRsCols,weakrs:true}} onChartOpen={openChart}/>
           </div>
         )}
 
@@ -14252,7 +14267,7 @@ export default function App(){
           const goTo=s=>{
             if(rotationScope==='sector'){setSectorFilter(s.id);setMainTab('rs')}
             else if(rotationScope==='index'){setRotationExpandedId(prev=>prev===s.id?null:s.id);setIdxConstituentFilters({industry:null,rsMin:0})}
-            else{setChartSym(s.id)}
+            else{openChart(s.id)}
           }
           const effectiveWlId=rotationWlId??activeWl??watchlists[0]?.id??null
           const effectiveWl=watchlists.find(w=>w.id===effectiveWlId)
@@ -14445,7 +14460,7 @@ export default function App(){
                     <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:12}}>Loading stocks…</div>
                   ):constituentRolledData&&constituentRolledData.rolledData.some(s=>s.trail?.length>0)?(
                     <RRGChart rolledData={constituentRolledData.rolledData}
-                      onDotClick={s=>setChartSym(s.id)}/>
+                      onDotClick={s=>openChart(s.id)}/>
                   ):(()=>{
                     const constituents=getIndexConstituents(rotationExpandedId,stocks)||[]
                     return(
@@ -14578,7 +14593,7 @@ export default function App(){
                         <TVCopyPanel stocks={filteredRotConstituents} label={`${rotationExpandedId} Constituents`}/>
                         <BreakoutTable key={`${rotationExpandedId}-${rotActiveIndustry}-${rotActiveRsMin}`}
                           stocks={filteredRotConstituents} isMobile={isMobile}
-                          visibleRsCols={visibleRsCols} onChartOpen={setChartSym}/>
+                          visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
                       </>
                     )}
                   </div>
@@ -14590,7 +14605,7 @@ export default function App(){
         })()}
 
         {mainTab==='themes'&&(
-          <ThemesRadarPanel onOpenSymbol={setChartSym}/>
+          <ThemesRadarPanel onOpenSymbol={openChart}/>
         )}
 
         {/* ══ CORPORATE ANNOUNCEMENTS ══ */}
@@ -14650,7 +14665,7 @@ export default function App(){
                     </div>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
-                        <span onClick={()=>setChartSym(p.symbol)}
+                        <span onClick={()=>openChart(p.symbol)}
                           style={{fontWeight:800,fontSize:13,color:C.accent,cursor:'pointer',
                             textDecoration:'underline',textDecorationColor:C.accent+'55'}}>
                           {p.symbol}
@@ -14776,7 +14791,7 @@ export default function App(){
                               borderRadius:8,padding:'8px 12px',display:'flex',flexDirection:'column',gap:4}}>
                               <div style={{display:'flex',alignItems:'center',gap:10}}>
                                 <div style={{minWidth:26,fontSize:11,fontWeight:700,color:C.muted}}>#{h.rank}</div>
-                                <span onClick={()=>setChartSym(h.symbol)}
+                                <span onClick={()=>openChart(h.symbol)}
                                   style={{fontWeight:800,fontSize:12,color:C.accent,cursor:'pointer',
                                     minWidth:76,textDecoration:'underline',textDecorationColor:C.accent+'55'}}>
                                   {h.symbol}
@@ -14885,7 +14900,7 @@ export default function App(){
                               <button type="button"
                                 onClick={()=>{
                                   setChartDetailTabHint(r.detailTab)
-                                  setChartSym(r.symbol)
+                                  openChart(r.symbol)
                                 }}
                                 style={{flex:1,textAlign:'left',border:'none',background:'transparent',
                                   cursor:'pointer',padding:0,color:C.text}}>
@@ -15072,7 +15087,7 @@ export default function App(){
                     <div key={`${a.symbol}-${i}`} style={{background:C.card,border:`1px solid ${C.border}`,
                       borderRadius:10,padding:'12px 14px',display:'flex',gap:12,alignItems:'flex-start'}}>
                       <div style={{minWidth:76}}>
-                      <div onClick={()=>setChartSym(a.symbol)}
+                      <div onClick={()=>openChart(a.symbol)}
                         style={{fontWeight:800,fontSize:13,color:C.accent,cursor:'pointer',
                             textDecoration:'underline',textDecorationColor:C.accent+'55'}}>
                         {a.symbol}
