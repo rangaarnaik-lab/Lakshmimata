@@ -1203,6 +1203,134 @@ function HistoryCalendarPicker({historyDate, setHistoryDate, availableDates, isM
   )
 }
 
+// Browser-notification prefs — enable/disable each signal type.
+const ALERT_PREF_KEY='lakshmimata-alert-prefs'
+const DEFAULT_ALERT_PREFS={
+  hy:true, ht:true, pp:true, squeeze:true, stage2:true, guppy:true, announcements:true,
+}
+const ALERT_PREF_OPTIONS=[
+  {key:'hy', label:'HY (High Yield vol)', icon:'📊'},
+  {key:'ht', label:'HT (High Turnover)', icon:'🚀'},
+  {key:'pp', label:'PP (Power Play)', icon:'🔥'},
+  {key:'squeeze', label:'Squeeze / VCP', icon:'🌀'},
+  {key:'stage2', label:'Stage 2 new entry', icon:'📈'},
+  {key:'guppy', label:'Guppy crossover', icon:'🐠'},
+  {key:'announcements', label:'Announcements', icon:'📢'},
+]
+function loadAlertPrefs(){
+  try{
+    const raw=JSON.parse(localStorage.getItem(ALERT_PREF_KEY)||'null')
+    if(!raw||typeof raw!=='object') return {...DEFAULT_ALERT_PREFS}
+    return {...DEFAULT_ALERT_PREFS, ...raw}
+  }catch{ return {...DEFAULT_ALERT_PREFS} }
+}
+function persistAlertPrefs(prefs){
+  try{ localStorage.setItem(ALERT_PREF_KEY, JSON.stringify(prefs)) }catch{/* ignore */}
+}
+/** Map squeeze_alerts.fire_type → which pref keys it matches. */
+function alertPrefKeysForFireType(fireType){
+  const t=String(fireType||'')
+  const keys=[]
+  if(/\bHY\b/.test(t)) keys.push('hy')
+  if(/\bHT\b/.test(t)) keys.push('ht')
+  if(/\bPP\b/.test(t)) keys.push('pp')
+  if(/Squeeze|VCP/i.test(t)) keys.push('squeeze')
+  if(/Stage\s*2|S2/i.test(t)) keys.push('stage2')
+  if(/Guppy/i.test(t)) keys.push('guppy')
+  return keys
+}
+function isAlertTypeEnabled(fireType, prefs){
+  const keys=alertPrefKeysForFireType(fireType)
+  if(!keys.length) return true // unknown types still notify
+  return keys.some(k=>prefs[k]!==false)
+}
+function alertNotificationTitle(alert){
+  const t=String(alert.fire_type||'')
+  if(/\bHY\b|\bHT\b/.test(t) && !/Squeeze|VCP/i.test(t)) return `🔊 ${alert.sym} — ${t} Volume!`
+  if(/\bPP\b/.test(t)) return `🔥 ${alert.sym} — Power Play!`
+  if(/Stage\s*2/i.test(t)) return `📈 ${alert.sym} — Stage 2 Entry!`
+  if(/Guppy/i.test(t)) return `🐠 ${alert.sym} — Guppy Crossover!`
+  if(/Squeeze|VCP/i.test(t)) return `🔥 ${alert.sym} — Squeeze Fired!`
+  return `🔔 ${alert.sym} — ${t||'Alert'}`
+}
+
+function AlertPrefsMenu({prefs, setPrefs, notifPermission, onRequestPermission, colors:C}){
+  const [open,setOpen]=useState(false)
+  const enabledCount=ALERT_PREF_OPTIONS.filter(o=>prefs[o.key]!==false).length
+  const toggle=key=>{
+    setPrefs(prev=>{
+      const next={...prev,[key]:prev[key]===false}
+      persistAlertPrefs(next)
+      return next
+    })
+  }
+  if(typeof Notification==='undefined') return null
+  if(notifPermission!=='granted'){
+    return(
+      <button type="button" onClick={onRequestPermission}
+        title="Enable browser alerts"
+        style={{padding:'5px 10px',borderRadius:6,
+          border:`1px solid ${C.yellow}44`,background:C.yellow+'11',
+          color:C.yellow,fontSize:10,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>
+        🔔 Enable Alerts
+      </button>
+    )
+  }
+  return(
+    <div style={{position:'relative'}}>
+      <button type="button" onClick={()=>setOpen(v=>!v)}
+        title="Customize which alerts you receive"
+        style={{padding:'5px 10px',borderRadius:6,
+          border:`1px solid ${open?C.accent:C.green}33`,
+          background:open?C.accent+'18':C.green+'11',
+          color:open?C.accent:C.green,fontSize:10,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>
+        🔔 Alerts {enabledCount}/{ALERT_PREF_OPTIONS.length} ▾
+      </button>
+      {open&&(
+        <>
+          <div onClick={()=>setOpen(false)} style={{position:'fixed',inset:0,zIndex:80}}/>
+          <div style={{position:'absolute',top:34,right:0,zIndex:81,width:240,
+            background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
+            padding:10,boxShadow:'0 12px 32px rgba(0,0,0,0.4)'}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
+              letterSpacing:'0.05em',marginBottom:8}}>Alert types</div>
+            {ALERT_PREF_OPTIONS.map(({key,label,icon})=>(
+              <label key={key}
+                style={{display:'flex',alignItems:'center',gap:8,padding:'6px 4px',
+                  cursor:'pointer',borderRadius:6,
+                  background:prefs[key]!==false?'transparent':'transparent'}}>
+                <input type="checkbox" checked={prefs[key]!==false}
+                  onChange={()=>toggle(key)}
+                  style={{accentColor:C.accent,width:14,height:14,cursor:'pointer'}}/>
+                <span style={{fontSize:11,color:prefs[key]!==false?C.text:C.muted}}>
+                  {icon} {label}
+                </span>
+              </label>
+            ))}
+            <div style={{display:'flex',gap:6,marginTop:8}}>
+              <button type="button"
+                onClick={()=>{const next={...DEFAULT_ALERT_PREFS};persistAlertPrefs(next);setPrefs(next)}}
+                style={{flex:1,padding:'5px 0',borderRadius:6,border:`1px solid ${C.border}`,
+                  background:'transparent',color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
+                All on
+              </button>
+              <button type="button"
+                onClick={()=>{
+                  const next=Object.fromEntries(ALERT_PREF_OPTIONS.map(o=>[o.key,false]))
+                  persistAlertPrefs(next);setPrefs(next)
+                }}
+                style={{flex:1,padding:'5px 0',borderRadius:6,border:`1px solid ${C.border}`,
+                  background:'transparent',color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
+                All off
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 function LastUpdatedBar({scanMeta,lastRefresh,loading,autoRefresh,setAutoRefresh,refreshInterval,setRefreshInterval,onRefresh,inline=false,hideAuto=false}){
   const [now,setNow]=useState(Date.now())
   useEffect(()=>{const t=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(t)},[])
@@ -8965,6 +9093,9 @@ export default function App(){
   const [notifPermission,setNotifPermission]=useState(
     typeof Notification!=='undefined'?Notification.permission:'denied'
   )
+  const [alertPrefs,setAlertPrefs]=useState(()=>loadAlertPrefs())
+  const alertPrefsRef=useRef(alertPrefs)
+  alertPrefsRef.current=alertPrefs
   const lastAlertCheck = useRef(null)
   const lastAnnouncementCheck = useRef(null)
 
@@ -8998,31 +9129,25 @@ export default function App(){
 
         if(data && data.length > 0){
           data.forEach(alert=>{
-            // Browser notification
-            if(typeof Notification!=='undefined' && Notification.permission==='granted'){
-              const isVolAlert = /HY|HT/.test(alert.fire_type) && !/Squeeze|VCP/.test(alert.fire_type)
-              const title = isVolAlert
-                ? `🔊 ${alert.sym} — ${alert.fire_type} Volume!`
-                : `🔥 ${alert.sym} — Squeeze Fired!`
-              const n = new Notification(
-                title,
-                {
-                  body: `${alert.fire_type} | RS: ${alert.rs_tv||alert.rs} | ${alert.chg_pct>=0?'+':''}${alert.chg_pct?.toFixed(2)}% | ${alert.sector}`,
-                  icon: '/favicon.ico',
-                  tag: `alert-${alert.sym}-${alert.fire_type}`,  // prevents duplicate for same stock+signal
-                  requireInteraction: false,
-                }
-              )
-              // Click notification → HY/HT alerts live in the RS tab
-              // (they're columns there, not a separate tab); squeeze/VCP
-              // still go to the Squeeze tab.
-              n.onclick = ()=>{
-                window.focus()
-                setMainTab(isVolAlert ? 'rs' : 'squeeze')
+            if(typeof Notification==='undefined' || Notification.permission!=='granted') return
+            if(!isAlertTypeEnabled(alert.fire_type, alertPrefsRef.current)) return
+            const ft=String(alert.fire_type||'')
+            const goSqueeze=/Squeeze|VCP/i.test(ft)
+            const goBreakout=/Stage\s*2|Guppy/i.test(ft)
+            const n = new Notification(
+              alertNotificationTitle(alert),
+              {
+                body: `${alert.fire_type} | RS: ${alert.rs_tv||alert.rs} | ${alert.chg_pct>=0?'+':''}${Number(alert.chg_pct||0).toFixed(2)}% | ${alert.sector||''}`,
+                icon: '/favicon.ico',
+                tag: `alert-${alert.sym}-${alert.fire_type}`,
+                requireInteraction: false,
               }
-              // Auto-close after 8 seconds
-              setTimeout(()=>n.close(), 8000)
+            )
+            n.onclick = ()=>{
+              window.focus()
+              setMainTab(goSqueeze ? 'squeeze' : goBreakout ? 'breakout' : 'rs')
             }
+            setTimeout(()=>n.close(), 8000)
           })
         }
       }catch(e){
@@ -9058,6 +9183,7 @@ export default function App(){
         lastAnnouncementCheck.current = new Date().toISOString()
 
         if(data && data.length > 0){
+          if(alertPrefsRef.current.announcements===false) return
           data.forEach(ann=>{
             if(typeof Notification!=='undefined' && Notification.permission==='granted'){
               const n = new Notification(
@@ -10362,23 +10488,14 @@ export default function App(){
                 </button>
               )}
 
-              {/* Notification permission toggle */}
-              {typeof Notification!=='undefined'&&notifPermission!=='granted'&&(
-                <button onClick={()=>Notification.requestPermission().then(p=>setNotifPermission(p))}
-                  title="Enable squeeze fire alerts"
-                  style={{padding:'5px 10px',borderRadius:6,
-                    border:`1px solid ${C.yellow}44`,background:C.yellow+'11',
-                    color:C.yellow,fontSize:10,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>
-                  🔔 Enable Alerts
-                </button>
-              )}
-              {notifPermission==='granted'&&(
-                <span title="Squeeze fire alerts active"
-                  style={{fontSize:10,color:C.green,padding:'5px 8px',
-                    border:`1px solid ${C.green}33`,borderRadius:6,whiteSpace:'nowrap'}}>
-                  🔔 Alerts ON
-                </span>
-              )}
+              {/* Alert permission + per-type enable/disable */}
+              <AlertPrefsMenu
+                prefs={alertPrefs}
+                setPrefs={setAlertPrefs}
+                notifPermission={notifPermission}
+                onRequestPermission={()=>Notification.requestPermission().then(p=>setNotifPermission(p))}
+                colors={C}
+              />
 
               {/* Scan button removed — the scope dropdown auto-filters on
                   change now. A small progress chip stands in while loading
