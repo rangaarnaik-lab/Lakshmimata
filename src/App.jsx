@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -1219,15 +1219,25 @@ const ALERT_PREF_OPTIONS=[
   {key:'rs70', label:'RS Rating > 70', icon:'⭐'},
   {key:'announcements', label:'Announcements', icon:'📢'},
 ]
-function loadAlertPrefs(){
+function alertPrefsStorageKey(userId){
+  return userId ? `${ALERT_PREF_KEY}:${userId}` : ALERT_PREF_KEY
+}
+function loadAlertPrefs(userId){
   try{
-    const raw=JSON.parse(localStorage.getItem(ALERT_PREF_KEY)||'null')
+    // Prefer per-user cache; fall back to legacy shared key once.
+    const keyed=localStorage.getItem(alertPrefsStorageKey(userId))
+    const legacy=!userId?null:localStorage.getItem(ALERT_PREF_KEY)
+    const raw=JSON.parse(keyed||legacy||'null')
     if(!raw||typeof raw!=='object') return {...DEFAULT_ALERT_PREFS}
     return {...DEFAULT_ALERT_PREFS, ...raw}
   }catch{ return {...DEFAULT_ALERT_PREFS} }
 }
-function persistAlertPrefs(prefs){
-  try{ localStorage.setItem(ALERT_PREF_KEY, JSON.stringify(prefs)) }catch{/* ignore */}
+function persistAlertPrefsLocal(prefs, userId){
+  try{ localStorage.setItem(alertPrefsStorageKey(userId), JSON.stringify(prefs)) }catch{/* ignore */}
+}
+function normalizeAlertPrefs(raw){
+  if(!raw||typeof raw!=='object') return {...DEFAULT_ALERT_PREFS}
+  return {...DEFAULT_ALERT_PREFS, ...raw}
 }
 /** Map squeeze_alerts.fire_type → which pref keys it matches. */
 function alertPrefKeysForFireType(fireType){
@@ -1261,15 +1271,15 @@ function alertNotificationTitle(alert){
   return `🔔 ${alert.sym} — ${t||'Alert'}`
 }
 
-function AlertPrefsMenu({prefs, setPrefs, notifPermission, onRequestPermission, colors:C}){
+function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestPermission, colors:C, cloudSynced}){
   const [open,setOpen]=useState(false)
   const enabledCount=ALERT_PREF_OPTIONS.filter(o=>prefs[o.key]!==false).length
+  const applyPrefs=next=>{
+    setPrefs(next)
+    onPersist?.(next)
+  }
   const toggle=key=>{
-    setPrefs(prev=>{
-      const next={...prev,[key]:prev[key]===false}
-      persistAlertPrefs(next)
-      return next
-    })
+    applyPrefs({...prefs,[key]:prefs[key]===false})
   }
   if(typeof Notification==='undefined') return null
   if(notifPermission!=='granted'){
@@ -1286,7 +1296,7 @@ function AlertPrefsMenu({prefs, setPrefs, notifPermission, onRequestPermission, 
   return(
     <div style={{position:'relative'}}>
       <button type="button" onClick={()=>setOpen(v=>!v)}
-        title="Customize which alerts you receive"
+        title={cloudSynced?'Your alert types (saved to your account)':'Customize which alerts you receive'}
         style={{padding:'5px 10px',borderRadius:6,
           border:`1px solid ${open?C.accent:C.green}33`,
           background:open?C.accent+'18':C.green+'11',
@@ -1296,16 +1306,18 @@ function AlertPrefsMenu({prefs, setPrefs, notifPermission, onRequestPermission, 
       {open&&(
         <>
           <div onClick={()=>setOpen(false)} style={{position:'fixed',inset:0,zIndex:80}}/>
-          <div style={{position:'absolute',top:34,right:0,zIndex:81,width:240,
+          <div style={{position:'absolute',top:34,right:0,zIndex:81,width:250,
             background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
             padding:10,boxShadow:'0 12px 32px rgba(0,0,0,0.4)'}}>
             <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
-              letterSpacing:'0.05em',marginBottom:8}}>Alert types</div>
+              letterSpacing:'0.05em',marginBottom:4}}>Alert types</div>
+            <div style={{fontSize:9,color:C.muted,marginBottom:8}}>
+              {cloudSynced?'Saved to your account — follows you across devices.':'Sign in to sync these across devices.'}
+            </div>
             {ALERT_PREF_OPTIONS.map(({key,label,icon})=>(
               <label key={key}
                 style={{display:'flex',alignItems:'center',gap:8,padding:'6px 4px',
-                  cursor:'pointer',borderRadius:6,
-                  background:prefs[key]!==false?'transparent':'transparent'}}>
+                  cursor:'pointer',borderRadius:6}}>
                 <input type="checkbox" checked={prefs[key]!==false}
                   onChange={()=>toggle(key)}
                   style={{accentColor:C.accent,width:14,height:14,cursor:'pointer'}}/>
@@ -1316,16 +1328,13 @@ function AlertPrefsMenu({prefs, setPrefs, notifPermission, onRequestPermission, 
             ))}
             <div style={{display:'flex',gap:6,marginTop:8}}>
               <button type="button"
-                onClick={()=>{const next={...DEFAULT_ALERT_PREFS};persistAlertPrefs(next);setPrefs(next)}}
+                onClick={()=>applyPrefs({...DEFAULT_ALERT_PREFS})}
                 style={{flex:1,padding:'5px 0',borderRadius:6,border:`1px solid ${C.border}`,
                   background:'transparent',color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
                 All on
               </button>
               <button type="button"
-                onClick={()=>{
-                  const next=Object.fromEntries(ALERT_PREF_OPTIONS.map(o=>[o.key,false]))
-                  persistAlertPrefs(next);setPrefs(next)
-                }}
+                onClick={()=>applyPrefs(Object.fromEntries(ALERT_PREF_OPTIONS.map(o=>[o.key,false])))}
                 style={{flex:1,padding:'5px 0',borderRadius:6,border:`1px solid ${C.border}`,
                   background:'transparent',color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
                 All off
@@ -9172,9 +9181,38 @@ export default function App(){
   const [notifPermission,setNotifPermission]=useState(
     typeof Notification!=='undefined'?Notification.permission:'denied'
   )
-  const [alertPrefs,setAlertPrefs]=useState(()=>loadAlertPrefs())
+  const [alertPrefs,setAlertPrefs]=useState(()=>loadAlertPrefs(null))
   const alertPrefsRef=useRef(alertPrefs)
   alertPrefsRef.current=alertPrefs
+  const alertPrefsSaveTimer=useRef(null)
+  const persistUserAlertPrefs=useCallback((prefs)=>{
+    const uid=session?.user?.id
+    persistAlertPrefsLocal(prefs, uid||null)
+    if(!uid || demoMode) return
+    if(alertPrefsSaveTimer.current) clearTimeout(alertPrefsSaveTimer.current)
+    alertPrefsSaveTimer.current=setTimeout(()=>{
+      saveUserAlertPrefs(uid, prefs).then(res=>{
+        if(res?.error) console.warn('Alert prefs save failed:', res.error)
+      })
+    }, 350)
+  },[session?.user?.id, demoMode])
+  // Load this user's cloud prefs when session is ready (falls back to local cache).
+  useEffect(()=>{
+    const uid=session?.user?.id
+    if(!uid || demoMode){
+      setAlertPrefs(loadAlertPrefs(uid||null))
+      return
+    }
+    let cancelled=false
+    setAlertPrefs(loadAlertPrefs(uid))
+    fetchUserAlertPrefs(uid).then(cloud=>{
+      if(cancelled || !cloud) return
+      const next=normalizeAlertPrefs(cloud)
+      setAlertPrefs(next)
+      persistAlertPrefsLocal(next, uid)
+    })
+    return ()=>{ cancelled=true }
+  },[session?.user?.id, demoMode])
   const lastAlertCheck = useRef(null)
   const lastAnnouncementCheck = useRef(null)
 
@@ -10571,6 +10609,8 @@ export default function App(){
               <AlertPrefsMenu
                 prefs={alertPrefs}
                 setPrefs={setAlertPrefs}
+                onPersist={persistUserAlertPrefs}
+                cloudSynced={!!(session?.user?.id && !demoMode)}
                 notifPermission={notifPermission}
                 onRequestPermission={()=>Notification.requestPermission().then(p=>setNotifPermission(p))}
                 colors={C}

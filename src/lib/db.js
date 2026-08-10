@@ -680,6 +680,41 @@ export async function deleteUserLayout(userId, slot) {
   return { success: true }
 }
 
+/** Load per-user alert enable/disable prefs (null if none saved yet). */
+export async function fetchUserAlertPrefs(userId) {
+  if (!userId) return null
+  const { data, error } = await supabase
+    .from('user_alert_prefs')
+    .select('prefs,updated_at')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) {
+    console.error('fetchUserAlertPrefs error:', error.message)
+    return null
+  }
+  return data?.prefs && typeof data.prefs === 'object' ? data.prefs : null
+}
+
+/** Upsert per-user alert prefs. */
+export async function saveUserAlertPrefs(userId, prefs) {
+  if (!userId) return { error: 'Sign in to save alert preferences.' }
+  const payload = {
+    user_id: userId,
+    prefs: prefs || {},
+    updated_at: new Date().toISOString(),
+  }
+  const { data, error } = await supabase
+    .from('user_alert_prefs')
+    .upsert(payload, { onConflict: 'user_id' })
+    .select('prefs,updated_at')
+    .single()
+  if (error) {
+    console.error('saveUserAlertPrefs error:', error.message)
+    return { error: error.message || 'Could not save alert preferences' }
+  }
+  return { data }
+}
+
 export async function fetchStockFullHistory(sym) {
   const cleanSym = (sym || '').trim()
   // Confirmed via direct Supabase inspection: rows exist with real data
