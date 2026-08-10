@@ -22,6 +22,8 @@ export default function PanelWindow({
   showClose = true,
   showMinimize = true,
   hideHeader = false,
+  onMoveUp = null,   // reorder docked tile up / earlier
+  onMoveDown = null, // reorder docked tile down / later
 }) {
   const dragRef = useRef(null)
 
@@ -145,6 +147,14 @@ export default function PanelWindow({
             {headerExtra}
           </div>
           <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+            {(onMoveUp || onMoveDown) && !isFloat && (
+              <>
+                <button type="button" title="Move up / earlier" disabled={!onMoveUp}
+                  onClick={onMoveUp} style={{ ...btn, opacity: onMoveUp ? 1 : 0.35 }}>▲</button>
+                <button type="button" title="Move down / later" disabled={!onMoveDown}
+                  onClick={onMoveDown} style={{ ...btn, opacity: onMoveDown ? 1 : 0.35 }}>▼</button>
+              </>
+            )}
             {isFloat && (
               <button
                 type="button"
@@ -211,6 +221,9 @@ export function ScreenerFrame({
   onMinimize,
   onClose,
   dockStyle = {},
+  onMoveUp = null,
+  onMoveDown = null,
+  headerExtra = null,
 }) {
   if (!visible) return null
   if (isMobile) {
@@ -228,7 +241,9 @@ export function ScreenerFrame({
       </div>
     )
   }
-  // Docked: chrome lives in the app top bar (single row). Floating: show window title bar for drag.
+  // Docked: chrome lives in the app top bar (single row) unless stacking
+  // (then show title bar so ▲▼ reorder is available). Floating: always show chrome.
+  const showDockChrome = !!floating || !!(onMoveUp || onMoveDown)
   return (
     <PanelWindow
       id="screener"
@@ -238,7 +253,10 @@ export function ScreenerFrame({
       onFloatingChange={onFloatingChange}
       onMinimize={onMinimize}
       onClose={onClose}
-      hideHeader={!floating}
+      hideHeader={!showDockChrome}
+      onMoveUp={onMoveUp}
+      onMoveDown={onMoveDown}
+      headerExtra={headerExtra}
       dockStyle={{
         height: '100%',
         minWidth: 0,
