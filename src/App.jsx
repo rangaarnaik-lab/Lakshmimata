@@ -19,7 +19,8 @@ import { resolveIndustry, resolveSector, getPeerGroup } from './data/industries'
 import {
   calcSMASeries, findSwingPoints, computeSupportResistance,
   detectInsideBars, detectAccDistDays, detectVCPContractions, detectCupAndHandle,
-  detectPPDays, detectHYDays, detectHTDays, detectIBVDays, detectNearEMA9Days
+  detectPPDays, detectHYDays, detectHTDays, detectIBVDays, detectNearEMA9Days,
+  detectBullSnortDays, aggregateToWeekly
 } from './scanners/chartAnalysis'
 
 // ─────────────────────────────────────────────────────────────────────
@@ -4909,29 +4910,69 @@ function ThemesRadarPanel({onOpenSymbol}){
 // alongside the TradingView embed as a second tab, not a replacement —
 // useful for stocks TradingView's free embed can't resolve, and for
 // seeing our own scanner's signals drawn directly on the chart.
-const RANGE_BARS = {'1D':1,'1M':21,'3M':63,'6M':126,'YTD':null,'1Y':252,'5Y':1260,'All':100000}
+const RANGE_BARS_D = {'1D':1,'1W':5,'1M':21,'3M':63,'6M':126,'YTD':null,'1Y':252,'5Y':1260,'All':100000}
+const RANGE_BARS_W = {'1D':1,'1W':1,'1M':4,'3M':13,'6M':26,'YTD':null,'1Y':52,'5Y':260,'All':100000}
+const BULL_SNORT_COLOR = '#f59e0b'
 
 function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [range, setRange] = useState('1Y')
-  const [zoomBars, setZoomBars] = useState(RANGE_BARS['1Y'])
+  const [barInterval, setBarInterval] = useState('D') // 'D' daily | 'W' weekly
+  const [zoomBars, setZoomBars] = useState(RANGE_BARS_D['1Y'])
   const [panOffset, setPanOffset] = useState(0) // bars back from the most recent
   const [showMA, setShowMA] = useState(true)
   const [chartStyle, setChartStyle] = useState('candle') // 'candle' | 'line'
   const [showSR, setShowSR] = useState(true)
   const [showPatterns, setShowPatterns] = useState(true)
+  const [showBullSnort, setShowBullSnort] = useState(true)
   const [showForecast, setShowForecast] = useState(false)
   const [hoverIdx, setHoverIdx] = useState(null)
   const [pinnedIdx, setPinnedIdx] = useState(null)
+  const [chartBox, setChartBox] = useState({w:900, h: chartExpanded?520:480})
   const dragRef = useRef(null) // {startX, startPanOffset} | {pinchDist, pinchZoomBars} | null
   const svgRef = useRef(null)
+  const chartWrapRef = useRef(null)
+  const plotRef = useRef(null)
   const rafRef = useRef(null)
+  const rangeBars = barInterval==='W' ? RANGE_BARS_W : RANGE_BARS_D
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
+
+  // Measure the plot pane only (not toolbar/legend) so the SVG fills the device panel.
+  useEffect(()=>{
+    const el=plotRef.current
+    if(!el || typeof ResizeObserver==='undefined') return
+    const ro=new ResizeObserver((entries)=>{
+      const cr=entries[0]?.contentRect
+      if(!cr) return
+      const w=Math.max(280, Math.round(cr.width))
+      const h=Math.max(180, Math.round(cr.height))
+      setChartBox(prev=>(prev.w===w&&prev.h===h)?prev:{w,h})
+    })
+    ro.observe(el)
+    return ()=>ro.disconnect()
+  },[loading, sym, chartExpanded, barInterval])
+
+  // Daily series (+ optional weekly aggregate). Analysis runs on this.
+  const seriesData = useMemo(() => {
+    if (!data || data.error || !data.prices || data.prices.length < 5) return null
+    let dates = data.dates
+    let closes = data.prices
+    let highs = data.highs
+    let lows = data.lows
+    let volumes = data.volumes
+    let opens = (data.opens && data.opens.length === closes.length)
+      ? data.opens
+      : closes.map((c,i)=> i>0 ? closes[i-1] : c)
+    if (barInterval === 'W') {
+      return aggregateToWeekly(dates, opens, highs, lows, closes, volumes)
+    }
+    return { dates, opens, highs, lows, closes, volumes }
+  }, [data, barInterval])
 
   // Analysis runs on the FULL series (so early visible bars still have
   // correct MA/pattern context from data before the visible window),
-  // then only the slice gets rendered. Memoized on `data` specifically
+  // then only the slice gets rendered. Memoized on `seriesData`
   // because these are genuinely expensive over up to 730 days of
   // history — without this, every single wheel-zoom tick and every
   // pixel of drag-pan was re-running all of them on every render,
@@ -4942,8 +4983,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   // order, every render) — so it checks data validity internally
   // instead of relying on the component having already bailed out.
   const analysis = useMemo(() => {
-    if (!data || data.error || !data.prices || data.prices.length < 30) return null
-    const closes = data.prices, highs = data.highs, lows = data.lows, volumes = data.volumes
+    const minBars = barInterval==='W' ? 16 : 30
+    if (!seriesData || !seriesData.closes || seriesData.closes.length < minBars) return null
+    const closes = seriesData.closes, highs = seriesData.highs, lows = seriesData.lows
+    const volumes = seriesData.volumes, opens = seriesData.opens
     const _swings = findSwingPoints(highs, lows, 5)
     return {
       ma20: calcSMASeries(closes, 20),
@@ -4958,17 +5001,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       hyDays: detectHYDays(volumes),
       htDays: detectHTDays(volumes),
       ibvDays: detectIBVDays(highs, lows, closes, volumes),
+      bullSnortDays: detectBullSnortDays(highs, lows, closes, volumes, opens),
       nearEma9Days: detectNearEMA9Days(closes),
       vcp: detectVCPContractions(_swings),
       cup: detectCupAndHandle(closes, highs, lows),
     }
-  }, [data])
+  }, [seriesData, barInterval])
 
   useEffect(() => {
     let cancelled = false
     setLoading(true); setData(null)
-    setZoomBars(RANGE_BARS['1Y']); setPanOffset(0) // reset zoom/pan for the new symbol
+    setZoomBars(RANGE_BARS_D['1Y']); setPanOffset(0) // reset zoom/pan for the new symbol
     setPinnedIdx(null)
+    setBarInterval('D')
     if (isIndex) setChartStyle('line') // no real OHLC exists for indices, only a close-price series
     const fetcher = isIndex ? fetchIndexPriceHistory(sym) : fetchStockFullHistory(sym)
     fetcher
@@ -4977,6 +5022,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       .finally(() => { if(!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [sym, isIndex])
+
+  useEffect(()=>{
+    // Switching D/W resets zoom to the current range preset in that unit.
+    const bars = range==='YTD' ? null : rangeBars[range]
+    if(bars!=null) setZoomBars(bars)
+    else setZoomBars(rangeBars['1Y'])
+    setPanOffset(0)
+  },[barInterval]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live-update TODAY's candle from the same live price feed the rest of
   // the app already polls (stocks.last_price, refreshed ~every minute
@@ -5024,34 +5077,43 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
     return () => { cancelled = true; clearInterval(t); setIsLiveUpdating(false) }
   }, [sym, isIndex])
 
+  const fillShell=(child)=>(
+    <div ref={chartWrapRef} style={{
+      padding:'8px 10px', height:isMobile?undefined:'100%', flex:isMobile?undefined:1,
+      minHeight:isMobile?320:0, display:'flex', flexDirection:'column', boxSizing:'border-box',
+    }}>{child}</div>
+  )
   if(loading){
-    return <div style={{padding:20,fontSize:12,color:C.muted,textAlign:'center'}}>Loading {sym} chart…</div>
+    return fillShell(<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted}}>Loading {sym} chart…</div>)
   }
   if(data && data.error){
-    return (
-      <div style={{padding:20,fontSize:12,color:C.red,textAlign:'center'}}>
+    return fillShell(
+      <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.red,textAlign:'center',padding:20}}>
         Couldn't load chart data for {sym}: {data.error}
       </div>
     )
   }
-  if(!data || !data.prices || data.prices.length < 30){
-    return (
-      <div style={{padding:20,fontSize:12,color:C.muted,textAlign:'center'}}>
-        Not enough price history yet for {sym} to draw a chart
-        {data && data.prices ? ` (only ${data.prices.length} days available, need 30+).` : '.'}
+  const minBarsNeeded = barInterval==='W' ? 16 : 30
+  if(!seriesData || !seriesData.closes || seriesData.closes.length < minBarsNeeded || !analysis){
+    return fillShell(
+      <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted,textAlign:'center',padding:20}}>
+        Not enough price history yet for {sym} to draw a {barInterval==='W'?'weekly':''} chart
+        {data?.prices ? ` (only ${barInterval==='W'?(seriesData?.closes?.length||0):data.prices.length} bars, need ${minBarsNeeded}+).` : '.'}
       </div>
     )
   }
 
-  const { ma20, ma50, ma200, ema9, swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, nearEma9Days, vcp, cup } = analysis
+  const { ma20, ma50, ma200, ema9, swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, bullSnortDays, nearEma9Days, vcp, cup } = analysis
 
-  let { dates, prices: closes, opens, highs, lows, volumes } = data
-  // Merge the live overlay into local copies for RENDERING only — never
-  // into `data` itself (see the comment on the live-poll effect above for
-  // why: analysis is expensively memoized on `data` and must stay stable
-  // while the market's open). Cheap: this is just array construction, not
-  // recomputing MA/S-R/patterns.
-  if (liveOverlay) {
+  let dates = seriesData.dates
+  let closes = seriesData.closes
+  let highs = seriesData.highs
+  let lows = seriesData.lows
+  let volumes = seriesData.volumes
+  let o = seriesData.opens
+  // Merge the live overlay into DAILY copies only, then re-aggregate if weekly.
+  // Never mutate `data` (analysis stays memoized on seriesData).
+  if (liveOverlay && barInterval === 'D') {
     const todayStr = new Date(Date.now() + ((330 + new Date().getTimezoneOffset())*60000))
       .toISOString().split('T')[0]
     const lastIdx = dates.length - 1
@@ -5062,7 +5124,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       if (liveOverlay.volume != null) { volumes = [...volumes]; volumes[lastIdx] = liveOverlay.volume }
     } else {
       dates = [...dates, todayStr]
-      opens = [...opens, liveOverlay.open]
+      o = [...o, liveOverlay.open]
       highs = [...highs, liveOverlay.high]
       lows = [...lows, liveOverlay.low]
       closes = [...closes, liveOverlay.price]
@@ -5070,25 +5132,21 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
     }
   }
   const n = closes.length
-  // Fall back to close price if opens weren't backfilled yet for this
-  // symbol (older stock_full_history rows fetched before Open tracking
-  // was added) — draws a thin/neutral candle instead of breaking.
-  const o = (opens && opens.length === n) ? opens : closes.map((c,i)=> i>0 ? closes[i-1] : c)
 
-  // ── Layout constants needed by both the zoom/pan handlers below and
-  // the SVG render further down ──
-  // Volume pane ~40% of candle+volume area (TradingView-like). Taller when chart is maximized.
-  const W = 900
-  const padL = 8, padR = 54, padT = 10, gapH = 8
-  const priceH = chartExpanded ? 220 : 250
-  const volH = chartExpanded ? 240 : 210
-  const H = padT + priceH + gapH + volH + 22
-  const chartW = W - padL - padR
+  // ── Layout: SVG viewBox matches the measured panel so the chart fills the device ──
+  const W = chartBox.w
+  const H = chartBox.h
+  const padL = 8, padR = Math.max(44, Math.round(W*0.06)), padT = 8, gapH = 6, axisPad = 20
+  const usable = Math.max(160, H - padT - gapH - axisPad)
+  const priceH = Math.max(100, Math.round(usable * (chartExpanded ? 0.52 : 0.58)))
+  const volH = Math.max(70, usable - priceH)
+  const chartW = Math.max(120, W - padL - padR)
 
   // barsToShow/start now driven by zoomBars/panOffset (mouse wheel /
   // pinch to zoom, drag to pan) rather than only the fixed range preset
   // buttons — those buttons just set zoomBars to a starting point.
-  const barsToShow = Math.max(10, Math.min(zoomBars, n))
+  const minZoom = barInterval==='W' ? 4 : 10
+  const barsToShow = Math.max(minZoom, Math.min(zoomBars, n))
   const maxPanOffset = Math.max(0, n - barsToShow)
   const clampedPanOffset = Math.min(panOffset, maxPanOffset)
   const start = Math.max(0, n - barsToShow - clampedPanOffset)
@@ -5105,7 +5163,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const handleWheel = (e) => {
     e.preventDefault()
     const factor = e.deltaY > 0 ? 1.15 : 0.87
-    throttle(() => setZoomBars(z => Math.max(10, Math.min(n, Math.round(z * factor)))))
+    throttle(() => setZoomBars(z => Math.max(minZoom, Math.min(n, Math.round(z * factor)))))
   }
   const pxToBars = (pxDelta) => {
     const rect = svgRef.current?.getBoundingClientRect()
@@ -5142,7 +5200,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       const newDist = touchDist(e.touches)
       const ratio = dragRef.current.pinchDist / Math.max(1, newDist) // fingers apart = zoom in
       const capturedPinchZoomBars = dragRef.current.pinchZoomBars
-      throttle(() => setZoomBars(Math.max(10, Math.min(n, Math.round(capturedPinchZoomBars * ratio)))))
+      throttle(() => setZoomBars(Math.max(minZoom, Math.min(n, Math.round(capturedPinchZoomBars * ratio)))))
     } else if (e.touches.length === 1 && dragRef.current.startX != null) {
       const deltaBars = pxToBars(e.touches[0].clientX - dragRef.current.startX)
       const capturedStartPanOffset = dragRef.current.startPanOffset
@@ -5168,6 +5226,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const vHY  = hyDays.slice(start)
   const vHT  = htDays.slice(start)
   const vIBV = ibvDays.slice(start)
+  const vSnort = (bullSnortDays||[]).slice(start)
   const vNearEma9 = nearEma9Days.slice(start)
 
   // ── Layout ──
@@ -5255,22 +5314,24 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       const idx = dates.findIndex(d=>d>=jan1)
       return idx>=0 ? n-idx : n
     }
-    return RANGE_BARS[r]
+    return rangeBars[r]
   }
   const applyRangePreset = (r) => { setZoomBars(zoomBarsForRange(r)); setPanOffset(0) }
 
   return (
-    <div style={{
-      padding:'10px 12px',
+    <div ref={chartWrapRef} style={{
+      padding:'8px 10px',
       height:isMobile?undefined:'100%',
       flex:isMobile?undefined:1,
-      minHeight:isMobile?undefined:0,
+      minHeight:isMobile?320:0,
       display:'flex',
       flexDirection:'column',
+      boxSizing:'border-box',
+      overflow:'hidden',
     }}>
       <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
       {/* Controls */}
-      <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8,alignItems:'center',flexShrink:0}}>
+      <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:6,alignItems:'center',flexShrink:0}}>
         {isLiveUpdating&&(
           <div title="Today's candle is updating from the live price feed (~every 45s during market hours). Prior days are final daily closes."
             style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:6,
@@ -5281,13 +5342,21 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           </div>
         )}
         <div style={{display:'flex',gap:3}}>
-          {Object.keys(RANGE_BARS).map(r=>(
+          {Object.keys(rangeBars).map(r=>(
             <button key={r} onClick={()=>{setRange(r);applyRangePreset(r)}}
               style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${range===r?C.accent:C.border}`,
                 background:range===r?C.accent+'22':'transparent',color:range===r?C.accent:C.muted,
                 fontSize:10,fontWeight:700,cursor:'pointer'}}>{r}</button>
           ))}
         </div>
+        <div style={{width:1,height:16,background:C.border,margin:'0 2px'}}/>
+        {[['D','D'],['W','W']].map(([label,val])=>(
+          <button key={val} onClick={()=>setBarInterval(val)}
+            title={val==='W'?'Weekly candles':'Daily candles'}
+            style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${barInterval===val?C.accent:C.border}`,
+              background:barInterval===val?C.accent+'1c':'transparent',color:barInterval===val?C.accent:C.muted,
+              fontSize:10,fontWeight:700,cursor:'pointer'}}>{label}</button>
+        ))}
         <div style={{width:1,height:16,background:C.border,margin:'0 2px'}}/>
         {[['Candle','candle'],['Line','line']].map(([label,val])=>(
           <button key={val} onClick={()=>setChartStyle(val)}
@@ -5299,8 +5368,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
         {[['MA','showMA',showMA,setShowMA,C.blue],
           ['S/R','showSR',showSR,setShowSR,C.yellow],
           ['Patterns','showPatterns',showPatterns,setShowPatterns,C.accent],
+          ['Bull Snort','showBullSnort',showBullSnort,setShowBullSnort,BULL_SNORT_COLOR],
           ['Forecast','showForecast',showForecast,setShowForecast,C.accent]].map(([label,key,val,setter,color])=>(
           <button key={key} onClick={()=>setter(v=>!v)}
+            title={key==='showBullSnort'?'Highlight bullish volume climax bars (up close, 2× avg vol, strong close)':undefined}
             style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${val?color:C.border}`,
               background:val?color+'1c':'transparent',color:val?color:C.muted,
               fontSize:10,fontWeight:700,cursor:'pointer'}}>{label}</button>
@@ -5335,11 +5406,11 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
               <span>{'  '}Vol MA <span style={{color:TV_VOL_MA}}>{fmtVol(hover.volEma)}</span></span>
             )}
           </span>
-        ) : `${sym} · ${barsToShow} days · tap a candle to pin its data`}
+        ) : `${sym} · ${barsToShow} ${barInterval==='W'?'weeks':'days'} · tap a candle to pin`}
       </div>
 
-      <div style={{flex:1,minHeight:isMobile?300:220,position:'relative'}}>
-      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet"
+      <div ref={plotRef} style={{flex:1,minHeight:0,position:'relative',width:'100%'}}>
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
         style={{
           width:'100%',
           height:'100%',
@@ -5516,22 +5587,23 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           )
         })}
 
-        {/* Volume bars — TradingView-style: teal up / red down, signal tint when Patterns on */}
+        {/* Volume bars — TradingView-style: teal up / red down; Bull Snort / Patterns tint */}
         <g>
           {vCloses.map((c,i)=>{
             if(vVol[i]==null||c==null) return null
             const op=vOpens[i]
             const up=c>=(op??c)
             const x=idxToX(i)
-            const signal=showPatterns&&(vHT[i]?'HT':vHY[i]?'HY':vIBV[i]?'IBV':vPP[i]?'PP':null)
+            const snort=showBullSnort&&vSnort[i]
+            const signal=!snort&&showPatterns&&(vHT[i]?'HT':vHY[i]?'HY':vIBV[i]?'IBV':vPP[i]?'PP':null)
             const signalColor={HT:C.orange,HY:C.pink,IBV:C.blue,PP:C.green}[signal]
-            const fill=signal?signalColor:(up?TV_VOL_UP:TV_VOL_DN)
+            const fill=snort?BULL_SNORT_COLOR:(signal?signalColor:(up?TV_VOL_UP:TV_VOL_DN))
             const barTopY=volToY(vVol[i])
             const barH=volTop+volH-barTopY
             if(barH<0.5) return null
             return (
               <rect key={`vol-${i}`} x={x-volBarW/2} y={barTopY} width={volBarW} height={barH}
-                fill={fill} opacity={signal?0.9:0.75}/>
+                fill={fill} opacity={snort||signal?0.92:0.75}/>
             )
           })}
         </g>
@@ -5578,6 +5650,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           <span><span style={{color:C.yellow}}>■</span> MA50</span>
           <span><span style={{color:C.purple}}>■</span> MA200</span>
         </>}
+        {showBullSnort && <span><span style={{color:BULL_SNORT_COLOR}}>■</span> Bull Snort</span>}
         {showPatterns && <>
           <span><span style={{color:C.teal}}>●</span> Inside Bar</span>
           <span><span style={{color:C.green}}>▲</span> Accumulation</span>

@@ -75,6 +75,70 @@ export function detectIBVDays(highs, lows, closes, volumes) {
   return flags
 }
 
+/**
+ * Bull Snort — strong bullish volume climax day:
+ * up close, volume ≥ 2× the 20-bar volume average, and close in the
+ * upper 30% of the bar's range. Works on daily or weekly bars.
+ * `opens` optional; falls back to prior close.
+ */
+export function detectBullSnortDays(highs, lows, closes, volumes, opens) {
+  const n = closes.length
+  const flags = new Array(n).fill(false)
+  const volMa = calcSMASeries(volumes, 20)
+  for (let i = 20; i < n; i++) {
+    const hi = highs[i], lo = lows[i], cl = closes[i], vol = volumes[i]
+    if (hi == null || lo == null || cl == null || vol == null) continue
+    const op = (opens && opens[i] != null) ? opens[i] : (i > 0 ? closes[i - 1] : cl)
+    if (cl < op) continue
+    const range = hi - lo
+    if (range <= 0) continue
+    if ((cl - lo) / range < 0.7) continue
+    const avg = volMa[i]
+    if (avg == null || avg <= 0) continue
+    flags[i] = vol >= avg * 2
+  }
+  return flags
+}
+
+/** Aggregate daily OHLCV into weekly bars (Mon–Sun weeks, UTC date keys). */
+export function aggregateToWeekly(dates, opens, highs, lows, closes, volumes) {
+  const weekKey = (d) => {
+    const dt = new Date(`${d}T00:00:00Z`)
+    if (Number.isNaN(dt.getTime())) return d
+    const day = dt.getUTCDay() // 0=Sun
+    const mondayOffset = (day + 6) % 7
+    const monday = new Date(dt)
+    monday.setUTCDate(dt.getUTCDate() - mondayOffset)
+    return monday.toISOString().slice(0, 10)
+  }
+  const weeks = []
+  let cur = null
+  for (let i = 0; i < dates.length; i++) {
+    const key = weekKey(dates[i])
+    const o = opens?.[i] ?? closes[i]
+    const h = highs[i], l = lows[i], c = closes[i], v = volumes[i] || 0
+    if (!cur || cur.key !== key) {
+      if (cur) weeks.push(cur)
+      cur = { key, date: dates[i], open: o, high: h, low: l, close: c, volume: v }
+    } else {
+      if (h != null) cur.high = Math.max(cur.high ?? h, h)
+      if (l != null) cur.low = Math.min(cur.low ?? l, l)
+      cur.close = c
+      cur.date = dates[i]
+      cur.volume += v
+    }
+  }
+  if (cur) weeks.push(cur)
+  return {
+    dates: weeks.map(w => w.date),
+    opens: weeks.map(w => w.open),
+    highs: weeks.map(w => w.high),
+    lows: weeks.map(w => w.low),
+    closes: weeks.map(w => w.close),
+    volumes: weeks.map(w => w.volume),
+  }
+}
+
 /** EMA series (exponential moving average) — null until enough data. */
 function emaSeries(values, period) {
   const out = new Array(values.length).fill(null)
