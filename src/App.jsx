@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useContext } from 'react'
+import PanelWindow, { PanelTaskbar, ScreenerFrame } from './components/PanelWindow'
 import {
   TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap, ArrowUpRight,
   TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal, Layers,
@@ -1202,7 +1203,7 @@ function HistoryCalendarPicker({historyDate, setHistoryDate, availableDates, isM
   )
 }
 
-function LastUpdatedBar({scanMeta,lastRefresh,loading,autoRefresh,setAutoRefresh,refreshInterval,setRefreshInterval,onRefresh}){
+function LastUpdatedBar({scanMeta,lastRefresh,loading,autoRefresh,setAutoRefresh,refreshInterval,setRefreshInterval,onRefresh,inline=false,hideAuto=false}){
   const [now,setNow]=useState(Date.now())
   useEffect(()=>{const t=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(t)},[])
 
@@ -1228,64 +1229,79 @@ function LastUpdatedBar({scanMeta,lastRefresh,loading,autoRefresh,setAutoRefresh
     day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true
   }):'—'
 
-  // Progress bar
-  const pct=lastRefresh?Math.min(100,((now-lastRefresh)/refreshInterval)*100):0
+  const status=(
+    <div style={{display:'flex',alignItems:'center',gap:inline?8:6,flexWrap:inline?'nowrap':'wrap',fontSize:inline?11:11,minWidth:0}}>
+      <div style={{display:'flex',alignItems:'center',gap:5,flexShrink:0}}>
+        <div style={{width:7,height:7,borderRadius:'50%',
+          background:loading?C.yellow:marketOpen?C.green:C.muted,
+          boxShadow:`0 0 5px ${loading?C.yellow:marketOpen?C.green:C.muted}`,
+          animation:loading?'pulse 1s infinite':'none'}}/>
+        <span style={{fontWeight:700,color:C.text,whiteSpace:'nowrap'}}>
+          {loading?'Updating…':marketOpen?'Live':'Closed'}
+        </span>
+      </div>
+      <span style={{color:C.muted,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{lastScanStr}</span>
+      {scanMeta?.stocks_count!=null&&(
+        <span style={{color:C.accent,fontWeight:700,flexShrink:0}}>{scanMeta.stocks_count}</span>
+      )}
+      {scanMeta?.scan_type&&(
+        <span style={{padding:'1px 6px',borderRadius:20,fontSize:9,fontWeight:600,flexShrink:0,
+          background:C.accent+'22',color:C.accent}}>
+          {scanMeta.scan_type==='live'?'⚡':scanMeta.scan_type==='batch_morning'?'🌅':'🌆'}
+        </span>
+      )}
+    </div>
+  )
+
+  const controls=(
+    <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+      {remaining!=null&&!loading&&(
+        <span style={{fontSize:10,color:C.muted}}>
+          <span style={{color:C.accent,fontWeight:700}}>{mm}:{ss}</span>
+        </span>
+      )}
+      <button type="button" onClick={onRefresh} disabled={loading} title="Refresh"
+        style={{padding:inline?'4px 8px':'3px 8px',borderRadius:5,border:`1px solid ${C.accent}44`,
+          background:'transparent',color:C.accent,fontSize:10,fontWeight:600,cursor:'pointer'}}>
+        ↻
+      </button>
+      {!hideAuto&&(
+        <button type="button" onClick={()=>setAutoRefresh(v=>!v)}
+          style={{padding:inline?'4px 8px':'3px 8px',borderRadius:5,
+            border:`1px solid ${autoRefresh?C.green:C.border}`,
+            background:autoRefresh?C.green+'22':'transparent',
+            color:autoRefresh?C.green:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
+          {autoRefresh?'⏸':'▶'}
+        </button>
+      )}
+      <select value={refreshInterval} onChange={e=>setRefreshInterval(+e.target.value)}
+        title="Auto-refresh interval"
+        style={{padding:inline?'4px 7px':'4px 7px',background:C.card,border:`1px solid ${C.border}`,
+          borderRadius:6,color:C.text,fontSize:10,outline:'none',cursor:'pointer'}}>
+        <option value={60000}>1 min</option>
+        <option value={120000}>2 min</option>
+        <option value={300000}>5 min</option>
+        <option value={600000}>10 min</option>
+      </select>
+    </div>
+  )
+
+  if(inline){
+    return(
+      <div style={{display:'flex',alignItems:'center',gap:10,minWidth:0,flex:1,justifyContent:'space-between'}}>
+        {status}
+        {controls}
+      </div>
+    )
+  }
 
   return(
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
       padding:'7px 12px',marginBottom:10}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
         flexWrap:'wrap',gap:6}}>
-        {/* Status */}
-        <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',fontSize:11}}>
-          <div style={{display:'flex',alignItems:'center',gap:5}}>
-            <div style={{width:7,height:7,borderRadius:'50%',
-              background:loading?C.yellow:marketOpen?C.green:C.muted,
-              boxShadow:`0 0 5px ${loading?C.yellow:marketOpen?C.green:C.muted}`,
-              animation:loading?'pulse 1s infinite':'none'}}/>
-            <span style={{fontWeight:700,color:C.text}}>
-              {loading?'Updating…':marketOpen?'Live':'Closed'}
-            </span>
-          </div>
-          <span style={{color:C.muted}}>· {lastScanStr}</span>
-          {scanMeta?.stocks_count&&(
-            <span style={{color:C.muted}}>· <strong style={{color:C.accent}}>{scanMeta.stocks_count}</strong></span>
-          )}
-          {scanMeta?.scan_type&&(
-            <span style={{padding:'1px 6px',borderRadius:20,fontSize:9,fontWeight:600,
-              background:C.accent+'22',color:C.accent}}>
-              {scanMeta.scan_type==='live'?'⚡':scanMeta.scan_type==='batch_morning'?'🌅':'🌆'}
-            </span>
-          )}
-        </div>
-        {/* Controls */}
-        <div style={{display:'flex',alignItems:'center',gap:6}}>
-          {remaining!=null&&!loading&&(
-            <span style={{fontSize:10,color:C.muted}}>
-              <span style={{color:C.accent,fontWeight:700}}>{mm}:{ss}</span>
-            </span>
-          )}
-          <button onClick={onRefresh} disabled={loading}
-            style={{padding:'3px 8px',borderRadius:5,border:`1px solid ${C.accent}44`,
-              background:'transparent',color:C.accent,fontSize:10,fontWeight:600,cursor:'pointer'}}>
-            ↻
-          </button>
-          <button onClick={()=>setAutoRefresh(v=>!v)}
-            style={{padding:'3px 8px',borderRadius:5,
-              border:`1px solid ${autoRefresh?C.green:C.border}`,
-              background:autoRefresh?C.green+'22':'transparent',
-              color:autoRefresh?C.green:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
-            {autoRefresh?'⏸':'▶'}
-          </button>
-          <select value={refreshInterval} onChange={e=>setRefreshInterval(+e.target.value)}
-            style={{padding:'4px 7px',background:C.card,border:`1px solid ${C.border}`,
-              borderRadius:6,color:C.text,fontSize:10,outline:'none',cursor:'pointer'}}>
-            <option value={60000}>1 min</option>
-            <option value={120000}>2 min</option>
-            <option value={300000}>5 min</option>
-            <option value={600000}>10 min</option>
-          </select>
-        </div>
+        {status}
+        {controls}
       </div>
     </div>
   )
@@ -3297,7 +3313,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
   )
 }
 
-function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, detailTab, setDetailTab, navigateTo, isMobile, readingMode, tableMode}){
+function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, detailTab, setDetailTab, navigateTo, isMobile, readingMode, tableMode, fillParent=false}){
   const [customizeOpen, setCustomizeOpen]=useState(false)
   const mcapStock=stocks?.find(s=>s.sym===sym)
   const mcapLabel=mcapStock?.marketCap!=null
@@ -3320,9 +3336,9 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
   const belowMin=readingMode?(isMobile?300:340):tableMode?(isMobile?260:300):(isMobile?200:220)
   const belowPad=readingMode?'8px 14px 14px':tableMode?'8px 14px 14px':'8px 14px 14px'
   return (
-    <div style={{flex:belowFlex,minHeight:belowMin,display:'flex',flexDirection:'column',
+    <div style={{flex:fillParent?1:belowFlex,minHeight:fillParent?0:belowMin,display:'flex',flexDirection:'column',
       overflow:'hidden',padding:belowPad,
-      borderTop:`1px solid ${C.divider}`,background:C.bg}}>
+      borderTop:fillParent?'none':`1px solid ${C.divider}`,background:C.bg,height:fillParent?'100%':undefined}}>
       <div style={{flexShrink:0}}>
         <div style={{display:'flex',justifyContent:'flex-end',marginBottom:customizeOpen?8:4}}>
           <button type="button" onClick={()=>setCustomizeOpen(v=>!v)}
@@ -3357,7 +3373,7 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
   )
 }
 
-function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange}){
+function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false}){
   const [loaded, setLoaded] = useState(false)
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
   const sectionOrder=normalizeChartSectionOrder(chartSectionOrder)
@@ -3403,73 +3419,59 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
 
   const panelStyle = isMobile
     ? {position:'fixed',inset:0,zIndex:1000,display:'flex',flexDirection:'column',background:C.sidebar}
-    : {position:'relative',flex:customPct!=null?`0 0 ${customPct}%`:(['0 0 35%','0 0 50%','0 0 75%'][wide]||'0 0 35%'),
+    : {position:'relative',flex:expandCol?1:(customPct!=null?`0 0 ${customPct}%`:(['0 0 35%','0 0 50%','0 0 75%'][wide]||'0 0 35%')),
         height:'100vh',overflow:'hidden',
         display:'flex',flexDirection:'column',background:C.sidebar,
-        borderLeft:`1px solid ${C.divider}`,transition:customPct!=null?'none':'flex 0.2s ease'}
+        borderLeft:`1px solid ${C.divider}`,transition:customPct!=null||expandCol?'none':'flex 0.2s ease'}
 
   const chartExpanded=wide>=1||(customPct!=null&&customPct>=45)
   const readingMode=['about','fundamentals','concall','ppt','resultsSummary'].includes(detailTab)
   const tableMode=detailTab==='results'
   const chartFlex=readingMode?'0 1 36%':tableMode?'0 1 44%':'1 1 58%'
   const chartMaxH=readingMode?'40%':tableMode?'46%':undefined
+  const belowFlex=readingMode?'1 1 58%':tableMode?'1 1 52%':'1 1 42%'
+  const belowMin=readingMode?340:tableMode?300:220
 
-  return(
-    <div style={panelStyle}>
-      {/* Header */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
-        padding:'14px 14px 8px',borderBottom:`1px solid ${C.divider}`,flexShrink:0,height:48}}>
-        <div style={{display:'flex',alignItems:'center',gap:6}}>
-          <button onClick={()=>prevSym&&navigateTo(prevSym)} disabled={!prevSym}
-            title="Previous stock"
-            style={{background:'transparent',border:`1px solid ${C.border}`,
-              color:prevSym?C.text:C.border,fontSize:13,width:26,height:26,borderRadius:4,
-              cursor:prevSym?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center'}}>
-            ◀
-          </button>
-          <span style={{fontWeight:700,fontSize:14,color:C.text,letterSpacing:'0.01em'}}>{sym}</span>
-          <button onClick={()=>nextSym&&navigateTo(nextSym)} disabled={!nextSym}
-            title="Next stock"
-            style={{background:'transparent',border:`1px solid ${C.border}`,
-              color:nextSym?C.text:C.border,fontSize:13,width:26,height:26,borderRadius:4,
-              cursor:nextSym?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center'}}>
-            ▶
-          </button>
-          <span style={{fontSize:10,color:C.muted,background:C.card,padding:'1px 5px',borderRadius:3}}>NSE</span>
-          <a href={`https://www.tradingview.com/chart/?symbol=${tvExchange}:${sym}`}
-            target="_blank" rel="noopener noreferrer"
-            title="Opens your own TradingView account (not the restricted embed) — apply your custom Pine Script here once and it'll persist as you switch symbols"
-            style={{fontSize:10,color:C.accent,textDecoration:'none',
-              padding:'2px 7px',borderRadius:4,border:`1px solid ${C.accent}33`,
-              display:'flex',alignItems:'center',gap:3}}>
-            {isMobile?'TV ↗':'Open in TradingView ↗'}
-          </a>
-        </div>
-        <div style={{display:'flex',gap:4,alignItems:'center'}}>
-          {!isMobile&&(
-            <button onClick={onToggleWide}
-              title={['Expand chart','Expand further','Back to normal'][wide]}
-              style={{background:'transparent',border:`1px solid ${C.border}`,
-                color:C.muted,fontSize:10,padding:'3px 8px',borderRadius:4,
-                cursor:'pointer',whiteSpace:'nowrap'}}>
-              {['◀◀','◀◀◀','▶▶▶'][wide]}
-            </button>
-          )}
-          <button onClick={onClose}
-            style={{background:'transparent',border:`1px solid ${C.border}`,
-              color:C.muted,fontSize:16,width:26,height:26,borderRadius:4,
-              cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',
-              lineHeight:1}}>×
-          </button>
-        </div>
-      </div>
+  const chartHeaderExtra=(
+    <div style={{display:'flex',alignItems:'center',gap:6}} onMouseDown={e=>e.stopPropagation()}>
+      <button type="button" onClick={()=>prevSym&&navigateTo(prevSym)} disabled={!prevSym}
+        title="Previous stock"
+        style={{background:'transparent',border:`1px solid ${C.border}`,
+          color:prevSym?C.text:C.border,fontSize:12,width:22,height:20,borderRadius:4,
+          cursor:prevSym?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        ◀
+      </button>
+      <button type="button" onClick={()=>nextSym&&navigateTo(nextSym)} disabled={!nextSym}
+        title="Next stock"
+        style={{background:'transparent',border:`1px solid ${C.border}`,
+          color:nextSym?C.text:C.border,fontSize:12,width:22,height:20,borderRadius:4,
+          cursor:nextSym?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        ▶
+      </button>
+      <a href={`https://www.tradingview.com/chart/?symbol=${tvExchange}:${sym}`}
+        target="_blank" rel="noopener noreferrer"
+        title="Open in TradingView"
+        style={{fontSize:10,color:C.accent,textDecoration:'none',
+          padding:'2px 6px',borderRadius:4,border:`1px solid ${C.accent}33`}}>
+        TV ↗
+      </a>
+      {!isMobile&&(
+        <button type="button" onClick={onToggleWide}
+          title={['Expand chart','Expand further','Back to normal'][wide]}
+          style={{background:'transparent',border:`1px solid ${C.border}`,
+            color:C.muted,fontSize:10,padding:'2px 6px',borderRadius:4,
+            cursor:'pointer',whiteSpace:'nowrap'}}>
+          {['◀◀','◀◀◀','▶▶▶'][wide]}
+        </button>
+      )}
+    </div>
+  )
 
-      {/* Chart source tabs — TradingView hidden for indices, since its
-          exchange:symbol format doesn't map to index names correctly
-          (would just show a broken/wrong chart) */}
+  const chartTabsAndBody=(
+    <>
       <div style={{display:'flex',gap:0,borderBottom:`1px solid ${C.divider}`,flexShrink:0}}>
         {(isIndex?[['own','Our Chart']]:[['own','Our Chart'],['tv','TradingView']]).map(([v,label])=>(
-          <button key={v} onClick={()=>setChartTab(v)}
+          <button key={v} type="button" onClick={()=>setChartTab(v)}
             style={{flex:1,padding:'8px 0',fontSize:11,fontWeight:700,cursor:'pointer',
               background:chartTab===v?C.card:'transparent',
               color:chartTab===v?C.accent:C.muted,
@@ -3478,16 +3480,12 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
           </button>
         ))}
       </div>
-
-      {/* NSE/BSE toggle — NSE restricted many symbols in TradingView's
-          embeddable widget ("only available on TradingView" even for
-          major stocks like LODHA); BSE listings still work in embeds. */}
       {chartTab==='tv'&&(
         <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 14px',
           borderBottom:`1px solid ${C.divider}`,flexShrink:0}}>
           <span style={{fontSize:10,color:C.muted}}>Exchange:</span>
           {['NSE','BSE'].map(ex=>(
-            <button key={ex} onClick={()=>{setTvExchange(ex);setLoaded(false)}}
+            <button key={ex} type="button" onClick={()=>{setTvExchange(ex);setLoaded(false)}}
               style={{padding:'2px 10px',borderRadius:6,border:`1px solid ${tvExchange===ex?C.accent:C.border}`,
                 background:tvExchange===ex?C.accent+'22':'transparent',
                 color:tvExchange===ex?C.accent:C.muted,fontSize:10,fontWeight:700,cursor:'pointer'}}>
@@ -3499,10 +3497,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
           )}
         </div>
       )}
-
-      {/* Body — shares height with the detail panel below; shrinks when reading text */}
-      <div style={{flex:chartFlex,minHeight:readingMode?120:tableMode?140:160,
-        maxHeight:chartMaxH,position:'relative',overflow:'hidden',
+      <div style={{flex:1,minHeight:0,position:'relative',overflow:'hidden',
         display:'flex',flexDirection:'column'}}>
         {chartTab==='tv'?(
           <>
@@ -3524,12 +3519,154 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
           <CandlestickChart sym={sym} isMobile={isMobile} isIndex={isIndex} chartExpanded={chartExpanded}/>
         )}
       </div>
-      {!isIndex&&(
-        <ChartBelowContent sym={sym} stocks={stocks} sectionOrder={sectionOrder}
-          onSectionOrderChange={persistSectionOrder} detailTab={detailTab} setDetailTab={setDetailTab}
-          navigateTo={navigateTo} isMobile={isMobile} readingMode={readingMode} tableMode={tableMode}/>
+    </>
+  )
+
+  const detailBody=!isIndex?(
+    <ChartBelowContent sym={sym} stocks={stocks} sectionOrder={sectionOrder}
+      onSectionOrderChange={persistSectionOrder} detailTab={detailTab} setDetailTab={setDetailTab}
+      navigateTo={navigateTo} isMobile={isMobile} readingMode={readingMode} tableMode={tableMode}
+      fillParent={!isMobile}/>
+  ):null
+
+  // Mobile: keep fullscreen stacked layout (no floating windows).
+  if(isMobile){
+    return(
+      <div style={panelStyle}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+          padding:'14px 14px 8px',borderBottom:`1px solid ${C.divider}`,flexShrink:0,height:48}}>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <button onClick={()=>prevSym&&navigateTo(prevSym)} disabled={!prevSym}
+              title="Previous stock"
+              style={{background:'transparent',border:`1px solid ${C.border}`,
+                color:prevSym?C.text:C.border,fontSize:13,width:26,height:26,borderRadius:4,
+                cursor:prevSym?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center'}}>
+              ◀
+            </button>
+            <span style={{fontWeight:700,fontSize:14,color:C.text,letterSpacing:'0.01em'}}>{sym}</span>
+            <button onClick={()=>nextSym&&navigateTo(nextSym)} disabled={!nextSym}
+              title="Next stock"
+              style={{background:'transparent',border:`1px solid ${C.border}`,
+                color:nextSym?C.text:C.border,fontSize:13,width:26,height:26,borderRadius:4,
+                cursor:nextSym?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center'}}>
+              ▶
+            </button>
+            <a href={`https://www.tradingview.com/chart/?symbol=${tvExchange}:${sym}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{fontSize:10,color:C.accent,textDecoration:'none',
+                padding:'2px 7px',borderRadius:4,border:`1px solid ${C.accent}33`}}>
+              TV ↗
+            </a>
+          </div>
+          <button onClick={onClose}
+            style={{background:'transparent',border:`1px solid ${C.border}`,
+              color:C.muted,fontSize:16,width:26,height:26,borderRadius:4,
+              cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',
+              lineHeight:1}}>×
+          </button>
+        </div>
+        <div style={{flex:chartFlex,minHeight:readingMode?120:tableMode?140:160,
+          maxHeight:chartMaxH,position:'relative',overflow:'hidden',
+          display:'flex',flexDirection:'column'}}>
+          {chartTabsAndBody}
+        </div>
+        {detailBody}
+      </div>
+    )
+  }
+
+  const winChart=panelChart||{open:true,minimized:false,float:null}
+  const winDetail=panelDetail||{open:true,minimized:false,float:null}
+  const chartDocked=winChart.open&&!winChart.minimized&&!winChart.float
+  const detailDocked=!isIndex&&winDetail.open&&!winDetail.minimized&&!winDetail.float
+  const anyDocked=chartDocked||detailDocked
+
+  const patchChart=(patch)=>{
+    onPanelChart?.(patch)
+    if(patch.open===false&&(!winDetail.open||isIndex)) onClose?.()
+  }
+  const patchDetail=(patch)=>{
+    onPanelDetail?.(patch)
+    if(patch.open===false&&!winChart.open) onClose?.()
+  }
+
+  return(
+    <>
+      {anyDocked&&(
+        <div style={panelStyle}>
+          {chartDocked&&(
+            <PanelWindow
+              id="chart"
+              title={`${sym} · Chart`}
+              colors={C}
+              floating={null}
+              onFloatingChange={f=>onPanelChart?.({float:f})}
+              onMinimize={()=>onPanelChart?.({minimized:true})}
+              onClose={()=>patchChart({open:false})}
+              headerExtra={chartHeaderExtra}
+              dockStyle={{
+                flex:detailDocked?chartFlex:1,
+                minHeight:readingMode?120:tableMode?140:160,
+                maxHeight:detailDocked?chartMaxH:undefined,
+                border:'none',borderRadius:0,background:C.sidebar,
+              }}
+              zIndex={40}
+            >
+              {chartTabsAndBody}
+            </PanelWindow>
+          )}
+          {detailDocked&&(
+            <PanelWindow
+              id="detail"
+              title={`${sym} · Details`}
+              colors={C}
+              floating={null}
+              onFloatingChange={f=>onPanelDetail?.({float:f})}
+              onMinimize={()=>onPanelDetail?.({minimized:true})}
+              onClose={()=>patchDetail({open:false})}
+              dockStyle={{
+                flex:chartDocked?belowFlex:1,
+                minHeight:belowMin,
+                border:'none',borderRadius:0,background:C.bg,
+                borderTop:chartDocked?`1px solid ${C.divider}`:'none',
+              }}
+              zIndex={41}
+            >
+              {detailBody}
+            </PanelWindow>
+          )}
+        </div>
       )}
-    </div>
+      {winChart.open&&!winChart.minimized&&winChart.float&&(
+        <PanelWindow
+          id="chart-float"
+          title={`${sym} · Chart`}
+          colors={C}
+          floating={winChart.float}
+          onFloatingChange={f=>onPanelChart?.({float:f})}
+          onMinimize={()=>onPanelChart?.({minimized:true})}
+          onClose={()=>patchChart({open:false})}
+          headerExtra={chartHeaderExtra}
+          zIndex={80}
+        >
+          {chartTabsAndBody}
+        </PanelWindow>
+      )}
+      {!isIndex&&winDetail.open&&!winDetail.minimized&&winDetail.float&&(
+        <PanelWindow
+          id="detail-float"
+          title={`${sym} · Details`}
+          colors={C}
+          floating={winDetail.float}
+          onFloatingChange={f=>onPanelDetail?.({float:f})}
+          onMinimize={()=>onPanelDetail?.({minimized:true})}
+          onClose={()=>patchDetail({open:false})}
+          zIndex={81}
+        >
+          {detailBody}
+        </PanelWindow>
+      )}
+    </>
   )
 }
 
@@ -8796,6 +8933,29 @@ export default function App(){
 
   // PP filters per tab
   const [chartSym,setChartSym]=useState(null)
+  // Window chrome for the 3 main panels (screener / chart / details):
+  // drag title bar to float, minimize to taskbar, close to hide (restore from taskbar).
+  const defaultPanelWin=()=>({open:true,minimized:false,float:null})
+  const [panelWins,setPanelWins]=useState({
+    screener:defaultPanelWin(),
+    chart:defaultPanelWin(),
+    detail:defaultPanelWin(),
+  })
+  const patchPanel=(id,patch)=>setPanelWins(w=>({...w,[id]:{...w[id],...patch}}))
+  const prevChartSymRef=useRef(null)
+  useEffect(()=>{
+    // Only force-open chart/detail when opening a symbol from none —
+    // keep minimize/close state when flipping prev/next.
+    if(!chartSym){ prevChartSymRef.current=null; return }
+    if(prevChartSymRef.current==null){
+      setPanelWins(w=>({
+        ...w,
+        chart:{...w.chart,open:true,minimized:false},
+        detail:{...w.detail,open:true,minimized:false},
+      }))
+    }
+    prevChartSymRef.current=chartSym
+  },[chartSym])
   const autoOpenedRef=useRef(false)
   const rsTableDrag=useDragScroll()
   const idxTableDrag=useDragScroll()
@@ -10077,17 +10237,49 @@ export default function App(){
           100% baseline for that inner split. */}
       <div ref={innerRowRef} style={{flex:1,minWidth:0,display:'flex',flexDirection:'row',userSelect:isDraggingDivider?'none':'auto'}}>
 
-      {/* ── Main area ── */}
-      <div style={{flex:(chartSym&&!isMobile)?(chartPanelPct!=null?`0 0 ${100-chartPanelPct}%`:['0 0 65%','0 0 50%','0 0 25%'][chartWide]):1,display:'flex',flexDirection:'column',minWidth:0,overflowX:'hidden',paddingBottom:isMobile?72:0}}>
+      {/* ── Main area (screener) — movable / minimize / close on desktop ── */}
+      <ScreenerFrame
+        isMobile={isMobile}
+        visible={isMobile||(panelWins.screener.open&&!panelWins.screener.minimized)}
+        title={
+          mainTab==='rs'?'RS Rating':mainTab==='market'?(
+            {overview:'Market · Overview',indices:'Market · Indices',sectors:'Market · Sectors',
+             industries:'Market · Industries',
+             gaps:'Market · Gaps',smartmoney:'Market · Smart Money'}[marketSubTab]||'Market'
+          ):
+          mainTab==='squeeze'?'Squeeze & VCP':
+          mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
+          mainTab==='weak'?'Weak RS':mainTab==='rotation'?'Sector Rotation':
+          mainTab==='leaders'?'Leaders':
+          mainTab==='patterns'?'Patterns':
+          mainTab==='watchlist'?'Watchlist':mainTab==='announcements'?'Announcements':
+          mainTab==='themes'?'Emerging Themes':
+          mainTab==='bestpicks'?'AI Best Picks':
+          mainTab==='feedback'?'User Feedback':'Account'
+        }
+        colors={C}
+        floating={panelWins.screener.float}
+        onFloatingChange={f=>patchPanel('screener',{float:f})}
+        onMinimize={()=>patchPanel('screener',{minimized:true})}
+        onClose={()=>patchPanel('screener',{open:false})}
+        dockStyle={{
+          flex:(chartSym&&!isMobile&&!panelWins.screener.float&&(
+            (panelWins.chart.open&&!panelWins.chart.minimized&&!panelWins.chart.float)||
+            (panelWins.detail.open&&!panelWins.detail.minimized&&!panelWins.detail.float)
+          ))
+            ?(chartPanelPct!=null?`0 0 ${100-chartPanelPct}%`:['0 0 65%','0 0 50%','0 0 25%'][chartWide])
+            :1,
+        }}
+      >
 
-        {/* Top bar */}
+        {/* Top bar — title + live status + controls in ONE row */}
         <div style={{borderBottom:`1px solid ${C.divider}`,
-          padding:'0 16px',height:52,
+          padding:'0 12px',height:52,
           display:'flex',alignItems:'center',justifyContent:'space-between',
-          background:C.card,position:'sticky',top:0,zIndex:30,gap:10}}>
+          background:C.card,position:'sticky',top:0,zIndex:30,gap:8,minWidth:0}}>
 
           {/* Mobile menu + page title */}
-          <div style={{display:'flex',alignItems:'center',gap:8,minWidth:0}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,minWidth:0,flexShrink:0}}>
             {isMobile&&(
               <div style={{width:28,height:28,background:C.accent,borderRadius:7,display:'flex',
                 alignItems:'center',justifyContent:'center',fontWeight:900,color:'#000',fontSize:13,flexShrink:0}}>L</div>
@@ -10109,7 +10301,7 @@ export default function App(){
                  mainTab==='bestpicks'?'AI Best Picks':
                  mainTab==='feedback'?'User Feedback':'Account'}
               </div>
-              {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1}}>
+              {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1,maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                 {demoMode?(historyDate?`Real data from ${historyDate} — not live`:'Loading real data…'):`${session?.user?.email} · ${scanLabel}`}
               </div>}
             </div>
@@ -10135,9 +10327,23 @@ export default function App(){
             ?
           </button>
 
+          {/* Live status + refresh — same row as title/controls (desktop) */}
+          {!isMobile&&['rs','squeeze','breakout','52wl','weak','leaders','patterns'].includes(mainTab)&&(
+            <div style={{flex:1,minWidth:120,maxWidth:420,overflow:'hidden'}}>
+              <LastUpdatedBar
+                inline
+                hideAuto
+                scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
+                autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
+                refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
+                onRefresh={runDBScan}
+              />
+            </div>
+          )}
+
           {/* Controls */}
           {mainTab!=='settings'&&mainTab!=='feedback'&&mainTab!=='watchlist'&&mainTab!=='rotation'&&(
-            <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
+            <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'nowrap',justifyContent:'flex-end',flexShrink:0}}>
 
               {/* Watchlist OR index selector — one dropdown now covers
                   both, instead of only being able to CLEAR an
@@ -10236,6 +10442,40 @@ export default function App(){
                   👁 Demo
                 </button>
               )}
+
+              {/* Screener window controls — same row (docked chrome is hidden) */}
+              {!isMobile&&(
+                <div style={{display:'flex',gap:4,marginLeft:2}}>
+                  {panelWins.screener.float?(
+                    <button type="button" title="Dock back"
+                      onClick={()=>patchPanel('screener',{float:null})}
+                      style={{width:26,height:22,borderRadius:4,border:`1px solid ${C.border}`,
+                        background:'transparent',color:C.muted,fontSize:12,cursor:'pointer'}}>⧉</button>
+                  ):(
+                    <button type="button" title="Float / undock panel"
+                      onClick={()=>{
+                        const el=document.querySelector('[data-panel-window="screener"]')
+                        const r=el?.getBoundingClientRect()
+                        patchPanel('screener',{float:{
+                          x:Math.max(8,r?.left??80),
+                          y:Math.max(8,r?.top??60),
+                          w:Math.max(480,r?.width??720),
+                          h:Math.max(360,r?.height??560),
+                        }})
+                      }}
+                      style={{width:26,height:22,borderRadius:4,border:`1px solid ${C.border}`,
+                        background:'transparent',color:C.muted,fontSize:12,cursor:'pointer'}}>⧉</button>
+                  )}
+                  <button type="button" title="Minimize"
+                    onClick={()=>patchPanel('screener',{minimized:true})}
+                    style={{width:26,height:22,borderRadius:4,border:`1px solid ${C.border}`,
+                      background:'transparent',color:C.muted,fontSize:12,cursor:'pointer'}}>─</button>
+                  <button type="button" title="Close"
+                    onClick={()=>patchPanel('screener',{open:false})}
+                    style={{width:26,height:22,borderRadius:4,border:`1px solid ${C.border}`,
+                      background:'transparent',color:C.muted,fontSize:14,cursor:'pointer',lineHeight:1}}>×</button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -10303,12 +10543,15 @@ export default function App(){
             // area by another 50-92% on top of the real 75%, which is what
             // was actually causing the persistent gap reported repeatedly.
             }}>
-            <LastUpdatedBar
-              scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
-              autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
-              refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
-              onRefresh={runDBScan}
-            />
+            {/* Desktop: status lives in the top bar (single row). Mobile keeps this bar. */}
+            {isMobile&&(
+              <LastUpdatedBar
+                scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
+                autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
+                refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
+                onRefresh={runDBScan}
+              />
+            )}
             {isMobile&&(
               <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
                 <select
@@ -12341,12 +12584,14 @@ export default function App(){
         {/* ══ SQUEEZE ══ */}
         {mainTab==='squeeze'&&(
           <div>
-            <LastUpdatedBar
-              scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
-              autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
-              refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
-              onRefresh={runDBScan}
-            />
+            {isMobile&&(
+              <LastUpdatedBar
+                scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
+                autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
+                refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
+                onRefresh={runDBScan}
+              />
+            )}
             <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
                 availableDates={availableDates} isMobile={isMobile}/>
@@ -12428,12 +12673,14 @@ export default function App(){
         {/* ══ BREAKOUT ══ */}
         {mainTab==='breakout'&&(
           <div>
-            <LastUpdatedBar
-              scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
-              autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
-              refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
-              onRefresh={runDBScan}
-            />
+            {isMobile&&(
+              <LastUpdatedBar
+                scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
+                autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
+                refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
+                onRefresh={runDBScan}
+              />
+            )}
             <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
                 availableDates={availableDates} isMobile={isMobile}/>
@@ -12594,12 +12841,14 @@ export default function App(){
         {/* ══ 52WL ══ */}
         {mainTab==='52wl'&&(
           <div>
-            <LastUpdatedBar
-              scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
-              autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
-              refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
-              onRefresh={runDBScan}
-            />
+            {isMobile&&(
+              <LastUpdatedBar
+                scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
+                autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
+                refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
+                onRefresh={runDBScan}
+              />
+            )}
             <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
                 availableDates={availableDates} isMobile={isMobile}/>
@@ -12643,14 +12892,16 @@ export default function App(){
         )}
 
         {/* ══ WEAK RS ══ */}
-        {mainTab==='52wl'&&(
+        {mainTab==='weak'&&(
           <div>
-            <LastUpdatedBar
-              scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
-              autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
-              refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
-              onRefresh={runDBScan}
-            />
+            {isMobile&&(
+              <LastUpdatedBar
+                scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
+                autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
+                refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
+                onRefresh={runDBScan}
+              />
+            )}
 
             {displayedWeak.length>0&&<TVCopyPanel stocks={displayedWeak} label={`Weak RS > +${weakThreshold}%`}/>}
             <div style={{background:C.card,border:`1px solid ${C.lime}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
@@ -13684,7 +13935,7 @@ export default function App(){
         )}
 
       </div>
-      </div>
+      </ScreenerFrame>
 
       {/* Quick settings — theme + ambient sound, always reachable from any
           tab via a floating button, instead of needing to navigate into
@@ -13771,7 +14022,10 @@ export default function App(){
           moving left/right updates chartPanelPct directly; the mousemove/
           mouseup listeners live in the isDraggingDivider effect above so
           dragging still works even if the cursor leaves this thin strip. */}
-      {chartSym&&!isMobile&&(
+      {chartSym&&!isMobile&&panelWins.screener.open&&!panelWins.screener.minimized&&!panelWins.screener.float&&(
+        (panelWins.chart.open&&!panelWins.chart.minimized&&!panelWins.chart.float)||
+        (panelWins.detail.open&&!panelWins.detail.minimized&&!panelWins.detail.float)
+      )&&(
         <div onMouseDown={()=>setIsDraggingDivider(true)}
           style={{width:6,flexShrink:0,cursor:'col-resize',background:isDraggingDivider?C.accent:'transparent',
             position:'relative',zIndex:10}}>
@@ -13803,8 +14057,39 @@ export default function App(){
         stocks={stocks}
         chartSectionOrder={chartSectionOrder}
         onChartSectionOrderChange={persistChartSections}
+        panelChart={panelWins.chart}
+        panelDetail={panelWins.detail}
+        onPanelChart={patch=>patchPanel('chart',patch)}
+        onPanelDetail={patch=>patchPanel('detail',patch)}
+        expandCol={!isMobile&&!(panelWins.screener.open&&!panelWins.screener.minimized&&!panelWins.screener.float)}
       />
       </div>
+
+      {!isMobile&&(
+        <PanelTaskbar
+          colors={C}
+          items={[
+            ...((!panelWins.screener.open||panelWins.screener.minimized)?[{
+              id:'screener',
+              title:'Screener',
+              minimized:!!panelWins.screener.minimized,
+              onRestore:()=>patchPanel('screener',{open:true,minimized:false}),
+            }]:[]),
+            ...(chartSym&&(!panelWins.chart.open||panelWins.chart.minimized)?[{
+              id:'chart',
+              title:`${chartSym} · Chart`,
+              minimized:!!panelWins.chart.minimized,
+              onRestore:()=>patchPanel('chart',{open:true,minimized:false}),
+            }]:[]),
+            ...(chartSym&&!indexData.some(idx=>idx.name===chartSym)&&(!panelWins.detail.open||panelWins.detail.minimized)?[{
+              id:'detail',
+              title:`${chartSym} · Details`,
+              minimized:!!panelWins.detail.minimized,
+              onRestore:()=>patchPanel('detail',{open:true,minimized:false}),
+            }]:[]),
+          ]}
+        />
+      )}
 
       {/* Real-time data upsell — shown when a demo user tries to Scan or
           enable Auto-refresh, both of which only make sense with live
