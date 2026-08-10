@@ -3420,7 +3420,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
   const panelStyle = isMobile
     ? {position:'fixed',inset:0,zIndex:1000,display:'flex',flexDirection:'column',background:C.sidebar}
     : {position:'relative',flex:expandCol?1:(customPct!=null?`0 0 ${customPct}%`:(['0 0 35%','0 0 50%','0 0 75%'][wide]||'0 0 35%')),
-        height:'100vh',overflow:'hidden',
+        height:'100%',alignSelf:'stretch',overflow:'hidden',
         display:'flex',flexDirection:'column',background:C.sidebar,
         borderLeft:`1px solid ${C.divider}`,transition:customPct!=null||expandCol?'none':'flex 0.2s ease'}
 
@@ -10224,59 +10224,14 @@ export default function App(){
         )
       })()}
 
-      {/* Inner row for Main area + Chart panel — sized to whatever's left
-          after the sidebar (flex:1, not a fixed % of the outer container).
-          Measured this via a headless-browser inspection after repeated
-          reports of a persistent gap/overflow: Main area's 75% and
-          ChartPanel's 25% were both being resolved against the OUTER
-          container's full width (e.g. 1600px), not the ~1548px actually
-          left after the 52px sidebar — so 75%+25% summed to 100% of a
-          width that was never actually available, overflowing the
-          viewport by exactly the sidebar's width every time, regardless
-          of screen size. This wrapper's own width becomes the correct
-          100% baseline for that inner split. */}
-      <div ref={innerRowRef} style={{flex:1,minWidth:0,display:'flex',flexDirection:'row',userSelect:isDraggingDivider?'none':'auto'}}>
+      {/* Main column (right of sidebar): full-width header, then screener|chart */}
+      <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',height:'100vh',overflow:'hidden'}}>
 
-      {/* ── Main area (screener) — movable / minimize / close on desktop ── */}
-      <ScreenerFrame
-        isMobile={isMobile}
-        visible={isMobile||(panelWins.screener.open&&!panelWins.screener.minimized)}
-        title={
-          mainTab==='rs'?'RS Rating':mainTab==='market'?(
-            {overview:'Market · Overview',indices:'Market · Indices',sectors:'Market · Sectors',
-             industries:'Market · Industries',
-             gaps:'Market · Gaps',smartmoney:'Market · Smart Money'}[marketSubTab]||'Market'
-          ):
-          mainTab==='squeeze'?'Squeeze & VCP':
-          mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
-          mainTab==='weak'?'Weak RS':mainTab==='rotation'?'Sector Rotation':
-          mainTab==='leaders'?'Leaders':
-          mainTab==='patterns'?'Patterns':
-          mainTab==='watchlist'?'Watchlist':mainTab==='announcements'?'Announcements':
-          mainTab==='themes'?'Emerging Themes':
-          mainTab==='bestpicks'?'AI Best Picks':
-          mainTab==='feedback'?'User Feedback':'Account'
-        }
-        colors={C}
-        floating={panelWins.screener.float}
-        onFloatingChange={f=>patchPanel('screener',{float:f})}
-        onMinimize={()=>patchPanel('screener',{minimized:true})}
-        onClose={()=>patchPanel('screener',{open:false})}
-        dockStyle={{
-          flex:(chartSym&&!isMobile&&!panelWins.screener.float&&(
-            (panelWins.chart.open&&!panelWins.chart.minimized&&!panelWins.chart.float)||
-            (panelWins.detail.open&&!panelWins.detail.minimized&&!panelWins.detail.float)
-          ))
-            ?(chartPanelPct!=null?`0 0 ${100-chartPanelPct}%`:['0 0 65%','0 0 50%','0 0 25%'][chartWide])
-            :1,
-        }}
-      >
-
-        {/* Top bar — title + live status + controls in ONE row */}
+        {/* Top bar — spans entire content width above chart/table */}
         <div style={{borderBottom:`1px solid ${C.divider}`,
-          padding:'0 12px',height:52,
+          padding:'0 12px',height:52,flexShrink:0,
           display:'flex',alignItems:'center',justifyContent:'space-between',
-          background:C.card,position:'sticky',top:0,zIndex:30,gap:8,minWidth:0}}>
+          background:C.card,zIndex:30,gap:8,minWidth:0}}>
 
           {/* Mobile menu + page title */}
           <div style={{display:'flex',alignItems:'center',gap:8,minWidth:0,flexShrink:0}}>
@@ -10329,7 +10284,7 @@ export default function App(){
 
           {/* Live status + refresh — same row as title/controls (desktop) */}
           {!isMobile&&['rs','squeeze','breakout','52wl','weak','leaders','patterns'].includes(mainTab)&&(
-            <div style={{flex:1,minWidth:120,maxWidth:420,overflow:'hidden'}}>
+            <div style={{flex:1,minWidth:140,overflow:'hidden'}}>
               <LastUpdatedBar
                 inline
                 hideAuto
@@ -10443,7 +10398,7 @@ export default function App(){
                 </button>
               )}
 
-              {/* Screener window controls — same row (docked chrome is hidden) */}
+              {/* Screener window controls */}
               {!isMobile&&(
                 <div style={{display:'flex',gap:4,marginLeft:2}}>
                   {panelWins.screener.float?(
@@ -10458,7 +10413,7 @@ export default function App(){
                         const r=el?.getBoundingClientRect()
                         patchPanel('screener',{float:{
                           x:Math.max(8,r?.left??80),
-                          y:Math.max(8,r?.top??60),
+                          y:Math.max(8,(r?.top??60)),
                           w:Math.max(480,r?.width??720),
                           h:Math.max(360,r?.height??560),
                         }})
@@ -10480,10 +10435,51 @@ export default function App(){
           )}
         </div>
 
-        <TickerBanner stocks={topMovers} onSelect={setChartSym}/>
+        <div style={{flexShrink:0}}>
+          <TickerBanner stocks={topMovers} onSelect={setChartSym}/>
+        </div>
+
+        {/* Below header: screener table | chart */}
+        <div ref={innerRowRef} style={{flex:1,minWidth:0,minHeight:0,display:'flex',flexDirection:'row',overflow:'hidden',userSelect:isDraggingDivider?'none':'auto'}}>
+
+      {/* ── Main area (screener) — movable / minimize / close on desktop ── */}
+      <ScreenerFrame
+        isMobile={isMobile}
+        visible={isMobile||(panelWins.screener.open&&!panelWins.screener.minimized)}
+        title={
+          mainTab==='rs'?'RS Rating':mainTab==='market'?(
+            {overview:'Market · Overview',indices:'Market · Indices',sectors:'Market · Sectors',
+             industries:'Market · Industries',
+             gaps:'Market · Gaps',smartmoney:'Market · Smart Money'}[marketSubTab]||'Market'
+          ):
+          mainTab==='squeeze'?'Squeeze & VCP':
+          mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
+          mainTab==='weak'?'Weak RS':mainTab==='rotation'?'Sector Rotation':
+          mainTab==='leaders'?'Leaders':
+          mainTab==='patterns'?'Patterns':
+          mainTab==='watchlist'?'Watchlist':mainTab==='announcements'?'Announcements':
+          mainTab==='themes'?'Emerging Themes':
+          mainTab==='bestpicks'?'AI Best Picks':
+          mainTab==='feedback'?'User Feedback':'Account'
+        }
+        colors={C}
+        floating={panelWins.screener.float}
+        onFloatingChange={f=>patchPanel('screener',{float:f})}
+        onMinimize={()=>patchPanel('screener',{minimized:true})}
+        onClose={()=>patchPanel('screener',{open:false})}
+        dockStyle={{
+          flex:(chartSym&&!isMobile&&!panelWins.screener.float&&(
+            (panelWins.chart.open&&!panelWins.chart.minimized&&!panelWins.chart.float)||
+            (panelWins.detail.open&&!panelWins.detail.minimized&&!panelWins.detail.float)
+          ))
+            ?(chartPanelPct!=null?`0 0 ${100-chartPanelPct}%`:['0 0 65%','0 0 50%','0 0 25%'][chartWide])
+            :1,
+          height:'100%',
+        }}
+      >
 
         {/* ── Page content ── */}
-        <div style={{padding:isMobile?'10px':'12px 16px',flex:1,overflowY:'auto'}}>
+        <div style={{padding:isMobile?'10px':'12px 16px',flex:1,overflowY:'auto',minHeight:0}}>
 
         {/* History mode banner — unmistakable when not viewing live data.
             Scoped to scanner tabs only: historyDate replays the STOCK
@@ -14063,7 +14059,8 @@ export default function App(){
         onPanelDetail={patch=>patchPanel('detail',patch)}
         expandCol={!isMobile&&!(panelWins.screener.open&&!panelWins.screener.minimized&&!panelWins.screener.float)}
       />
-      </div>
+      </div>{/* end innerRow: screener | chart */}
+      </div>{/* end main column under sidebar */}
 
       {!isMobile&&(
         <PanelTaskbar

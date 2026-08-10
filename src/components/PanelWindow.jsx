@@ -240,7 +240,7 @@ export function ScreenerFrame({
       onClose={onClose}
       hideHeader={!floating}
       dockStyle={{
-        height: '100vh',
+        height: '100%',
         minWidth: 0,
         overflowX: 'hidden',
         borderRadius: 0,
