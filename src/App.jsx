@@ -1357,6 +1357,95 @@ function isAnnouncementAlertEnabled(ann, prefs){
   const cat=classifyAnnouncementAlert(ann)
   return prefs[cat.key]!==false
 }
+
+// ── In-app notification history (local, last N fired alerts) ─────────
+const NOTIF_HISTORY_KEY='lakshmimata-notif-history'
+const NOTIF_HISTORY_MAX=100
+function loadNotifHistory(){
+  try{
+    const raw=JSON.parse(localStorage.getItem(NOTIF_HISTORY_KEY)||'[]')
+    return Array.isArray(raw)?raw:[]
+  }catch{ return [] }
+}
+function pushNotifHistory(entry){
+  try{
+    const item={
+      id: entry.id || `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+      at: entry.at || new Date().toISOString(),
+      kind: entry.kind || 'signal', // 'signal' | 'announcement'
+      sym: entry.sym || '',
+      title: entry.title || '',
+      body: entry.body || '',
+      category: entry.category || null,
+      fireType: entry.fireType || null,
+    }
+    const next=[item, ...loadNotifHistory().filter(h=>h.id!==item.id)].slice(0, NOTIF_HISTORY_MAX)
+    localStorage.setItem(NOTIF_HISTORY_KEY, JSON.stringify(next))
+    window.dispatchEvent(new CustomEvent('lm-notif-history'))
+    return next
+  }catch{ return loadNotifHistory() }
+}
+function clearNotifHistory(kind=null){
+  try{
+    if(!kind) localStorage.setItem(NOTIF_HISTORY_KEY, '[]')
+    else localStorage.setItem(NOTIF_HISTORY_KEY, JSON.stringify(loadNotifHistory().filter(h=>h.kind!==kind)))
+    window.dispatchEvent(new CustomEvent('lm-notif-history'))
+  }catch{/* ignore */}
+}
+function formatNotifHistoryTime(iso){
+  try{
+    return new Date(iso).toLocaleString('en-IN',{
+      day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:true,
+    })
+  }catch{ return '' }
+}
+function NotifHistoryList({items, colors:C, onClear, emptyText='No notifications yet', maxShow=25, onItemClick, compact=false}){
+  const shown=(items||[]).slice(0, maxShow)
+  return (
+    <div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:6}}>
+        <span style={{fontSize:9,color:C.muted,fontWeight:700}}>
+          {items?.length?`${Math.min(items.length,maxShow)}${items.length>maxShow?'+':''} recent`:''}
+        </span>
+        {items?.length>0&&(
+          <button type="button" onClick={onClear}
+            style={{padding:'2px 8px',borderRadius:5,border:`1px solid ${C.border}`,
+              background:'transparent',color:C.muted,fontSize:9,fontWeight:700,cursor:'pointer'}}>
+            Clear
+          </button>
+        )}
+      </div>
+      {!shown.length?(
+        <div style={{fontSize:10,color:C.muted,padding:'8px 4px'}}>{emptyText}</div>
+      ):(
+        <div style={{display:'flex',flexDirection:'column',gap:compact?4:6,maxHeight:compact?160:220,overflowY:'auto'}}>
+          {shown.map(h=>(
+            <button key={h.id} type="button"
+              onClick={()=>onItemClick?.(h)}
+              style={{
+                textAlign:'left', padding:compact?'6px 8px':'8px 10px', borderRadius:8, cursor:onItemClick?'pointer':'default',
+                border:`1px solid ${C.border}`, background:C.card, color:C.text,
+              }}>
+              <div style={{display:'flex',justifyContent:'space-between',gap:8,alignItems:'baseline'}}>
+                <span style={{fontSize:11,fontWeight:700,color:C.text}}>
+                  {h.kind==='announcement'?'📢':'🔔'} {h.sym||'—'}
+                  {h.category?` · ${h.category}`:''}
+                  {h.fireType&&h.kind==='signal'?` · ${h.fireType}`:''}
+                </span>
+                <span style={{fontSize:9,color:C.muted,whiteSpace:'nowrap'}}>{formatNotifHistoryTime(h.at)}</span>
+              </div>
+              <div style={{fontSize:10,color:C.muted,marginTop:2,lineHeight:1.35,
+                overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>
+                {h.body||h.title}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function alertNotificationTitle(alert){
   const t=String(alert.fire_type||'')
   if(/\bHY\b|\bHT\b/.test(t) && !/Squeeze|VCP/i.test(t)) return `🔊 ${alert.sym} — ${t} Volume!`
@@ -1371,8 +1460,9 @@ function alertNotificationTitle(alert){
   return `🔔 ${alert.sym} — ${t||'Alert'}`
 }
 
-function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestPermission, colors:C, cloudSynced}){
+function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestPermission, colors:C, cloudSynced, notifHistory=[], onClearHistory, onHistoryClick}){
   const [open,setOpen]=useState(false)
+  const [menuSection,setMenuSection]=useState('settings') // 'settings' | 'history'
   const enabledCount=ALERT_PREF_OPTIONS.filter(o=>{
     if(o.key==='watchlistOnly') return prefs.watchlistOnly===true
     return prefs[o.key]!==false
@@ -1393,6 +1483,7 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
   const soundOn=prefs.soundEnabled!==false
   const soundId=prefs.soundId||DEFAULT_ALERT_PREFS.soundId
   const soundVolume=Number.isFinite(Number(prefs.soundVolume))?Number(prefs.soundVolume):DEFAULT_ALERT_PREFS.soundVolume
+  const annHistory=(notifHistory||[]).filter(h=>h.kind==='announcement')
   if(typeof Notification==='undefined') return null
   if(notifPermission!=='granted'){
     return(
@@ -1413,14 +1504,38 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
           border:`1px solid ${open?C.accent:C.green}33`,
           background:open?C.accent+'18':C.green+'11',
           color:open?C.accent:C.green,fontSize:10,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>
-        🔔 Alerts {enabledCount}/{ALERT_PREF_OPTIONS.length}{soundOn?' 🔊':''} ▾
+        🔔 Alerts {enabledCount}/{ALERT_PREF_OPTIONS.length}{soundOn?' 🔊':''}{notifHistory.length?` · ${notifHistory.length}`:''} ▾
       </button>
       {open&&(
         <>
           <div onClick={()=>setOpen(false)} style={{position:'fixed',inset:0,zIndex:80}}/>
-          <div style={{position:'absolute',top:34,right:0,zIndex:81,width:280,maxHeight:'min(70vh,520px)',overflowY:'auto',
+          <div style={{position:'absolute',top:34,right:0,zIndex:81,width:300,maxHeight:'min(70vh,560px)',overflowY:'auto',
             background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
             padding:10,boxShadow:'0 12px 32px rgba(0,0,0,0.4)'}}>
+            <div style={{display:'flex',gap:4,marginBottom:10}}>
+              {[['settings','Settings'],['history',`History${notifHistory.length?` (${notifHistory.length})`:''}`]].map(([id,label])=>(
+                <button key={id} type="button" onClick={()=>setMenuSection(id)}
+                  style={{flex:1,padding:'5px 0',borderRadius:6,border:`1px solid ${menuSection===id?C.accent:C.border}`,
+                    background:menuSection===id?C.accent+'18':'transparent',
+                    color:menuSection===id?C.accent:C.muted,fontSize:10,fontWeight:700,cursor:'pointer'}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {menuSection==='history'?(
+              <div>
+                <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
+                  letterSpacing:'0.05em',marginBottom:6}}>Notification history</div>
+                <NotifHistoryList
+                  items={notifHistory}
+                  colors={C}
+                  maxShow={40}
+                  emptyText="No alerts fired yet while the app was open."
+                  onClear={()=>onClearHistory?.()}
+                  onItemClick={h=>{ onHistoryClick?.(h); setOpen(false) }}
+                />
+              </div>
+            ):(<>
             {/* Sound — TradingView-style picker */}
             <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
               letterSpacing:'0.05em',marginBottom:6}}>Alert sound</div>
@@ -1505,7 +1620,7 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
                 <div style={{margin:'2px 0 8px 22px',padding:'6px 8px',borderRadius:8,
                   border:`1px solid ${C.border}`,background:C.bg}}>
                   <div style={{fontSize:9,color:C.muted,marginBottom:4,fontWeight:700}}>
-                    Notify for these filing types
+                    Filing types
                   </div>
                   {ANN_ALERT_CAT_OPTIONS.map(({key:ak,label:al,icon:ai})=>{
                     const aOn=prefs[ak]!==false
@@ -1539,6 +1654,20 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
                       None
                     </button>
                   </div>
+                  <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.divider}`}}>
+                    <div style={{fontSize:9,color:C.muted,marginBottom:4,fontWeight:700}}>
+                      Announcement notification history
+                    </div>
+                    <NotifHistoryList
+                      items={annHistory}
+                      colors={C}
+                      compact
+                      maxShow={12}
+                      emptyText="No announcement alerts yet."
+                      onClear={()=>onClearHistory?.('announcement')}
+                      onItemClick={h=>{ onHistoryClick?.(h); setOpen(false) }}
+                    />
+                  </div>
                 </div>
               )}
               </div>
@@ -1566,6 +1695,7 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
                 All off
               </button>
             </div>
+            </>)}
           </div>
         </>
       )}
@@ -9555,8 +9685,19 @@ export default function App(){
     typeof Notification!=='undefined'?Notification.permission:'denied'
   )
   const [alertPrefs,setAlertPrefs]=useState(()=>loadAlertPrefs(null))
+  const [notifHistory,setNotifHistory]=useState(()=>loadNotifHistory())
+  const [annHistoryOpen,setAnnHistoryOpen]=useState(true)
   const alertPrefsRef=useRef(alertPrefs)
   alertPrefsRef.current=alertPrefs
+  useEffect(()=>{
+    const refresh=()=>setNotifHistory(loadNotifHistory())
+    window.addEventListener('lm-notif-history', refresh)
+    window.addEventListener('storage', refresh)
+    return ()=>{
+      window.removeEventListener('lm-notif-history', refresh)
+      window.removeEventListener('storage', refresh)
+    }
+  },[])
   // All symbols across every watchlist — used when "Watchlist only" alerts are on.
   const watchlistAlertSymsRef=useRef(new Set())
   watchlistAlertSymsRef.current=new Set(
@@ -9638,10 +9779,19 @@ export default function App(){
             const ft=String(alert.fire_type||'')
             const goSqueeze=/Squeeze|VCP/i.test(ft)
             const goBreakout=/Stage\s*2|Guppy/i.test(ft)
-            const n = new Notification(
-              alertNotificationTitle(alert),
-              {
-                body: `${alert.fire_type} | RS: ${alert.rs_tv||alert.rs} | ${alert.chg_pct>=0?'+':''}${Number(alert.chg_pct||0).toFixed(2)}% | ${alert.sector||''}`,
+            const title=alertNotificationTitle(alert)
+            const body=`${alert.fire_type} | RS: ${alert.rs_tv||alert.rs} | ${alert.chg_pct>=0?'+':''}${Number(alert.chg_pct||0).toFixed(2)}% | ${alert.sector||''}`
+            pushNotifHistory({
+              id:`signal-${alert.sym}-${alert.fire_type}-${alert.fired_at||''}`,
+              at: alert.fired_at || new Date().toISOString(),
+              kind:'signal',
+              sym: alert.sym,
+              title,
+              body,
+              fireType: alert.fire_type,
+            })
+            const n = new Notification(title, {
+                body,
                 icon: '/favicon.ico',
                 tag: `alert-${alert.sym}-${alert.fire_type}`,
                 requireInteraction: false,
@@ -9651,6 +9801,7 @@ export default function App(){
             n.onclick = ()=>{
               window.focus()
               setMainTab(goSqueeze ? 'squeeze' : goBreakout ? 'breakout' : 'rs')
+              if(alert.sym) setChartSym(alert.sym)
             }
             setTimeout(()=>n.close(), 8000)
           })
@@ -9702,10 +9853,19 @@ export default function App(){
             }
             if(!playedSound){ playAlertSoundFromPrefs(prefs); playedSound=true }
             const cat=classifyAnnouncementAlert(ann)
-            const n = new Notification(
-              `📢 ${ann.symbol} — ${cat.label}`,
-              {
-                body: ann.subject.length>110 ? ann.subject.slice(0,107)+'…' : ann.subject,
+            const title=`📢 ${ann.symbol} — ${cat.label}`
+            const body=ann.subject.length>110 ? ann.subject.slice(0,107)+'…' : ann.subject
+            pushNotifHistory({
+              id:`ann-${ann.symbol}-${ann.id||ann.announced_at||ann.created_at}`,
+              at: ann.created_at || ann.announced_at || new Date().toISOString(),
+              kind:'announcement',
+              sym: ann.symbol,
+              title,
+              body,
+              category: cat.label,
+            })
+            const n = new Notification(title, {
+                body,
                 icon: '/favicon.ico',
                 tag: `announcement-${ann.symbol}-${ann.id}`,
                 requireInteraction: false,
@@ -9715,6 +9875,7 @@ export default function App(){
             n.onclick = ()=>{
               window.focus()
               setMainTab('announcements')
+              if(ann.symbol) setChartSym(ann.symbol)
             }
             setTimeout(()=>n.close(), 8000)
           })
@@ -10046,8 +10207,19 @@ export default function App(){
         matched.slice(0,3).forEach(a=>{
           try{
             const cat=classifyAnnouncementAlert(a)
-            new Notification(`📢 ${a.symbol} — ${cat.label}${a.ai_rating?` · ${a.ai_rating}`:''}`,
-              {body:(a.subject||a.category||'New announcement').slice(0,140),tag:`ann-${a.symbol}-${a.announced_at}`,
+            const title=`📢 ${a.symbol} — ${cat.label}${a.ai_rating?` · ${a.ai_rating}`:''}`
+            const body=(a.subject||a.category||'New announcement').slice(0,140)
+            pushNotifHistory({
+              id:`ann-wl-${a.symbol}-${a.announced_at}`,
+              at: a.announced_at || new Date().toISOString(),
+              kind:'announcement',
+              sym: a.symbol,
+              title,
+              body,
+              category: cat.label,
+            })
+            new Notification(title,
+              {body, tag:`ann-${a.symbol}-${a.announced_at}`,
                 silent: prefs.soundEnabled!==false})
           }catch(e){}
         })
@@ -11003,6 +11175,15 @@ export default function App(){
                 onPersist={persistUserAlertPrefs}
                 cloudSynced={!!(session?.user?.id && !demoMode)}
                 notifPermission={notifPermission}
+                notifHistory={notifHistory}
+                onClearHistory={(kind)=>clearNotifHistory(kind||null)}
+                onHistoryClick={(h)=>{
+                  if(h?.kind==='announcement') setMainTab('announcements')
+                  else if(/Squeeze|VCP/i.test(h?.fireType||'')) setMainTab('squeeze')
+                  else if(/Stage\s*2|Guppy/i.test(h?.fireType||'')) setMainTab('breakout')
+                  else setMainTab('rs')
+                  if(h?.sym) setChartSym(h.sym)
+                }}
                 onRequestPermission={()=>{
                   playAlertSoundFromPrefs(alertPrefsRef.current) // unlock AudioContext for later alerts
                   Notification.requestPermission().then(p=>setNotifPermission(p))
@@ -14156,6 +14337,41 @@ export default function App(){
                 {annAlertsOn?'🔔 Alerts On':'🔕 Alerts Off'}
               </button>
             </div>
+
+            {/* Subsection: notification history for announcement alerts */}
+            {(()=>{
+              const annHist=notifHistory.filter(h=>h.kind==='announcement')
+              return (
+                <div style={{marginBottom:14,border:`1px solid ${C.border}`,borderRadius:10,background:C.card,overflow:'hidden'}}>
+                  <button type="button" onClick={()=>setAnnHistoryOpen(v=>!v)}
+                    style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,
+                      padding:'10px 12px',border:'none',background:'transparent',cursor:'pointer',color:C.text}}>
+                    <span style={{fontSize:12,fontWeight:800}}>
+                      🔔 Notification history
+                      <span style={{marginLeft:8,fontSize:10,fontWeight:700,color:C.muted}}>
+                        {annHist.length?`${annHist.length} alert${annHist.length===1?'':'s'}`:'none yet'}
+                      </span>
+                    </span>
+                    <span style={{fontSize:11,color:C.muted}}>{annHistoryOpen?'▾':'▸'}</span>
+                  </button>
+                  {annHistoryOpen&&(
+                    <div style={{padding:'0 12px 12px'}}>
+                      <div style={{fontSize:10,color:C.muted,marginBottom:8}}>
+                        Alerts fired while the app was open (Results, Orders, Concall, …). Tap a row to open the chart.
+                      </div>
+                      <NotifHistoryList
+                        items={annHist}
+                        colors={C}
+                        maxShow={30}
+                        emptyText="No announcement notifications yet. Enable Alerts and pick filing types under 🔔 Alerts."
+                        onClear={()=>clearNotifHistory('announcement')}
+                        onItemClick={h=>{ if(h?.sym) setChartSym(h.sym) }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
 
             <div style={{display:'flex',gap:6,overflowX:'auto',marginBottom:14,WebkitOverflowScrolling:'touch'}}>
               {ANNOUNCEMENT_CATEGORIES.map(({id,label})=>(
