@@ -7605,16 +7605,18 @@ function TickerBanner({stocks, indices, onSelect, onSelectIndex}){
           const label = shortIndexTickerName(name)
           const chg = idx.chgD ?? idx.chg_d ?? 0
           const px = idx.lastPrice ?? idx.last_price
+          const tip = [
+            name,
+            px!=null?`Level ${Number(px).toLocaleString('en-IN',{maximumFractionDigits:2})}`:null,
+            (onSelectIndex||onSelect)?'Open chart':null,
+          ].filter(Boolean).join(' · ')
           return (
             <span key={i}
               onClick={()=>{ if(name && (onSelectIndex||onSelect)) (onSelectIndex||onSelect)(name) }}
-              title={(onSelectIndex||onSelect) ? `Open ${name} chart` : undefined}
+              title={tip||undefined}
               style={{fontFamily:"monospace",fontSize:12,letterSpacing:'0.02em',color:C.muted,marginRight:28,
                 cursor:(onSelectIndex||onSelect)?'pointer':'default'}}>
               <b style={{color:C.accent,fontWeight:700}}>{label}</b>{' '}
-              {px!=null&&(
-                <>{Number(px).toLocaleString('en-IN',{maximumFractionDigits:2})}{' '}</>
-              )}
               <span style={{color:chg>=0?C.green:C.red}}>
                 {chg>=0?'▲':'▼'} {Math.abs(chg).toFixed(2)}%
               </span>
