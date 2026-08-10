@@ -329,7 +329,9 @@ function useDragScroll(){
       userSelect: dragging ? 'none' : undefined,
       WebkitOverflowScrolling: 'touch',
       overflowX: 'auto',
-      overflowY: 'hidden',
+      // Do NOT force overflowY:hidden — Market Indices/Sectors/Industries
+      // expand a BreakoutTable below the row; hidden clips it and blocks
+      // page scroll. Callers set overflowY themselves.
     },
     handlers: { onMouseDown, onTouchStart, onTouchMove, onTouchEnd, onClickCapture },
   }
@@ -12690,7 +12692,15 @@ export default function App(){
                 {marketSubTab==='indices'&&(
                 <div>
                 <div style={{fontWeight:800,fontSize:14,margin:'0 0 8px'}}>📊 Indices</div>
-                <div ref={idxTableDrag.ref} {...idxTableDrag.handlers} style={{overflowX:'auto',overflowY:'auto',maxHeight:520,border:`1px solid ${C.border}`,borderRadius:12,...idxTableDrag.style}}>
+                {(()=>{
+                  const idxExpanded = !!(expandedIndex && !String(expandedIndex).startsWith('sector:') && !String(expandedIndex).startsWith('industry:'))
+                  return (
+                <div ref={idxTableDrag.ref} {...idxTableDrag.handlers} style={{
+                  ...idxTableDrag.style,
+                  overflowX:'auto',
+                  overflowY: idxExpanded ? 'visible' : 'auto',
+                  maxHeight: idxExpanded ? 'none' : 520,
+                  border:`1px solid ${C.border}`,borderRadius:12}}>
                   <div style={{minWidth:820}}>
                     {/* Header row — click to sort */}
                     <div style={{display:'grid',
@@ -12723,7 +12733,16 @@ export default function App(){
                       const isExpanded = expandedIndex===idx.name
                       return (
                       <div key={idx.name}>
-                        <div onClick={()=>{setExpandedIndex(isExpanded?null:idx.name);setIdxConstituentFilters({industry:null,rsMin:0})}}
+                        <div onClick={()=>{
+                            const next = isExpanded?null:idx.name
+                            setExpandedIndex(next)
+                            setIdxConstituentFilters({industry:null,rsMin:0})
+                            if(next){
+                              requestAnimationFrame(()=>{
+                                document.getElementById('exp-index:'+next)?.scrollIntoView({block:'nearest',behavior:'smooth'})
+                              })
+                            }
+                          }}
                           style={{display:'grid',
                           gridTemplateColumns:'150px 90px 60px 90px 70px 70px 70px 60px 60px',
                           gap:4,padding:'10px 12px',alignItems:'center',cursor:'pointer',
@@ -12817,7 +12836,8 @@ export default function App(){
                                 (s.rs??0) >= activeRsMin)
                             : null
                           return (
-                            <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,position:'sticky',left:0,width:'calc(100vw - 60px)',maxWidth:900}}>
+                            <div id={'exp-index:'+idx.name}
+                              style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,maxWidth:900}}>
                               <div style={{display:'flex',justifyContent:'flex-end',marginBottom:constituents?8:0}}>
                                 <button onClick={()=>setShowRowGuidance(v=>!v)}
                                   style={{width:18,height:18,borderRadius:'50%',border:`1px solid ${C.muted}`,
@@ -12899,6 +12919,8 @@ export default function App(){
                     })()}
                   </div>
                 </div>
+                  )
+                })()}
                 </div>
                 )}
 
@@ -12907,7 +12929,12 @@ export default function App(){
                 <div>
                 {sectorData.length>0?(
                   <>
-                    <div ref={secTableDrag.ref} {...secTableDrag.handlers} style={{overflowX:'auto',overflowY:'auto',maxHeight:String(expandedIndex||'').startsWith('sector:')?'none':520,border:`1px solid ${C.border}`,borderRadius:12,...secTableDrag.style}}>
+                    <div ref={secTableDrag.ref} {...secTableDrag.handlers} style={{
+                      ...secTableDrag.style,
+                      overflowX:'auto',
+                      overflowY: String(expandedIndex||'').startsWith('sector:') ? 'visible' : 'auto',
+                      maxHeight: String(expandedIndex||'').startsWith('sector:') ? 'none' : 520,
+                      border:`1px solid ${C.border}`,borderRadius:12}}>
                       <div style={{minWidth:760}}>
                         <div style={{display:'grid',
                           gridTemplateColumns:'170px 70px 60px 60px 70px 70px 90px 90px 90px',
@@ -13106,7 +13133,12 @@ export default function App(){
                           {rows.length} industries shown · {hiddenCount} more hidden (&lt;{MIN_INDUSTRY_STOCKS} stocks each)
                       </div>
                       )}
-                      <div ref={indTableDrag.ref} {...indTableDrag.handlers} style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12,maxHeight:String(expandedIndex||'').startsWith('industry:')?'none':520,overflowY:'auto',...indTableDrag.style}}>
+                      <div ref={indTableDrag.ref} {...indTableDrag.handlers} style={{
+                        ...indTableDrag.style,
+                        overflowX:'auto',
+                        overflowY: String(expandedIndex||'').startsWith('industry:') ? 'visible' : 'auto',
+                        maxHeight: String(expandedIndex||'').startsWith('industry:') ? 'none' : 520,
+                        border:`1px solid ${C.border}`,borderRadius:12}}>
                         <div style={{minWidth:760}}>
                           <div style={{display:'grid',
                             gridTemplateColumns:'220px 60px 60px 60px 70px 70px 90px 90px 90px',
