@@ -1235,6 +1235,27 @@ function HistoryCalendarPicker({historyDate, setHistoryDate, availableDates, isM
   )
 }
 
+// Announcement tab categories + alert sub-filters (same keyword matching).
+const ANNOUNCEMENT_CATEGORIES=[
+  {id:'all',    label:'All',         keyword:null},
+  {id:'results', label:'Results',    keyword:['financial result','quarterly result','results for the quarter','unaudited results','audited results'], exclude:['newspaper publication','newspaper advertisement','transcript','press release','investor meet','con. call','con call','conference call','clarification']},
+  {id:'concall', label:'Concall',    keyword:['con call','con-call','concall','conference call','investor','analyst meet'], exclude:['transcript']},
+  {id:'transcript', label:'Transcript', keyword:['transcript']},
+  {id:'orders', label:'Order Book',  keyword:['award of order','work order','purchase order','order received from','bagged','bagging','receiving of order','receipt of order','receiving of contract','receipt of contract','secures order','wins order','letter of intent','order worth','order valued'], exclude:['cancellation of order','cancellation of work order','cancellation of purchase order','order cancelled','work order cancelled','purchase order cancelled','cancellation of contract','contract cancelled','termination of contract','contract terminated','termination of work order','work order terminated','rescission of','order rescinded','contract rescinded','order withdrawn','withdrawal of order','loss of order','order lost']},
+  {id:'board',  label:'Board Meeting', keyword:'board meeting'},
+  {id:'div',    label:'Dividend',    keyword:'dividend'},
+  {id:'other',  label:'Other',       keyword:null},
+]
+const ANN_ALERT_CAT_OPTIONS=[
+  {key:'annResults', id:'results', label:'Results', icon:'📊'},
+  {key:'annOrders', id:'orders', label:'Order Book', icon:'📦'},
+  {key:'annConcall', id:'concall', label:'Concall', icon:'📞'},
+  {key:'annTranscript', id:'transcript', label:'Transcript', icon:'📝'},
+  {key:'annBoard', id:'board', label:'Board Meeting', icon:'🏛️'},
+  {key:'annDiv', id:'div', label:'Dividend', icon:'💰'},
+  {key:'annOther', id:'other', label:'Other', icon:'📎'},
+]
+
 // Browser-notification prefs — enable/disable each signal type + alert sound.
 const ALERT_PREF_KEY='lakshmimata-alert-prefs'
 const DEFAULT_ALERT_PREFS={
@@ -1243,6 +1264,8 @@ const DEFAULT_ALERT_PREFS={
   soundEnabled:true,
   soundId:'ping',
   soundVolume:0.7,
+  annResults:true, annOrders:true, annConcall:true, annTranscript:true,
+  annBoard:true, annDiv:true, annOther:true,
 }
 const ALERT_PREF_OPTIONS=[
   {key:'watchlistOnly', label:'Watchlist only', icon:'📋'},
@@ -1312,6 +1335,27 @@ function isAlertTypeEnabled(fireType, prefs){
   const keys=alertPrefKeysForFireType(fireType)
   if(!keys.length) return true // unknown types still notify
   return keys.some(k=>prefs[k]!==false)
+}
+/** Classify an announcement into Results / Orders / … using tab keywords. */
+function classifyAnnouncementAlert(ann){
+  const text=((ann?.category||'')+' '+(ann?.subject||'')).toLowerCase()
+  for(const opt of ANN_ALERT_CAT_OPTIONS){
+    if(opt.id==='other') continue
+    const cat=ANNOUNCEMENT_CATEGORIES.find(c=>c.id===opt.id)
+    if(!cat?.keyword) continue
+    const keywords=Array.isArray(cat.keyword)?cat.keyword:[cat.keyword]
+    const excludes=cat.exclude||[]
+    const hit=keywords.some(k=>text.includes(String(k).toLowerCase()))
+    if(!hit) continue
+    if(excludes.some(k=>text.includes(String(k).toLowerCase()))) continue
+    return opt
+  }
+  return ANN_ALERT_CAT_OPTIONS.find(o=>o.id==='other')
+}
+function isAnnouncementAlertEnabled(ann, prefs){
+  if(!prefs || prefs.announcements===false) return false
+  const cat=classifyAnnouncementAlert(ann)
+  return prefs[cat.key]!==false
 }
 function alertNotificationTitle(alert){
   const t=String(alert.fire_type||'')
@@ -1433,8 +1477,11 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
             </div>
             {ALERT_PREF_OPTIONS.map(({key,label,icon})=>{
               const on=key==='watchlistOnly' ? prefs[key]===true : prefs[key]!==false
+              const annOn=prefs.announcements!==false
+              const annEnabledCount=ANN_ALERT_CAT_OPTIONS.filter(o=>prefs[o.key]!==false).length
               return (
-              <label key={key}
+              <div key={key}>
+              <label
                 style={{display:'flex',alignItems:'center',gap:8,padding:'6px 4px',
                   cursor:'pointer',borderRadius:6,
                   borderBottom:key==='watchlistOnly'?`1px solid ${C.divider}`:'none',
@@ -1444,6 +1491,9 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
                   style={{accentColor:C.accent,width:14,height:14,cursor:'pointer'}}/>
                 <span style={{fontSize:11,color:on?C.text:C.muted}}>
                   {icon} {label}
+                  {key==='announcements'&&on&&(
+                    <span style={{color:C.muted,fontWeight:600}}> · {annEnabledCount}/{ANN_ALERT_CAT_OPTIONS.length}</span>
+                  )}
                   {key==='watchlistOnly'&&(
                     <span style={{display:'block',fontSize:9,color:C.muted,fontWeight:500}}>
                       Only notify for symbols in any of your watchlists
@@ -1451,12 +1501,54 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
                   )}
                 </span>
               </label>
+              {key==='announcements'&&annOn&&(
+                <div style={{margin:'2px 0 8px 22px',padding:'6px 8px',borderRadius:8,
+                  border:`1px solid ${C.border}`,background:C.bg}}>
+                  <div style={{fontSize:9,color:C.muted,marginBottom:4,fontWeight:700}}>
+                    Notify for these filing types
+                  </div>
+                  {ANN_ALERT_CAT_OPTIONS.map(({key:ak,label:al,icon:ai})=>{
+                    const aOn=prefs[ak]!==false
+                    return (
+                      <label key={ak}
+                        style={{display:'flex',alignItems:'center',gap:6,padding:'3px 2px',cursor:'pointer'}}>
+                        <input type="checkbox" checked={aOn}
+                          onChange={()=>applyPrefs({...prefs,[ak]:prefs[ak]===false})}
+                          style={{accentColor:C.accent,width:13,height:13,cursor:'pointer'}}/>
+                        <span style={{fontSize:10,color:aOn?C.text:C.muted}}>{ai} {al}</span>
+                      </label>
+                    )
+                  })}
+                  <div style={{display:'flex',gap:4,marginTop:4}}>
+                    <button type="button"
+                      onClick={()=>applyPrefs({
+                        ...prefs,
+                        ...Object.fromEntries(ANN_ALERT_CAT_OPTIONS.map(o=>[o.key,true])),
+                      })}
+                      style={{flex:1,padding:'3px 0',borderRadius:5,border:`1px solid ${C.border}`,
+                        background:'transparent',color:C.muted,fontSize:9,fontWeight:600,cursor:'pointer'}}>
+                      All types
+                    </button>
+                    <button type="button"
+                      onClick={()=>applyPrefs({
+                        ...prefs,
+                        ...Object.fromEntries(ANN_ALERT_CAT_OPTIONS.map(o=>[o.key,false])),
+                      })}
+                      style={{flex:1,padding:'3px 0',borderRadius:5,border:`1px solid ${C.border}`,
+                        background:'transparent',color:C.muted,fontSize:9,fontWeight:600,cursor:'pointer'}}>
+                      None
+                    </button>
+                  </div>
+                </div>
+              )}
+              </div>
             )})}
             <div style={{display:'flex',gap:6,marginTop:8}}>
               <button type="button"
                 onClick={()=>applyPrefs({
                   ...prefs,
                   ...Object.fromEntries(ALERT_PREF_OPTIONS.filter(o=>o.key!=='watchlistOnly').map(o=>[o.key,true])),
+                  ...Object.fromEntries(ANN_ALERT_CAT_OPTIONS.map(o=>[o.key,true])),
                   watchlistOnly:false,
                 })}
                 style={{flex:1,padding:'5px 0',borderRadius:6,border:`1px solid ${C.border}`,
@@ -1467,6 +1559,7 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
                 onClick={()=>applyPrefs({
                   ...prefs,
                   ...Object.fromEntries(ALERT_PREF_OPTIONS.map(o=>[o.key,false])),
+                  ...Object.fromEntries(ANN_ALERT_CAT_OPTIONS.map(o=>[o.key,false])),
                 })}
                 style={{flex:1,padding:'5px 0',borderRadius:6,border:`1px solid ${C.border}`,
                   background:'transparent',color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
@@ -9602,13 +9695,15 @@ export default function App(){
           let playedSound=false
           data.forEach(ann=>{
             if(typeof Notification==='undefined' || Notification.permission!=='granted') return
+            if(!isAnnouncementAlertEnabled(ann, prefs)) return
             if(wlOnly){
               const sym=String(ann.symbol||'').toUpperCase()
               if(!sym || !wlSyms.has(sym)) return
             }
             if(!playedSound){ playAlertSoundFromPrefs(prefs); playedSound=true }
+            const cat=classifyAnnouncementAlert(ann)
             const n = new Notification(
-              `📢 ${ann.symbol} — New Announcement`,
+              `📢 ${ann.symbol} — ${cat.label}`,
               {
                 body: ann.subject.length>110 ? ann.subject.slice(0,107)+'…' : ann.subject,
                 icon: '/favicon.ico',
@@ -9772,21 +9867,8 @@ export default function App(){
     })
   },[mainTab,bestPicksView])
   const [announcementsPage,setAnnouncementsPage]=useState(0)
-  // Sub-tabs on the Announcements tab — filters by NSE's own category
-  // text (e.g. "Financial Results", "Award of Order / Receipt of
-  // Order"), matched with ILIKE server-side so pagination stays
-  // meaningful instead of filtering an already-paginated page down to
-  // almost nothing.
-  const ANNOUNCEMENT_CATEGORIES=[
-    {id:'all',    label:'All',         keyword:null},
-    {id:'results', label:'Results',    keyword:['financial result','quarterly result','results for the quarter','unaudited results','audited results'], exclude:['newspaper publication','newspaper advertisement','transcript','press release','investor meet','con. call','con call','conference call','clarification']},
-    {id:'concall', label:'Concall',    keyword:['con call','con-call','concall','conference call','investor','analyst meet'], exclude:['transcript']},
-    {id:'transcript', label:'Transcript', keyword:['transcript']},
-    {id:'orders', label:'Order Book',  keyword:['award of order','work order','purchase order','order received from','bagged','bagging','receiving of order','receipt of order','receiving of contract','receipt of contract','secures order','wins order','letter of intent','order worth','order valued'], exclude:['cancellation of order','cancellation of work order','cancellation of purchase order','order cancelled','work order cancelled','purchase order cancelled','cancellation of contract','contract cancelled','termination of contract','contract terminated','termination of work order','work order terminated','rescission of','order rescinded','contract rescinded','order withdrawn','withdrawal of order','loss of order','order lost']},
-    {id:'board',  label:'Board Meeting', keyword:'board meeting'},
-    {id:'div',    label:'Dividend',    keyword:'dividend'},
-    {id:'other',  label:'Other',       keyword:null},
-  ]
+  // Announcement sub-tabs use module-level ANNOUNCEMENT_CATEGORIES
+  // (same keywords as alert-type filters in 🔔 Alerts).
   const [announcementsCategory,setAnnouncementsCategory]=useState('all')
   // Sector/Industry/Market-Cap filters for the Announcements tab — named
   // distinctly (Ann suffix) so they don't collide with the scanner's own
@@ -9957,11 +10039,14 @@ export default function App(){
       try{ localStorage.setItem('lm-ann-last-seen',new Date().toISOString()) }catch(e){}
       if(rows.length===0) return
       const prefs=alertPrefsRef.current
+      const matched=rows.filter(a=>isAnnouncementAlertEnabled(a, prefs))
+      if(matched.length===0) return
       playAlertSoundFromPrefs(prefs)
       if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
-        rows.slice(0,3).forEach(a=>{
+        matched.slice(0,3).forEach(a=>{
           try{
-            new Notification(`📢 ${a.symbol}${a.ai_rating?` · ${a.ai_rating}`:''}`,
+            const cat=classifyAnnouncementAlert(a)
+            new Notification(`📢 ${a.symbol} — ${cat.label}${a.ai_rating?` · ${a.ai_rating}`:''}`,
               {body:(a.subject||a.category||'New announcement').slice(0,140),tag:`ann-${a.symbol}-${a.announced_at}`,
                 silent: prefs.soundEnabled!==false})
           }catch(e){}
@@ -10918,7 +11003,10 @@ export default function App(){
                 onPersist={persistUserAlertPrefs}
                 cloudSynced={!!(session?.user?.id && !demoMode)}
                 notifPermission={notifPermission}
-                onRequestPermission={()=>Notification.requestPermission().then(p=>setNotifPermission(p))}
+                onRequestPermission={()=>{
+                  playAlertSoundFromPrefs(alertPrefsRef.current) // unlock AudioContext for later alerts
+                  Notification.requestPermission().then(p=>setNotifPermission(p))
+                }}
                 colors={C}
               />
 
