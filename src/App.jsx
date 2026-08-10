@@ -4969,19 +4969,20 @@ function ThemesRadarPanel({onOpenSymbol}){
 // alongside the TradingView embed as a second tab, not a replacement —
 // useful for stocks TradingView's free embed can't resolve, and for
 // seeing our own scanner's signals drawn directly on the chart.
-const RANGE_BARS_D = {'1D':1,'1W':5,'1M':21,'3M':63,'6M':126,'YTD':null,'1Y':252,'5Y':1260,'All':100000}
-const RANGE_BARS_W = {'1D':1,'1W':1,'1M':4,'3M':13,'6M':26,'YTD':null,'1Y':52,'5Y':260,'All':100000}
+// History length presets (how much to show). Candle size is separate: 1D vs 1W.
+const RANGE_BARS_D = {'1M':21,'3M':63,'6M':126,'YTD':null,'1Y':252,'5Y':1260,'All':100000}
+const RANGE_BARS_W = {'1M':4,'3M':13,'6M':26,'YTD':null,'1Y':52,'5Y':260,'All':100000}
 const BULL_SNORT_COLOR = '#f59e0b'
 
 function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [range, setRange] = useState('1Y')
-  const [barInterval, setBarInterval] = useState('D') // 'D' daily | 'W' weekly
+  const [barInterval, setBarInterval] = useState('D') // 'D' = 1D candles | 'W' = 1W candles
   const [zoomBars, setZoomBars] = useState(RANGE_BARS_D['1Y'])
   const [panOffset, setPanOffset] = useState(0) // bars back from the most recent
   const [showMA, setShowMA] = useState(true)
-  const [chartStyle, setChartStyle] = useState('candle') // 'candle' | 'line'
+  const [chartStyle, setChartStyle] = useState('candle') // 'candle' | 'line' — available for both 1D and 1W
   const [showSR, setShowSR] = useState(true)
   const [showPatterns, setShowPatterns] = useState(true)
   const [showBullSnort, setShowBullSnort] = useState(true)
@@ -5042,11 +5043,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   // order, every render) — so it checks data validity internally
   // instead of relying on the component having already bailed out.
   const analysis = useMemo(() => {
-    const minBars = barInterval==='W' ? 16 : 30
+    // Weekly needs fewer bars to start drawing; MAs simply stay null until enough history.
+    const minBars = barInterval==='W' ? 8 : 30
     if (!seriesData || !seriesData.closes || seriesData.closes.length < minBars) return null
     const closes = seriesData.closes, highs = seriesData.highs, lows = seriesData.lows
     const volumes = seriesData.volumes, opens = seriesData.opens
-    const _swings = findSwingPoints(highs, lows, 5)
+    const _swings = findSwingPoints(highs, lows, barInterval==='W' ? 3 : 5)
     return {
       ma20: calcSMASeries(closes, 20),
       ma50: calcSMASeries(closes, 50),
@@ -5152,11 +5154,11 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       </div>
     )
   }
-  const minBarsNeeded = barInterval==='W' ? 16 : 30
+  const minBarsNeeded = barInterval==='W' ? 8 : 30
   if(!seriesData || !seriesData.closes || seriesData.closes.length < minBarsNeeded || !analysis){
     return fillShell(
       <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted,textAlign:'center',padding:20}}>
-        Not enough price history yet for {sym} to draw a {barInterval==='W'?'weekly':''} chart
+        Not enough price history yet for {sym} to draw a {barInterval==='W'?'1W':'1D'} chart
         {data?.prices ? ` (only ${barInterval==='W'?(seriesData?.closes?.length||0):data.prices.length} bars, need ${minBarsNeeded}+).` : '.'}
       </div>
     )
@@ -5400,28 +5402,41 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
             <span style={{fontSize:9,fontWeight:800,color:C.red,letterSpacing:'0.04em'}}>LIVE</span>
           </div>
         )}
+        {/* Candle size: 1D (daily) / 1W (weekly) — Candle style works for both */}
+        <div style={{display:'flex',gap:3}}>
+          {[['1D','D','Daily candlesticks'],['1W','W','Weekly candlesticks']].map(([label,val,title])=>(
+            <button key={val} type="button" title={title}
+              onClick={()=>{
+                setBarInterval(val)
+                if(!isIndex) setChartStyle('candle')
+              }}
+              style={{padding:'3px 10px',borderRadius:6,border:`1px solid ${barInterval===val?C.accent:C.border}`,
+                background:barInterval===val?C.accent+'22':'transparent',color:barInterval===val?C.accent:C.muted,
+                fontSize:10,fontWeight:700,cursor:'pointer'}}>{label}</button>
+          ))}
+        </div>
+        <div style={{width:1,height:16,background:C.border,margin:'0 2px'}}/>
+        {/* History length */}
         <div style={{display:'flex',gap:3}}>
           {Object.keys(rangeBars).map(r=>(
-            <button key={r} onClick={()=>{setRange(r);applyRangePreset(r)}}
+            <button key={r} type="button" onClick={()=>{setRange(r);applyRangePreset(r)}}
               style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${range===r?C.accent:C.border}`,
                 background:range===r?C.accent+'22':'transparent',color:range===r?C.accent:C.muted,
                 fontSize:10,fontWeight:700,cursor:'pointer'}}>{r}</button>
           ))}
         </div>
         <div style={{width:1,height:16,background:C.border,margin:'0 2px'}}/>
-        {[['D','D'],['W','W']].map(([label,val])=>(
-          <button key={val} onClick={()=>setBarInterval(val)}
-            title={val==='W'?'Weekly candles':'Daily candles'}
-            style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${barInterval===val?C.accent:C.border}`,
-              background:barInterval===val?C.accent+'1c':'transparent',color:barInterval===val?C.accent:C.muted,
-              fontSize:10,fontWeight:700,cursor:'pointer'}}>{label}</button>
-        ))}
-        <div style={{width:1,height:16,background:C.border,margin:'0 2px'}}/>
         {[['Candle','candle'],['Line','line']].map(([label,val])=>(
-          <button key={val} onClick={()=>setChartStyle(val)}
+          <button key={val} type="button"
+            onClick={()=>setChartStyle(val)}
+            disabled={isIndex && val==='candle'}
+            title={isIndex && val==='candle' ? 'Indices have close-only history — use Line' : `${label} chart (${barInterval==='W'?'1W':'1D'})`}
             style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${chartStyle===val?C.accent:C.border}`,
-              background:chartStyle===val?C.accent+'1c':'transparent',color:chartStyle===val?C.accent:C.muted,
-              fontSize:10,fontWeight:700,cursor:'pointer'}}>{label}</button>
+              background:chartStyle===val?C.accent+'1c':'transparent',
+              color:chartStyle===val?C.accent:C.muted,
+              fontSize:10,fontWeight:700,
+              cursor:(isIndex && val==='candle')?'default':'pointer',
+              opacity:(isIndex && val==='candle')?0.4:1}}>{label}</button>
         ))}
         <div style={{width:1,height:16,background:C.border,margin:'0 2px'}}/>
         {[['MA','showMA',showMA,setShowMA,C.blue],
