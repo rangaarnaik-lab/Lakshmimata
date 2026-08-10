@@ -1206,7 +1206,7 @@ function HistoryCalendarPicker({historyDate, setHistoryDate, availableDates, isM
 // Browser-notification prefs — enable/disable each signal type.
 const ALERT_PREF_KEY='lakshmimata-alert-prefs'
 const DEFAULT_ALERT_PREFS={
-  hy:true, ht:true, pp:true, squeeze:true, stage2:true, guppy:true, announcements:true,
+  hy:true, ht:true, pp:true, squeeze:true, stage2:true, guppy:true, rs70:true, announcements:true,
 }
 const ALERT_PREF_OPTIONS=[
   {key:'hy', label:'HY (High Yield vol)', icon:'📊'},
@@ -1215,6 +1215,7 @@ const ALERT_PREF_OPTIONS=[
   {key:'squeeze', label:'Squeeze / VCP', icon:'🌀'},
   {key:'stage2', label:'Stage 2 new entry', icon:'📈'},
   {key:'guppy', label:'Guppy crossover', icon:'🐠'},
+  {key:'rs70', label:'RS Rating > 70', icon:'⭐'},
   {key:'announcements', label:'Announcements', icon:'📢'},
 ]
 function loadAlertPrefs(){
@@ -1237,6 +1238,7 @@ function alertPrefKeysForFireType(fireType){
   if(/Squeeze|VCP/i.test(t)) keys.push('squeeze')
   if(/Stage\s*2|S2/i.test(t)) keys.push('stage2')
   if(/Guppy/i.test(t)) keys.push('guppy')
+  if(/RS\s*>\s*70|RS\s*≥\s*70|RS\s*>=\s*70/i.test(t)) keys.push('rs70')
   return keys
 }
 function isAlertTypeEnabled(fireType, prefs){
@@ -1250,6 +1252,10 @@ function alertNotificationTitle(alert){
   if(/\bPP\b/.test(t)) return `🔥 ${alert.sym} — Power Play!`
   if(/Stage\s*2/i.test(t)) return `📈 ${alert.sym} — Stage 2 Entry!`
   if(/Guppy/i.test(t)) return `🐠 ${alert.sym} — Guppy Crossover!`
+  if(/RS\s*>\s*70|RS\s*≥\s*70|RS\s*>=\s*70/i.test(t)){
+    const rs=alert.rs_tv??alert.rs
+    return `⭐ ${alert.sym} — RS ${rs!=null?rs:'>70'}!`
+  }
   if(/Squeeze|VCP/i.test(t)) return `🔥 ${alert.sym} — Squeeze Fired!`
   return `🔔 ${alert.sym} — ${t||'Alert'}`
 }
