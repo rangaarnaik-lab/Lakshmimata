@@ -895,6 +895,18 @@ const INDEX_TO_SECTOR = {
   'Private Bank': 'Private Bank', 'PSU Bank': 'PSU Bank', 'Defence': 'Defence',
   'Media': 'Telecom', // closest available bucket — not a precise match
 }
+/** UI label for index_dashboard names — sectorals are stored as "Auto"
+ *  but are the official Nifty Auto series, not the equal-weight sector. */
+function indexDisplayName(name){
+  if(!name) return ''
+  if(/^Nifty\b/i.test(name) || /^Bank Nifty$/i.test(name) || /^India VIX$/i.test(name)) return name
+  if(INDEX_TO_SECTOR[name] || ['Next 50','500','Midcap 150','Smallcap 250','Microcap 250',
+    'MNC','IPO','Consumption','PSE','Commodities','Chemicals','Oil & Gas',
+    'Consumer Durables','Financial Services','Housing','EV & New Age Auto'].includes(name)){
+    return `Nifty ${name}`
+  }
+  return name
+}
 function getIndexConstituents(idxName, allStocks){
   if(idxName==='Nifty 50')     return allStocks.filter(s=>s.inNifty50)
   if(idxName==='Midcap 150')   return allStocks.filter(s=>s.inMidcap)
@@ -11113,8 +11125,12 @@ export default function App(){
         const vals = members.map(m=>m[f]).filter(v=>v!=null)
         return vals.length ? vals.filter(v=>v>0).length/vals.length*100 : null
       }
+      // Most common parent sector among members (for Auto Ancillaries → Auto)
+      const secCounts = {}
+      for(const m of members){ if(m.sector) secCounts[m.sector]=(secCounts[m.sector]||0)+1 }
+      const parentSector = Object.entries(secCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || null
       return {
-        name, count: members.length,
+        name, count: members.length, parentSector,
         avgRS: Math.round(members.reduce((a,m)=>a+(m.rs||0),0)/members.length),
         ppCount: members.filter(m=>m.pp?.isPP).length,
         improving: members.filter(m=>m.rsTrend?.trend==='improving').length,
@@ -12518,24 +12534,27 @@ export default function App(){
             {marketSubTab==='indices'&&(
             <div style={{marginBottom:12}}>
               <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>🗂 Index Performance Dashboard</div>
-              <div style={{fontSize:11,color:C.muted}}>
-                Daily · Weekly · Monthly · Quarterly · Yearly performance + RS-TV + Weinstein Stage for each index
+              <div style={{fontSize:11,color:C.muted,lineHeight:1.45}}>
+                Official index series (e.g. Nifty Auto) — market-cap weighted. Not the same as Sector Avg RS
+                or Industries (Auto Ancillaries / Passenger Cars…). RS-TV + Stage + period % change.
               </div>
             </div>
             )}
             {marketSubTab==='sectors'&&(
             <div style={{marginBottom:12}}>
               <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>🏭 Sectors</div>
-              <div style={{fontSize:11,color:C.muted}}>
-                Sector RS, pocket pivots, and advance % — tap a row for constituent stocks
+              <div style={{fontSize:11,color:C.muted,lineHeight:1.45}}>
+                Equal-weight Avg RS of all stocks tagged in that sector (same list when you expand a row).
+                Differs from Nifty Auto index and from finer Industries under Auto.
               </div>
             </div>
             )}
             {marketSubTab==='industries'&&(
             <div style={{marginBottom:12}}>
               <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>🏗 Industries</div>
-              <div style={{fontSize:11,color:C.muted}}>
-                Finer industry breakdown — tap a row for stocks in that industry
+              <div style={{fontSize:11,color:C.muted,lineHeight:1.45}}>
+                Finer buckets inside a sector (e.g. Auto → Auto Ancillaries, Tyres, Passenger Cars).
+                An industry can lead while the parent sector or Nifty index ranks differently.
               </div>
             </div>
             )}
@@ -12642,9 +12661,14 @@ export default function App(){
                               <span onClick={e=>{e.stopPropagation();setChartSym(idx.name)}}
                                 style={{color:C.accent,cursor:'pointer',textDecoration:'underline',
                                   textDecorationColor:C.accent+'55',textUnderlineOffset:'2px'}}
-                                title={`Open ${idx.name} chart`}>{idx.name}</span>
+                                title={`Open ${idx.name} chart · official index series (not sector Avg RS)`}>
+                                {indexDisplayName(idx.name)}
+                              </span>
                               <span style={{fontSize:9,color:C.muted}}>{isExpanded?'▲':'▼'}</span>
                             </div>
+                            {INDEX_TO_SECTOR[idx.name]&&(
+                              <div style={{fontSize:9,color:C.muted,marginTop:1}}>index · ≠ sector Avg RS</div>
+                            )}
                           </div>
                           <div style={cellStyle}>
                             <div style={{fontSize:11,color:C.muted}}>₹{idx.lastPrice?.toLocaleString('en-IN')}</div>
@@ -13029,6 +13053,9 @@ export default function App(){
                                   <div style={{...cellStyle,position:'sticky',left:0,
                                     background:isExp?C.active:(i%2===0?C.card:C.bg),zIndex:1,paddingRight:8}}>
                                     <div style={{fontWeight:700,fontSize:11,color:C.text,display:'flex',alignItems:'center',gap:4}}>{ind.name} <span style={{fontSize:9,color:C.muted}}>{isExp?'▲':'▼'}</span></div>
+                                    {ind.parentSector&&(
+                                      <div style={{fontSize:9,color:C.muted,marginTop:1}}>in {ind.parentSector}</div>
+                                    )}
                                   </div>
                                   <div style={cellStyle}><div style={{fontWeight:700,fontSize:11,color:C.muted}}>#{i+1}</div></div>
                                   <div style={cellStyle}><div style={{fontWeight:800,fontSize:12,color:rsColor(ind.avgRS)}}>{ind.avgRS}</div></div>
