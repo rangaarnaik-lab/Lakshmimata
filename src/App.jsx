@@ -10563,7 +10563,7 @@ export default function App(){
   const [rotationData,setRotationData]=useState(null)
   const [loadingRotation,setLoadingRotation]=useState(false)
   const [rotationWindow,setRotationWindow]=useState(10) // trading days
-  const [rotationScope,setRotationScope]=useState('sector') // 'sector' | 'index' | 'watchlist'
+  const [rotationScope,setRotationScope]=useState('index') // 'sector' | 'index' | 'watchlist' — indices first
   const [rotationExpandedId,setRotationExpandedId]=useState(null) // clicked index's constituent stocks, shown inline instead of navigating away
   const [constituentRotationData,setConstituentRotationData]=useState(null)
   const [loadingConstituentRotation,setLoadingConstituentRotation]=useState(false)
@@ -14156,7 +14156,7 @@ export default function App(){
                 </div>
               </div>
 
-              {rotationAvailableDates.length>1&&!(rotationScope==='index'&&rotationExpandedId)&&(
+              {rotationAvailableDates.length>1&&(
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
                   padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12}}>
                   <span style={{fontSize:11,color:C.muted,fontWeight:600,whiteSpace:'nowrap'}}>
@@ -14176,69 +14176,39 @@ export default function App(){
                 </div>
               )}
 
+              {/* All indices/sectors always rotate on top; stocks (if drilled) sit below. */}
               <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16,marginBottom:16,position:'relative'}}>
-
-                {rotationScope==='index'&&rotationExpandedId?(
-                  // Drilled into one index — this chart now shows ITS
-                  // constituent stocks rotating against each other,
-                  // in place, instead of a separate section further down
-                  // the page that required scrolling to find.
-                  <>
-                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,flexWrap:'wrap'}}>
-                      <button onClick={()=>setRotationExpandedId(null)}
-                        style={{padding:'5px 12px',borderRadius:20,border:`1px solid ${C.border}`,
-                          background:'transparent',color:C.muted,fontSize:12,fontWeight:600,cursor:'pointer'}}>
-                        ← All Indices
-                      </button>
-                      <span style={{fontSize:12,color:C.muted}}>/</span>
-                      <span style={{fontSize:13,fontWeight:800,color:C.accent}}>{rotationExpandedId} constituents</span>
-                    </div>
-                    {loadingConstituentRotation?(
-                      <div style={{textAlign:'center',padding:'60px 0',color:C.muted,fontSize:12}}>Loading…</div>
-                    ):constituentRolledData&&constituentRolledData.rolledData.some(s=>s.trail?.length>0)?(
-                      <RRGChart rolledData={constituentRolledData.rolledData}
-                        onDotClick={s=>setChartSym(s.id)}/>
-                    ):(()=>{
-                      const constituents=getIndexConstituents(rotationExpandedId,stocks)||[]
-                      return(
-                        <div style={{background:C.bg,border:`1px solid ${C.orange}44`,borderRadius:8,padding:'10px 12px',fontSize:11,color:C.muted}}>
-                          ⚠️ No rotation chart yet for {rotationExpandedId} —{' '}
-                          {constituentRotationData===null?'no historical data returned for these symbols yet.':
-                           constituentRotationData.length===0?'query returned zero rows.':
-                           'data returned but none of the stocks have a usable trail (need at least 2 days of history).'}
-                          {' '}({(constituentRotationData||[]).length} stocks matched, requesting {constituents.length} symbols
-                          over the last {rotationWindow}d)
-                        </div>
-                      )
-                    })()}
-                    <div style={{fontSize:10,color:C.muted,marginTop:8}}>
-                      Each dot is one stock within {rotationExpandedId}. Tap a dot to open that stock's chart. Tap "← All Indices" to zoom back out.
-                    </div>
-                  </>
-                ):(
-                  <>
-                    {requestedWindow&&maxAvailable>0&&maxAvailable<rotationWindow+JDK_WINDOW+JDK_ROC&&(
-                      <div style={{fontSize:11,color:C.yellow,background:C.yellow+'14',border:`1px solid ${C.yellow}33`,
-                        borderRadius:8,padding:'8px 12px',marginBottom:12}}>
-                        ⚠ Only {maxAvailable} day{maxAvailable===1?'':'s'} of RS history available — JdK needs ~{JDK_WINDOW+JDK_ROC} warmup days
-                        plus your trail. Chart will fill in as more daily snapshots accumulate.
-                      </div>
+                {rotationScope==='index'&&(
+                  <div style={{fontSize:12,fontWeight:800,color:C.accent,marginBottom:10}}>
+                    🔄 All indices
+                    {rotationExpandedId&&(
+                      <span style={{fontWeight:600,color:C.muted,marginLeft:8}}>
+                        · tap an index below to focus · stocks for {rotationExpandedId} are under this chart
+                      </span>
                     )}
-                    {rolledData.length===0?(
-                      <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:12}}>
-                        Not enough history yet to compute JdK RS-Ratio / RS-Momentum (need ~{JDK_WINDOW+JDK_ROC}+ days).
-                      </div>
-                    ):(
-                      <RRGChart rolledData={rolledData} onDotClick={goTo}
-                      dotSizing={rotationScope==='sector'}/>
-                    )}
-                    <div style={{fontSize:10,color:C.muted,marginTop:8}}>
-                      Crosshair = benchmark (100, 100). X = JdK RS-Ratio (relative-strength trend), Y = JdK RS-Momentum (its rate of change).
-                      Built from daily {rawLevelLabel} history. Hollow dot = start of trail · filled + arrow = today.
-                      Thicker trails sit farther from the origin (bigger relative move). Window chip = trail length.
-                    </div>
-                  </>
+                  </div>
                 )}
+                {requestedWindow&&maxAvailable>0&&maxAvailable<rotationWindow+JDK_WINDOW+JDK_ROC&&(
+                  <div style={{fontSize:11,color:C.yellow,background:C.yellow+'14',border:`1px solid ${C.yellow}33`,
+                    borderRadius:8,padding:'8px 12px',marginBottom:12}}>
+                    ⚠ Only {maxAvailable} day{maxAvailable===1?'':'s'} of RS history available — JdK needs ~{JDK_WINDOW+JDK_ROC} warmup days
+                    plus your trail. Chart will fill in as more daily snapshots accumulate.
+                  </div>
+                )}
+                {rolledData.length===0?(
+                  <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:12}}>
+                    Not enough history yet to compute JdK RS-Ratio / RS-Momentum (need ~{JDK_WINDOW+JDK_ROC}+ days).
+                  </div>
+                ):(
+                  <RRGChart rolledData={rolledData} onDotClick={goTo}
+                    dotSizing={rotationScope==='sector'}/>
+                )}
+                <div style={{fontSize:10,color:C.muted,marginTop:8}}>
+                  Crosshair = benchmark (100, 100). X = JdK RS-Ratio (relative-strength trend), Y = JdK RS-Momentum (its rate of change).
+                  Built from daily {rawLevelLabel} history. Hollow dot = start of trail · filled + arrow = today.
+                  Thicker trails sit farther from the origin (bigger relative move). Window chip = trail length.
+                  {rotationScope==='index'&&' Tap an index to load its constituent stocks below.'}
+                </div>
                 <div style={{display:'flex',gap:14,flexWrap:'wrap',marginTop:8,paddingTop:10,borderTop:`1px solid ${C.divider}`}}>
                   {[['Leading (+/+) — Ratio & Momentum > 100',RRG_QUAD.leading.label],
                     ['Improving (-/+) — Momentum up, Ratio still < 100',RRG_QUAD.improving.label],
@@ -14251,7 +14221,43 @@ export default function App(){
                 </div>
               </div>
 
-              {!(rotationScope==='index'&&rotationExpandedId)&&rolledData.some(s=>s.trail?.length>0)&&(()=>{
+              {rotationScope==='index'&&rotationExpandedId&&(
+                <div style={{background:C.card,border:`1px solid ${C.accent}44`,borderRadius:12,padding:16,marginBottom:16}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,flexWrap:'wrap'}}>
+                    <span style={{fontSize:12,fontWeight:800,color:C.accent}}>
+                      📈 {rotationExpandedId} — stocks rotating
+                    </span>
+                    <button onClick={()=>{setRotationExpandedId(null);setRotationSelectedIds(new Set());setIdxConstituentFilters({industry:null,rsMin:0})}}
+                      style={{marginLeft:'auto',padding:'5px 12px',borderRadius:20,border:`1px solid ${C.border}`,
+                        background:'transparent',color:C.muted,fontSize:11,fontWeight:600,cursor:'pointer'}}>
+                      Clear focus
+                    </button>
+                  </div>
+                  {loadingConstituentRotation?(
+                    <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:12}}>Loading stocks…</div>
+                  ):constituentRolledData&&constituentRolledData.rolledData.some(s=>s.trail?.length>0)?(
+                    <RRGChart rolledData={constituentRolledData.rolledData}
+                      onDotClick={s=>setChartSym(s.id)}/>
+                  ):(()=>{
+                    const constituents=getIndexConstituents(rotationExpandedId,stocks)||[]
+                    return(
+                      <div style={{background:C.bg,border:`1px solid ${C.orange}44`,borderRadius:8,padding:'10px 12px',fontSize:11,color:C.muted}}>
+                        ⚠️ No rotation chart yet for {rotationExpandedId} stocks —{' '}
+                        {constituentRotationData===null?'no historical data returned for these symbols yet.':
+                         constituentRotationData.length===0?'query returned zero rows.':
+                         'data returned but none of the stocks have a usable trail (need at least 2 days of history).'}
+                        {' '}({(constituentRotationData||[]).length} stocks matched, requesting {constituents.length} symbols
+                        over the last {rotationWindow}d)
+                      </div>
+                    )
+                  })()}
+                  <div style={{fontSize:10,color:C.muted,marginTop:8}}>
+                    Each dot is one stock within {rotationExpandedId}. Tap a dot to open that stock's chart. Indices chart stays above.
+                  </div>
+                </div>
+              )}
+
+              {rolledData.some(s=>s.trail?.length>0)&&(()=>{
                 const {text}=generateRotationInsights(rolledData,scopeLabel)
                 return text?(
                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
@@ -14265,7 +14271,7 @@ export default function App(){
               })()}
 
               <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>
-                RANKED BY QUADRANT — distance from benchmark (100, 100)
+                {rotationScope==='index'?'INDICES RANKED BY QUADRANT':'RANKED BY QUADRANT'} — distance from benchmark (100, 100)
               </div>
               {rrgGroups.length===0?(
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'20px',
