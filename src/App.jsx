@@ -7552,43 +7552,90 @@ function SectorPanel({sectorData,allStocks,isMobile,onChart,onViewInRS}){
 
 // ── Auth Screen ────────────────────────────────────────────────────────
 // ── Landing Page ─────────────────────────────────────────────────────
-// Reusable scrolling ticker of top-moving stocks — used on the landing
-// page and, per request, at the top of every tab in the main app too.
-// Pure presentational: caller supplies the data, so it can be fed from
-// whichever source is already loaded in that context instead of firing
-// a duplicate fetch.
-function TickerBanner({stocks, onSelect}){
-  if(!stocks || stocks.length===0) return null
-  const open = (s) => {
-    const sym = s.sym || s.symbol
-    if(sym && onSelect) onSelect(sym)
+// Reusable scrolling ticker — indices row on top (market pulse), stock
+// movers underneath. Used on the landing page and at the top of every
+// tab in the main app. Pure presentational: caller supplies the data.
+function shortIndexTickerName(name){
+  return String(name||'')
+    .replace(/^Nifty\s+/i,'')
+    .replace(/^NSE\s+/i,'')
+    .replace('Private Bank','Pvt Bank')
+}
+function TickerBanner({stocks, indices, onSelect, onSelectIndex}){
+  const hasStocks = !!(stocks && stocks.length)
+  const hasIndices = !!(indices && indices.length)
+  if(!hasStocks && !hasIndices) return null
+  const pauseTracks = (paused) => (e) => {
+    e.currentTarget.querySelectorAll('[data-ticker-track]').forEach(el=>{
+      el.style.animationPlayState = paused ? 'paused' : 'running'
+    })
   }
+  const scrollSecs = (n) => Math.max(28, Math.min(90, Math.round(n * 2.4)))
+  const stockRow = hasStocks && (
+    <div style={{overflow:'hidden',whiteSpace:'nowrap',padding:hasIndices?'5px 0 7px':'7px 0'}}>
+      <div data-ticker-track style={{display:'inline-block',
+        animation:`lakshmimata-ticker-scroll ${scrollSecs(stocks.length)}s linear infinite`}}>
+        {[...stocks,...stocks].map((s,i)=>{
+          const sym = s.sym || s.symbol
+          const chg = s.chg_pct ?? s.chg ?? 0
+          return (
+            <span key={i}
+              onClick={()=>{ if(sym && onSelect) onSelect(sym) }}
+              title={onSelect ? `Open ${sym} chart` : undefined}
+              style={{fontFamily:"monospace",fontSize:12,letterSpacing:'0.02em',color:C.muted,marginRight:32,
+                cursor:onSelect?'pointer':'default'}}>
+              <b style={{color:C.text,fontWeight:600}}>{sym}</b>{' '}
+              ₹{(s.last_price??s.last)?.toLocaleString('en-IN',{maximumFractionDigits:2})}{' '}
+              <span style={{color:chg>=0?C.green:C.red}}>
+                {chg>=0?'▲':'▼'} {Math.abs(chg).toFixed(2)}%
+              </span>
+            </span>
+          )
+        })}
+      </div>
+    </div>
+  )
+  const indexRow = hasIndices && (
+    <div style={{overflow:'hidden',whiteSpace:'nowrap',padding:hasStocks?'7px 0 4px':'7px 0',
+      borderBottom:hasStocks?`1px solid ${C.divider}`:'none'}}>
+      <div data-ticker-track style={{display:'inline-block',
+        animation:`lakshmimata-ticker-scroll ${scrollSecs(indices.length)}s linear infinite`}}>
+        {[...indices,...indices].map((idx,i)=>{
+          const name = idx.name
+          const label = shortIndexTickerName(name)
+          const chg = idx.chgD ?? idx.chg_d ?? 0
+          const px = idx.lastPrice ?? idx.last_price
+          return (
+            <span key={i}
+              onClick={()=>{ if(name && (onSelectIndex||onSelect)) (onSelectIndex||onSelect)(name) }}
+              title={(onSelectIndex||onSelect) ? `Open ${name} chart` : undefined}
+              style={{fontFamily:"monospace",fontSize:12,letterSpacing:'0.02em',color:C.muted,marginRight:28,
+                cursor:(onSelectIndex||onSelect)?'pointer':'default'}}>
+              <b style={{color:C.accent,fontWeight:700}}>{label}</b>{' '}
+              {px!=null&&(
+                <>{Number(px).toLocaleString('en-IN',{maximumFractionDigits:2})}{' '}</>
+              )}
+              <span style={{color:chg>=0?C.green:C.red}}>
+                {chg>=0?'▲':'▼'} {Math.abs(chg).toFixed(2)}%
+              </span>
+            </span>
+          )
+        })}
+      </div>
+    </div>
+  )
   return(
-    <div style={{background:C.card,borderBottom:`1px solid ${C.divider}`,overflow:'hidden',
-      whiteSpace:'nowrap',padding:'7px 0'}}
-      onMouseEnter={e=>{ const el=e.currentTarget.querySelector('[data-ticker-track]'); if(el) el.style.animationPlayState='paused' }}
-      onMouseLeave={e=>{ const el=e.currentTarget.querySelector('[data-ticker-track]'); if(el) el.style.animationPlayState='running' }}>
+    <div style={{background:C.card,borderBottom:`1px solid ${C.divider}`}}
+      onMouseEnter={pauseTracks(true)}
+      onMouseLeave={pauseTracks(false)}>
       <style>{`
         @keyframes lakshmimata-ticker-scroll {
           from { transform: translateX(0); }
           to { transform: translateX(-50%); }
         }
       `}</style>
-      <div data-ticker-track style={{display:'inline-block',animation:'lakshmimata-ticker-scroll 32s linear infinite'}}>
-        {[...stocks,...stocks].map((s,i)=>(
-          <span key={i}
-            onClick={()=>open(s)}
-            title={onSelect ? `Open ${(s.sym||s.symbol)} chart` : undefined}
-            style={{fontFamily:"monospace",fontSize:12,letterSpacing:'0.02em',color:C.muted,marginRight:32,
-              cursor:onSelect?'pointer':'default'}}>
-            <b style={{color:C.text,fontWeight:600}}>{s.sym||s.symbol}</b>{' '}
-            ₹{(s.last_price??s.last)?.toLocaleString('en-IN',{maximumFractionDigits:2})}{' '}
-            <span style={{color:(s.chg_pct??s.chg)>=0?C.green:C.red}}>
-              {(s.chg_pct??s.chg)>=0?'▲':'▼'} {Math.abs(s.chg_pct??s.chg??0).toFixed(2)}%
-            </span>
-          </span>
-        ))}
-      </div>
+      {indexRow}
+      {stockRow}
     </div>
   )
 }
@@ -7606,6 +7653,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
   const [slide,setSlide]=useState(0)
   const [paused,setPaused]=useState(false)
   const [topGainers,setTopGainers]=useState([])
+  const [landingIndices,setLandingIndices]=useState([])
   const [usageStats,setUsageStats]=useState(null) // {uniqueUsers, dailyTrend} | null while loading
   const [publicFeedback,setPublicFeedback]=useState([])
   const [feedbackStats,setFeedbackStats]=useState(null)
@@ -7617,6 +7665,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
   },[paused])
   useEffect(()=>{
     fetchTopGainers(15).then(setTopGainers)
+    fetchIndexDashboard().then(setLandingIndices).catch(()=>{})
   },[])
   useEffect(()=>{
     logPageView().finally(() => fetchUsageStats(14).then(setUsageStats))
@@ -7649,10 +7698,9 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
         FOR INFORMATIONAL AND EDUCATIONAL PURPOSES · NOT INVESTMENT ADVICE
       </div>
 
-      {/* Live ticker — today's real top gainers, not sample data. Public
-          read on the stocks table (no auth needed), so this works for
-          logged-out visitors too. */}
-      <TickerBanner stocks={topGainers}/>
+      {/* Live ticker — all indices on top, today's top gainers below.
+          Public reads (no auth), so this works for logged-out visitors. */}
+      <TickerBanner stocks={topGainers} indices={landingIndices}/>
 
       <div style={{maxWidth:1080,margin:'0 auto',padding:'0 24px'}}>
         {/* Nav */}
@@ -10743,18 +10791,21 @@ export default function App(){
     if(session||demoMode)runDBScan()
   },[session,demoMode,runDBScan])
 
-  // Load index dashboard and breadth data on tab switch. The Indices tab
-  // also auto-refreshes every 60s while active — the backend writes live
-  // index prices every scan, but without polling here the UI showed one
-  // stale snapshot from whenever the tab was opened.
+  // Index dashboard feeds the app-wide ticker (all indices above stocks)
+  // and Market → Indices. Refresh every 60s while logged in / demo so the
+  // banner stays live even when you're not on the Market tab.
   useEffect(()=>{
-    if(!session) return
-    let timer = null
+    if(!session && !demoMode) return
+    const load = () => fetchIndexDashboard().then(setIndexData).catch(e=>console.error('Index fetch:',e))
+    load()
+    const timer = setInterval(load, 60000)
+    return ()=>clearInterval(timer)
+  },[session,demoMode])
+
+  // Breadth + rotation load on tab switch.
+  useEffect(()=>{
+    if(!session && !demoMode) return
     if(mainTab==='market'){
-      const load = () => fetchIndexDashboard().then(setIndexData).catch(e=>console.error('Index fetch:',e))
-      load()
-      timer = setInterval(load, 60000)
-      // Fetch market breadth from Supabase
       supabase.from('market_breadth').select('*').order('scan_date',{ascending:false}).limit(30)
         .then(({data})=>setBreadthData(data||[]))
         .catch(e=>console.error('Breadth fetch:',e))
@@ -10772,8 +10823,7 @@ export default function App(){
         .catch(e=>console.error('Sector rotation fetch:',e))
         .finally(()=>setLoadingRotation(false))
     }
-    return ()=>{ if(timer) clearInterval(timer) }
-  },[session,mainTab,rotationWindow,rotationScope,rotationWlId,watchlists,activeWl])
+  },[session,demoMode,mainTab,rotationWindow,rotationScope,rotationWlId,watchlists,activeWl])
 
   // Constituent stocks' own RRG rotation — fetched separately from the
   // main sector/index/watchlist chart above, only when an index is
@@ -11509,7 +11559,8 @@ export default function App(){
         </div>
 
         <div style={{flexShrink:0}}>
-          <TickerBanner stocks={topMovers} onSelect={setChartSym}/>
+          <TickerBanner stocks={topMovers} indices={indexData}
+            onSelect={setChartSym} onSelectIndex={setChartSym}/>
         </div>
 
         {/* Below header: screener table | chart — or stacked up/down via Layout menu */}
