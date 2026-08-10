@@ -4969,20 +4969,41 @@ function ThemesRadarPanel({onOpenSymbol}){
 // alongside the TradingView embed as a second tab, not a replacement —
 // useful for stocks TradingView's free embed can't resolve, and for
 // seeing our own scanner's signals drawn directly on the chart.
-// History length presets (how much to show). Candle size is separate: 1D / 1W / 1M / 1Y.
+// History length presets (how much to show). Candle size is separate: 1D / 1W / 1M / 12M (TradingView names).
 const RANGE_BARS_BY_INTERVAL = {
-  D: {'1M':21,'3M':63,'6M':126,'YTD':null,'1Y':252,'5Y':1260,'All':100000},
-  W: {'1M':4,'3M':13,'6M':26,'YTD':null,'1Y':52,'5Y':260,'All':100000},
-  M: {'1M':1,'3M':3,'6M':6,'YTD':null,'1Y':12,'5Y':60,'All':100000},
-  Y: {'1M':1,'3M':1,'6M':1,'YTD':null,'1Y':1,'5Y':5,'All':100000},
+  D: {'1D':1,'5D':5,'1M':21,'3M':63,'6M':126,'YTD':null,'1Y':252,'5Y':1260,'All':100000},
+  W: {'1D':1,'5D':1,'1M':4,'3M':13,'6M':26,'YTD':null,'1Y':52,'5Y':260,'All':100000},
+  M: {'1D':1,'5D':1,'1M':1,'3M':3,'6M':6,'YTD':null,'1Y':12,'5Y':60,'All':100000},
+  Y: {'1D':1,'5D':1,'1M':1,'3M':1,'6M':1,'YTD':null,'1Y':1,'5Y':5,'All':100000},
 }
 const BAR_INTERVAL_META = {
   D: { label:'1D', unit:'days',   minBars:30, minZoom:10, swing:5 },
   W: { label:'1W', unit:'weeks',  minBars:8,  minZoom:4,  swing:3 },
   M: { label:'1M', unit:'months', minBars:6,  minZoom:3,  swing:2 },
-  Y: { label:'1Y', unit:'years',  minBars:3,  minZoom:2,  swing:1 },
+  Y: { label:'12M', unit:'years', minBars:3,  minZoom:2,  swing:1 },
 }
+const TV_TOOLBAR_BLUE = '#2962ff'
 const BULL_SNORT_COLOR = '#f59e0b'
+
+function TvCandleIcon({active, muted}) {
+  const c = active ? TV_TOOLBAR_BLUE : muted
+  return (
+    <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">
+      <line x1="4" y1="1" x2="4" y2="13" stroke={c} strokeWidth="1.2"/>
+      <rect x="2.2" y="3.5" width="3.6" height="6" fill={c}/>
+      <line x1="12" y1="2" x2="12" y2="12" stroke={c} strokeWidth="1.2"/>
+      <rect x="10.2" y="4.5" width="3.6" height="5" fill="none" stroke={c} strokeWidth="1.2"/>
+    </svg>
+  )
+}
+function TvLineIcon({active, muted}) {
+  const c = active ? TV_TOOLBAR_BLUE : muted
+  return (
+    <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">
+      <polyline points="1,11 5,7 8,9 15,2" fill="none" stroke={c} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round"/>
+    </svg>
+  )
+}
 
 function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const [data, setData] = useState(null)
@@ -5103,7 +5124,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
     else if (barInterval === 'M' && range === '1M') nextRange = '1Y'
     if (nextRange !== range) setRange(nextRange)
     const bars = nextRange==='YTD' ? null : rangeBars[nextRange]
-    if(bars!=null) setZoomBars(Math.max(intervalMeta.minZoom, bars))
+    if(bars!=null) setZoomBars(Math.max(1, bars))
     else setZoomBars(rangeBars['1Y'] ?? RANGE_BARS_BY_INTERVAL.D['1Y'])
     setPanOffset(0)
   },[barInterval]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -5222,8 +5243,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   // barsToShow/start now driven by zoomBars/panOffset (mouse wheel /
   // pinch to zoom, drag to pan) rather than only the fixed range preset
   // buttons — those buttons just set zoomBars to a starting point.
-  const minZoom = intervalMeta.minZoom
-  const barsToShow = Math.max(minZoom, Math.min(zoomBars, n))
+  // Allow TV short ranges (1D/5D) down to 1 bar; wheel/pinch keep a friendlier floor.
+  const wheelMinZoom = intervalMeta.minZoom
+  const barsToShow = Math.max(1, Math.min(zoomBars, n))
   const maxPanOffset = Math.max(0, n - barsToShow)
   const clampedPanOffset = Math.min(panOffset, maxPanOffset)
   const start = Math.max(0, n - barsToShow - clampedPanOffset)
@@ -5240,7 +5262,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const handleWheel = (e) => {
     e.preventDefault()
     const factor = e.deltaY > 0 ? 1.15 : 0.87
-    throttle(() => setZoomBars(z => Math.max(minZoom, Math.min(n, Math.round(z * factor)))))
+    throttle(() => setZoomBars(z => Math.max(wheelMinZoom, Math.min(n, Math.round(z * factor)))))
   }
   const pxToBars = (pxDelta) => {
     const rect = svgRef.current?.getBoundingClientRect()
@@ -5277,7 +5299,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       const newDist = touchDist(e.touches)
       const ratio = dragRef.current.pinchDist / Math.max(1, newDist) // fingers apart = zoom in
       const capturedPinchZoomBars = dragRef.current.pinchZoomBars
-      throttle(() => setZoomBars(Math.max(minZoom, Math.min(n, Math.round(capturedPinchZoomBars * ratio)))))
+      throttle(() => setZoomBars(Math.max(wheelMinZoom, Math.min(n, Math.round(capturedPinchZoomBars * ratio)))))
     } else if (e.touches.length === 1 && dragRef.current.startX != null) {
       const deltaBars = pxToBars(e.touches[0].clientX - dragRef.current.startX)
       const capturedStartPanOffset = dragRef.current.startPanOffset
@@ -5407,76 +5429,82 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       overflow:'hidden',
     }}>
       <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
-      {/* Controls */}
-      <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:6,alignItems:'center',flexShrink:0}}>
+      {/* TradingView-style top toolbar: intervals · chart type · studies */}
+      <div style={{
+        display:'flex', flexWrap:'wrap', gap:2, marginBottom:4, alignItems:'center', flexShrink:0,
+        padding:'2px 0 6px', borderBottom:`1px solid ${C.border}`,
+      }}>
         {isLiveUpdating&&(
-          <div title="Today's candle is updating from the live price feed (~every 45s during market hours). Prior days are final daily closes."
-            style={{display:'flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:6,
-              background:C.red+'18',border:`1px solid ${C.red}44`}}>
-            <span style={{width:6,height:6,borderRadius:'50%',background:C.red,
+          <div title="Today's candle is updating from the live price feed (~every 45s during market hours)."
+            style={{display:'flex',alignItems:'center',gap:4,padding:'2px 8px',borderRadius:3,marginRight:4,
+              background:C.red+'18'}}>
+            <span style={{width:5,height:5,borderRadius:'50%',background:C.red,
               animation:'pulse 1.5s ease-in-out infinite'}}/>
             <span style={{fontSize:9,fontWeight:800,color:C.red,letterSpacing:'0.04em'}}>LIVE</span>
           </div>
         )}
-        {/* Candle size: 1D / 1W / 1M / 1Y — Candle style works for all */}
-        <div style={{display:'flex',gap:3}}>
-          {[['1D','D','Daily candlesticks'],['1W','W','Weekly candlesticks'],
-            ['1M','M','Monthly candlesticks'],['1Y','Y','Yearly candlesticks']].map(([label,val,title])=>(
-            <button key={val} type="button" title={title}
+        {/* Resolution favorites — flat TV text buttons */}
+        <div style={{display:'flex',alignItems:'center',gap:0}}>
+          {[['1D','D','Daily'],['1W','W','Weekly'],['1M','M','Monthly'],['12M','Y','Yearly']].map(([label,val,title])=>(
+            <button key={val} type="button" title={`${title} · ${label}`}
               onClick={()=>{
                 setBarInterval(val)
                 if(!isIndex) setChartStyle('candle')
               }}
-              style={{padding:'3px 10px',borderRadius:6,border:`1px solid ${barInterval===val?C.accent:C.border}`,
-                background:barInterval===val?C.accent+'22':'transparent',color:barInterval===val?C.accent:C.muted,
-                fontSize:10,fontWeight:700,cursor:'pointer'}}>{label}</button>
+              style={{
+                padding:'4px 9px', border:'none', borderRadius:3, background:'transparent',
+                color: barInterval===val ? TV_TOOLBAR_BLUE : C.muted,
+                fontSize:12, fontWeight: barInterval===val ? 700 : 600,
+                cursor:'pointer', fontFamily:'inherit', lineHeight:1.2,
+              }}>{label}</button>
           ))}
         </div>
-        <div style={{width:1,height:16,background:C.border,margin:'0 2px'}}/>
-        {/* History length */}
-        <div style={{display:'flex',gap:3}}>
-          {Object.keys(rangeBars).map(r=>(
-            <button key={r} type="button" title={`Show last ${r} of ${intervalMeta.label} bars`}
-              onClick={()=>{setRange(r);applyRangePreset(r)}}
-              style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${range===r?C.accent:C.border}`,
-                background:range===r?C.accent+'22':'transparent',color:range===r?C.accent:C.muted,
-                fontSize:10,fontWeight:700,cursor:'pointer'}}>{r}</button>
-          ))}
+        <div style={{width:1,height:18,background:C.border,margin:'0 6px'}}/>
+        {/* Chart type icons */}
+        <div style={{display:'flex',alignItems:'center',gap:2}}>
+          <button type="button" disabled={isIndex}
+            onClick={()=>setChartStyle('candle')}
+            title={isIndex ? 'Indices have close-only history — use Line' : 'Candles'}
+            style={{
+              display:'flex',alignItems:'center',justifyContent:'center',
+              width:28,height:24,border:'none',borderRadius:3,cursor:isIndex?'default':'pointer',
+              background: chartStyle==='candle' ? TV_TOOLBAR_BLUE+'22' : 'transparent',
+              opacity: isIndex ? 0.35 : 1,
+            }}>
+            <TvCandleIcon active={chartStyle==='candle'} muted={C.muted}/>
+          </button>
+          <button type="button" onClick={()=>setChartStyle('line')} title="Line"
+            style={{
+              display:'flex',alignItems:'center',justifyContent:'center',
+              width:28,height:24,border:'none',borderRadius:3,cursor:'pointer',
+              background: chartStyle==='line' ? TV_TOOLBAR_BLUE+'22' : 'transparent',
+            }}>
+            <TvLineIcon active={chartStyle==='line'} muted={C.muted}/>
+          </button>
         </div>
-        <div style={{width:1,height:16,background:C.border,margin:'0 2px'}}/>
-        {[['Candle','candle'],['Line','line']].map(([label,val])=>(
-          <button key={val} type="button"
-            onClick={()=>setChartStyle(val)}
-            disabled={isIndex && val==='candle'}
-            title={isIndex && val==='candle' ? 'Indices have close-only history — use Line' : `${label} chart (${intervalMeta.label})`}
-            style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${chartStyle===val?C.accent:C.border}`,
-              background:chartStyle===val?C.accent+'1c':'transparent',
-              color:chartStyle===val?C.accent:C.muted,
-              fontSize:10,fontWeight:700,
-              cursor:(isIndex && val==='candle')?'default':'pointer',
-              opacity:(isIndex && val==='candle')?0.4:1}}>{label}</button>
-        ))}
-        <div style={{width:1,height:16,background:C.border,margin:'0 2px'}}/>
-        {[['MA','showMA',showMA,setShowMA,C.blue],
-          ['S/R','showSR',showSR,setShowSR,C.yellow],
-          ['Patterns','showPatterns',showPatterns,setShowPatterns,C.accent],
-          ['Bull Snort','showBullSnort',showBullSnort,setShowBullSnort,BULL_SNORT_COLOR],
-          ['Forecast','showForecast',showForecast,setShowForecast,C.accent]].map(([label,key,val,setter,color])=>(
-          <button key={key} onClick={()=>setter(v=>!v)}
-            title={key==='showBullSnort'?'Highlight bullish volume climax bars (up close, 2× avg vol, strong close)':undefined}
-            style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${val?color:C.border}`,
-              background:val?color+'1c':'transparent',color:val?color:C.muted,
-              fontSize:10,fontWeight:700,cursor:'pointer'}}>{label}</button>
+        <div style={{width:1,height:18,background:C.border,margin:'0 6px'}}/>
+        {/* Studies / overlays — flat TV toggles */}
+        {[['MA',showMA,setShowMA,'Moving averages'],
+          ['S/R',showSR,setShowSR,'Support & resistance'],
+          ['Patterns',showPatterns,setShowPatterns,'Pattern markers'],
+          ['Bull Snort',showBullSnort,setShowBullSnort,'Bullish volume climax bars'],
+          ['Forecast',showForecast,setShowForecast,'Trend forecast']].map(([label,val,setter,title])=>(
+          <button key={label} type="button" title={title} onClick={()=>setter(v=>!v)}
+            style={{
+              padding:'4px 8px', border:'none', borderRadius:3, background: val ? TV_TOOLBAR_BLUE+'18' : 'transparent',
+              color: val ? TV_TOOLBAR_BLUE : C.muted,
+              fontSize:11, fontWeight: val ? 700 : 600, cursor:'pointer', fontFamily:'inherit',
+            }}>{label}</button>
         ))}
         {(zoomBars!==zoomBarsForRange(range)||panOffset!==0)&&(
-          <button onClick={()=>applyRangePreset(range)}
-            style={{padding:'3px 9px',borderRadius:6,border:`1px solid ${C.border}`,
-              background:'transparent',color:C.muted,fontSize:10,fontWeight:700,cursor:'pointer'}}>
-            ↺ Reset zoom
+          <button type="button" onClick={()=>applyRangePreset(range)} title="Reset zoom to selected range"
+            style={{padding:'4px 8px',border:'none',borderRadius:3,background:'transparent',
+              color:C.muted,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+            Reset
           </button>
         )}
-        <span style={{fontSize:9,color:C.muted,marginLeft:'auto'}}>
-          {isMobile?'Pinch to zoom · drag to pan':'Scroll to zoom · drag to pan'}
+        <span style={{fontSize:10,color:C.muted,marginLeft:'auto',opacity:0.85}}>
+          {intervalMeta.label}
         </span>
       </div>
 
@@ -5729,6 +5757,23 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           </text>
         ))}
       </svg>
+      </div>
+
+      {/* TradingView-style date range strip (under chart) */}
+      <div style={{
+        display:'flex', flexWrap:'wrap', alignItems:'center', justifyContent:'center',
+        gap:2, padding:'4px 0 2px', flexShrink:0,
+      }}>
+        {Object.keys(rangeBars).map(r=>(
+          <button key={r} type="button" title={`Show ${r}`}
+            onClick={()=>{setRange(r);applyRangePreset(r)}}
+            style={{
+              padding:'3px 8px', border:'none', borderRadius:3, background:'transparent',
+              color: range===r ? TV_TOOLBAR_BLUE : C.muted,
+              fontSize:11, fontWeight: range===r ? 700 : 600,
+              cursor:'pointer', fontFamily:'inherit', textTransform: r==='All'?'uppercase':'none',
+            }}>{r === 'All' ? 'ALL' : r}</button>
+        ))}
       </div>
 
       {/* Legend — compact single row to leave more room for the chart */}
