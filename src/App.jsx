@@ -913,8 +913,30 @@ function getIndexConstituents(idxName, allStocks){
   if(idxName==='Smallcap 250') return allStocks.filter(s=>s.inSmallcap)
   if(idxName==='Microcap 250') return allStocks.filter(s=>s.inMicrocap)
   const sectorKey = INDEX_TO_SECTOR[idxName]
-  if(sectorKey) return allStocks.filter(s=>s.sector===sectorKey)
+  if(sectorKey) return getSectorMemberStocks(sectorKey, allStocks)
   return null // no reliable constituent mapping for this index yet
+}
+
+/** Stocks belonging to a sector row — prefers live `sector` tags, then
+ *  sector aliases (Defence ↔ Aerospace & Defence), then SECTOR_MAP /
+ *  topStocks so expand never looks empty when the sectors table has a count. */
+function getSectorMemberStocks(sectorName, allStocks, sectorRow=null){
+  const name = String(sectorName||'')
+  const aliases = name==='Defence' ? ['Defence','Aerospace & Defence','Defense']
+    : name==='IT' ? ['IT','I.T']
+    : name==='Metals' ? ['Metals','Metals & Mining','Metal']
+    : [name]
+  const aliasSet = new Set(aliases.map(a=>a.toLowerCase()))
+  let list = (allStocks||[]).filter(s=>aliasSet.has(String(s.sector||'').toLowerCase()))
+  if(list.length===0 && SECTOR_MAP[name]){
+    const mapSet = new Set(SECTOR_MAP[name])
+    list = (allStocks||[]).filter(s=>mapSet.has(s.sym))
+  }
+  if(list.length===0 && sectorRow?.topStocks?.length){
+    const tops = new Set(sectorRow.topStocks.map(t=>t.sym||t))
+    list = (allStocks||[]).filter(s=>tops.has(s.sym))
+  }
+  return [...list].sort((a,b)=>(b.rs??0)-(a.rs??0))
 }
 const chgColor = v => v>=0?C.green:C.red
 const fmtChg = v => v!=null?`${v>=0?'+':''}${v.toFixed(2)}%`:'—'
@@ -2736,7 +2758,7 @@ function pickTapeIndices(indexData, max = 8) {
   return picked
 }
 
-function IndexTapeStrip({indexData, isMobile, onIndexClick, onViewAll}) {
+function IndexTapeStrip({indexData, isMobile, onIndexClick, onViewAll, activeName}) {
   const items = pickTapeIndices(indexData)
   if (!items.length) {
     return (
@@ -2749,8 +2771,9 @@ function IndexTapeStrip({indexData, isMobile, onIndexClick, onViewAll}) {
     <div style={{marginBottom:10}}>
       <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
         <div style={{fontWeight:700,fontSize:12,color:C.text}}>Index Tape</div>
+        <div style={{fontSize:10,color:C.muted}}>Tap an index to open its chart</div>
         {onViewAll&&(
-          <button onClick={onViewAll}
+          <button type="button" onClick={onViewAll}
             style={{marginLeft:'auto',fontSize:10,fontWeight:600,color:C.accent,background:'transparent',
               border:'none',cursor:'pointer',padding:0}}>
             All indices →
@@ -2761,10 +2784,13 @@ function IndexTapeStrip({indexData, isMobile, onIndexClick, onViewAll}) {
         {items.map(idx => {
           const stageColor = {1:C.yellow,2:C.green,3:C.orange,4:C.red}[idx.stage] || C.muted
           const shortName = idx.name.replace(/^Nifty /, '').replace('Private Bank', 'Pvt Bank')
+          const active = activeName===idx.name
           return (
-            <button key={idx.name} onClick={()=>onIndexClick?.(idx.name)}
-              style={{flex:'0 0 auto',minWidth:isMobile?108:120,background:C.card,
-                border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px',cursor:'pointer',
+            <button key={idx.name} type="button"
+              onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); onIndexClick?.(idx.name) }}
+              title={`Open ${idx.name} chart`}
+              style={{flex:'0 0 auto',minWidth:isMobile?108:120,background:active?C.active:C.card,
+                border:`1px solid ${active?C.accent:C.border}`,borderRadius:8,padding:'8px 10px',cursor:'pointer',
                 textAlign:'left'}}>
               <div style={{fontSize:10,fontWeight:700,color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
                 {shortName}
@@ -3872,12 +3898,12 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
               background:fundLabelColor(fundQ.label)+'22',
               border:`1px solid ${fundLabelColor(fundQ.label)}55`,borderRadius:999,
               padding:'4px 10px',cursor:'pointer'}}>
-            Fund {fundQ.label}{fundQ.score!=null?` · ${Math.round(fundQ.score)}`:''}
+            Fundamental {fundQ.label}{fundQ.score!=null?` ${Math.round(fundQ.score)}`:''}
           </button>
         ):(
           <span style={{fontSize:10,fontWeight:700,color:C.muted,
             border:`1px dashed ${C.border}`,borderRadius:999,padding:'4px 10px'}}>
-            Fund —
+            Fundamental —
           </span>
         )}
         {quickResultRating?(
@@ -3886,7 +3912,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
             style={{fontSize:11,fontWeight:800,color:resultCol,
               background:resultCol+'22',border:`1px solid ${resultCol}55`,
               borderRadius:999,padding:'4px 10px',cursor:'pointer'}}>
-            {resultRatingShort(quickResultRating)} Result
+            Result - {quickResultRating}
           </button>
         ):(
           <span style={{fontSize:10,fontWeight:700,color:C.muted,
@@ -3926,14 +3952,22 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
                 display:'flex',alignItems:'center',gap:5,
           }}>
             {t.label}
-                {hasContent && (
+                {hasContent && (()=>{
+                  // Date / count only — never a vague "Ready" label.
+                  const badgeText = (t.key==='about'||t.key==='fundamentals')
+                    ? dateHint
+                    : (flag.count>1
+                        ? `${flag.count}${dateHint?` · ${dateHint}`:''}`
+                        : dateHint)
+                  return badgeText ? (
                   <span style={{
                     fontSize:9,fontWeight:800,color:C.green,background:C.green+'22',
                     border:`1px solid ${C.green}55`,borderRadius:999,padding:'1px 6px',
                   }}>
-                    {(t.key==='about'||t.key==='fundamentals') ? (dateHint || 'Ready') : (flag.count>1 ? `${flag.count} · ${dateHint}` : dateHint || 'Ready')}
+                    {badgeText}
                   </span>
-                )}
+                  ) : null
+                })()}
                 {flag && flag.count===0 && (t.key==='concall'||t.key==='ppt'||t.key==='about'||t.key==='fundamentals'||t.key==='resultsSummary') && (
                   <span style={{fontSize:9,fontWeight:600,color:C.muted,opacity:0.7}}>—</span>
                 )}
@@ -4623,7 +4657,8 @@ function SectorRankingPanel({symbol, sector, industry, stocks, onSelectSymbol}){
     if(!symbol || !groupLabel || !stocks?.length){ setRanking(null); return }
     // Prefer industry peers (jewellery ↔ jewellery). Sector-wide ranking
     // incorrectly mixed KALYANKJIL with BLUESTARCO / WHIRLPOOL etc.
-    // getPeerGroup() also groups shipbuilders (GRSE, MAZDOCK) under Shipping & Defence.
+    // getPeerGroup() also groups shipbuilders (GRSE, MAZDOCK) under Shipping & Defence
+    // and splits NSE's Pharma "Bulk Drugs & Formln" catch-all (IOLCP ≠ CIPLA).
     let peers = peerGroup
       ? stocks.filter(s=>getPeerGroup(s.sym, s.industry)===peerGroup && s.sym)
       : stocks.filter(s=>s.sector===sector && s.sym)
@@ -6366,7 +6401,7 @@ const RS_OPTIONAL_COL_ORDER_DEFAULT = ['trend','signals','stage','squeeze','wl52
 
 const RS_COL_WIDTH = {
   trend:'52px', signals:'182px', stage:'140px', squeeze:'170px', wl52:'160px', weakrs:'150px',
-  mcap:'55px', pe:'55px', roe:'48px', de:'48px', prom:'48px', fundRating:'58px', resultRating:'72px',
+  mcap:'55px', pe:'55px', roe:'48px', de:'48px', prom:'48px', fundRating:'58px', resultRating:'88px',
 }
 
 const RS_COL_LABELS = {
@@ -7317,10 +7352,11 @@ function resultRatingColor(rating){
 }
 
 function resultRatingShort(rating){
-  if(rating==='Excellent') return '⭐ Exc'
-  if(rating==='Good') return '✓ Good'
-  if(rating==='Weak') return '⚠ Weak'
-  if(rating==='Neutral') return '– Neu'
+  // Full words in the RS table Result column (not Exc / Neu).
+  if(rating==='Excellent') return 'Excellent'
+  if(rating==='Good') return 'Good'
+  if(rating==='Weak') return 'Weak'
+  if(rating==='Neutral') return 'Neutral'
   return null
 }
 
@@ -7644,7 +7680,7 @@ function SectorPanel({sectorData,allStocks,isMobile,onChart,onViewInRS}){
             {expanded===sec.sector&&(
               <div style={{borderTop:`1px solid ${C.border}`,padding:'12px 14px'}}>
                 {(() => {
-                  const sectorStocks = (allStocks||[]).filter(s=>s.sector===sec.sector).sort((a,b)=>b.rs-a.rs)
+                  const sectorStocks = getSectorMemberStocks(sec.sector, allStocks, sec)
                   return (
                     <>
                       <TVCopyPanel stocks={sectorStocks} label={sec.sector}/>
@@ -9975,14 +10011,16 @@ export default function App(){
   const dockStack=dockLayout.mode==='stack'
   // User (or alert) picked a symbol — show Chart; Details/About only for
   // stocks (ChartPanel already hides Details for indices).
+  // Always dock Chart (clear float) so a prior float/minimize can't make
+  // the click look like a no-op — especially from Market Index Tape.
   const openChart=useCallback((sym)=>{
     if(!sym) return
     setChartSym(sym)
     if(isMobile) return
     setPanelWins(w=>({
       ...w,
-      chart:{...w.chart,open:true,minimized:false},
-      detail:{...w.detail,open:true,minimized:false},
+      chart:{open:true,minimized:false,float:null},
+      detail:{open:true,minimized:false,float:null},
     }))
   },[isMobile])
   const prevChartSymRef=useRef(null)
@@ -12347,7 +12385,7 @@ export default function App(){
               // null on historical views (open/prevClose aren't
               // backfilled there), so these naturally read as empty
               // rather than wrong when looking at a past day.
-              const GAP_THRESH = 2
+              const GAP_THRESH = 5
               const gapUps   = stocks.filter(s=>s.gapPct!=null&&s.gapPct>=GAP_THRESH).sort((a,b)=>b.gapPct-a.gapPct)
               const gapDowns = stocks.filter(s=>s.gapPct!=null&&s.gapPct<=-GAP_THRESH).sort((a,b)=>a.gapPct-b.gapPct)
 
@@ -12417,10 +12455,11 @@ export default function App(){
               })()
 
               // Compact metric cell — label + value on one strip (not a tall card)
-              const Stat=({label,value,total,color})=>(
+              const Stat=({label,value,total,color,onClick})=>(
                 <div title={total!=null?`${((value/total)*100).toFixed(1)}% of ${total}`:undefined}
+                  onClick={onClick}
                   style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:7,
-                    padding:'7px 9px',minWidth:0}}>
+                    padding:'7px 9px',minWidth:0,cursor:onClick?'pointer':'default'}}>
                   <div style={{fontSize:9,color:C.muted,fontWeight:600,letterSpacing:'0.02em',
                     whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginBottom:2}}>{label}</div>
                   <div style={{display:'flex',alignItems:'baseline',gap:5,justifyContent:'space-between'}}>
@@ -12463,13 +12502,14 @@ export default function App(){
                 {label:'52W Highs', value:newHighs, color:C.accent},
                 {label:'Near 52W Lows', value:nearLows, color:C.red},
                 {label:'In Squeeze', value:inSqueeze, color:C.blue},
-                {label:`Gap Up ≥${GAP_THRESH}%`, value:gapUps.length, color:C.green},
-                {label:`Gap Down ≥${GAP_THRESH}%`, value:gapDowns.length, color:C.red},
+                {label:`Gap Up ≥${GAP_THRESH}%`, value:gapUps.length, color:C.green, tab:'gaps'},
+                {label:`Gap Down ≥${GAP_THRESH}%`, value:gapDowns.length, color:C.red, tab:'gaps'},
               ]
 
               return(
                 <>
                   <IndexTapeStrip indexData={indexData} isMobile={isMobile}
+                    activeName={chartSym}
                     onIndexClick={name=>openChart(name)}
                     onViewAll={()=>setMarketSubTab('indices')}/>
 
@@ -12527,7 +12567,8 @@ export default function App(){
                     gridTemplateColumns:isMobile?'repeat(3,1fr)':'repeat(7,1fr)',
                     gap:6,marginBottom:12}}>
                     {breadthStats.map(s=>(
-                      <Stat key={s.label} label={s.label} value={s.value} total={tot} color={s.color}/>
+                      <Stat key={s.label} label={s.label} value={s.value} total={tot} color={s.color}
+                        onClick={s.tab?()=>setMarketSubTab(s.tab):undefined}/>
                     ))}
                   </div>
 
@@ -12866,7 +12907,7 @@ export default function App(){
                 <div>
                 {sectorData.length>0?(
                   <>
-                    <div ref={secTableDrag.ref} {...secTableDrag.handlers} style={{overflowX:'auto',overflowY:'auto',maxHeight:520,border:`1px solid ${C.border}`,borderRadius:12,...secTableDrag.style}}>
+                    <div ref={secTableDrag.ref} {...secTableDrag.handlers} style={{overflowX:'auto',overflowY:'auto',maxHeight:String(expandedIndex||'').startsWith('sector:')?'none':520,border:`1px solid ${C.border}`,borderRadius:12,...secTableDrag.style}}>
                       <div style={{minWidth:760}}>
                         <div style={{display:'grid',
                           gridTemplateColumns:'170px 70px 60px 60px 70px 70px 90px 90px 90px',
@@ -12909,7 +12950,16 @@ export default function App(){
                           )
                           return (
                             <div key={sec.sector}>
-                              <div onClick={()=>{setExpandedIndex(isExp?null:'sector:'+sec.sector);setIdxConstituentFilters({industry:null,rsMin:0})}}
+                              <div onClick={()=>{
+                                  const next = isExp?null:'sector:'+sec.sector
+                                  setExpandedIndex(next)
+                                  setIdxConstituentFilters({industry:null,rsMin:0})
+                                  if(next){
+                                    requestAnimationFrame(()=>{
+                                      document.getElementById('exp-'+next)?.scrollIntoView({block:'nearest',behavior:'smooth'})
+                                    })
+                                  }
+                                }}
                                 style={{display:'grid',
                                 gridTemplateColumns:'170px 70px 60px 60px 70px 70px 90px 90px 90px',
                                 gap:4,padding:'10px 12px',alignItems:'center',cursor:'pointer',
@@ -12948,7 +12998,7 @@ export default function App(){
                                 {advCell(sec.advancesM)}
                               </div>
                               {isExp&&(()=>{
-                                const secStocks = (stocks||[]).filter(s=>s.sector===sec.sector).sort((a,b)=>b.rs-a.rs)
+                                const secStocks = getSectorMemberStocks(sec.sector, stocks, sec)
                                 const strong = sec.rank<=3 && sec.count>0 && (sec.improving/sec.count)>=0.5
                                 const secIndustries = [...new Set(secStocks.map(s=>s.industry).filter(Boolean))].sort()
                                 const secActiveIndustry = idxConstituentFilters.industry
@@ -12957,7 +13007,8 @@ export default function App(){
                                   (!secActiveIndustry || s.industry===secActiveIndustry) &&
                                   (s.rs??0) >= secActiveRsMin)
                                 return (
-                                  <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,position:'sticky',left:0,width:'calc(100vw - 60px)',maxWidth:900}}>
+                                  <div id={'exp-sector:'+sec.sector}
+                                    style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,maxWidth:900}}>
                                     <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
                                       <button onClick={()=>setShowRowGuidance(v=>!v)}
                                         style={{width:18,height:18,borderRadius:'50%',border:`1px solid ${C.muted}`,
@@ -12982,6 +13033,12 @@ export default function App(){
                                     <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
                                       {sec.sector} stocks ({filteredSecStocks.length}{filteredSecStocks.length!==secStocks.length?` of ${secStocks.length}`:''})
                                     </div>
+                                    {secStocks.length===0?(
+                                      <div style={{fontSize:12,color:C.muted,padding:'8px 0'}}>
+                                        No matching stocks in the current universe for {sec.sector}.
+                                      </div>
+                                    ):(
+                                    <>
                                     <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10,alignItems:'center'}}>
                                       {secIndustries.length>1&&(
                                         <select value={secActiveIndustry||''} onChange={e=>setIdxConstituentFilters(f=>({...f,industry:e.target.value||null}))}
@@ -13015,6 +13072,8 @@ export default function App(){
                                     <BreakoutTable key={`${sec.sector}-${secActiveIndustry}-${secActiveRsMin}`}
                                       stocks={filteredSecStocks} isMobile={isMobile}
                                       visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
+                                    </>
+                                    )}
                                   </div>
                                 )
                               })()}
@@ -13047,7 +13106,7 @@ export default function App(){
                           {rows.length} industries shown · {hiddenCount} more hidden (&lt;{MIN_INDUSTRY_STOCKS} stocks each)
                       </div>
                       )}
-                      <div ref={indTableDrag.ref} {...indTableDrag.handlers} style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12,maxHeight:520,overflowY:'auto',...indTableDrag.style}}>
+                      <div ref={indTableDrag.ref} {...indTableDrag.handlers} style={{overflowX:'auto',border:`1px solid ${C.border}`,borderRadius:12,maxHeight:String(expandedIndex||'').startsWith('industry:')?'none':520,overflowY:'auto',...indTableDrag.style}}>
                         <div style={{minWidth:760}}>
                           <div style={{display:'grid',
                             gridTemplateColumns:'220px 60px 60px 60px 70px 70px 90px 90px 90px',
@@ -13077,7 +13136,16 @@ export default function App(){
                             )
                             return (
                               <div key={ind.name}>
-                                <div onClick={()=>{setExpandedIndex(isExp?null:'industry:'+ind.name);setIdxConstituentFilters({industry:null,rsMin:0})}}
+                                <div onClick={()=>{
+                                    const next = isExp?null:'industry:'+ind.name
+                                    setExpandedIndex(next)
+                                    setIdxConstituentFilters({industry:null,rsMin:0})
+                                    if(next){
+                                      requestAnimationFrame(()=>{
+                                        document.getElementById('exp-'+next)?.scrollIntoView({block:'nearest',behavior:'smooth'})
+                                      })
+                                    }
+                                  }}
                                   style={{display:'grid',
                                   gridTemplateColumns:'220px 60px 60px 60px 70px 70px 90px 90px 90px',
                                   gap:4,padding:'9px 12px',alignItems:'center',cursor:'pointer',
@@ -13109,12 +13177,20 @@ export default function App(){
                                 </div>
                                 {isExp&&(()=>{
                                   const indActiveRsMin = idxConstituentFilters.rsMin
-                                  const filteredIndMembers = ind.members.filter(s=>(s.rs??0) >= indActiveRsMin)
+                                  const members = [...(ind.members||[])].sort((a,b)=>(b.rs??0)-(a.rs??0))
+                                  const filteredIndMembers = members.filter(s=>(s.rs??0) >= indActiveRsMin)
                                   return (
-                                  <div style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,position:'sticky',left:0,width:'calc(100vw - 60px)',maxWidth:900}}>
+                                  <div id={'exp-industry:'+ind.name}
+                                    style={{padding:'12px 14px',background:C.bg,borderBottom:`1px solid ${C.border}`,maxWidth:900}}>
                                     <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
-                                      {ind.name} stocks ({filteredIndMembers.length}{filteredIndMembers.length!==ind.members.length?` of ${ind.members.length}`:''})
+                                      {ind.name} stocks ({filteredIndMembers.length}{filteredIndMembers.length!==members.length?` of ${members.length}`:''})
                                     </div>
+                                    {members.length===0?(
+                                      <div style={{fontSize:12,color:C.muted,padding:'8px 0'}}>
+                                        No stocks tagged with this industry in the current universe.
+                                      </div>
+                                    ):(
+                                    <>
                                     <div style={{display:'flex',gap:4,marginBottom:10}}>
                                       {[['RS: All',0],['70+',70],['80+',80],['90+',90]].map(([label,mn])=>(
                                         <button key={label} onClick={()=>setIdxConstituentFilters(f=>({...f,rsMin:mn}))}
@@ -13129,6 +13205,8 @@ export default function App(){
                                     <BreakoutTable key={`${ind.name}-${indActiveRsMin}`}
                                       stocks={filteredIndMembers} isMobile={isMobile}
                                       visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
+                                    </>
+                                    )}
                                   </div>
                                   )
                                 })()}
@@ -13154,7 +13232,7 @@ export default function App(){
             rather than reaching into the stats-grid IIFE above, since
             that block's local consts aren't in scope this far down. */}
         {mainTab==='market'&&(marketSubTab==='gaps'||marketSubTab==='smartmoney')&&stocks.length>0&&(()=>{
-          const GAP_THRESH = 2
+          const GAP_THRESH = 5
           const gapUps   = stocks.filter(s=>s.gapPct!=null&&s.gapPct>=GAP_THRESH).sort((a,b)=>b.gapPct-a.gapPct)
           const gapDowns = stocks.filter(s=>s.gapPct!=null&&s.gapPct<=-GAP_THRESH).sort((a,b)=>a.gapPct-b.gapPct)
 
