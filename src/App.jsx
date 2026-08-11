@@ -1,26 +1,28 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useContext } from 'react'
 import PanelWindow, { PanelTaskbar, ScreenerFrame } from './components/PanelWindow'
 import {
-  TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap, ArrowUpRight,
+  TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap,
   TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal, Layers,
   ThumbsUp, ThumbsDown, MessageSquare
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchMissedAiFilings } from './lib/db'
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchMissedAiFilings } from './lib/db'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
   detectPP, calcHY, calcHT, calcNearEMA9, emaArr,
   detect52WLCrossover, detectWeakRSBigMove, buildSectorRS
 } from './scanners/math'
 import { SECTOR_MAP, NIFTY50, MIDCAP, SMALLCAP, getSector } from './data/sectors'
-import { resolveIndustry, resolveSector, getPeerGroup } from './data/industries'
+import { resolveIndustry, resolveSector, getPeerGroup, isJunkIndustry } from './data/industries'
 import {
   calcSMASeries, findSwingPoints, computeSupportResistance,
   detectInsideBars, detectAccDistDays, detectVCPContractions, detectCupAndHandle,
   detectPPDays, detectHYDays, detectHTDays, detectIBVDays, detectNearEMA9Days,
-  detectBullSnortDays, aggregateToWeekly, aggregateToMonthly, aggregateToYearly
+  detectBullSnortDays, aggregateToWeekly, aggregateToMonthly, aggregateToYearly,
+  calcRSISeries, calcMACDSeries, detectEmaCrossoverDays,
+  GUPPY_SHORT_PERIODS, GUPPY_LONG_PERIODS,
 } from './scanners/chartAnalysis'
 
 // ─────────────────────────────────────────────────────────────────────
@@ -80,6 +82,15 @@ const rsLabel  = r => r>=90?'Elite':r>=80?'Strong':r>=60?'Avg+':r>=40?'Avg':'Wea
 const trendIcon  = t => t==='improving'?'↑↑':t==='declining'?'↓↓':'→'
 const trendColor = t => t==='improving'?C.green:t==='declining'?C.red:C.muted
 const fmtP   = v => `₹${v>=1000?v.toFixed(0):v.toFixed(2)}`
+/** Portfolio-style amounts: ₹1.2L / ₹40.5K / ₹999 */
+const fmtAmt = v => {
+  if (v == null || !isFinite(v)) return '—'
+  const abs = Math.abs(v)
+  const sign = v < 0 ? '-' : ''
+  if (abs >= 1e5) return `${sign}₹${(abs/1e5).toFixed(2)}L`
+  if (abs >= 1e3) return `${sign}₹${(abs/1e3).toFixed(1)}K`
+  return `${sign}₹${abs.toFixed(0)}`
+}
 const fmtVol = v => v>=1e7?`${(v/1e7).toFixed(1)}Cr`:v>=1e5?`${(v/1e5).toFixed(1)}L`:`${(v/1e3).toFixed(0)}K`
 const fmtDT  = d => d?new Date(d).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—'
 const REFRESH_OPTIONS=[{label:'1 min',ms:60000},{label:'5 min',ms:300000},{label:'10 min',ms:600000},{label:'30 min',ms:1800000}]
@@ -246,6 +257,7 @@ const PRESETS = [
   {id:'breakout',  label:'HY/HT Break',  icon:'💥', desc:'Had HY/HT in last 5 days + breaking out today'},
   {id:'ibv',       label:'IBV',          icon:'🏛️', desc:'Institutional-style buying activity detected'},
   {id:'pp',        label:'PP Today',     icon:'🔥', desc:'Pocket Pivot today'},
+  {id:'bullsnort', label:'Bull Snort',   icon:'🐂', desc:'Bullish volume climax — up close, 2× vol vs 20d avg, close in upper 30% of range'},
   {id:'ema9',      label:'EMA9',         icon:'⚡', desc:'RS 90+ near 9-day EMA'},
   {id:'hy',        label:'HY Vol',       icon:'📊', desc:'Today volume > 52W max volume'},
   {id:'ht',        label:'HT Vol',       icon:'🎯', desc:'Today volume > all-time high volume'},
@@ -389,6 +401,7 @@ const SIGNAL_GLOSSARY = [
   ['📊 HY', 'High Yield (volume) — today\'s volume is near the highest it\'s been in the last 52 weeks, on an up day.'],
   ['🏛️ IBV', 'Institutional-style Buying Volume — unusually heavy volume combined with the price closing strong within the day\'s range, suggesting large/institutional buying rather than retail noise.'],
   ['🔥 PP', 'Pocket Pivot — an up day where volume beats every down day in the past 10 days, while price stays near its short-term average. A classic early-accumulation signal.'],
+  ['🐂 Bull Snort', 'Bullish volume climax — up close, volume ≥ 2× the 20-day average, and close in the upper 30% of the day\'s range. Same rule as the chart overlay.'],
   ['🔥 PP 2x Consecutive', 'At least two Pocket Pivot days back-to-back within the last 10 days — sustained accumulation, not a one-off.'],
   ['🔥 PP >2 in 10d', 'More than two Pocket Pivot days total within the last 10 days (don\'t need to be consecutive) — repeated accumulation interest.'],
   ['⚡ EMA9 / EMA21 / EMA50', 'Price has pulled back to within 3% of its 9/21/50-day average — a common "buy the dip in an uptrend" zone, shown only for stocks already ranked in the top 10% by RS.'],
@@ -1042,7 +1055,8 @@ function MergedSignalDots({s}){
 // fixed template, this scores each column header against a keyword set
 // per field and picks whichever header matches best — works across
 // exports without the person needing to reformat anything first.
-const SYMBOL_COL_HINTS = ['symbol','instrument','trading symbol','stock symbol','scrip','stock name','company','tradingsymbol']
+const SYMBOL_COL_HINTS = ['tradingsymbol','trading symbol','symbol','instrument','stock symbol','scrip']
+const NAME_COL_HINTS = ['company name','stock name','security name','name of company','company','name']
 const QTY_COL_HINTS = ['qty', 'quantity', 'net qty', 'shares', 'holding qty']
 const PRICE_COL_HINTS = ['avg. cost', 'avg cost', 'average price', 'avg price', 'average buy price',
   'buy avg', 'avg. cost price', 'average cost', 'purchase price', 'buy price']
@@ -1058,6 +1072,44 @@ function bestColumnMatch(headers, hints){
   }
   return best
 }
+
+/** Prefer brokerage company name, then industry, then sector. */
+function portfolioDisplayName(holding, stock){
+  const fromFile = (holding?.name || '').trim()
+  if (fromFile && fromFile.toUpperCase() !== holding?.sym) return fromFile
+  return stock?.industry || stock?.sector || null
+}
+
+function findIndexRow(indexData, names){
+  if (!indexData?.length) return null
+  for (const name of names) {
+    const exact = indexData.find(i => i.name === name)
+    if (exact) return exact
+    const fuzzy = indexData.find(i =>
+      String(i.name||'').toLowerCase().includes(String(name).toLowerCase()))
+    if (fuzzy) return fuzzy
+  }
+  return null
+}
+
+/** Value-weighted (else equal-weight) average of a stock field across holdings. */
+function portfolioWeightedAvg(holdings, stocks, field){
+  let sumW = 0, sum = 0
+  for (const h of holdings) {
+    const s = stocks.find(x => x.sym === h.sym)
+    if (!s || s[field] == null || !isFinite(s[field])) continue
+    const w = (h.qty && s.last) ? h.qty * s.last : 1
+    sum += s[field] * w
+    sumW += w
+  }
+  return sumW > 0 ? sum / sumW : null
+}
+
+const PORTFOLIO_BENCH_INDICES = [
+  { key:'nifty50',  label:'Nifty 50',     short:'Nifty',  names:['Nifty 50'], rsField:'rsNifty50' },
+  { key:'midcap',   label:'Midcap 150',   short:'Midcap', names:['Midcap 150','Nifty Midcap 150'], rsField:'rsMidcap' },
+  { key:'smallcap', label:'Smallcap 250', short:'Small',  names:['Smallcap 250','Nifty Smallcap 250'], rsField:'rsSmallcap' },
+]
 
 // Cleans a brokerage's raw symbol text into the plain NSE ticker this
 // app uses — strips exchange prefixes ("NSE:", "BSE:"), "-EQ"/"-BE"
@@ -1083,6 +1135,7 @@ function parseBrokerageHoldingsFile(file){
 
         const headers = Object.keys(rows[0])
         const symCol   = bestColumnMatch(headers, SYMBOL_COL_HINTS)
+        const nameCol  = bestColumnMatch(headers.filter(h=>h!==symCol), NAME_COL_HINTS)
         const qtyCol   = bestColumnMatch(headers, QTY_COL_HINTS)
         const priceCol = bestColumnMatch(headers, PRICE_COL_HINTS)
 
@@ -1097,14 +1150,16 @@ function parseBrokerageHoldingsFile(file){
           if(!sym){ continue }
           const qty = qtyCol ? Number(row[qtyCol]) : null
           const entryPrice = priceCol ? Number(row[priceCol]) : null
+          const rawName = nameCol != null ? String(row[nameCol] ?? '').trim() : ''
           if(qtyCol && (qty==null || isNaN(qty))){ skipped.push(sym); continue }
           holdings.push({
             sym,
+            name: rawName && rawName.toUpperCase() !== sym ? rawName : null,
             qty: (qty!=null && !isNaN(qty)) ? qty : null,
             entryPrice: (entryPrice!=null && !isNaN(entryPrice)) ? entryPrice : null,
           })
         }
-        resolve({holdings, skipped, matchedCols:{symCol, qtyCol, priceCol}})
+        resolve({holdings, skipped, matchedCols:{symCol, nameCol, qtyCol, priceCol}})
       }catch(err){
         reject(err)
       }
@@ -1936,6 +1991,7 @@ function PresetFilterBar({active,setActive,stocks,resultRatingsMap}){
   PRESETS.forEach(p => {
     if(p.id === 'all')       counts[p.id] = stocks.length
     else if(p.id === 'pp')       counts[p.id] = stocks.filter(s=>topVolumeSignal(s)==='pp').length
+    else if(p.id === 'bullsnort') counts[p.id] = stocks.filter(s=>s.isBullSnort).length
     else if(p.id === 'ema9')     counts[p.id] = stocks.filter(s=>s.nearEMA9?.isNearEMA9).length
     else if(p.id === 'hy')       counts[p.id] = stocks.filter(s=>topVolumeSignal(s)==='hy').length
     else if(p.id === 'ht')       counts[p.id] = stocks.filter(s=>topVolumeSignal(s)==='ht').length
@@ -2664,22 +2720,31 @@ function FiiDiiDailyPanel({data, isMobile, range, setRange}){
         )}
       </div>
 
-      {latest&&(
-        <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:8,marginBottom:12}}>
+      {latest&&(()=>{
+        const netFlow = (latest.fii_net==null && latest.dii_net==null)
+          ? null
+          : (Number(latest.fii_net)||0) + (Number(latest.dii_net)||0)
+        return (
+        <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(5,1fr)',gap:8,marginBottom:12}}>
           {[
+            {label:'Total Net', value:netFlow, color:netFlow==null?C.muted:netFlow>=0?C.green:C.red},
             {label:'FII Net', value:latest.fii_net, color:latest.fii_net>=0?C.green:C.red},
             {label:'DII Net', value:latest.dii_net, color:latest.dii_net>=0?C.green:C.red},
             {label:'FII Buy', value:latest.fii_buy, color:C.text},
             {label:'DII Buy', value:latest.dii_buy, color:C.text},
           ].map(c=>(
-            <div key={c.label} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px'}}>
+            <div key={c.label} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px',
+              ...(c.label==='Total Net'?{borderColor:C.accent+'66',gridColumn:isMobile?'1 / -1':undefined}:{})}}>
               <div style={{fontSize:9,color:C.muted,fontWeight:700,textTransform:'uppercase'}}>{c.label}</div>
               <div style={{fontSize:15,fontWeight:800,color:c.color,marginTop:2}}>{fmtCr(c.value)} Cr</div>
-              <div style={{fontSize:9,color:C.muted,marginTop:2}}>{latest.trade_date}</div>
+              <div style={{fontSize:9,color:C.muted,marginTop:2}}>
+                {c.label==='Total Net'?'FII + DII · ':''}{latest.trade_date}
+              </div>
             </div>
           ))}
         </div>
-      )}
+        )
+      })()}
 
       <div style={{display:'flex',gap:12,fontSize:10,color:C.muted,marginBottom:8}}>
         <span><span style={{color:C.accent}}>■</span> FII net</span>
@@ -2711,14 +2776,18 @@ function FiiDiiDailyPanel({data, isMobile, range, setRange}){
         <table style={{width:'100%',borderCollapse:'collapse',minWidth:480,fontSize:11}}>
           <thead>
             <tr style={{borderBottom:`1px solid ${C.border}`}}>
-              {['Date','FII Buy','FII Sell','FII Net','DII Buy','DII Sell','DII Net'].map(h=>(
+              {['Date','FII Buy','FII Sell','FII Net','DII Buy','DII Sell','DII Net','Net Flow'].map(h=>(
                 <th key={h} style={{textAlign:h==='Date'?'left':'right',padding:'6px 8px',fontSize:9,
                   color:C.muted,fontWeight:700,textTransform:'uppercase'}}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {[...slice].reverse().slice(0,10).map(row=>(
+            {[...slice].reverse().slice(0,10).map(row=>{
+              const netFlow = (row.fii_net==null && row.dii_net==null)
+                ? null
+                : (Number(row.fii_net)||0) + (Number(row.dii_net)||0)
+              return (
               <tr key={row.trade_date} style={{borderBottom:`1px solid ${C.border}33`}}>
                 <td style={{padding:'6px 8px',color:C.text}}>{row.trade_date}</td>
                 {['fii_buy','fii_sell','fii_net','dii_buy','dii_sell','dii_net'].map(k=>{
@@ -2731,8 +2800,13 @@ function FiiDiiDailyPanel({data, isMobile, range, setRange}){
                     </td>
                   )
                 })}
+                <td style={{textAlign:'right',padding:'6px 8px',
+                  color:netFlow==null?C.muted:netFlow>=0?C.green:C.red,fontWeight:800}}>
+                  {fmtCr(netFlow)}
+                </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -2821,7 +2895,8 @@ function FiiDiiMiniCard({data, isMobile, onViewDetails}) {
   const fmtCr = v => v==null?'—':`${v>=0?'+':''}${Number(v).toLocaleString('en-IN',{maximumFractionDigits:0})}`
   const latest = data?.length ? data[data.length-1] : null
   return (
-    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',height:'100%'}}>
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',height:'100%',
+      minHeight:0,overflow:'visible'}}>
       <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
         <div style={{fontWeight:700,fontSize:12,color:C.text}}>FII / DII (Cash)</div>
         {onViewDetails&&(
@@ -2836,24 +2911,38 @@ function FiiDiiMiniCard({data, isMobile, onViewDetails}) {
         <div style={{fontSize:11,color:C.muted,lineHeight:1.5}}>
           Daily NSE provisional flows appear after market close once the fetch job runs.
         </div>
-      ) : (
+      ) : (()=>{
+        const totalNet = (latest.fii_net==null && latest.dii_net==null)
+          ? null
+          : (Number(latest.fii_net)||0) + (Number(latest.dii_net)||0)
+        return (
         <>
           <div style={{fontSize:9,color:C.muted,marginBottom:6}}>{latest.trade_date}</div>
-          <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'1fr 1fr',gap:8}}>
+          <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'1fr 1fr 1fr',gap:8}}>
             {[
-              {label:'FII Net', value:latest.fii_net},
-              {label:'DII Net', value:latest.dii_net},
+              {label:'FII Net', value:latest.fii_net, accent:false},
+              {label:'DII Net', value:latest.dii_net, accent:false},
+              {label:'Total Net', value:totalNet, accent:true},
             ].map(c => (
-              <div key={c.label} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:7,padding:'8px 10px'}}>
-                <div style={{fontSize:9,color:C.muted,fontWeight:700}}>{c.label}</div>
-                <div style={{fontSize:15,fontWeight:800,color:c.value>=0?C.green:C.red,marginTop:2}}>
+              <div key={c.label} style={{
+                background:C.bg,
+                border:`1px solid ${c.accent?C.accent+'66':C.border}`,
+                borderRadius:7,padding:'8px 10px',
+                gridColumn:isMobile&&c.accent?'1 / -1':undefined,
+              }}>
+                <div style={{fontSize:9,color:C.muted,fontWeight:700}}>
+                  {c.label}{c.accent && <span style={{fontWeight:500}}> (FII+DII)</span>}
+                </div>
+                <div style={{fontSize:c.accent?16:15,fontWeight:800,
+                  color:c.value==null?C.muted:c.value>=0?C.green:C.red,marginTop:2}}>
                   {fmtCr(c.value)} Cr
                 </div>
               </div>
             ))}
           </div>
         </>
-      )}
+        )
+      })()}
     </div>
   )
 }
@@ -2917,30 +3006,64 @@ function StageDistributionBar({stocks}) {
   ]
   const counts = stages.map(s => ({
     ...s,
-    count: stocks.filter(st => calcWeinsteinStage(st).stage === s.n).length,
+    name: s.label,
+    value: stocks.filter(st => calcWeinsteinStage(st).stage === s.n).length,
   }))
   const tot = stocks.length
+  const pieData = counts.filter(s => s.value > 0)
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',marginBottom:10}}>
       <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:8,flexWrap:'wrap'}}>
         <div style={{fontWeight:700,fontSize:12,color:C.text}}>Weinstein Stage Mix</div>
         <div style={{fontSize:10,color:C.muted}}>{tot} stocks</div>
       </div>
-      <div style={{display:'flex',height:10,borderRadius:5,overflow:'hidden',marginBottom:8}}>
-        {counts.map(s => s.count > 0 && (
-          <div key={s.n} title={`${s.label}: ${s.count} (${((s.count/tot)*100).toFixed(1)}%)`}
-            style={{width:`${(s.count/tot)*100}%`,background:s.color,minWidth:s.count>0?2:0}}/>
-        ))}
-      </div>
-      <div style={{display:'flex',flexWrap:'wrap',gap:10}}>
-        {counts.map(s => (
-          <div key={s.n} style={{display:'flex',alignItems:'center',gap:5,fontSize:10}}>
-            <span style={{width:8,height:8,borderRadius:2,background:s.color,flexShrink:0}}/>
-            <span style={{color:C.muted,fontWeight:600}}>{s.label}</span>
-            <span style={{color:C.text,fontWeight:800}}>{s.count}</span>
-            <span style={{color:C.muted}}>({((s.count/tot)*100).toFixed(0)}%)</span>
-          </div>
-        ))}
+      <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+        <div style={{width:148,height:148,flexShrink:0}}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={pieData}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                innerRadius={38}
+                outerRadius={66}
+                paddingAngle={1.5}
+                stroke={C.card}
+                strokeWidth={1}
+              >
+                {pieData.map(s => (
+                  <Cell key={s.n} fill={s.color}/>
+                ))}
+              </Pie>
+              <Tooltip
+                formatter={(value, name) => [
+                  `${value} (${tot ? ((value / tot) * 100).toFixed(1) : 0}%)`,
+                  name,
+                ]}
+                contentStyle={{
+                  background:C.card, border:`1px solid ${C.border}`, borderRadius:8,
+                  fontSize:11, color:C.text,
+                }}
+                itemStyle={{color:C.text}}
+                labelStyle={{color:C.muted}}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:6,minWidth:140,flex:1}}>
+          {counts.map(s => (
+            <div key={s.n} style={{display:'flex',alignItems:'center',gap:6,fontSize:10}}>
+              <span style={{width:8,height:8,borderRadius:2,background:s.color,flexShrink:0}}/>
+              <span style={{color:C.muted,fontWeight:600,flex:1}}>{s.label}</span>
+              <span style={{color:C.text,fontWeight:800}}>{s.value}</span>
+              <span style={{color:C.muted,minWidth:36,textAlign:'right'}}>
+                ({tot ? ((s.value / tot) * 100).toFixed(0) : 0}%)
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -3685,16 +3808,93 @@ function FundamentalsPanel({symbol, stocks}){
   )
 }
 
+function CorporateNewsSection({symbol, news, loading}){
+  const ratingColor = r => {
+    if(!r) return C.muted
+    const t = String(r).toLowerCase()
+    if(t.includes('positive')||t.includes('bull')) return C.green
+    if(t.includes('negative')||t.includes('bear')) return C.red
+    return C.yellow
+  }
+  return (
+    <div style={{
+      background:`linear-gradient(135deg, ${C.accent}1a 0%, ${C.accent}05 100%)`,
+      border:`1px solid ${C.accent}40`,borderRadius:10,padding:'10px 12px',marginTop:12,
+      boxShadow:`0 1px 3px ${C.accent}15`,
+    }}>
+      <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:8}}>
+        <div style={{
+          width:22,height:22,borderRadius:'50%',flexShrink:0,
+          background:`linear-gradient(135deg, ${C.accent}, ${C.accent}bb)`,
+          display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,
+          boxShadow:`0 1px 4px ${C.accent}66`,
+        }}>📰</div>
+        <div style={{fontSize:11,fontWeight:800,color:C.text,letterSpacing:'0.02em',
+          textTransform:'uppercase',flex:1}}>Corporate news</div>
+        <span style={{fontSize:9,color:C.muted}}>NSE filings</span>
+      </div>
+      {loading?(
+        <div style={{fontSize:11,color:C.muted}}>Loading filings…</div>
+      ):!news?.length?(
+        <div style={{fontSize:11,color:C.muted,lineHeight:1.5}}>
+          No recent NSE corporate filings for {symbol} in our feed yet.
+        </div>
+      ):(
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {news.map((a,i)=>{
+            const when = a.announced_at
+              ? new Date(a.announced_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})
+              : null
+            const body = a.ai_summary || a.subject || a.category || 'Filing'
+            const title = a.subject || a.category || 'Corporate filing'
+            return (
+              <div key={`${a.announced_at||i}-${a.attachment_url||i}`}
+                style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px'}}>
+                <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap',marginBottom:3}}>
+                  {when&&<span style={{fontSize:10,fontWeight:700,color:C.muted}}>{when}</span>}
+                  {a.category&&(
+                    <span style={{fontSize:9,fontWeight:700,color:C.accent,background:C.accent+'18',
+                      borderRadius:999,padding:'1px 7px'}}>{a.category}</span>
+                  )}
+                  {a.ai_rating&&(
+                    <span style={{fontSize:9,fontWeight:800,color:ratingColor(a.ai_rating)}}>
+                      {a.ai_rating}
+                    </span>
+                  )}
+                </div>
+                <div style={{fontSize:12,fontWeight:700,color:C.text,lineHeight:1.35,marginBottom:a.ai_summary?4:0}}>
+                  {a.attachment_url?(
+                    <a href={a.attachment_url} target="_blank" rel="noopener noreferrer"
+                      style={{color:C.text,textDecoration:'none'}}>
+                      {title} <span style={{color:C.accent,fontSize:10}}>↗</span>
+                    </a>
+                  ):title}
+                </div>
+                {a.ai_summary&&(
+                  <div style={{fontSize:11,color:C.muted,lineHeight:1.45}}>{body}</div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AboutCompanyPanel({symbol, stocks}){
   const s = stocks?.find(x=>x.sym===symbol) || null
   const [about, setAbout] = useState(undefined) // undefined=loading
+  const [news, setNews] = useState(undefined) // undefined=loading
   const [imgBroken, setImgBroken] = useState(false)
   useEffect(()=>{
     let cancelled=false
     setAbout(undefined)
+    setNews(undefined)
     setImgBroken(false)
-    if(!symbol){ setAbout(null); return }
+    if(!symbol){ setAbout(null); setNews([]); return }
     fetchCompanyAbout(symbol).then(row=>{ if(!cancelled) setAbout(row) })
+    fetchSymbolCorporateNews(symbol, 12).then(rows=>{ if(!cancelled) setNews(rows||[]) })
     return()=>{cancelled=true}
   },[symbol])
 
@@ -3718,6 +3918,7 @@ function AboutCompanyPanel({symbol, stocks}){
             Sector: <span style={{color:C.muted}}>{[s.industry,s.sector].filter(Boolean).join(' · ')}</span>
           </div>
         ):null}
+        <CorporateNewsSection symbol={symbol} news={news||[]} loading={news===undefined}/>
       </div>
     )
   }
@@ -3808,6 +4009,7 @@ function AboutCompanyPanel({symbol, stocks}){
           <BulletSection icon="🚀" label="Innovation & strategy" color={C.lime} bullets={innovation}
             feedback={{symbol, contentType:'about', sectionKey:'innovation'}}/>
         )}
+        <CorporateNewsSection symbol={symbol} news={news||[]} loading={news===undefined}/>
         {Array.isArray(about.sources)&&about.sources.some(s=>s?.url)&&(
           <div style={{marginTop:12,paddingTop:10,borderTop:`1px solid ${C.border}`}}>
             <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
@@ -3840,7 +4042,6 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
     concall: undefined, ppt: undefined, about: undefined,
     fundamentals: undefined, resultsSummary: undefined,
   })
-  const [quickResultRating, setQuickResultRating] = useState(null)
   const scanRow = stocks?.find(x=>x.sym===sym) || null
   const fundQ = ensureFundamentalQuality(scanRow)
 
@@ -3852,7 +4053,6 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
       concall: undefined, ppt: undefined, about: undefined,
       fundamentals: undefined, resultsSummary: undefined,
     })
-    setQuickResultRating(null)
     if (!sym) return
     Promise.all([
       fetchTranscriptSummaries(sym),
@@ -3860,8 +4060,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
       fetchCompanyAbout(sym),
       fetchStockFundamentals(sym),
       fetchConcallSummaries(sym),
-      fetchFinancialResultsHistory(sym),
-    ]).then(([t, p, about, fund, rs, hist]) => {
+    ]).then(([t, p, about, fund, rs]) => {
       if (cancelled) return
       const fundReady = !!(fund && (
         fund.ai_highlights?.length
@@ -3876,7 +4075,6 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
           : {count: 0, latestAt: null},
         resultsSummary: {count: rs?.length || 0, latestAt: rs?.[0]?.announced_at || null},
       })
-      setQuickResultRating(computeResultRating(hist) || null)
     })
     return () => { cancelled = true }
   }, [sym]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -3886,43 +4084,10 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
     return new Date(iso).toLocaleDateString('en-IN', {day: 'numeric', month: 'short'})
   }
 
-  const resultCol = resultRatingColor(quickResultRating)
+  // Market Cap · Fundamental · Result live on one line above (ChartBelowContent).
 
   return (
     <div style={scrollable?{display:'flex',flexDirection:'column',flex:1,minHeight:0,height:'100%'}:undefined}>
-      {/* Always-visible quality strip — Fund score + latest Result rating */}
-      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',
-        marginBottom:8,flexShrink:0}}>
-        {fundQ.label?(
-          <button type="button" onClick={()=>changeTab('fundamentals')}
-            title="Overall fundamental quality — open Fundamentals"
-            style={{fontSize:11,fontWeight:800,color:fundLabelColor(fundQ.label),
-              background:fundLabelColor(fundQ.label)+'22',
-              border:`1px solid ${fundLabelColor(fundQ.label)}55`,borderRadius:999,
-              padding:'4px 10px',cursor:'pointer'}}>
-            Fundamental {fundQ.label}{fundQ.score!=null?` ${Math.round(fundQ.score)}`:''}
-          </button>
-        ):(
-          <span style={{fontSize:10,fontWeight:700,color:C.muted,
-            border:`1px dashed ${C.border}`,borderRadius:999,padding:'4px 10px'}}>
-            Fundamental —
-          </span>
-        )}
-        {quickResultRating?(
-          <button type="button" onClick={()=>changeTab('results')}
-            title="Latest-quarter Result quality — open Results"
-            style={{fontSize:11,fontWeight:800,color:resultCol,
-              background:resultCol+'22',border:`1px solid ${resultCol}55`,
-              borderRadius:999,padding:'4px 10px',cursor:'pointer'}}>
-            Result - {quickResultRating}
-          </button>
-        ):(
-          <span style={{fontSize:10,fontWeight:700,color:C.muted,
-            border:`1px dashed ${C.border}`,borderRadius:999,padding:'4px 10px'}}>
-            Result —
-          </span>
-        )}
-      </div>
       <div style={{display:'flex',alignItems:'flex-end',gap:8,marginBottom:10,
         borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
         <div style={{display:'flex',gap:4,overflowX:'auto',flex:1,minWidth:0,
@@ -3990,16 +4155,7 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
       }:undefined}>
       {activeTab==='about' && <AboutCompanyPanel symbol={sym} stocks={stocks}/>}
       {activeTab==='fundamentals' && <FundamentalsPanel symbol={sym} stocks={stocks}/>}
-      {activeTab==='results' && (
-        <>
-          <ResultsHistoryTable symbol={sym}/>
-          <SectorRankingPanel symbol={sym}
-            sector={stocks?.find(s=>s.sym===sym)?.sector}
-            industry={stocks?.find(s=>s.sym===sym)?.industry}
-            stocks={stocks}
-            onSelectSymbol={onSelectSymbol}/>
-        </>
-      )}
+      {activeTab==='results' && <ResultsHistoryTable symbol={sym}/>}
       {activeTab==='resultsSummary' && <ResultsFilingSummary symbol={sym}/>}
       {activeTab==='concall' && <TranscriptSummary symbol={sym}/>}
       {activeTab==='ppt' && <PptSummary symbol={sym}/>}
@@ -4008,18 +4164,87 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
   )
 }
 
+function fmtMarketCapCr(mcap){
+  if(mcap==null || !isFinite(mcap)) return null
+  if(mcap>=100000) return `₹${(mcap/100000).toFixed(1)}L Cr`
+  if(mcap>=1000) return `₹${(mcap/1000).toFixed(1)}K Cr`
+  return `₹${mcap.toFixed(0)} Cr`
+}
+
 function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, detailTab, setDetailTab, navigateTo, isMobile, readingMode, tableMode, fillParent=false}){
   const [customizeOpen, setCustomizeOpen]=useState(false)
   const mcapStock=stocks?.find(s=>s.sym===sym)
-  const mcapLabel=mcapStock?.marketCap!=null
-    ? (mcapStock.marketCap>=100000?`₹${(mcapStock.marketCap/100000).toFixed(1)}L Cr`:`₹${mcapStock.marketCap.toFixed(0)} Cr`)
-    : null
+  const fundQ=ensureFundamentalQuality(mcapStock)
+  const [resultRating,setResultRating]=useState(null)
+  const [mcapFallback,setMcapFallback]=useState(null)
+  useEffect(()=>{
+    let cancelled=false
+    setResultRating(null)
+    setMcapFallback(null)
+    if(!sym) return
+    const needMcap=mcapStock?.marketCap==null
+    Promise.all([
+      fetchFinancialResultsHistory(sym).catch(()=>null),
+      needMcap ? fetchStockFundamentals(sym).catch(()=>null) : Promise.resolve(null),
+    ]).then(([hist, fund])=>{
+      if(cancelled) return
+      setResultRating(computeResultRating(hist)||null)
+      const fromFund=fund?.market_cap ?? fund?.marketCap
+      if(fromFund!=null && isFinite(+fromFund)) setMcapFallback(+fromFund)
+    })
+    return ()=>{ cancelled=true }
+  },[sym, mcapStock?.marketCap])
+  const mcapLabel=fmtMarketCapCr(mcapStock?.marketCap ?? mcapFallback)
+  const resultCol=resultRatingColor(resultRating)
   const renderBlock=(sectionId)=>{
     if(sectionId==='mcap'){
-      if(!mcapLabel) return null
+      // One line: Market Cap · Fundamental · Result
       return (
-        <div style={{marginBottom:10,fontSize:12,fontWeight:700,color:C.text}}>
-          Market Cap: <span style={{color:C.muted,fontWeight:600}}>{mcapLabel}</span>
+        <div style={{
+          marginBottom:10, display:'flex', alignItems:'center', gap:8,
+          flexWrap:'nowrap', overflowX:'auto', WebkitOverflowScrolling:'touch',
+        }}>
+          <span style={{
+            fontSize:11, fontWeight:700, color:C.text, whiteSpace:'nowrap',
+            padding:'4px 10px', borderRadius:999, border:`1px solid ${C.border}`, background:C.card,
+          }} title="Market capitalization">
+            MCap <span style={{color:mcapLabel?C.muted:C.muted,fontWeight:600}}>
+              {mcapLabel || '—'}
+            </span>
+          </span>
+          <button type="button" onClick={()=>setDetailTab?.('fundamentals')}
+            title="Overall fundamental quality — open Fundamentals"
+            style={{
+              fontSize:11, fontWeight:800, whiteSpace:'nowrap', cursor:'pointer',
+              color: fundQ.label ? fundLabelColor(fundQ.label) : C.muted,
+              background: fundQ.label ? fundLabelColor(fundQ.label)+'22' : 'transparent',
+              border:`1px ${fundQ.label?'solid':'dashed'} ${fundQ.label?fundLabelColor(fundQ.label)+'55':C.border}`,
+              borderRadius:999, padding:'4px 10px',
+            }}>
+            Fundamental {fundQ.label||'—'}{fundQ.label&&fundQ.score!=null?` ${Math.round(fundQ.score)}`:''}
+          </button>
+          <button type="button" onClick={()=>setDetailTab?.('results')}
+            title="Latest-quarter Result quality — open Results"
+            style={{
+              fontSize:11, fontWeight:800, whiteSpace:'nowrap', cursor:'pointer',
+              color: resultRating ? resultCol : C.muted,
+              background: resultRating ? resultCol+'22' : 'transparent',
+              border:`1px ${resultRating?'solid':'dashed'} ${resultRating?resultCol+'55':C.border}`,
+              borderRadius:999, padding:'4px 10px',
+            }}>
+            Result {resultRating ? `- ${resultRating}` : '—'}
+          </button>
+        </div>
+      )
+    }
+    if(sectionId==='peers'){
+      // Result-quality peer ranking — always directly under MCap line (not buried in Results tab).
+      return (
+        <div style={{marginBottom:10}}>
+          <SectorRankingPanel symbol={sym}
+            industry={mcapStock?.industry}
+            stocks={stocks}
+            onSelectSymbol={(s)=>navigateTo?.(s,{openResults:true})}/>
         </div>
       )
     }
@@ -4193,7 +4418,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
   )
 
   const chartTabsAndBody=(
-    <>
+    <div style={{flex:1,minHeight:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <div style={{display:'flex',gap:0,borderBottom:`1px solid ${C.divider}`,flexShrink:0}}>
         {(isIndex?[['own','Our Chart']]:[['own','Our Chart'],['tv','TradingView']]).map(([v,label])=>(
           <button key={v} type="button" onClick={()=>setChartTab(v)}
@@ -4244,7 +4469,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
           <CandlestickChart sym={sym} isMobile={isMobile} isIndex={isIndex} chartExpanded={chartExpanded}/>
         )}
       </div>
-    </>
+    </div>
   )
 
   const detailBody=!isIndex?(
@@ -4644,27 +4869,25 @@ function ResultsHistoryTable({symbol}){
 
 // Ranks a stock's result-quality rating (same computeResultRating() used
 // everywhere else, so this always agrees with the badge shown above)
-// against other stocks in the SAME INDUSTRY when available (e.g. jewellery
+// against other stocks in the SAME INDUSTRY peer group (e.g. jewellery
 // vs jewellery — not the whole Consumer Discretionary sector which mixes
-// ACs, footwear, durables). Falls back to sector only when industry is
-// missing. Capped to 40 peers by market cap.
+// ACs, footwear, durables). Never falls back to sector/"Other" — those
+// catch-alls mixed unrelated names (ALPHAGEO with BRITANNIA/OIL/CUPID).
+// Capped to 40 peers by market cap.
 const RATING_ORDER = {Excellent:3, Good:2, Neutral:1, Weak:0}
-function SectorRankingPanel({symbol, sector, industry, stocks, onSelectSymbol}){
+function SectorRankingPanel({symbol, industry, stocks, onSelectSymbol}){
   const [ranking, setRanking] = useState(undefined) // undefined=loading, null=no peers, array=loaded
   const peerGroup = getPeerGroup(symbol, industry)
-  const groupLabel = peerGroup || sector
+  const groupLabel = (!isJunkIndustry(peerGroup) && peerGroup) || null
   useEffect(()=>{
     let cancelled = false
     setRanking(undefined)
     if(!symbol || !groupLabel || !stocks?.length){ setRanking(null); return }
-    // Prefer industry peers (jewellery ↔ jewellery). Sector-wide ranking
-    // incorrectly mixed KALYANKJIL with BLUESTARCO / WHIRLPOOL etc.
-    // getPeerGroup() also groups shipbuilders (GRSE, MAZDOCK) under Shipping & Defence
-    // and splits NSE's Pharma "Bulk Drugs & Formln" catch-all (IOLCP ≠ CIPLA).
-    let peers = peerGroup
-      ? stocks.filter(s=>getPeerGroup(s.sym, s.industry)===peerGroup && s.sym)
-      : stocks.filter(s=>s.sector===sector && s.sym)
-    peers = peers
+    // Industry peer groups only (jewellery ↔ jewellery). getPeerGroup() also
+    // groups shipbuilders (GRSE, MAZDOCK) under Shipping & Defence and splits
+    // NSE's Pharma "Bulk Drugs & Formln" catch-all (IOLCP ≠ CIPLA).
+    let peers = stocks
+      .filter(s=>s.sym && getPeerGroup(s.sym, s.industry)===groupLabel)
       .sort((a,b)=>(b.marketCap??0)-(a.marketCap??0))
       .slice(0, 40)
     if(!peers.some(p=>p.sym===symbol)){
@@ -4672,20 +4895,31 @@ function SectorRankingPanel({symbol, sector, industry, stocks, onSelectSymbol}){
       if(self) peers.push(self)
     }
     if(peers.length < 2){ setRanking(null); return }
+    const peerBySym = Object.fromEntries(peers.map(p=>[p.sym,p]))
     Promise.all(peers.map(p=>
-      fetchFinancialResultsHistory(p.sym).then(hist=>({sym:p.sym, rating:computeResultRating(hist)}))
+      fetchFinancialResultsHistory(p.sym).then(hist=>({
+        sym:p.sym,
+        rating:computeResultRating(hist),
+        marketCap:p.marketCap ?? null,
+        industry:p.industry || null,
+      }))
     )).then(results=>{
       if(cancelled) return
       const rated = results.filter(r=>r.rating!=null)
         .sort((a,b)=>RATING_ORDER[b.rating]-RATING_ORDER[a.rating])
+        .map(r=>({
+          ...r,
+          marketCap: r.marketCap ?? peerBySym[r.sym]?.marketCap ?? null,
+        }))
       setRanking(rated.length>=2 ? rated : null)
     })
     return ()=>{cancelled=true}
-  }, [symbol, sector, industry, peerGroup, groupLabel, stocks])
+  }, [symbol, industry, groupLabel, stocks])
 
+  if(!groupLabel) return null
   if(ranking===undefined) return (
     <div style={{marginTop:8,fontSize:10.5,color:C.muted,padding:'4px 2px'}}>
-      Ranking vs {groupLabel} {industry?'industry':'sector'} peers…
+      Ranking vs {groupLabel} industry peers…
     </div>
   )
   if(ranking===null) return null
@@ -4697,24 +4931,33 @@ function SectorRankingPanel({symbol, sector, industry, stocks, onSelectSymbol}){
       <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>
         #{myIdx+1} of {ranking.length} rated in {groupLabel}
       </div>
-      <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+      <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
         {ranking.map((r,i)=>{
           const isSelf = r.sym===symbol
           const canOpen = !isSelf && typeof onSelectSymbol==='function'
+          const mcap = fmtMarketCapCr(r.marketCap)
           return (
-            <div key={r.sym} title={canOpen ? `${r.rating} — open ${r.sym} Results` : r.rating}
+            <div key={r.sym}
+              title={canOpen ? `${r.rating}${mcap?` · ${mcap}`:''} — open ${r.sym} Results` : `${r.rating}${mcap?` · ${mcap}`:''}`}
               onClick={()=>{ if(canOpen) onSelectSymbol(r.sym) }}
-            style={{display:'flex',alignItems:'center',gap:4,padding:'2px 7px',borderRadius:10,
-                fontSize:10,fontWeight:isSelf?800:600,
+              style={{
+                display:'flex', flexDirection:'column', alignItems:'flex-start', gap:1,
+                padding:'4px 8px', borderRadius:10, minWidth:72,
+                fontSize:10, fontWeight:isSelf?800:600,
                 background:ratingColor(r.rating)+(isSelf?'33':'18'),
-              color:ratingColor(r.rating),
+                color:ratingColor(r.rating),
                 border:isSelf?`1px solid ${ratingColor(r.rating)}`:'1px solid transparent',
                 cursor:canOpen?'pointer':'default',
-                textDecoration:canOpen?'underline':'none',
-                textUnderlineOffset:2}}>
-            <span style={{opacity:0.7}}>#{i+1}</span> {r.sym}
-    </div>
-  )
+              }}>
+              <div style={{display:'flex',alignItems:'center',gap:4,
+                textDecoration:canOpen?'underline':'none', textUnderlineOffset:2}}>
+                <span style={{opacity:0.7}}>#{i+1}</span> {r.sym}
+              </div>
+              <div style={{fontSize:9,fontWeight:600,opacity:0.85,color:C.muted}}>
+                {mcap || 'MCap —'}
+              </div>
+            </div>
+          )
         })}
       </div>
     </div>
@@ -5565,6 +5808,16 @@ function TvLineIcon({active, muted}) {
     </svg>
   )
 }
+/** TradingView-style fx / Indicators icon */
+function TvFxIcon({active, muted}) {
+  const c = active ? TV_TOOLBAR_BLUE : muted
+  return (
+    <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">
+      <text x="1" y="11" fontSize="11" fontWeight="700" fill={c} fontFamily="Georgia, serif">ƒ</text>
+      <text x="8" y="12" fontSize="9" fontWeight="700" fill={c} fontFamily="Georgia, serif">x</text>
+    </svg>
+  )
+}
 
 function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const [data, setData] = useState(null)
@@ -5578,7 +5831,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const [showSR, setShowSR] = useState(true)
   const [showPatterns, setShowPatterns] = useState(true)
   const [showBullSnort, setShowBullSnort] = useState(true)
+  const [showGuppy, setShowGuppy] = useState(false)
+  const [showRSI, setShowRSI] = useState(false)
+  const [showMACD, setShowMACD] = useState(false)
   const [showForecast, setShowForecast] = useState(false)
+  const [showIndMenu, setShowIndMenu] = useState(false)
+  const [indSearch, setIndSearch] = useState('')
   const [hoverIdx, setHoverIdx] = useState(null)
   const [pinnedIdx, setPinnedIdx] = useState(null)
   const [chartBox, setChartBox] = useState({w:900, h: chartExpanded?520:480})
@@ -5586,10 +5844,26 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const svgRef = useRef(null)
   const chartWrapRef = useRef(null)
   const plotRef = useRef(null)
+  const indMenuRef = useRef(null)
   const rafRef = useRef(null)
   const rangeBars = RANGE_BARS_BY_INTERVAL[barInterval] || RANGE_BARS_BY_INTERVAL.D
   const intervalMeta = BAR_INTERVAL_META[barInterval] || BAR_INTERVAL_META.D
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
+
+  // Close TradingView-style Indicators menu on outside click / Escape
+  useEffect(()=>{
+    if (!showIndMenu) return
+    const onDown = (e) => {
+      if (indMenuRef.current && !indMenuRef.current.contains(e.target)) setShowIndMenu(false)
+    }
+    const onKey = (e) => { if (e.key === 'Escape') setShowIndMenu(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [showIndMenu])
 
   // Measure the plot pane only (not toolbar/legend) so the SVG fills the device panel.
   useEffect(()=>{
@@ -5637,16 +5911,25 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   // instead of relying on the component having already bailed out.
   const analysis = useMemo(() => {
     // Coarser intervals need fewer bars to start drawing; MAs stay null until enough history.
-    const minBars = intervalMeta.minBars
+    // Indices often have shorter stored series than stocks — allow a lower floor.
+    const minBars = isIndex ? Math.min(5, intervalMeta.minBars) : intervalMeta.minBars
     if (!seriesData || !seriesData.closes || seriesData.closes.length < minBars) return null
     const closes = seriesData.closes, highs = seriesData.highs, lows = seriesData.lows
     const volumes = seriesData.volumes, opens = seriesData.opens
     const _swings = findSwingPoints(highs, lows, intervalMeta.swing)
+    const ema9 = emaArr(closes, 9)
+    const ema50 = emaArr(closes, 50)
     return {
       ma20: calcSMASeries(closes, 20),
       ma50: calcSMASeries(closes, 50),
       ma200: calcSMASeries(closes, 200),
-      ema9: emaArr(closes, 9),
+      ema9,
+      ema50,
+      guppyShort: GUPPY_SHORT_PERIODS.map(p => emaArr(closes, p)),
+      guppyLong: GUPPY_LONG_PERIODS.map(p => emaArr(closes, p)),
+      guppyCross: detectEmaCrossoverDays(ema9, ema50),
+      rsi: calcRSISeries(closes, 14),
+      macd: calcMACDSeries(closes, 12, 26, 9),
       swings: _swings,
       sr: computeSupportResistance(_swings, closes[closes.length-1]),
       insideBars: detectInsideBars(highs, lows),
@@ -5660,7 +5943,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       vcp: detectVCPContractions(_swings),
       cup: detectCupAndHandle(closes, highs, lows),
     }
-  }, [seriesData, barInterval, intervalMeta])
+  }, [seriesData, barInterval, intervalMeta, isIndex])
 
   useEffect(() => {
     let cancelled = false
@@ -5752,17 +6035,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       </div>
     )
   }
-  const minBarsNeeded = intervalMeta.minBars
+  const minBarsNeeded = isIndex ? Math.min(5, intervalMeta.minBars) : intervalMeta.minBars
   if(!seriesData || !seriesData.closes || seriesData.closes.length < minBarsNeeded || !analysis){
     return fillShell(
       <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted,textAlign:'center',padding:20}}>
         Not enough price history yet for {sym} to draw a {intervalMeta.label} chart
         {data?.prices ? ` (only ${barInterval==='D'?data.prices.length:(seriesData?.closes?.length||0)} bars, need ${minBarsNeeded}+).` : '.'}
+        {isIndex ? ' Index history is stored in index_price_history — run ensure_index_price_history_public_read.sql if this persists.' : ''}
       </div>
     )
   }
 
-  const { ma20, ma50, ma200, ema9, swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, bullSnortDays, nearEma9Days, vcp, cup } = analysis
+  const { ma20, ma50, ma200, ema9, ema50, guppyShort, guppyLong, guppyCross, rsi, macd,
+    swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, bullSnortDays, nearEma9Days, vcp, cup } = analysis
 
   let dates = seriesData.dates
   let closes = seriesData.closes
@@ -5795,10 +6080,20 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   // ── Layout: SVG viewBox matches the measured panel so the chart fills the device ──
   const W = chartBox.w
   const H = chartBox.h
-  const padL = 8, padR = Math.max(44, Math.round(W*0.06)), padT = 8, gapH = 6, axisPad = 20
-  const usable = Math.max(160, H - padT - gapH - axisPad)
-  const priceH = Math.max(100, Math.round(usable * (chartExpanded ? 0.52 : 0.58)))
-  const volH = Math.max(70, usable - priceH)
+  const padL = 8, padR = Math.max(44, Math.round(W*0.06)), padT = 8, gapH = 4, axisPad = 18
+  const panelGaps = gapH + (showRSI ? gapH : 0) + (showMACD ? gapH : 0)
+  const usable = Math.max(160, H - padT - panelGaps - axisPad)
+  // When RSI/MACD panes are on, shrink price/volume so everything fits.
+  const extraPanes = (showRSI ? 1 : 0) + (showMACD ? 1 : 0)
+  const priceShare = extraPanes === 0 ? (chartExpanded ? 0.52 : 0.58)
+    : extraPanes === 1 ? 0.46 : 0.40
+  const volShare = extraPanes === 0 ? (1 - priceShare)
+    : extraPanes === 1 ? 0.22 : 0.18
+  const indShare = extraPanes === 0 ? 0 : (1 - priceShare - volShare) / extraPanes
+  const priceH = Math.max(90, Math.round(usable * priceShare))
+  const volH = Math.max(48, Math.round(usable * volShare))
+  const rsiH = showRSI ? Math.max(44, Math.round(usable * indShare)) : 0
+  const macdH = showMACD ? Math.max(48, Math.round(usable * indShare)) : 0
   const chartW = Math.max(120, W - padL - padR)
 
   // barsToShow/start now driven by zoomBars/panOffset (mouse wheel /
@@ -5880,6 +6175,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const vMA50   = ma50.slice(start)
   const vMA200  = ma200.slice(start)
   const vEma9line = ema9.slice(start)
+  const vEma50line = (ema50||[]).slice(start)
+  const vGuppyShort = (guppyShort||[]).map(s=>s.slice(start))
+  const vGuppyLong = (guppyLong||[]).map(s=>s.slice(start))
+  const vGuppyCross = (guppyCross||[]).slice(start)
+  const vRSI = (rsi||[]).slice(start)
+  const vMacd = (macd?.macd||[]).slice(start)
+  const vMacdSig = (macd?.signal||[]).slice(start)
+  const vMacdHist = (macd?.hist||[]).slice(start)
   const vInsideBars = insideBars.slice(start)
   const vAccDist = accDist.slice(start)
   const vPP  = ppDays.slice(start)
@@ -5891,11 +6194,17 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
 
   // ── Layout ──
   const volTop = padT + priceH + gapH
-  const axisY  = volTop + volH + 18
+  const rsiTop = volTop + volH + (showRSI ? gapH : 0)
+  const macdTop = rsiTop + rsiH + (showMACD ? gapH : 0)
+  const panesBottom = macdTop + macdH
+  const axisY  = panesBottom + 16
 
   const visibleHighs = vHighs.filter(v=>v!=null)
   const visibleLows  = vLows.filter(v=>v!=null)
-  const maVals = [...vMA20, ...vMA50, ...vMA200, ...vEma9line].filter(v=>v!=null)
+  const guppyVals = showGuppy
+    ? [...vGuppyShort, ...vGuppyLong].flat().filter(v=>v!=null)
+    : []
+  const maVals = [...vMA20, ...vMA50, ...vMA200, ...vEma9line, ...guppyVals].filter(v=>v!=null)
   let maxP = Math.max(...visibleHighs, ...maVals, sr.r1||0, sr.r2||0)
   let minP = Math.min(...visibleLows, ...(maVals.length?maVals:[Infinity]), sr.s1||Infinity, sr.s2||Infinity)
   if(!isFinite(minP)) minP = Math.min(...visibleLows)
@@ -5943,6 +6252,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const TV_VOL_UP = '#26a69a'
   const TV_VOL_DN = '#ef5350'
   const TV_VOL_MA = '#5d8cff'
+  const rsiToY = v => rsiTop + (100 - v) / 100 * rsiH
+  const macdAbs = Math.max(
+    0.0001,
+    ...[...vMacd, ...vMacdSig, ...vMacdHist].filter(v=>v!=null).map(v=>Math.abs(v)),
+  )
+  const macdToY = v => macdTop + macdH / 2 - (v / macdAbs) * (macdH * 0.42)
 
   // X-axis labels, TradingView style: show the month abbreviation at
   // month boundaries, just the day number otherwise.
@@ -5960,10 +6275,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
     xLabels.push({ i, text: isNewMonth ? MONTH_ABBR[m-1] : String(day) })
   }
 
-  const hover = (pinnedIdx ?? hoverIdx) != null ? {
-    date: vDates[pinnedIdx ?? hoverIdx], open: vOpens[pinnedIdx ?? hoverIdx], high: vHighs[pinnedIdx ?? hoverIdx],
-    low: vLows[pinnedIdx ?? hoverIdx], close: vCloses[pinnedIdx ?? hoverIdx], vol: vVol[pinnedIdx ?? hoverIdx],
-    volEma: vVolEma[pinnedIdx ?? hoverIdx],
+  const hi = pinnedIdx ?? hoverIdx
+  const hover = hi != null ? {
+    date: vDates[hi], open: vOpens[hi], high: vHighs[hi],
+    low: vLows[hi], close: vCloses[hi], vol: vVol[hi],
+    volEma: vVolEma[hi],
+    rsi: vRSI[hi],
+    macd: vMacd[hi], macdSig: vMacdSig[hi], macdHist: vMacdHist[hi],
+    guppyCross: vGuppyCross[hi],
   } : null
 
   // YTD's bar count is dynamic (depends on today's date vs the data),
@@ -5978,6 +6297,32 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   }
   const applyRangePreset = (r) => { setZoomBars(zoomBarsForRange(r)); setPanOffset(0) }
 
+  // TradingView-style indicator catalog (overlays / oscillators / signals)
+  const chartIndicators = [
+    { id:'ma', group:'Overlays', label:'Moving Average', short:'MA', desc:'EMA9 · MA20 · MA50 · MA200', on:showMA, set:setShowMA },
+    { id:'guppy', group:'Overlays', label:'Guppy MMA', short:'Guppy', desc:'Short/long ribbons + EMA9×50 cross', on:showGuppy, set:setShowGuppy },
+    { id:'sr', group:'Overlays', label:'Support & Resistance', short:'S/R', desc:'R1 R2 · S1 S2 levels', on:showSR, set:setShowSR },
+    { id:'rsi', group:'Oscillators', label:'Relative Strength Index', short:'RSI', desc:'RSI (14) with 70 / 30 bands', on:showRSI, set:setShowRSI },
+    { id:'macd', group:'Oscillators', label:'MACD', short:'MACD', desc:'MACD (12, 26, 9) + histogram', on:showMACD, set:setShowMACD },
+    { id:'patterns', group:'Signals', label:'Patterns', short:'Patterns', desc:'Inside bar · Acc/Dist · HT/HY/IBV/PP · VCP · Cup', on:showPatterns, set:setShowPatterns },
+    { id:'bullsnort', group:'Signals', label:'Bull Snort', short:'Bull Snort', desc:'Bullish volume climax bars', on:showBullSnort, set:setShowBullSnort },
+    { id:'forecast', group:'Signals', label:'Forecast', short:'Forecast', desc:'Simple trend projection', on:showForecast, set:setShowForecast },
+  ]
+  const indQ = indSearch.trim().toLowerCase()
+  const filteredIndicators = indQ
+    ? chartIndicators.filter(i =>
+        i.label.toLowerCase().includes(indQ) ||
+        i.short.toLowerCase().includes(indQ) ||
+        i.desc.toLowerCase().includes(indQ) ||
+        i.group.toLowerCase().includes(indQ))
+    : chartIndicators
+  const indGroups = ['Overlays', 'Oscillators', 'Signals'].map(g => ({
+    group: g,
+    items: filteredIndicators.filter(i => i.group === g),
+  })).filter(g => g.items.length)
+  const activeIndicators = chartIndicators.filter(i => i.on)
+  const anyIndOn = activeIndicators.length > 0
+
   return (
     <div ref={chartWrapRef} style={{
       padding:'8px 10px',
@@ -5990,10 +6335,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       overflow:'hidden',
     }}>
       <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
-      {/* TradingView-style top toolbar: intervals · chart type · studies */}
+      {/* TradingView-style top toolbar: intervals · chart type · Indicators */}
       <div style={{
         display:'flex', flexWrap:'wrap', gap:2, marginBottom:4, alignItems:'center', flexShrink:0,
-        padding:'2px 0 6px', borderBottom:`1px solid ${C.border}`,
+        padding:'2px 0 6px', borderBottom:`1px solid ${C.border}`, position:'relative',
       }}>
         {isLiveUpdating&&(
           <div title="Today's candle is updating from the live price feed (~every 45s during market hours)."
@@ -6044,19 +6389,93 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           </button>
         </div>
         <div style={{width:1,height:18,background:C.border,margin:'0 6px'}}/>
-        {/* Studies / overlays — flat TV toggles */}
-        {[['MA',showMA,setShowMA,'Moving averages'],
-          ['S/R',showSR,setShowSR,'Support & resistance'],
-          ['Patterns',showPatterns,setShowPatterns,'Pattern markers'],
-          ['Bull Snort',showBullSnort,setShowBullSnort,'Bullish volume climax bars'],
-          ['Forecast',showForecast,setShowForecast,'Trend forecast']].map(([label,val,setter,title])=>(
-          <button key={label} type="button" title={title} onClick={()=>setter(v=>!v)}
+        {/* TradingView-style Indicators (fx) button + dropdown */}
+        <div ref={indMenuRef} style={{position:'relative'}}>
+          <button type="button" title="Indicators"
+            onClick={()=>setShowIndMenu(v=>{
+              const next = !v
+              if (next) setIndSearch('')
+              return next
+            })}
             style={{
-              padding:'4px 8px', border:'none', borderRadius:3, background: val ? TV_TOOLBAR_BLUE+'18' : 'transparent',
-              color: val ? TV_TOOLBAR_BLUE : C.muted,
-              fontSize:11, fontWeight: val ? 700 : 600, cursor:'pointer', fontFamily:'inherit',
-            }}>{label}</button>
-        ))}
+              display:'flex', alignItems:'center', gap:5,
+              padding:'4px 10px', border:'none', borderRadius:3, cursor:'pointer', fontFamily:'inherit',
+              background: showIndMenu || anyIndOn ? TV_TOOLBAR_BLUE+'18' : 'transparent',
+              color: showIndMenu || anyIndOn ? TV_TOOLBAR_BLUE : C.muted,
+              fontSize:11, fontWeight: showIndMenu || anyIndOn ? 700 : 600,
+            }}>
+            <TvFxIcon active={showIndMenu || anyIndOn} muted={C.muted}/>
+            Indicators
+            {anyIndOn && (
+              <span style={{
+                minWidth:16, height:16, borderRadius:8, padding:'0 4px',
+                background:TV_TOOLBAR_BLUE, color:'#fff', fontSize:9, fontWeight:800,
+                display:'inline-flex', alignItems:'center', justifyContent:'center',
+              }}>{activeIndicators.length}</span>
+            )}
+          </button>
+          {showIndMenu && (
+            <div style={{
+              position:'absolute', top:'calc(100% + 4px)', left:0, zIndex:40,
+              width: Math.min(320, Math.max(260, W - 24)),
+              maxHeight: Math.min(380, H + 80),
+              overflow:'hidden', display:'flex', flexDirection:'column',
+              background:C.card, border:`1px solid ${C.border}`, borderRadius:6,
+              boxShadow:'0 10px 28px rgba(0,0,0,0.45)',
+            }}>
+              <div style={{padding:'10px 12px 8px', borderBottom:`1px solid ${C.border}`}}>
+                <div style={{fontSize:12, fontWeight:700, color:C.text, marginBottom:6}}>Indicators</div>
+                <input
+                  autoFocus
+                  value={indSearch}
+                  onChange={e=>setIndSearch(e.target.value)}
+                  placeholder="Search RSI, MACD, Guppy…"
+                  style={{
+                    width:'100%', boxSizing:'border-box',
+                    padding:'7px 10px', borderRadius:4, border:`1px solid ${C.border}`,
+                    background:C.bg||'#0e1117', color:C.text, fontSize:12, fontFamily:'inherit', outline:'none',
+                  }}
+                />
+              </div>
+              <div style={{overflowY:'auto', padding:'4px 0 8px'}}>
+                {indGroups.length === 0 && (
+                  <div style={{padding:'16px 14px', fontSize:12, color:C.muted}}>No matching indicators</div>
+                )}
+                {indGroups.map(({group, items})=>(
+                  <div key={group}>
+                    <div style={{
+                      padding:'8px 14px 4px', fontSize:10, fontWeight:800, color:C.muted,
+                      letterSpacing:'0.06em', textTransform:'uppercase',
+                    }}>{group}</div>
+                    {items.map(ind=>(
+                      <button key={ind.id} type="button"
+                        onClick={()=>ind.set(v=>!v)}
+                        style={{
+                          width:'100%', display:'flex', alignItems:'flex-start', gap:10,
+                          padding:'8px 14px', border:'none', background: ind.on ? TV_TOOLBAR_BLUE+'14' : 'transparent',
+                          cursor:'pointer', textAlign:'left', fontFamily:'inherit',
+                        }}>
+                        <span style={{
+                          marginTop:2, width:16, height:16, borderRadius:3, flexShrink:0,
+                          border:`1.5px solid ${ind.on ? TV_TOOLBAR_BLUE : C.border}`,
+                          background: ind.on ? TV_TOOLBAR_BLUE : 'transparent',
+                          color:'#fff', fontSize:11, fontWeight:800,
+                          display:'inline-flex', alignItems:'center', justifyContent:'center',
+                        }}>{ind.on ? '✓' : ''}</span>
+                        <span style={{display:'flex', flexDirection:'column', gap:2, minWidth:0}}>
+                          <span style={{fontSize:12.5, fontWeight:700, color: ind.on ? TV_TOOLBAR_BLUE : C.text}}>
+                            {ind.label}
+                          </span>
+                          <span style={{fontSize:10.5, color:C.muted, lineHeight:1.35}}>{ind.desc}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
         {(zoomBars!==zoomBarsForRange(range)||panOffset!==0)&&(
           <button type="button" onClick={()=>applyRangePreset(range)} title="Reset zoom to selected range"
             style={{padding:'4px 8px',border:'none',borderRadius:3,background:'transparent',
@@ -6068,6 +6487,30 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           {intervalMeta.label}
         </span>
       </div>
+
+      {/* Active studies — TradingView-style chips with remove */}
+      {anyIndOn && (
+        <div style={{
+          display:'flex', flexWrap:'wrap', gap:4, marginBottom:4, flexShrink:0, alignItems:'center',
+        }}>
+          {activeIndicators.map(ind=>(
+            <span key={ind.id} style={{
+              display:'inline-flex', alignItems:'center', gap:4,
+              padding:'2px 4px 2px 8px', borderRadius:3,
+              background:C.card, border:`1px solid ${C.border}`,
+              fontSize:10, fontWeight:700, color:C.text,
+            }}>
+              {ind.short}
+              <button type="button" title={`Remove ${ind.short}`}
+                onClick={()=>ind.set(false)}
+                style={{
+                  border:'none', background:'transparent', color:C.muted, cursor:'pointer',
+                  fontSize:12, lineHeight:1, padding:'0 2px', fontFamily:'inherit',
+                }}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Hover readout */}
       <div style={{fontSize:10,color:C.muted,marginBottom:4,minHeight:14,flexShrink:0}}>
@@ -6085,6 +6528,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
             Vol <span style={{color:C.text}}>{hover.vol?.toLocaleString('en-IN')}</span>
             {hover.volEma!=null&&(
               <span>{'  '}Vol MA <span style={{color:TV_VOL_MA}}>{fmtVol(hover.volEma)}</span></span>
+            )}
+            {showRSI && hover.rsi!=null && (
+              <span>{'  '}RSI <span style={{color:hover.rsi>=70?C.red:hover.rsi<=30?C.green:C.text}}>{hover.rsi.toFixed(1)}</span></span>
+            )}
+            {showMACD && hover.macd!=null && (
+              <span>{'  '}MACD <span style={{color:C.blue}}>{hover.macd.toFixed(2)}</span>
+                {hover.macdSig!=null && <> / <span style={{color:C.orange}}>{hover.macdSig.toFixed(2)}</span></>}
+              </span>
+            )}
+            {showGuppy && hover.guppyCross && (
+              <span style={{color:hover.guppyCross==='bull'?C.green:C.red,fontWeight:700}}>
+                {'  '}Guppy {hover.guppyCross==='bull'?'▲ bull':'▼ bear'} cross
+              </span>
             )}
           </span>
         ) : `${sym} · ${barsToShow} ${intervalMeta.unit} · tap a candle to pin`}
@@ -6207,6 +6663,52 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           ) : null
         )}
 
+        {/* Guppy MMA ribbons (short teal / long rose) + EMA9×EMA50 cross markers */}
+        {showGuppy && (
+          <g opacity={0.85}>
+            {vGuppyShort.map((series,k)=>{
+              const pts = series.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
+              return pts.length>1 ? (
+                <polyline key={`gs-${k}`} points={pts.join(' ')} fill="none"
+                  stroke="#2dd4bf" strokeWidth={0.9} opacity={0.45 + k*0.06}/>
+              ) : null
+            })}
+            {vGuppyLong.map((series,k)=>{
+              const pts = series.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
+              return pts.length>1 ? (
+                <polyline key={`gl-${k}`} points={pts.join(' ')} fill="none"
+                  stroke="#f472b6" strokeWidth={0.9} opacity={0.4 + k*0.05}/>
+              ) : null
+            })}
+            {/* Highlight EMA9 / EMA50 used for crossover */}
+            {(() => {
+              const e9 = vEma9line.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
+              const e50 = vEma50line.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
+              return (
+                <>
+                  {e9.length>1 && <polyline points={e9.join(' ')} fill="none" stroke={C.teal} strokeWidth={1.6} opacity={0.95}/>}
+                  {e50.length>1 && <polyline points={e50.join(' ')} fill="none" stroke={C.purple} strokeWidth={1.6} opacity={0.95}/>}
+                </>
+              )
+            })()}
+            {vGuppyCross.map((flag,i)=>{
+              if (!flag || vCloses[i]==null) return null
+              const x = idxToX(i)
+              const y = priceToY(vCloses[i])
+              const bull = flag === 'bull'
+              return (
+                <g key={`gx-${i}`}>
+                  <polygon
+                    points={bull
+                      ? `${x},${y-10} ${x-5},${y-2} ${x+5},${y-2}`
+                      : `${x},${y+10} ${x-5},${y+2} ${x+5},${y+2}`}
+                    fill={bull ? C.green : C.red} opacity={0.95}/>
+                </g>
+              )
+            })}
+          </g>
+        )}
+
         {/* MA lines */}
         {showMA && [[vMA20,C.blue],[vMA50,C.yellow],[vMA200,C.purple],[vEma9line,C.teal]].map(([series,color],k)=>{
           const pts = series.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
@@ -6231,6 +6733,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           const x = idxToX(i)
           const yOpen = priceToY(op), yClose = priceToY(c)
           const bodyTop = Math.min(yOpen,yClose), bodyH = Math.max(1, Math.abs(yClose-yOpen))
+          const accY = Math.min(padT + priceH - 2, priceToY(lo) + 10)
           return (
             <g key={i}
               onMouseEnter={()=>setHoverIdx(i)}
@@ -6246,14 +6749,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
                 <circle cx={x} cy={priceToY(hi)-6} r={2} fill={C.teal}/>
               )}
               {showPatterns && vAccDist[i]==='acc' && (
-                <text x={x} y={volTop+volH+10} fontSize={7} fill={C.green} textAnchor="middle">▲</text>
+                <text x={x} y={accY} fontSize={7} fill={C.green} textAnchor="middle">▲</text>
               )}
               {showPatterns && vAccDist[i]==='dist' && (
-                <text x={x} y={volTop+volH+10} fontSize={7} fill={C.red} textAnchor="middle">▼</text>
+                <text x={x} y={accY} fontSize={7} fill={C.red} textAnchor="middle">▼</text>
               )}
               {(hoverIdx===i || pinnedIdx===i) && (
                 <>
-                  <line x1={x} y1={padT} x2={x} y2={volTop+volH} stroke={pinnedIdx===i?C.accent:C.muted}
+                  <line x1={x} y1={padT} x2={x} y2={panesBottom} stroke={pinnedIdx===i?C.accent:C.muted}
                     strokeWidth={pinnedIdx===i?1:0.5} strokeDasharray={pinnedIdx===i?'none':'2,2'}/>
                   {/* Floating date label under the crosshair, TradingView style */}
                   <rect x={x-24} y={axisY-9} width={48} height={13} rx={2}
@@ -6296,6 +6799,65 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
             <polyline points={pts.join(' ')} fill="none" stroke={TV_VOL_MA} strokeWidth={1.4} opacity={0.95}/>
           ) : null
         })()}
+
+        {/* RSI pane */}
+        {showRSI && (
+          <g>
+            <rect x={padL} y={rsiTop} width={chartW} height={rsiH} fill={C.card} opacity={0.4}/>
+            <line x1={padL} y1={rsiTop} x2={padL+chartW} y2={rsiTop} stroke={C.border} strokeWidth={1} opacity={0.8}/>
+            <rect x={padL} y={rsiToY(70)} width={chartW} height={Math.max(0, rsiToY(30)-rsiToY(70))}
+              fill={C.muted} opacity={0.08}/>
+            {[70,50,30].map(lvl=>(
+              <g key={`rsi-${lvl}`}>
+                <line x1={padL} y1={rsiToY(lvl)} x2={padL+chartW} y2={rsiToY(lvl)}
+                  stroke={lvl===50?C.border:lvl===70?C.red:C.green}
+                  strokeWidth={0.6} strokeDasharray={lvl===50?'2,2':'3,3'} opacity={0.7}/>
+                <text x={padL+chartW+4} y={rsiToY(lvl)+3} fontSize={8} fill={C.muted}>{lvl}</text>
+              </g>
+            ))}
+            <text x={padL+4} y={rsiTop+11} fontSize={8} fontWeight={700} fill={C.muted}>RSI 14</text>
+            {(() => {
+              const pts = vRSI.map((v,i)=> v!=null ? `${idxToX(i)},${rsiToY(v)}` : null).filter(Boolean)
+              return pts.length>1 ? (
+                <polyline points={pts.join(' ')} fill="none" stroke="#a78bfa" strokeWidth={1.4} opacity={0.95}/>
+              ) : null
+            })()}
+          </g>
+        )}
+
+        {/* MACD pane */}
+        {showMACD && (
+          <g>
+            <rect x={padL} y={macdTop} width={chartW} height={macdH} fill={C.card} opacity={0.4}/>
+            <line x1={padL} y1={macdTop} x2={padL+chartW} y2={macdTop} stroke={C.border} strokeWidth={1} opacity={0.8}/>
+            <line x1={padL} y1={macdToY(0)} x2={padL+chartW} y2={macdToY(0)}
+              stroke={C.border} strokeWidth={0.7} opacity={0.8}/>
+            <text x={padL+4} y={macdTop+11} fontSize={8} fontWeight={700} fill={C.muted}>MACD 12,26,9</text>
+            {vMacdHist.map((h,i)=>{
+              if (h==null) return null
+              const x = idxToX(i)
+              const y0 = macdToY(0)
+              const y1 = macdToY(h)
+              const top = Math.min(y0, y1)
+              const height = Math.max(1, Math.abs(y1 - y0))
+              return (
+                <rect key={`mh-${i}`} x={x-volBarW/2} y={top} width={volBarW} height={height}
+                  fill={h>=0?C.green:C.red} opacity={0.55}/>
+              )
+            })}
+            {(() => {
+              const mPts = vMacd.map((v,i)=> v!=null ? `${idxToX(i)},${macdToY(v)}` : null).filter(Boolean)
+              const sPts = vMacdSig.map((v,i)=> v!=null ? `${idxToX(i)},${macdToY(v)}` : null).filter(Boolean)
+              return (
+                <>
+                  {mPts.length>1 && <polyline points={mPts.join(' ')} fill="none" stroke={C.blue} strokeWidth={1.3}/>}
+                  {sPts.length>1 && <polyline points={sPts.join(' ')} fill="none" stroke={C.orange} strokeWidth={1.3}/>}
+                </>
+              )
+            })()}
+            <text x={padL+chartW+4} y={macdToY(0)+3} fontSize={8} fill={C.muted}>0</text>
+          </g>
+        )}
 
         {/* Forecast — dashed trend projection, clearly separated from
             real data with its own label and disclaimer below the chart */}
@@ -6347,6 +6909,17 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           <span><span style={{color:C.blue}}>■</span> MA20</span>
           <span><span style={{color:C.yellow}}>■</span> MA50</span>
           <span><span style={{color:C.purple}}>■</span> MA200</span>
+        </>}
+        {showGuppy && <>
+          <span><span style={{color:'#2dd4bf'}}>—</span> Guppy short</span>
+          <span><span style={{color:'#f472b6'}}>—</span> Guppy long</span>
+          <span><span style={{color:C.green}}>▲</span>/<span style={{color:C.red}}>▼</span> EMA9×50 cross</span>
+        </>}
+        {showRSI && <span><span style={{color:'#a78bfa'}}>—</span> RSI 14</span>}
+        {showMACD && <>
+          <span><span style={{color:C.blue}}>—</span> MACD</span>
+          <span><span style={{color:C.orange}}>—</span> Signal</span>
+          <span><span style={{color:C.green}}>■</span> Hist</span>
         </>}
         {showBullSnort && <span><span style={{color:BULL_SNORT_COLOR}}>■</span> Bull Snort</span>}
         {showPatterns && <>
@@ -6558,9 +7131,10 @@ function ReorderableList({items, onReorder, renderItem, hint}){
   )
 }
 
-const CHART_SECTION_ORDER_DEFAULT = ['mcap','themes','mgmt','details']
+const CHART_SECTION_ORDER_DEFAULT = ['mcap','peers','themes','mgmt','details']
 const CHART_SECTION_LABELS = {
   mcap:'Market Cap',
+  peers:'Peer Result Ranking',
   themes:'Emerging Themes',
   mgmt:'Management Flags',
   details:'Company Details',
@@ -6569,7 +7143,17 @@ const CHART_SECTION_LABELS = {
 function normalizeChartSectionOrder(order){
   const base=Array.isArray(order)?order.filter(k=>CHART_SECTION_ORDER_DEFAULT.includes(k)):[]
   for(const k of CHART_SECTION_ORDER_DEFAULT){
-    if(!base.includes(k)) base.push(k)
+    if(base.includes(k)) continue
+    // Insert new sections (e.g. peers) at their default position, not always at the end —
+    // otherwise saved layouts bury "Peer Result Ranking" under Details.
+    const defIdx = CHART_SECTION_ORDER_DEFAULT.indexOf(k)
+    let insertAt = base.length
+    for(let i = defIdx + 1; i < CHART_SECTION_ORDER_DEFAULT.length; i++){
+      const neighbor = CHART_SECTION_ORDER_DEFAULT[i]
+      const pos = base.indexOf(neighbor)
+      if(pos !== -1){ insertAt = pos; break }
+    }
+    base.splice(insertAt, 0, k)
   }
   return base
 }
@@ -7105,20 +7689,21 @@ const HELP_CONTENT = [
     • Lagging (bottom-left, -/-) — weak and still falling. Improving (top-left, -/+) — weak but momentum turning up (often early).
     • Idealized rotation is clockwise. Trail length = your Window chip; thicker trails sit farther from the 100/100 crosshair.
     Tap an index to drill into constituents. Date slider rewinds the RRG to a past day.`},
-  {id:'leaders', title:'Leaders', body:`Two event-driven lists: RS Line New Highs (stocks whose relative-strength 
-    line — not just price — just made a new high, often an early leadership tell) and New Stage 2 Entries (stocks 
-    that flipped into a confirmed uptrend today). Both export to TradingView and support alerts.`},
-  {id:'patterns', title:'Patterns', body:`Every chart pattern the scanner detects, grouped and listed one by one 
-    instead of scattered across tabs: classic chart patterns (Head & Shoulders, Double Top/Bottom, Triangles, Rising/
-    Falling Wedges, Flags & Pennants — swing-point heuristics, expect some false positives while tuned), breakouts 
-    (resistance, 52-week high, cup & handle, new Stage 2 entries), base-building/coiling setups (cup forming, Guppy 
-    MA compression, volatility squeeze, VCP), moving-average crossovers (Guppy bullish/bearish), and volume 
-    footprints (Pocket Pivot, RS line new high). Each section is its own exportable list.`},
+  {id:'leaders', title:'Leaders', body:`Leadership signals, one section at a time (chips under the header):
+    • RS Line New Highs — Early Leaders — relative-strength line (not just price) made a new high.
+    • New Stage 2 Entries Today — flipped into a confirmed Weinstein uptrend today.
+    • 52 Week High Stocks — price leadership at fresh 52-week highs.
+    Each section exports to TradingView and supports alerts.`},
+  {id:'patterns', title:'Patterns', body:`Every chart pattern the scanner detects, grouped and listed one by one:
+    • Breakouts — HY/HT (high volume + strong RS), resistance, 52-week high, cup & handle, new Stage 2.
+    • Coiling — cup forming, Guppy compression, volatility squeeze, VCP.
+    • Classic — Head & Shoulders, Double Top/Bottom, Triangles, Wedges, Flags & Pennants (heuristics; some false positives).
+    • MA Crossovers — Guppy bullish/bearish.
+    • Volume — Pocket Pivot, RS line new high.
+    Each type is its own exportable list under the section chips.`},
   {id:'squeeze', title:'Squeeze', body:`Stocks in a volatility squeeze (Bollinger Bands inside Keltner Channels) or 
     forming a VCP (Volatility Contraction Pattern) — both precede explosive moves. Tight price action + falling 
     volume is the setup; the breakout direction isn't predicted, only that a big move is coming.`},
-  {id:'breakout', title:'Breakout', body:`Stocks breaking resistance, cup-and-handle patterns, or Guppy MA 
-    crossovers, with volume confirmation. This is the "something's happening right now" tab for price-action triggers.`},
   {id:'52wl', title:'52WL Crossover', body:`Stocks making new 52-week highs (potential breakouts) or sitting near 
     52-week lows (potential value or falling knives — check the trend before assuming either).`},
   {id:'weak', title:'Weak RS', body:`The inverse scanner — stocks with deteriorating relative strength, useful for 
@@ -8010,8 +8595,8 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
               {slide===1 && (
                 <div>
                   <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:16}}>
-                    <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>Breakout Scanner</h4>
-                    <span style={{fontSize:11,color:C.muted,...mono}}>Resistance breaks, cup &amp; handle, Guppy crossovers</span>
+                    <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>Patterns · Breakouts</h4>
+                    <span style={{fontSize:11,color:C.muted,...mono}}>HY/HT, resistance, cup &amp; handle, Stage 2</span>
                   </div>
                   <table style={{width:'100%',borderCollapse:'collapse'}}>
                     <thead><tr>
@@ -9672,6 +10257,8 @@ export default function App(){
   const [patternsSubTab,setPatternsSubTab]=useState('breakouts')
   // Within Patterns → Breakouts: show one breakout type at a time ('all' = every type).
   const [patternsBreakoutType,setPatternsBreakoutType]=useState('all')
+  // Leaders: one section at a time (avoids stacking two huge tables).
+  const [leadersSubTab,setLeadersSubTab]=useState('rsHigh')
   const [helpCenterSection,setHelpCenterSection]=useState(null)
   const [breadthHistory,setBreadthHistory]=useState([])
   const [emaBreadthHistory,setEmaBreadthHistory]=useState([])
@@ -9679,6 +10266,13 @@ export default function App(){
   const [fiiDiiRange,setFiiDiiRange]=useState('1M')
   const [breadthRange,setBreadthRange]=useState('1M')
   const [mainTab,setMainTab]=useState('rs')
+  // Breakout tab merged into Patterns → Breakouts (HY/HT lives there now).
+  useEffect(()=>{
+    if(mainTab!=='breakout') return
+    setMainTab('patterns')
+    setPatternsSubTab('breakouts')
+    setPatternsBreakoutType('hyht')
+  },[mainTab])
   useEffect(()=>{
     if(mainTab!=='market') return
     if(marketSubTab==='breadth') setMarketSubTab('overview')
@@ -9690,6 +10284,7 @@ export default function App(){
   const [sigFilters,setSigFilters]=useState([]) // multi-select, [] = no filter (all)
   const [stageFilter,setStageFilter]=useState('all')
   const [sectorFilter,setSectorFilter]=useState('all')
+  const [industryFilter,setIndustryFilter]=useState('all')
   const [mcapMin,setMcapMin]=useState('')
   const [mcapMax,setMcapMax]=useState('')
   const [savedScanners,setSavedScanners]=useState([])
@@ -9735,7 +10330,7 @@ export default function App(){
 
   const currentFilterState = () => ({
     search, rsMin, rsMax, mcapMin, mcapMax, rsImprFilter,
-    sigFilters, stageFilter, sectorFilter, presetFilter,
+    sigFilters, stageFilter, sectorFilter, industryFilter, presetFilter,
   })
   const applyFilterState = (f) => {
     setSearch(f.search??'')
@@ -9750,6 +10345,7 @@ export default function App(){
     else setSigFilters([])
     setStageFilter(f.stageFilter??'all')
     setSectorFilter(f.sectorFilter??'all')
+    setIndustryFilter(f.industryFilter??'all')
     setPresetFilter(f.presetFilter??'all')
   }
   const handleSaveScanner = async () => {
@@ -10011,18 +10607,34 @@ export default function App(){
   }
   const detailFirst=dockLayout.order.indexOf('detail') < dockLayout.order.indexOf('chart')
   const dockStack=dockLayout.mode==='stack'
+  // True when the open chart is an index (Nifty 50, Midcap 150, …).
+  // Kept explicitly so index charts still load even if indexData hasn't
+  // arrived yet (name-only detection would briefly treat them as stocks
+  // and fetch stock_full_history → empty chart).
+  const [chartIsIndex,setChartIsIndex]=useState(false)
+  // Populated after indexData loads — used by openChart without creating
+  // a declare-before-use TDZ on indexData (declared further below).
+  const indexNamesRef=useRef(new Set())
   // User (or alert) picked a symbol — show Chart; Details/About only for
   // stocks (ChartPanel already hides Details for indices).
   // Always dock Chart (clear float) so a prior float/minimize can't make
   // the click look like a no-op — especially from Market Index Tape.
-  const openChart=useCallback((sym)=>{
+  const openChart=useCallback((sym, opts={})=>{
     if(!sym) return
+    const asIndex = opts.isIndex != null
+      ? !!opts.isIndex
+      : indexNamesRef.current.has(sym)
+    setChartIsIndex(asIndex)
     setChartSym(sym)
     if(isMobile) return
     setPanelWins(w=>({
       ...w,
       chart:{open:true,minimized:false,float:null},
-      detail:{open:true,minimized:false,float:null},
+      // Details panel is stock-only; keep it closed for indices so the
+      // chart gets the full dock slot instead of looking "empty".
+      detail: asIndex
+        ? {open:false,minimized:false,float:null}
+        : {open:true,minimized:false,float:null},
     }))
   },[isMobile])
   const prevChartSymRef=useRef(null)
@@ -10034,11 +10646,13 @@ export default function App(){
       setPanelWins(w=>({
         ...w,
         chart:{...w.chart,open:true,minimized:false},
-        detail:{...w.detail,open:true,minimized:false},
+        detail: chartIsIndex
+          ? {...w.detail,open:false,minimized:false}
+          : {...w.detail,open:true,minimized:false},
       }))
     }
     prevChartSymRef.current=chartSym
-  },[chartSym,mainTab])
+  },[chartSym,mainTab,chartIsIndex])
   const autoOpenedRef=useRef(false)
   const rsTableDrag=useDragScroll()
   const idxTableDrag=useDragScroll()
@@ -10158,7 +10772,7 @@ export default function App(){
             if(!playedSound){ playAlertSoundFromPrefs(prefs); playedSound=true }
             const ft=String(alert.fire_type||'')
             const goSqueeze=/Squeeze|VCP/i.test(ft)
-            const goBreakout=/Stage\s*2|Guppy/i.test(ft)
+            const goPatterns=/Stage\s*2|Guppy|HY\/HT|Breakout|Cup|52W/i.test(ft)
             const title=alertNotificationTitle(alert)
             const body=`${alert.fire_type} | RS: ${alert.rs_tv||alert.rs} | ${alert.chg_pct>=0?'+':''}${Number(alert.chg_pct||0).toFixed(2)}% | ${alert.sector||''}`
             pushNotifHistory({
@@ -10180,7 +10794,11 @@ export default function App(){
             )
             n.onclick = ()=>{
               window.focus()
-              setMainTab(goSqueeze ? 'squeeze' : goBreakout ? 'breakout' : 'rs')
+              if(goSqueeze) setMainTab('squeeze')
+              else if(goPatterns){
+                setMainTab('patterns')
+                setPatternsSubTab('breakouts')
+              } else setMainTab('rs')
               if(alert.sym) openChart(alert.sym)
             }
             setTimeout(()=>n.close(), 8000)
@@ -10315,6 +10933,7 @@ export default function App(){
   // if it satisfies ANY of the selected signals).
   const matchesSignal = (s,sig) => {
     if(sig==='pp') return topVolumeSignal(s)==='pp'
+    if(sig==='bullsnort') return !!s.isBullSnort
     if(sig==='hy') return topVolumeSignal(s)==='hy'
     if(sig==='ht') return topVolumeSignal(s)==='ht'
     if(sig==='ema9') return !!s.nearEMA9?.isNearEMA9
@@ -10353,15 +10972,12 @@ export default function App(){
   const [showColumns,setShowColumns]=useState(false)
   // Which breakout type is shown on the Breakout tab — one table with
   // clickable filter chips instead of 5 always-stacked sections.
-  const [breakoutType,setBreakoutType]=useState('hyht')
   // RS Rating → Filters → Breakout type (single-select, like Result quality).
   const [breakoutTypeFilter,setBreakoutTypeFilter]=useState('all')
   const [announcements,setAnnouncements]=useState([])
   const [announcementsLoading,setAnnouncementsLoading]=useState(false)
-  // AI Best Picks — composite technical+fundamental score computed
-  // server-side, refreshed at most hourly. Fetched on tab-open and via
-  // a manual refresh button (no need for constant polling — the
-  // underlying data itself only changes hourly).
+  // AI Best Picks — Stage-2 + RS + Fundamental + Result (+ tech confluence),
+  // scored server-side, refreshed hourly. Fetched on tab-open / Refresh.
   const [bestPicks,setBestPicks]=useState([])
   const [bestPicksLoading,setBestPicksLoading]=useState(false)
   const [bestPicksView,setBestPicksView]=useState('today') // 'today' | 'history'
@@ -10494,7 +11110,7 @@ export default function App(){
     const needRatings =
       String(presetFilter||'').startsWith('result')
       || mainTab==='rs'
-      || mainTab==='breakout'
+      || mainTab==='patterns'
       || (mainTab==='announcements' && announcementsCategory==='results')
     if(!needRatings || resultRatingsLoadedRef.current) return
     let cancelled=false
@@ -10779,6 +11395,13 @@ export default function App(){
 
   // ── DB-powered scan (reads from Supabase, pre-computed by live server) ──
   const [indexData,setIndexData]=useState([])
+  useEffect(()=>{
+    indexNamesRef.current = new Set((indexData||[]).map(i=>i.name).filter(Boolean))
+    // If an index chart was opened before indexData arrived, flip the flag.
+    if(chartSym && indexNamesRef.current.has(chartSym) && !chartIsIndex){
+      setChartIsIndex(true)
+    }
+  },[indexData, chartSym, chartIsIndex])
   const [expandedIndex,setExpandedIndex]=useState(null)
   const [idxConstituentFilters,setIdxConstituentFilters]=useState({industry:null,rsMin:0})
   const [idxSort,setIdxSort]=useState({key:'rsTv',dir:-1})
@@ -10894,6 +11517,9 @@ export default function App(){
         pp:detectPP(s.prices,s.volumes),hist:histMap[s.sym]||[],
         rsTrend:rsSlope(histMap[s.sym]||[]),
         hy:calcHY(s.volumes),ht:calcHT(s.volumes),
+        isBullSnort:!!(detectBullSnortDays(
+          s.highs||s.prices, s.lows||s.prices, s.prices, s.volumes, s.opens
+        ).slice(-1)[0]),
         nearEMA9:calcNearEMA9(s.prices,rs),
         scanner52wl:detect52WLCrossover(s.prices,s.volumes),
         weakRS:detectWeakRSBigMove(s.prices,s.volumes,rs,weakThreshold),
@@ -10951,7 +11577,7 @@ export default function App(){
     if(!autoOpenedRef.current && stocks.length>0 && !chartSym && mainTab!=='market'){
       autoOpenedRef.current = true
       const top = [...stocks].sort((a,b)=>(b.rsTv??b.rs??0)-(a.rsTv??a.rs??0))[0]
-      if(top) setChartSym(top.sym)
+      if(top){ setChartIsIndex(false); setChartSym(top.sym) }
     }
   },[stocks,chartSym,mainTab])
 
@@ -10974,10 +11600,12 @@ export default function App(){
       setPanelWins(w=>({
         ...w,
         chart:{...w.chart,open:true,minimized:false},
-        detail:{...w.detail,open:true,minimized:false},
+        detail: chartIsIndex
+          ? {...w.detail,open:false,minimized:false}
+          : {...w.detail,open:true,minimized:false},
       }))
     }
-  },[mainTab,isMobile,chartSym])
+  },[mainTab,isMobile,chartSym,chartIsIndex])
 
   // Load from DB on mount, whenever the selected history date changes,
   // and whenever the scope dropdown (index / watchlist) changes — the
@@ -11050,7 +11678,25 @@ export default function App(){
   // Filter helpers
   const applyPP=(list,f)=>f==='yes'?list.filter(s=>s.pp?.isPP):f==='no'?list.filter(s=>!s.pp?.isPP):list
 
-  const rsBase=useMemo(()=>stocks.filter(s=>{
+  // Sector + Industry scope — shared by RS / Squeeze / Leaders / Patterns / 52WL / Weak.
+  const sectorOptions=useMemo(
+    ()=>[...new Set(stocks.map(s=>s.sector).filter(Boolean))].sort((a,b)=>a.localeCompare(b)),
+    [stocks])
+  const industryOptions=useMemo(()=>{
+    const pool = sectorFilter==='all' ? stocks : stocks.filter(s=>s.sector===sectorFilter)
+    return [...new Set(pool.map(s=>s.industry).filter(Boolean))].sort((a,b)=>a.localeCompare(b))
+  },[stocks,sectorFilter])
+  useEffect(()=>{
+    if(industryFilter==='all') return
+    if(!industryOptions.includes(industryFilter)) setIndustryFilter('all')
+  },[industryOptions,industryFilter])
+  const scopedStocks=useMemo(()=>stocks.filter(s=>{
+    if(sectorFilter!=='all'&&s.sector!==sectorFilter) return false
+    if(industryFilter!=='all'&&s.industry!==industryFilter) return false
+    return true
+  }),[stocks,sectorFilter,industryFilter])
+
+  const rsBase=useMemo(()=>scopedStocks.filter(s=>{
     if(!s.sym.toLowerCase().includes(search.toLowerCase()))return false
     if(s.rs<rsMin||s.rs>rsMax)return false
     if(mcapMin!==''&&(s.marketCap==null||s.marketCap<+mcapMin))return false
@@ -11058,9 +11704,9 @@ export default function App(){
     if(rsImprFilter!=='all'&&s.rsTrend?.trend!==rsImprFilter)return false
     if(sigFilters.length>0&&!sigFilters.some(sig=>matchesSignal(s,sig)))return false
     if(stageFilter!=='all'&&calcWeinsteinStage(s).stage!==+stageFilter)return false
-    if(sectorFilter!=='all'&&s.sector!==sectorFilter)return false
     // Preset filter
     if(presetFilter==='pp'&&!s.pp?.isPP)return false
+    if(presetFilter==='bullsnort'&&!s.isBullSnort)return false
     if(presetFilter==='ema9'&&!s.nearEMA9?.isNearEMA9)return false
     if(presetFilter==='hy'&&!s.hy?.isHY)return false
     if(presetFilter==='ht'&&!s.ht?.isHT)return false
@@ -11124,7 +11770,7 @@ export default function App(){
     // (e.g. P/E) sorting by chg% wouldn't make as much sense.
     if(sortBy==='rs'||sortBy==='rsTv') return (b.chg??0)-(a.chg??0)
     return 0
-  }),[stocks,search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,sectorFilter,presetFilter,resultRatingsMap,breakoutTypeFilter,sortBy,sortDir])
+  }),[scopedStocks,search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,presetFilter,resultRatingsMap,breakoutTypeFilter,sortBy,sortDir])
   const displayedRS=rsBase
   const rsTotalPages=Math.max(1,Math.ceil(displayedRS.length/RS_PAGE_SIZE))
   const rsPageClamped=Math.min(rsPage,rsTotalPages-1)
@@ -11136,7 +11782,7 @@ export default function App(){
   // would otherwise kick you back to page 1 mid-scroll every minute even
   // though nothing you asked for actually changed.
   useEffect(()=>{ setRsPage(0) },
-    [search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,sectorFilter,presetFilter,sortBy,sortDir])
+    [search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,sectorFilter,industryFilter,presetFilter,sortBy,sortDir])
 
   // Rotation chart's rolling-momentum trail computation — same issue as
   // the Industries table above: this was an inline IIFE inside JSX,
@@ -11215,13 +11861,13 @@ export default function App(){
     return { rows, hiddenCount: allRows.length - rows.length }
   },[stocks])
 
-  const wlBase=stocks.filter(s=>s.scanner52wl.near52wLow&&s.sym.toLowerCase().includes(wlSearch.toLowerCase())&&(!wlSigOnly||s.scanner52wl.isSignal)).sort((a,b)=>a.scanner52wl.pctFrom52wLow-b.scanner52wl.pctFrom52wLow)
+  const wlBase=scopedStocks.filter(s=>s.scanner52wl.near52wLow&&s.sym.toLowerCase().includes(wlSearch.toLowerCase())&&(!wlSigOnly||s.scanner52wl.isSignal)).sort((a,b)=>a.scanner52wl.pctFrom52wLow-b.scanner52wl.pctFrom52wLow)
   const displayed52WL=applyPP(wlBase,ppFilter52WL)
 
-  const weakBase=stocks.filter(s=>s.weakRS.chg1d>=weakThreshold&&s.rs<50&&s.sym.toLowerCase().includes(weakSearch.toLowerCase())&&(!weakSigOnly||s.weakRS.isSignal)).sort((a,b)=>b.weakRS.chg1d-a.weakRS.chg1d)
+  const weakBase=scopedStocks.filter(s=>s.weakRS.chg1d>=weakThreshold&&s.rs<50&&s.sym.toLowerCase().includes(weakSearch.toLowerCase())&&(!weakSigOnly||s.weakRS.isSignal)).sort((a,b)=>b.weakRS.chg1d-a.weakRS.chg1d)
   const displayedWeak=applyPP(weakBase,ppFilterWeak)
 
-  const tabs=[['rs','📊','RS Rating'],['market','🌐','Market'],['squeeze','🌀','Squeeze'],['breakout','💥','Breakout'],['52wl','🎯','52WL'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
+  const tabs=[['rs','📊','RS Rating'],['market','🌐','Market'],['squeeze','🌀','Squeeze'],['patterns','📐','Patterns'],['52wl','🎯','52WL'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
 
   const sessionShareNotice=sessionTakenOver?(
     <div style={{position:'fixed',inset:0,zIndex:5000,background:'rgba(0,0,0,0.72)',
@@ -11346,7 +11992,6 @@ export default function App(){
           {id:'leaders',  label:'Leaders',           short:'Leaders',  Icon:Flag},
           {id:'patterns', label:'Patterns',          short:'Patterns', Icon:LineChartIcon},
           {id:'squeeze',  label:'Squeeze',           short:'Squeeze',  Icon:Zap},
-          {id:'breakout', label:'Breakout',          short:'Breakout', Icon:ArrowUpRight},
           {id:'52wl',     label:'52WL',              short:'52WL',     Icon:Award},
           {id:'weak',     label:'Weak RS',           short:'Weak',     Icon:TrendingDown},
         ]
@@ -11460,7 +12105,7 @@ export default function App(){
                     gaps:'Market · Gaps',smartmoney:'Market · Smart Money'}[marketSubTab]||'Market'
                  ):
                  mainTab==='squeeze'?'Squeeze & VCP':
-                 mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
+                 mainTab==='52wl'?'52WL Crossover':
                  mainTab==='weak'?'Weak RS':mainTab==='rotation'?'Sector Rotation':
                  mainTab==='leaders'?'Leaders':
                  mainTab==='patterns'?'Patterns':
@@ -11496,7 +12141,7 @@ export default function App(){
           </button>
 
           {/* Live status + refresh — same row as title/controls (desktop) */}
-          {!isMobile&&['rs','squeeze','breakout','52wl','weak','leaders','patterns'].includes(mainTab)&&(
+          {!isMobile&&['rs','squeeze','52wl','weak','leaders','patterns'].includes(mainTab)&&(
             <div style={{flex:1,minWidth:140,overflow:'hidden'}}>
               <LastUpdatedBar
                 inline
@@ -11594,7 +12239,9 @@ export default function App(){
                     else if(cat.includes('transcript')) setAnnouncementsCategory('transcript')
                   }
                   else if(/Squeeze|VCP/i.test(h?.fireType||'')) setMainTab('squeeze')
-                  else if(/Stage\s*2|Guppy/i.test(h?.fireType||'')) setMainTab('breakout')
+                  else if(/Stage\s*2|Guppy|HY\/HT|Breakout|Cup|52W/i.test(h?.fireType||'')){
+                    setMainTab('patterns'); setPatternsSubTab('breakouts')
+                  }
                   else setMainTab('rs')
                   if(h?.sym) openChart(h.sym)
                 }}
@@ -11761,7 +12408,7 @@ export default function App(){
 
         <div style={{flexShrink:0}}>
           <TickerBanner stocks={topMovers} indices={indexData}
-            onSelect={openChart} onSelectIndex={openChart}/>
+            onSelect={openChart} onSelectIndex={name=>openChart(name,{isIndex:true})}/>
         </div>
 
         {/* Below header: screener table | chart — or stacked up/down via Layout menu */}
@@ -11782,7 +12429,7 @@ export default function App(){
              gaps:'Market · Gaps',smartmoney:'Market · Smart Money'}[marketSubTab]||'Market'
           ):
           mainTab==='squeeze'?'Squeeze & VCP':
-          mainTab==='breakout'?'Breakout':mainTab==='52wl'?'52WL Crossover':
+          mainTab==='52wl'?'52WL Crossover':
           mainTab==='weak'?'Weak RS':mainTab==='rotation'?'Sector Rotation':
           mainTab==='leaders'?'Leaders':
           mainTab==='patterns'?'Patterns':
@@ -11840,6 +12487,47 @@ export default function App(){
                 background:'transparent',color:C.purple,fontSize:11,fontWeight:700,cursor:'pointer'}}>
               ← Back to Live
             </button>
+          </div>
+        )}
+
+        {/* Sector / Industry — shared across RS, Squeeze, Leaders, Patterns, 52WL, Weak */}
+        {['rs','squeeze','leaders','patterns','52wl','weak'].includes(mainTab)&&(
+          <div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'center',marginBottom:12,
+            background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'8px 12px'}}>
+            <span style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',letterSpacing:'0.04em'}}>
+              Scope
+            </span>
+            <select value={sectorFilter}
+              onChange={e=>{ setSectorFilter(e.target.value); setIndustryFilter('all') }}
+              style={{padding:'6px 10px',borderRadius:7,border:`1px solid ${sectorFilter!=='all'?C.accent:C.border}`,
+                background:C.bg,color:sectorFilter!=='all'?C.accent:C.text,fontSize:12,fontWeight:600,
+                outline:'none',cursor:'pointer',maxWidth:isMobile?140:220}}>
+              <option value="all">All sectors</option>
+              {sectorOptions.map(sec=>(
+                <option key={sec} value={sec}>{sec}</option>
+              ))}
+            </select>
+            <select value={industryFilter} onChange={e=>setIndustryFilter(e.target.value)}
+              style={{padding:'6px 10px',borderRadius:7,border:`1px solid ${industryFilter!=='all'?C.accent:C.border}`,
+                background:C.bg,color:industryFilter!=='all'?C.accent:C.text,fontSize:12,fontWeight:600,
+                outline:'none',cursor:'pointer',maxWidth:isMobile?140:240}}>
+              <option value="all">All industries</option>
+              {industryOptions.map(ind=>(
+                <option key={ind} value={ind}>{ind}</option>
+              ))}
+            </select>
+            {(sectorFilter!=='all'||industryFilter!=='all')&&(
+              <button type="button" onClick={()=>{ setSectorFilter('all'); setIndustryFilter('all') }}
+                style={{padding:'5px 10px',borderRadius:7,border:`1px solid ${C.border}`,background:'transparent',
+                  color:C.muted,fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                Clear
+              </button>
+            )}
+            <span style={{fontSize:11,color:C.muted,marginLeft:'auto'}}>
+              {scopedStocks.length===stocks.length
+                ? `${stocks.length} stocks`
+                : `${scopedStocks.length} of ${stocks.length}`}
+            </span>
           </div>
         )}
 
@@ -11922,17 +12610,18 @@ export default function App(){
               </div>
             )}
 
-            {/* Summary chips */}
-            {stocks.length>0&&(
+            {/* Summary chips (counts respect Sector/Industry scope) */}
+            {scopedStocks.length>0&&(
               <div style={{display:'flex',gap:8,marginBottom:12,overflowX:'auto',paddingBottom:4}}>
-                {[{label:'All',val:stocks.length,color:C.text,f:'all'},
-                  {label:'🚀HT',val:stocks.filter(s=>topVolumeSignal(s)==='ht').length,color:C.orange,f:'ht'},
-                  {label:'📊HY',val:stocks.filter(s=>topVolumeSignal(s)==='hy').length,color:C.pink,f:'hy'},
-                  {label:'🏛️IBV',val:stocks.filter(s=>topVolumeSignal(s)==='ibv').length,color:C.blue,f:'ibv'},
-                  {label:'🔥PP',val:stocks.filter(s=>topVolumeSignal(s)==='pp').length,color:C.green,f:'pp'},
-                  {label:'⚡EMA9',val:stocks.filter(s=>s.nearEMA9.isNearEMA9).length,color:C.teal,f:'ema9'},
-                  {label:'🎯R1',val:stocks.filter(s=>s.isResistanceBreakout).length,color:C.red,f:'r1breakout'},
-                  {label:'↑↑Impr',val:stocks.filter(s=>s.rsTrend.trend==='improving').length,color:C.green,f:'__impr'},
+                {[{label:'All',val:scopedStocks.length,color:C.text,f:'all'},
+                  {label:'🚀HT',val:scopedStocks.filter(s=>topVolumeSignal(s)==='ht').length,color:C.orange,f:'ht'},
+                  {label:'📊HY',val:scopedStocks.filter(s=>topVolumeSignal(s)==='hy').length,color:C.pink,f:'hy'},
+                  {label:'🏛️IBV',val:scopedStocks.filter(s=>topVolumeSignal(s)==='ibv').length,color:C.blue,f:'ibv'},
+                  {label:'🔥PP',val:scopedStocks.filter(s=>topVolumeSignal(s)==='pp').length,color:C.green,f:'pp'},
+                  {label:'🐂Snort',val:scopedStocks.filter(s=>s.isBullSnort).length,color:'#f59e0b',f:'bullsnort'},
+                  {label:'⚡EMA9',val:scopedStocks.filter(s=>s.nearEMA9.isNearEMA9).length,color:C.teal,f:'ema9'},
+                  {label:'🎯R1',val:scopedStocks.filter(s=>s.isResistanceBreakout).length,color:C.red,f:'r1breakout'},
+                  {label:'↑↑Impr',val:scopedStocks.filter(s=>s.rsTrend.trend==='improving').length,color:C.green,f:'__impr'},
                 ].map(({label,val,color,f})=>(
                   <div key={label} onClick={()=>{
                     if(f==='__impr')setRsImprFilter(v=>v==='improving'?'all':'improving')
@@ -12012,16 +12701,6 @@ export default function App(){
                     </div>
                   </div>
                 )}
-                {sectorFilter!=='all'&&(
-                  <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
-                    <span style={{fontSize:11,color:C.muted}}>Filtering by sector:</span>
-                    <span style={{display:'flex',alignItems:'center',gap:6,padding:'3px 10px',borderRadius:20,
-                      background:C.accent+'22',border:`1px solid ${C.accent}`,color:C.accent,fontSize:11,fontWeight:700}}>
-                      {sectorFilter}
-                      <span onClick={()=>setSectorFilter('all')} style={{cursor:'pointer',fontSize:13,lineHeight:1}}>×</span>
-                    </span>
-                  </div>
-                )}
                 {showFilters&&(
                   <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px'}}>
                     {/* My Scanners — save/load the current filter combination */}
@@ -12062,6 +12741,7 @@ export default function App(){
                           else if(f.sigFilter&&f.sigFilter!=='all') parts.push(f.sigFilter.toUpperCase())
                           if(f.stageFilter&&f.stageFilter!=='all') parts.push(`Stage ${f.stageFilter}`)
                           if(f.sectorFilter&&f.sectorFilter!=='all') parts.push(f.sectorFilter)
+                          if(f.industryFilter&&f.industryFilter!=='all') parts.push(f.industryFilter)
                           if(f.presetFilter&&f.presetFilter!=='all') parts.push(f.presetFilter)
                           return parts.length ? parts.join(' · ') : 'No filters (all stocks)'
                         }
@@ -12160,6 +12840,32 @@ export default function App(){
                         Coverage may be incomplete for stocks where fundamentals haven't been fetched yet
                       </div>
                     </div>
+                    <div style={{marginBottom:14}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>
+                        Sector &amp; Industry
+                        <span style={{color:C.muted,fontWeight:400}}> (applies on RS, Squeeze, Leaders, Patterns, 52WL, Weak)</span>
+                      </div>
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                        <select value={sectorFilter}
+                          onChange={e=>{ setSectorFilter(e.target.value); setIndustryFilter('all') }}
+                          style={{flex:'1 1 160px',padding:'8px 10px',borderRadius:6,border:`1px solid ${sectorFilter!=='all'?C.accent:C.border}`,
+                            background:C.bg,color:sectorFilter!=='all'?C.accent:C.text,fontSize:12,outline:'none',cursor:'pointer'}}>
+                          <option value="all">All sectors</option>
+                          {sectorOptions.map(sec=><option key={sec} value={sec}>{sec}</option>)}
+                        </select>
+                        <select value={industryFilter} onChange={e=>setIndustryFilter(e.target.value)}
+                          style={{flex:'1 1 160px',padding:'8px 10px',borderRadius:6,border:`1px solid ${industryFilter!=='all'?C.accent:C.border}`,
+                            background:C.bg,color:industryFilter!=='all'?C.accent:C.text,fontSize:12,outline:'none',cursor:'pointer'}}>
+                          <option value="all">All industries</option>
+                          {industryOptions.map(ind=><option key={ind} value={ind}>{ind}</option>)}
+                        </select>
+                      </div>
+                      {(sectorFilter!=='all'||industryFilter!=='all')&&(
+                        <div style={{fontSize:11,color:C.muted,marginTop:6}}>
+                          Scoped to {scopedStocks.length} of {stocks.length} stocks
+                        </div>
+                      )}
+                    </div>
                     <div style={{marginBottom:10}}>
                       <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>RS Trend</div>
                       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
@@ -12197,7 +12903,7 @@ export default function App(){
                           style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilters.length===0?C.muted:C.border}`,
                             cursor:'pointer',fontSize:12,fontWeight:600,
                             background:sigFilters.length===0?C.muted+'22':'transparent',color:sigFilters.length===0?C.text:C.muted}}>All</button>
-                        {[['ht','🚀HT',C.orange],['hy','📊HY',C.pink],['ibv','🏛️IBV',C.blue],['pp','🔥PP',C.green],['ppconsec2','🔥PP 2x Consecutive',C.green],['ppgt2','🔥PP >2 in 10d',C.green],['ema9','⚡EMA9',C.teal],['ema21','⚡EMA21',C.teal],['ema50','⚡EMA50',C.teal],['power','⭐Power',C.accent],['hyht','💥HY/HT Break',C.accent],['r1breakout','🎯R1 Breakout',C.red],['52wh','🏆52W High',C.yellow],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.purple],['s2new','🚀Stage 2 New',C.green],['vcp2t','🌀VCP 2T',C.purple],['vcp3t','🌀VCP 3T',C.purple],['vcp4t','🌀VCP 4T',C.purple]].map(([v,label,color])=>{
+                        {[['ht','🚀HT',C.orange],['hy','📊HY',C.pink],['ibv','🏛️IBV',C.blue],['pp','🔥PP',C.green],['bullsnort','🐂Bull Snort','#f59e0b'],['ppconsec2','🔥PP 2x Consecutive',C.green],['ppgt2','🔥PP >2 in 10d',C.green],['ema9','⚡EMA9',C.teal],['ema21','⚡EMA21',C.teal],['ema50','⚡EMA50',C.teal],['power','⭐Power',C.accent],['hyht','💥HY/HT Break',C.accent],['r1breakout','🎯R1 Breakout',C.red],['52wh','🏆52W High',C.yellow],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.purple],['s2new','🚀Stage 2 New',C.green],['vcp2t','🌀VCP 2T',C.purple],['vcp3t','🌀VCP 3T',C.purple],['vcp4t','🌀VCP 4T',C.purple]].map(([v,label,color])=>{
                           const active = sigFilters.includes(v)
                           return (
                             <button key={v} onClick={()=>setSigFilters(prev=>active?prev.filter(x=>x!==v):[...prev,v])}
@@ -12512,7 +13218,7 @@ export default function App(){
                 <>
                   <IndexTapeStrip indexData={indexData} isMobile={isMobile}
                     activeName={chartSym}
-                    onIndexClick={name=>openChart(name)}
+                    onIndexClick={name=>openChart(name,{isIndex:true})}
                     onViewAll={()=>setMarketSubTab('indices')}/>
 
                   {/* Compact verdict: one header row + factor chips */}
@@ -12751,7 +13457,7 @@ export default function App(){
                           <div style={{...cellStyle,position:'sticky',left:0,
                             background:isExpanded?C.active:(i%2===0?C.card:C.bg),zIndex:1,paddingRight:8}}>
                             <div style={{fontWeight:700,fontSize:12,color:C.text,display:'flex',alignItems:'center',gap:4}}>
-                              <span onClick={e=>{e.stopPropagation();openChart(idx.name)}}
+                              <span onClick={e=>{e.stopPropagation();openChart(idx.name,{isIndex:true})}}
                                 style={{color:C.accent,cursor:'pointer',textDecoration:'underline',
                                   textDecorationColor:C.accent+'55',textUnderlineOffset:'2px'}}
                                 title={`Open ${idx.name} chart · official index series (not sector Avg RS)`}>
@@ -13436,60 +14142,86 @@ export default function App(){
           <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>Loading…</div>
         )}
 
-        {/* ══ LEADERS — RS Line New Highs + New Stage 2 Entries ══ */}
-        {mainTab==='leaders'&&(
+        {/* ══ LEADERS — RS Line New Highs / Stage 2 / 52W Highs ══ */}
+        {mainTab==='leaders'&&(()=>{
+          const stocks = scopedStocks
+          const LEADER_SECTIONS = [
+            {id:'rsHigh', label:'RS Line New Highs — Early Leaders', short:'RS Line New Highs', color:C.teal,
+              filter:s=>s.rsLineNewHigh,
+              blurb:'Relative-strength line made a new high — early leadership, not just price.'},
+            {id:'s2new', label:historyDate?'New Stage 2 Entries':'New Stage 2 Entries Today', short:'New Stage 2', color:C.green,
+              filter:s=>s.isS2NewEntry,
+              blurb:'Flipped into a confirmed Weinstein Stage 2 uptrend.'},
+            {id:'wh52', label:'52 Week High Stocks', short:'52W High', color:C.accent,
+              filter:s=>s.is52whBreakout,
+              blurb:'Price leadership — fresh 52-week highs.'},
+          ]
+          const active = LEADER_SECTIONS.find(s=>s.id===leadersSubTab) || LEADER_SECTIONS[0]
+          const matches = stocks.filter(active.filter)
+          const emptyAll = stocks.length>0 && LEADER_SECTIONS.every(sec=>stocks.filter(sec.filter).length===0)
+          return (
           <div style={{padding:'0 0 20px'}}>
             <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
                 availableDates={availableDates} isMobile={isMobile}/>
             </div>
-            <div style={{marginBottom:14}}>
+            <div style={{marginBottom:10}}>
               <div style={{fontWeight:700,fontSize:16,color:C.text}}>Leaders</div>
               <div style={{fontSize:11,color:C.muted}}>
                 {historyDate
-                  ? `Early-leadership and Stage 2 entry signals on ${new Date(historyDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`
-                  : 'Stocks flashing early-leadership and breakout signals today'}
+                  ? `Leadership signals on ${new Date(historyDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`
+                  : 'Leadership signals — pick a section below'}
               </div>
             </div>
             {stocks.length===0?(
               <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>No data loaded yet.</div>
             ):(<>
-                  {/* RS Line New Highs — early leaders */}
-                  {stocks.filter(s=>s.rsLineNewHigh).length>0&&(
-                    <div style={{background:C.card,border:`1px solid ${C.teal}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.teal,marginBottom:8}}>
-                        RS Line New Highs — Early Leaders ({stocks.filter(s=>s.rsLineNewHigh).length})
-                      </div>
-                      <TVCopyPanel stocks={stocks.filter(s=>s.rsLineNewHigh)} label="RS Line New Highs"/>
-                      <BreakoutTable stocks={stocks.filter(s=>s.rsLineNewHigh)}
-                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
-                    </div>
-                  )}
-
-                  {/* New Stage 2 entries */}
-                  {stocks.filter(s=>s.isS2NewEntry).length>0&&(
-                    <div style={{background:C.card,border:`1px solid ${C.green}33`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                      <div style={{fontWeight:700,fontSize:13,color:C.green,marginBottom:8}}>
-                        New Stage 2 Entries{historyDate?'':' Today'} ({stocks.filter(s=>s.isS2NewEntry).length})
-                      </div>
-                      <TVCopyPanel stocks={stocks.filter(s=>s.isS2NewEntry)} label="New Stage 2 Entries"/>
-                      <BreakoutTable stocks={stocks.filter(s=>s.isS2NewEntry)}
-                        isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
-                    </div>
-                  )}
-                  {stocks.filter(s=>s.rsLineNewHigh).length===0&&stocks.filter(s=>s.isS2NewEntry).length===0&&(
-                    <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
-                      {historyDate
-                        ? `No early leaders or new Stage 2 entries on ${new Date(historyDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}.`
-                        : 'No early leaders or new Stage 2 entries today.'}
-                    </div>
-                  )}
+              <div style={{position:'sticky',top:0,zIndex:5,background:C.bg,
+                marginLeft:-16,marginRight:-16,padding:'8px 16px',
+                borderBottom:`1px solid ${C.border}`,marginBottom:12}}>
+                <div style={{display:'flex',gap:6,overflowX:'auto',WebkitOverflowScrolling:'touch'}}>
+                  {LEADER_SECTIONS.map(({id,short,color,filter})=>(
+                    <button key={id} type="button" onClick={()=>setLeadersSubTab(id)}
+                      style={{flexShrink:0,padding:'6px 12px',borderRadius:20,
+                        border:`1px solid ${leadersSubTab===id?color:C.border}`,
+                        background:leadersSubTab===id?color+'22':C.card,
+                        color:leadersSubTab===id?color:C.text,
+                        fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
+                      {short} ({stocks.filter(filter).length})
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {emptyAll?(
+                <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
+                  {historyDate
+                    ? `No leadership signals on ${new Date(historyDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}.`
+                    : 'No leadership signals today.'}
+                </div>
+              ):(
+                <div style={{background:C.card,border:`1px solid ${active.color}33`,borderRadius:10,padding:'14px'}}>
+                  <div style={{fontWeight:700,fontSize:13,color:active.color,marginBottom:4}}>
+                    {active.label} ({matches.length})
+                  </div>
+                  <div style={{fontSize:11,color:C.muted,marginBottom:10,lineHeight:1.45}}>{active.blurb}</div>
+                  {matches.length===0?(
+                    <div style={{fontSize:12,color:C.muted,padding:'12px 0'}}>None in this section right now.</div>
+                  ):(<>
+                    <TVCopyPanel stocks={matches} label={active.label}/>
+                    <BreakoutTable stocks={matches}
+                      isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
+                  </>)}
+                </div>
+              )}
             </>)}
           </div>
-        )}
+          )
+        })()}
 
         {/* ══ PATTERNS — every detected chart pattern, one by one ══ */}
-        {mainTab==='patterns'&&(
+        {mainTab==='patterns'&&(()=>{
+          const stocks = scopedStocks
+          return (
           <div style={{padding:'0 0 20px'}}>
             <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
@@ -13539,6 +14271,7 @@ export default function App(){
               // you check four different tabs to see what's setting up.
               const GROUPS = [
                 {id:'breakouts', group:'📈 Breakouts', items:[
+                  {key:'hyht',     label:'HY/HT Breakout', color:C.accent, filter:s=>calcHYHTBreakout(s).isBreakout},
                   {key:'resBreak', label:'Resistance Breakout', color:C.green, filter:s=>s.isResistanceBreakout},
                   {key:'h52',      label:'52-Week High Breakout', color:C.green, filter:s=>s.is52whBreakout},
                   {key:'cupBreak', label:'Cup & Handle Breakout', color:C.green, filter:s=>s.isCupHandleBreakout},
@@ -13604,12 +14337,77 @@ export default function App(){
                         <div style={{fontWeight:700,fontSize:13,color,marginBottom:8}}>
                           {label} ({matches.length})
                         </div>
+                        {key==='hyht'&&(
+                          <div style={{fontSize:11,color:C.muted,marginBottom:8,lineHeight:1.45}}>
+                            High Year / High Time volume in the last 5 days and breaking out today (price up with strong RS).
+                          </div>
+                        )}
                         <TVCopyPanel stocks={matches} label={label}/>
                         <BreakoutTable stocks={matches}
                           isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
                       </div>
                     )
                   })}
+                  {id==='breakouts'&&patternsBreakoutType==='hyht'&&stocks.filter(s=>calcHYHTBreakout(s).isBreakout).length>0&&(
+                    <div style={{marginTop:4}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>HY/HT DETAIL CARDS</div>
+                      {stocks.filter(s=>calcHYHTBreakout(s).isBreakout)
+                        .sort((a,b)=>b.rs-a.rs)
+                        .map(s=>{
+                          const bo=calcHYHTBreakout(s)
+                          const ibv=calcIBV(s)
+                          const stage=calcWeinsteinStage(s)
+                          return(
+                            <div key={s.sym} onClick={()=>openChart(s.sym)} style={{background:C.card,
+                              border:`2px solid ${bo.color}55`,cursor:'pointer',
+                              borderRadius:12,marginBottom:10,padding:'14px'}}>
+                              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                                <div>
+                                  <div style={{fontWeight:800,fontSize:16}}>{s.sym}</div>
+                                  <div style={{fontSize:11,color:C.muted}}>{s.sector}</div>
+                                  <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
+                                    <div style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:800,
+                                      background:bo.color+'22',color:bo.color}}>{bo.strength}</div>
+                                    <StageBadge stage={stage}/>
+                                    {(()=>{
+                                      const top = topVolumeSignal(s)
+                                      return <>
+                                        {top==='ht'&&<Badge color={C.orange}>🎯HT</Badge>}
+                                        {top==='hy'&&<Badge color={C.pink}>📊HY</Badge>}
+                                        {top==='ibv'&&<div style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:700,
+                                          background:C.blue+'22',color:C.blue}}>🏛️ IBV {ibv.ppCount}d</div>}
+                                        {top==='pp'&&<Badge color={C.green}>🔥PP</Badge>}
+                                      </>
+                                    })()}
+                                  </div>
+                                </div>
+                                <div style={{textAlign:'right'}}>
+                                  <div style={{fontWeight:900,fontSize:22,color:rsColor(s.rs)}}>{s.rs}</div>
+                                  <div style={{fontWeight:700,fontSize:14,color:C.green}}>+{bo.chg}%</div>
+                                  <div style={{fontSize:11,color:C.muted}}>{fmtP(s.last)}</div>
+                                </div>
+                              </div>
+                              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
+                                {[
+                                  ['RS Rating',s.rs,rsColor(s.rs)],
+                                  ['Chg',`+${bo.chg}%`,C.green],
+                                  ['PP 5d',`${bo.recentPPCount}×`,C.orange],
+                                  ['Trend',trendIcon(s.rsTrend?.trend||'flat'),trendColor(s.rsTrend?.trend||'flat')],
+                                ].map(([k,v,c])=>(
+                                  <div key={k} style={{background:C.bg,borderRadius:7,padding:'8px',textAlign:'center'}}>
+                                    <div style={{fontSize:9,color:C.muted,marginBottom:2}}>{k}</div>
+                                    <div style={{fontWeight:800,fontSize:13,color:c}}>{v}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div style={{marginTop:8}}>
+                                <TopSignalDots s={s} withCount={false}/>
+                              </div>
+                            </div>
+                          )
+                        })}
+                    </div>
+                  )}
                   {items
                     .filter(({key})=>id!=='breakouts'||patternsBreakoutType==='all'||patternsBreakoutType===key)
                     .every(({filter})=>stocks.filter(filter).length===0)&&(
@@ -13619,7 +14417,8 @@ export default function App(){
               ))
             })()}
           </div>
-        )}
+          )
+        })()}
 
         {/* ══ PORTFOLIO TRACKER ══ */}
         {mainTab==='portfolio'&&(
@@ -13652,6 +14451,7 @@ export default function App(){
                             const existing=bySym.get(row.sym)
                             bySym.set(row.sym,{
                               sym:row.sym,
+                              name: row.name || existing?.name || null,
                               addedAt:existing?.addedAt||new Date().toISOString(),
                               entryPrice: row.entryPrice ?? existing?.entryPrice ?? null,
                               qty: row.qty ?? existing?.qty ?? null,
@@ -13723,45 +14523,160 @@ export default function App(){
                   if(rsv!=null){ rsWeightedSum += rsv*(h.qty*s.last); rsWeight += (h.qty*s.last) }
                 }
               }
+              const pnlAmt = haveValueFor>0 ? (current-invested) : null
               const pnlPct = invested>0 ? ((current-invested)/invested*100) : null
               const avgRs = rsWeight>0 ? (rsWeightedSum/rsWeight) : (rsCount>0 ? rsSum/rsCount : null)
+              // Period returns of the portfolio (value-weighted stock chg) for vs-index alpha
+              const portChgD = portfolioWeightedAvg(portfolioHoldings, stocks, 'chg')
+              const portChgW = portfolioWeightedAvg(portfolioHoldings, stocks, 'chgW')
+              const portChgM = portfolioWeightedAvg(portfolioHoldings, stocks, 'chgM')
+              const fmtPctSigned = (v, digits=2) => v==null || !isFinite(v) ? '—'
+                : `${v>=0?'+':''}${v.toFixed(digits)}%`
+              const alphaColor = (a) => a==null ? C.muted : a>=0 ? C.green : C.red
+              const stageColorOf = (st) => ({1:C.yellow,2:C.green,3:C.orange,4:C.red}[st] || C.muted)
               return(
-                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
-                  padding:'14px 16px',marginBottom:14,display:'grid',
-                  gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:14}}>
+                <>
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(3,1fr)',gap:10,marginBottom:12}}>
                   {haveValueFor>0?(<>
-                    <div>
-                      <div style={{fontSize:10,color:C.muted,marginBottom:3}}>Invested</div>
-                      <div style={{fontWeight:700,fontSize:15}}>{fmtP(invested)}</div>
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px 16px'}}>
+                      <div style={{fontSize:10,color:C.muted,marginBottom:4,fontWeight:700,letterSpacing:'0.04em'}}>TOTAL INVESTED</div>
+                      <div style={{fontWeight:800,fontSize:20,color:C.text}}>{fmtAmt(invested)}</div>
                     </div>
-                    <div>
-                      <div style={{fontSize:10,color:C.muted,marginBottom:3}}>Current Value</div>
-                      <div style={{fontWeight:700,fontSize:15}}>{fmtP(current)}</div>
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px 16px'}}>
+                      <div style={{fontSize:10,color:C.muted,marginBottom:4,fontWeight:700,letterSpacing:'0.04em'}}>TOTAL P&amp;L</div>
+                      <div style={{fontWeight:800,fontSize:20,color:pnlAmt>=0?C.green:C.red}}>
+                        {pnlAmt>=0?'+':'-'}{fmtAmt(Math.abs(pnlAmt)).replace('₹','')}
+                      </div>
                     </div>
-                    <div>
-                      <div style={{fontSize:10,color:C.muted,marginBottom:3}}>Overall P&amp;L</div>
-                      <div style={{fontWeight:700,fontSize:15,color:pnlPct>=0?C.green:C.red}}>
-                        {pnlPct>=0?'+':''}{pnlPct.toFixed(1)}%
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px 16px'}}>
+                      <div style={{fontSize:10,color:C.muted,marginBottom:4,fontWeight:700,letterSpacing:'0.04em'}}>PORTFOLIO RETURN</div>
+                      <div style={{fontWeight:800,fontSize:20,color:pnlPct>=0?C.green:C.red}}>
+                        {pnlPct>=0?'+':''}{pnlPct.toFixed(2)}%
+                      </div>
+                      <div style={{fontSize:9,color:C.muted,marginTop:4}}>
+                        vs cost · period moves below
                       </div>
                     </div>
                   </>):(
-                    <div style={{gridColumn:'1 / -1',fontSize:11,color:C.muted}}>
+                    <div style={{gridColumn:'1 / -1',background:C.card,border:`1px solid ${C.border}`,
+                      borderRadius:10,padding:'12px 16px',fontSize:11,color:C.muted}}>
                       Add quantity + entry price (via upload or "+ Add Stock") to see invested value and P&amp;L.
                     </div>
                   )}
-                  {avgRs!=null&&(
+                </div>
+
+                {/* Portfolio performance vs Nifty 50 / Midcap / Smallcap trends */}
+                <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
+                  padding:'14px 16px',marginBottom:12}}>
+                  <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:10,flexWrap:'wrap',marginBottom:10}}>
                     <div>
-                      <div style={{fontSize:10,color:C.muted,marginBottom:3}}>Portfolio RS-TV{haveValueFor>0?' (wtd)':''}</div>
-                      <div style={{fontWeight:700,fontSize:15,color:rsColor(avgRs)}}>{avgRs.toFixed(0)}</div>
+                      <div style={{fontWeight:800,fontSize:13,color:C.text}}>Performance vs Market</div>
+                      <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+                        Value-weighted portfolio % vs index trend · α = portfolio − index
+                      </div>
                     </div>
-                  )}
-                  <div style={{gridColumn:'1 / -1',fontSize:10,color:C.muted,fontStyle:'italic',marginTop:2}}>
-                    RS-TV is each stock's strength directly relative to Nifty (1-99) — the portfolio figure above is
-                    the value-weighted average across your holdings. Above 50 means your portfolio is, on balance,
-                    outperforming Nifty right now; below 50 means it's lagging. This isn't the same as "your % return
-                    vs Nifty's % return since you bought," since brokerage exports don't include purchase dates.
+                    <div style={{display:'flex',gap:10,flexWrap:'wrap',fontSize:11}}>
+                      {[['1D',portChgD],['1W',portChgW],['1M',portChgM]].map(([lab,v])=>(
+                        <span key={lab} style={{color:C.muted}}>
+                          Port {lab}{' '}
+                          <b style={{color:v==null?C.muted:v>=0?C.green:C.red}}>{fmtPctSigned(v)}</b>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(3,1fr)',gap:10}}>
+                    {PORTFOLIO_BENCH_INDICES.map(bench=>{
+                      const idx = findIndexRow(indexData, bench.names)
+                      const periods = [
+                        {lab:'1D', port:portChgD, idx:idx?.chgD},
+                        {lab:'1W', port:portChgW, idx:idx?.chgW},
+                        {lab:'1M', port:portChgM, idx:idx?.chgM},
+                      ]
+                      const rsVs = portfolioWeightedAvg(portfolioHoldings, stocks, bench.rsField)
+                      const stColor = stageColorOf(idx?.stage)
+                      return (
+                        <div key={bench.key} style={{
+                          background:C.bg, border:`1px solid ${C.border}`, borderRadius:8,
+                          padding:'12px 12px 10px',
+                        }}>
+                          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:8}}>
+                            <div
+                              onClick={()=>idx && openChart(idx.name,{isIndex:true})}
+                              style={{fontWeight:800,fontSize:12.5,color:idx?C.accent:C.text,cursor:idx?'pointer':'default',
+                                textDecoration:idx?'underline':'none',textDecorationColor:C.accent+'55'}}
+                              title={idx?`Open ${bench.label} chart`:undefined}>
+                              {bench.label}
+                            </div>
+                            {idx?.stageLabel ? (
+                              <span style={{
+                                fontSize:9, fontWeight:800, padding:'2px 6px', borderRadius:4,
+                                background:stColor+'22', color:stColor,
+                              }}>{idx.stageLabel}</span>
+                            ) : (
+                              <span style={{fontSize:9,color:C.muted}}>No index data</span>
+                            )}
+                          </div>
+                          {idx?.lastPrice!=null && (
+                            <div style={{fontSize:10,color:C.muted,marginBottom:8}}>
+                              {fmtP(idx.lastPrice)}
+                              {idx.rsTv!=null && <> · RS-TV <b style={{color:rsColor(idx.rsTv)}}>{idx.rsTv}</b></>}
+                            </div>
+                          )}
+                          <div style={{display:'grid',gridTemplateColumns:'36px 1fr 1fr 1fr',gap:4,fontSize:10,marginBottom:4}}>
+                            <div style={{color:C.muted}}/>
+                            <div style={{color:C.muted,fontWeight:700,textAlign:'right'}}>Port</div>
+                            <div style={{color:C.muted,fontWeight:700,textAlign:'right'}}>Index</div>
+                            <div style={{color:C.muted,fontWeight:700,textAlign:'right'}}>α</div>
+                            {periods.map(p=>{
+                              const alpha = (p.port!=null && p.idx!=null) ? (p.port - p.idx) : null
+                              return (
+                                <React.Fragment key={p.lab}>
+                                  <div style={{color:C.muted,fontWeight:700}}>{p.lab}</div>
+                                  <div style={{textAlign:'right',fontWeight:700,color:p.port==null?C.muted:p.port>=0?C.green:C.red}}>
+                                    {fmtPctSigned(p.port)}
+                                  </div>
+                                  <div style={{textAlign:'right',fontWeight:600,color:p.idx==null?C.muted:p.idx>=0?C.green:C.red}}>
+                                    {fmtPctSigned(p.idx)}
+                                  </div>
+                                  <div style={{textAlign:'right',fontWeight:800,color:alphaColor(alpha)}}>
+                                    {fmtPctSigned(alpha)}
+                                  </div>
+                                </React.Fragment>
+                              )
+                            })}
+                          </div>
+                          <div style={{
+                            marginTop:8, paddingTop:8, borderTop:`1px solid ${C.border}`,
+                            display:'flex', justifyContent:'space-between', alignItems:'center', gap:8,
+                          }}>
+                            <span style={{fontSize:10,color:C.muted}}>Holdings RS vs {bench.short}</span>
+                            <span style={{fontWeight:800,fontSize:14,color:rsVs!=null?rsColor(rsVs):C.muted}}>
+                              {rsVs!=null ? rsVs.toFixed(0) : '—'}
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div style={{fontSize:9.5,color:C.muted,marginTop:10,lineHeight:1.4}}>
+                    Period % uses each holding’s market move (1D/1W/1M), weighted by position value — not your cost-basis return.
+                    Positive α means the portfolio beat that index over the window. Holdings RS is relative strength vs that universe (1–99).
                   </div>
                 </div>
+
+                {avgRs!=null&&(
+                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
+                    padding:'12px 16px',marginBottom:14}}>
+                    <div style={{display:'flex',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
+                      <div style={{fontSize:10,color:C.muted,fontWeight:700}}>Portfolio RS-TV{haveValueFor>0?' (wtd)':''}</div>
+                      <div style={{fontWeight:800,fontSize:22,color:rsColor(avgRs)}}>{avgRs.toFixed(0)}</div>
+                    </div>
+                    <div style={{fontSize:10,color:C.muted,marginTop:6,lineHeight:1.4}}>
+                      RS-TV is each stock's strength vs Nifty (1–99). Above 50 = portfolio outperforming Nifty on balance.
+                    </div>
+                  </div>
+                )}
+                </>
               )
             })()}
 
@@ -13771,124 +14686,177 @@ export default function App(){
                 <div style={{fontSize:14,fontWeight:700,color:C.text}}>No holdings yet</div>
                 <div style={{fontSize:12,marginTop:6}}>Click "+ Add Stock" to track your positions</div>
               </div>
-            ):(
-              <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                {portfolioHoldings.map(h=>{
-                  const s=stocks.find(x=>x.sym===h.sym)
-                  const stage=s?calcWeinsteinStage(s):null
-                  const dangerZone=stage&&(stage.stage===3||stage.stage===4)
-                  const pnlPct=(h.entryPrice&&s?.last)?((s.last-h.entryPrice)/h.entryPrice*100):null
-                  const journalOpen=journalOpenSym===h.sym
-                  const journal=h.journal||[]
-                  return(
-                    <div key={h.sym} style={{background:C.card,
-                      border:`1px solid ${dangerZone?C.red+'55':C.divider}`,
-                      borderRadius:10,padding:'12px 16px'}}>
-                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
-                        <div style={{display:'flex',alignItems:'center',gap:12,flex:1,minWidth:0}}>
-                          <div>
-                            <div style={{fontWeight:700,fontSize:14,color:C.accent,
-                              cursor:'pointer'}}
-                              onClick={()=>s&&openChart(s.sym)}>{h.sym}</div>
-                            <div style={{fontSize:10,color:C.muted,marginTop:2}}>
-                              {s?.sector||'—'}{h.entryPrice?` · Entry ${fmtP(h.entryPrice)}${h.qty?` × ${h.qty}`:''}`:''}
-                            </div>
-                          </div>
-                          {s?(
-                            <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-                              <div style={{textAlign:'center'}}>
-                                <div style={{fontWeight:700,fontSize:16,color:rsColor(s.rsTv||s.rs)}}>{s.rsTv||s.rs}</div>
-                                <div style={{fontSize:8,color:C.muted}}>RS-TV</div>
-                              </div>
-                              {stage&&<StageBadge stage={stage}/>}
-                              {topVolumeSignal(s)==='pp'&&<Badge color={C.green}>PP</Badge>}
-                              {pnlPct!=null&&(
-                                <Badge color={pnlPct>=0?C.green:C.red}>
-                                  {pnlPct>=0?'+':''}{pnlPct.toFixed(1)}% P&amp;L
-                                </Badge>
-                              )}
-                              {dangerZone&&(
-                                <div style={{padding:'3px 8px',borderRadius:5,fontSize:10,fontWeight:700,
-                                  background:C.red+'22',color:C.red,border:`1px solid ${C.red}44`}}>
-                                  ⚠️ EXIT SIGNAL
-                                </div>
-                              )}
-                            </div>
-                          ):<span style={{color:C.muted,fontSize:11}}>No data</span>}
-                        </div>
-                        <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                          {s&&<span style={{fontWeight:600,fontSize:13}}>{fmtP(s.last)}</span>}
-                          {s&&<span style={{fontWeight:700,fontSize:12,color:s.chg>=0?C.green:C.red}}>
-                            {s.chg>=0?'+':''}{s.chg?.toFixed(2)}%
-                          </span>}
-                          <button onClick={()=>setJournalOpenSym(journalOpen?null:h.sym)}
-                            title="Trade journal"
-                            style={{background:journalOpen?C.accent+'22':'transparent',
-                              border:`1px solid ${journalOpen?C.accent:C.border}`,
-                              color:journalOpen?C.accent:C.muted,fontSize:12,padding:'3px 8px',
-                              borderRadius:5,cursor:'pointer'}}>
-                            📝{journal.length>0?` ${journal.length}`:''}
-                          </button>
-                          <button onClick={()=>setPortfolioHoldings(h2=>h2.filter(x=>x.sym!==h.sym))}
-                            style={{background:'transparent',border:`1px solid ${C.border}`,
-                              color:C.muted,fontSize:12,padding:'3px 8px',borderRadius:5,cursor:'pointer'}}>
-                            ×
-                          </button>
-                        </div>
-                      </div>
+            ):(()=>{
+              const rows = portfolioHoldings.map(h=>{
+                const s=stocks.find(x=>x.sym===h.sym)
+                const stage=s?calcWeinsteinStage(s):null
+                const dangerZone=stage&&(stage.stage===3||stage.stage===4)
+                const invested = (h.qty!=null && h.entryPrice!=null) ? h.qty*h.entryPrice : null
+                const current = (h.qty!=null && s?.last!=null) ? h.qty*s.last : null
+                const pnlAmt = (invested!=null && current!=null) ? current-invested : null
+                const pnlPct = (h.entryPrice && s?.last)
+                  ? ((s.last-h.entryPrice)/h.entryPrice*100)
+                  : null
+                const name = portfolioDisplayName(h, s)
+                return {h, s, stage, dangerZone, invested, pnlAmt, pnlPct, name}
+              })
+              // Split into two columns on wide screens (like common portfolio trackers)
+              const useSplit = !isMobile && rows.length >= 6
+              const tables = useSplit
+                ? [rows.slice(0, Math.ceil(rows.length/2)), rows.slice(Math.ceil(rows.length/2))]
+                : [rows]
 
-                      {journalOpen&&(
-                        <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.divider}`}}>
-                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                            <div style={{fontSize:11,fontWeight:700,color:C.muted}}>TRADE JOURNAL</div>
-                            <button onClick={()=>{
-                              const note=prompt('Journal note:')
-                              if(note?.trim()){
-                                setPortfolioHoldings(hs=>hs.map(x=>x.sym===h.sym
-                                  ?{...x,journal:[...(x.journal||[]),{ts:new Date().toISOString(),note:note.trim()}]}
-                                  :x))
-                              }
-                            }}
-                              style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.accent}44`,
-                                background:C.accent+'18',color:C.accent,fontSize:11,fontWeight:600,cursor:'pointer'}}>
-                              + Add Note
-                            </button>
-                          </div>
-                          {journal.length===0?(
-                            <div style={{fontSize:11,color:C.muted,padding:'8px 0'}}>
-                              No notes yet — record why you entered, what you're watching for, or your exit plan.
-                            </div>
-                          ):(
-                            <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                              {[...journal].reverse().map((j,ji)=>(
-                                <div key={ji} style={{background:C.bg,borderRadius:7,padding:'8px 10px',
-                                  display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8}}>
-                                  <div style={{minWidth:0}}>
-                                    <div style={{fontSize:9,color:C.muted,marginBottom:2}}>
-                                      {new Date(j.ts).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}
-                                      {' · '}
-                                      {new Date(j.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}
-                                    </div>
-                                    <div style={{fontSize:12,color:C.text,wordBreak:'break-word'}}>{j.note}</div>
+              const renderTable = (tableRows, key) => (
+                <div key={key} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:420}}>
+                      <thead>
+                        <tr style={{background:C.bg}}>
+                          {['STOCK','AVG COST','INVESTED','P&L','RETURN','',''].map((label,i)=>(
+                            <th key={i} style={{
+                              padding:'10px 12px', textAlign: i===0?'left':'right',
+                              fontSize:10, fontWeight:800, color:C.muted, letterSpacing:'0.04em',
+                              borderBottom:`1px solid ${C.border}`, whiteSpace:'nowrap',
+                            }}>{label}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tableRows.map(({h,s,stage,dangerZone,invested,pnlAmt,pnlPct,name}, idx)=>{
+                          const journalOpen=journalOpenSym===h.sym
+                          const journal=h.journal||[]
+                          return(
+                            <React.Fragment key={h.sym}>
+                              <tr style={{
+                                background: idx%2 ? C.bg : 'transparent',
+                                borderLeft: dangerZone ? `3px solid ${C.red}` : '3px solid transparent',
+                              }}>
+                                <td style={{padding:'10px 12px',textAlign:'left',maxWidth:200}}>
+                                  <div style={{fontWeight:800,fontSize:13,color:C.text,cursor:s?'pointer':'default',
+                                    letterSpacing:'0.01em'}}
+                                    onClick={()=>s&&openChart(s.sym)}
+                                    title={s?'Open chart':undefined}>
+                                    {h.sym}
                                   </div>
-                                  <button onClick={()=>{
-                                    setPortfolioHoldings(hs=>hs.map(x=>x.sym===h.sym
-                                      ?{...x,journal:(x.journal||[]).filter(jj=>jj.ts!==j.ts)}
-                                      :x))
-                                  }}
-                                    style={{background:'transparent',border:'none',color:C.muted,
-                                      fontSize:12,cursor:'pointer',flexShrink:0,padding:'0 2px'}}>×</button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+                                  <div style={{
+                                    fontSize:10.5, color:C.muted, marginTop:2, lineHeight:1.3,
+                                    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                                  }} title={name||undefined}>
+                                    {name || '—'}
+                                  </div>
+                                  {(stage||dangerZone||(s&&(s.rsTv!=null||s.rs!=null)))&&(
+                                    <div style={{display:'flex',gap:4,flexWrap:'wrap',marginTop:5,alignItems:'center'}}>
+                                      {s&&(s.rsTv!=null||s.rs!=null)&&(
+                                        <span style={{fontSize:9,fontWeight:800,color:rsColor(s.rsTv||s.rs)}}>
+                                          RS {(s.rsTv||s.rs)}
+                                        </span>
+                                      )}
+                                      {stage&&<StageBadge stage={stage}/>}
+                                      {dangerZone&&(
+                                        <span style={{fontSize:9,fontWeight:800,color:C.red}}>⚠ EXIT</span>
+                                      )}
+                                    </div>
+                                  )}
+                                </td>
+                                <td style={{padding:'10px 12px',textAlign:'right',fontWeight:600,color:C.text,whiteSpace:'nowrap'}}>
+                                  {h.entryPrice!=null ? fmtP(h.entryPrice) : '—'}
+                                </td>
+                                <td style={{padding:'10px 12px',textAlign:'right',fontWeight:600,color:C.text,whiteSpace:'nowrap'}}>
+                                  {invested!=null ? fmtAmt(invested) : '—'}
+                                </td>
+                                <td style={{padding:'10px 12px',textAlign:'right',fontWeight:700,whiteSpace:'nowrap',
+                                  color:pnlAmt==null?C.muted:pnlAmt>=0?C.green:C.red}}>
+                                  {pnlAmt==null ? '—' : `${pnlAmt>=0?'+':'-'}${fmtAmt(Math.abs(pnlAmt)).replace('₹','')}`}
+                                </td>
+                                <td style={{padding:'10px 12px',textAlign:'right',fontWeight:700,whiteSpace:'nowrap',
+                                  color:pnlPct==null?C.muted:pnlPct>=0?C.green:C.red}}>
+                                  {pnlPct==null ? '—' : `${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%`}
+                                </td>
+                                <td style={{padding:'10px 4px',textAlign:'right',width:36}}>
+                                  <button onClick={()=>setJournalOpenSym(journalOpen?null:h.sym)}
+                                    title="Trade journal"
+                                    style={{background:journalOpen?C.accent+'22':'transparent',
+                                      border:`1px solid ${journalOpen?C.accent:C.border}`,
+                                      color:journalOpen?C.accent:C.muted,fontSize:11,padding:'2px 6px',
+                                      borderRadius:5,cursor:'pointer'}}>
+                                    📝{journal.length>0?` ${journal.length}`:''}
+                                  </button>
+                                </td>
+                                <td style={{padding:'10px 8px 10px 4px',textAlign:'right',width:28}}>
+                                  <button onClick={()=>setPortfolioHoldings(h2=>h2.filter(x=>x.sym!==h.sym))}
+                                    style={{background:'transparent',border:'none',
+                                      color:C.muted,fontSize:14,cursor:'pointer',padding:'0 4px'}}>
+                                    ×
+                                  </button>
+                                </td>
+                              </tr>
+                              {journalOpen&&(
+                                <tr>
+                                  <td colSpan={7} style={{padding:'0 12px 12px',background:idx%2?C.bg:'transparent'}}>
+                                    <div style={{paddingTop:4,borderTop:`1px solid ${C.divider}`}}>
+                                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,marginTop:8}}>
+                                        <div style={{fontSize:11,fontWeight:700,color:C.muted}}>TRADE JOURNAL · {h.sym}</div>
+                                        <button onClick={()=>{
+                                          const note=prompt('Journal note:')
+                                          if(note?.trim()){
+                                            setPortfolioHoldings(hs=>hs.map(x=>x.sym===h.sym
+                                              ?{...x,journal:[...(x.journal||[]),{ts:new Date().toISOString(),note:note.trim()}]}
+                                              :x))
+                                          }
+                                        }}
+                                          style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.accent}44`,
+                                            background:C.accent+'18',color:C.accent,fontSize:11,fontWeight:600,cursor:'pointer'}}>
+                                          + Add Note
+                                        </button>
+                                      </div>
+                                      {journal.length===0?(
+                                        <div style={{fontSize:11,color:C.muted,padding:'4px 0 8px'}}>
+                                          No notes yet — record why you entered, what you're watching for, or your exit plan.
+                                        </div>
+                                      ):(
+                                        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                                          {[...journal].reverse().map((j,ji)=>(
+                                            <div key={ji} style={{background:C.card,borderRadius:7,padding:'8px 10px',
+                                              display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,
+                                              border:`1px solid ${C.border}`}}>
+                                              <div style={{minWidth:0}}>
+                                                <div style={{fontSize:9,color:C.muted,marginBottom:2}}>
+                                                  {new Date(j.ts).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}
+                                                  {' · '}
+                                                  {new Date(j.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}
+                                                </div>
+                                                <div style={{fontSize:12,color:C.text,wordBreak:'break-word'}}>{j.note}</div>
+                                              </div>
+                                              <button onClick={()=>{
+                                                setPortfolioHoldings(hs=>hs.map(x=>x.sym===h.sym
+                                                  ?{...x,journal:(x.journal||[]).filter(jj=>jj.ts!==j.ts)}
+                                                  :x))
+                                              }}
+                                                style={{background:'transparent',border:'none',color:C.muted,
+                                                  fontSize:12,cursor:'pointer',flexShrink:0,padding:'0 2px'}}>×</button>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+
+              return (
+                <div style={{display:'grid',gridTemplateColumns:useSplit?'1fr 1fr':'1fr',gap:12}}>
+                  {tables.map((t,i)=>renderTable(t, i))}
+                </div>
+              )
+            })()}
           </div>
         )}
 
@@ -13998,7 +14966,9 @@ export default function App(){
         )}
 
         {/* ══ SQUEEZE ══ */}
-        {mainTab==='squeeze'&&(
+        {mainTab==='squeeze'&&(()=>{
+          const stocks = scopedStocks
+          return (
           <div>
             {isMobile&&(
               <LastUpdatedBar
@@ -14084,175 +15054,9 @@ export default function App(){
               })()}
             </div>
           </div>
-        )}
+          )
+        })()}
 
-        {/* ══ BREAKOUT ══ */}
-        {mainTab==='breakout'&&(
-          <div>
-            {isMobile&&(
-              <LastUpdatedBar
-                scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
-                autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
-                refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
-                onRefresh={runDBScan}
-              />
-            )}
-            <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
-              <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
-                availableDates={availableDates} isMobile={isMobile}/>
-            </div>
-            {/* Stats — tap a tile to jump to that breakout type */}
-            <div style={{background:C.card,border:`1px solid ${C.accent}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:15,color:C.accent,marginBottom:6}}>💥 Breakout Scanner</div>
-              <div style={{fontSize:12,color:C.muted,marginBottom:12}}>
-                Pick a breakout type below — one list at a time. Tap a count tile to jump to that type.
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
-                {[
-                  {l:'💥 HY/HT Break',v:stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length,c:C.accent,type:'hyht'},
-                  {l:'🎯 R1 Breakout',v:stocks.filter(s=>s.isResistanceBreakout&&passesMcap(s)).length,c:C.red,type:'r1'},
-                  {l:'🏆 52W High',v:stocks.filter(s=>s.is52whBreakout&&passesMcap(s)).length,c:C.yellow,type:'52wh'},
-                  {l:'☕ Cup Breakout',v:stocks.filter(s=>s.isCupHandleBreakout&&passesMcap(s)).length,c:C.yellow,type:'cup'},
-                  {l:'🐠 Guppy Crossover',v:stocks.filter(s=>s.isGuppyBullishCrossover&&passesMcap(s)).length,c:C.green,type:'guppy'},
-                  {l:'🚀 Stage 2 New',v:stocks.filter(s=>s.isS2NewEntry&&passesMcap(s)).length,c:C.green,type:'s2'},
-                  {l:'📅 Weekly Gainers',v:stocks.filter(s=>s.chgW>0&&passesMcap(s)).length,c:C.teal,type:'weekly'},
-                  {l:'🔥 PP + HY/HT',v:stocks.filter(s=>s.pp?.isPP&&calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length,c:C.orange,type:'hyht'},
-                ].map(({l,v,c,type})=>(
-                  <div key={l} onClick={()=>setBreakoutType(type)}
-                    style={{background:breakoutType===type?c+'18':C.bg,borderRadius:8,padding:'10px',textAlign:'center',
-                      cursor:'pointer',border:`1px solid ${breakoutType===type?c+'66':'transparent'}`}}>
-                    <div style={{fontSize:22,fontWeight:900,color:c}}>{v}</div>
-                    <div style={{fontSize:10,color:C.muted,marginTop:3}}>{l}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Breakout type filter — one table at a time */}
-            {(()=>{
-              const BREAKOUT_TYPES=[
-                {key:'hyht',icon:'💥',label:'HY/HT Breakout',color:C.accent,
-                  desc:'Had High Year or High Time volume in the last 5 days and is breaking out today (price up with strong RS)',
-                  filter:s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s), sort:'rs'},
-                {key:'r1',icon:'🎯',label:'R1 Breakout',color:C.red,
-                  desc:'Stocks whose price just crossed above a significant recent resistance level',
-                  filter:s=>s.isResistanceBreakout&&passesMcap(s), sort:'rs'},
-                {key:'52wh',icon:'🏆',label:'52W High',color:C.yellow,
-                  desc:'Stocks that just crossed above their prior 52-week high — a fresh new high today, not one from days ago',
-                  filter:s=>s.is52whBreakout&&passesMcap(s), sort:'rs'},
-                {key:'cup',icon:'☕',label:'Cup & Handle',color:C.yellow,
-                  desc:'Stocks breaking out above a cup-and-handle formation today — algorithmic approximation, use as a visual aid',
-                  filter:s=>s.isCupHandleBreakout&&passesMcap(s), sort:'rs'},
-                {key:'guppy',icon:'🐠',label:'Guppy Crossover',color:C.green,
-                  desc:'Short-term EMA group just crossed above the long-term EMA group — short-term momentum picking up ahead of the longer trend',
-                  filter:s=>s.isGuppyBullishCrossover&&passesMcap(s), sort:'rs'},
-                {key:'s2',icon:'🚀',label:'Stage 2 New',color:C.green,
-                  desc:'Stocks that flipped into a confirmed Weinstein Stage 2 uptrend today',
-                  filter:s=>s.isS2NewEntry&&passesMcap(s), sort:'rs'},
-                {key:'weekly',icon:'📅',label:'Weekly',color:C.teal,
-                  desc:'Biggest gainers over the last week',
-                  filter:s=>s.chgW>0&&passesMcap(s), sort:'chgW'},
-              ]
-              const active=BREAKOUT_TYPES.find(t=>t.key===breakoutType)||BREAKOUT_TYPES[0]
-              const filtered=stocks.filter(active.filter)
-              return(
-                <div style={{background:C.card,border:`1px solid ${active.color}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-                  <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
-                    {BREAKOUT_TYPES.map(t=>(
-                      <button key={t.key} onClick={()=>setBreakoutType(t.key)}
-                        style={{padding:'6px 12px',borderRadius:20,
-                          border:`1px solid ${breakoutType===t.key?t.color:C.border}`,
-                          background:breakoutType===t.key?t.color+'22':'transparent',
-                          color:breakoutType===t.key?t.color:C.muted,
-                          fontSize:12,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
-                        {t.icon} {t.label}
-                        <span style={{marginLeft:6,opacity:0.75,fontWeight:600}}>
-                          {stocks.filter(t.filter).length}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                  <div style={{fontWeight:800,fontSize:14,color:active.color,marginBottom:4}}>{active.icon} {active.label}</div>
-                  <div style={{fontSize:11,color:C.muted,marginBottom:10}}>{active.desc}</div>
-                  {filtered.length===0?(
-                    <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
-                      No {active.label} signals right now.
-                    </div>
-                  ):(
-                    <>
-                  <TVCopyPanel stocks={filtered} label={active.label}/>
-                  <BreakoutTable key={breakoutType} stocks={filtered} isMobile={isMobile} visibleRsCols={visibleRsCols}
-                    onChartOpen={openChart} defaultSortBy={active.sort}/>
-                    </>
-                  )}
-                </div>
-              )
-            })()}
-
-            {/* HY/HT detail cards — only when that type is selected */}
-            {breakoutType==='hyht'&&stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s)).length>0&&(
-              <div style={{marginBottom:8}}>
-                <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>HY/HT DETAIL CARDS</div>
-                </div>
-            )}
-            {breakoutType==='hyht'&&stocks.filter(s=>calcHYHTBreakout(s).isBreakout&&passesMcap(s))
-              .sort((a,b)=>b.rs-a.rs)
-              .map((s,i)=>{
-                const bo=calcHYHTBreakout(s)
-                const ibv=calcIBV(s)
-                const stage=calcWeinsteinStage(s)
-                return(
-                  <div key={s.sym} onClick={()=>openChart(s.sym)} style={{background:C.card,
-                    border:`2px solid ${bo.color}55`,cursor:'pointer',
-                    borderRadius:12,marginBottom:10,padding:'14px'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-                      <div>
-                        <div style={{fontWeight:800,fontSize:16}}>{s.sym}</div>
-                        <div style={{fontSize:11,color:C.muted}}>{s.sector}</div>
-                        <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
-                          <div style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:800,
-                            background:bo.color+'22',color:bo.color}}>{bo.strength}</div>
-                          <StageBadge stage={stage}/>
-                          {(()=>{
-                            const top = topVolumeSignal(s)
-                            return <>
-                              {top==='ht'&&<Badge color={C.orange}>🎯HT</Badge>}
-                              {top==='hy'&&<Badge color={C.pink}>📊HY</Badge>}
-                              {top==='ibv'&&<div style={{padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:700,
-                                background:C.blue+'22',color:C.blue}}>🏛️ IBV {ibv.ppCount}d</div>}
-                              {top==='pp'&&<Badge color={C.green}>🔥PP</Badge>}
-                            </>
-                          })()}
-                        </div>
-                      </div>
-                      <div style={{textAlign:'right'}}>
-                        <div style={{fontWeight:900,fontSize:22,color:rsColor(s.rs)}}>{s.rs}</div>
-                        <div style={{fontWeight:700,fontSize:14,color:C.green}}>+{bo.chg}%</div>
-                        <div style={{fontSize:11,color:C.muted}}>{fmtP(s.last)}</div>
-                      </div>
-                    </div>
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
-                      {[
-                        ['RS Rating',s.rs,rsColor(s.rs)],
-                        ['Chg',`+${bo.chg}%`,C.green],
-                        ['PP 5d',`${bo.recentPPCount}×`,C.orange],
-                        ['Trend',trendIcon(s.rsTrend?.trend||'flat'),trendColor(s.rsTrend?.trend||'flat')],
-                      ].map(([k,v,c])=>(
-                        <div key={k} style={{background:C.bg,borderRadius:7,padding:'8px',textAlign:'center'}}>
-                          <div style={{fontSize:9,color:C.muted,marginBottom:2}}>{k}</div>
-                          <div style={{fontWeight:800,fontSize:13,color:c}}>{v}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{marginTop:8}}>
-                      <TopSignalDots s={s} withCount={false}/>
-                    </div>
-                  </div>
-                )
-              })
-            }
-          </div>
-        )}
 
         {/* ══ 52WL ══ */}
         {mainTab==='52wl'&&(
@@ -14375,7 +15179,7 @@ export default function App(){
             return RRG_QUAD[q].label
           }
           const goTo=s=>{
-            if(rotationScope==='sector'){setSectorFilter(s.id);setMainTab('rs')}
+            if(rotationScope==='sector'){setSectorFilter(s.id);setIndustryFilter('all');setMainTab('rs')}
             else if(rotationScope==='index'){setRotationExpandedId(prev=>prev===s.id?null:s.id);setIdxConstituentFilters({industry:null,rsMin:0})}
             else{openChart(s.id)}
           }
@@ -14725,7 +15529,7 @@ export default function App(){
               <div>
                 <div style={{fontWeight:800,fontSize:15,color:C.accent}}>🎯 AI Best Picks</div>
                 <div style={{fontSize:12,color:C.muted,marginTop:2}}>
-                  Top 5 stocks by technical + fundamental confluence, across all ~2382 NSE stocks. Refreshed hourly.
+                  Score top 10 (Stage&nbsp;2 · RS · Fund · Result) → AI recommends best 5. Refreshed hourly.
                 </div>
               </div>
               <button onClick={loadBestPicks} disabled={bestPicksLoading}
@@ -14802,13 +15606,34 @@ export default function App(){
                       )}
                       <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:6}}>
                         {p.rs_tv!=null&&(
-                          <span style={{fontSize:9,fontWeight:700,color:C.text,background:C.border+'55',borderRadius:6,padding:'2px 6px'}}>
+                          <span style={{fontSize:9,fontWeight:800,color:rsColor(p.rs_tv),background:rsColor(p.rs_tv)+'18',borderRadius:6,padding:'2px 6px'}}>
                             RS {p.rs_tv}
                           </span>
                         )}
-                        {p.weinstein_stage!=null&&(
+                        {(p.is_s2_new_entry||p.weinstein_stage===2)&&(
+                          <span style={{fontSize:9,fontWeight:800,color:C.green,background:C.green+'18',borderRadius:6,padding:'2px 6px'}}>
+                            {p.is_s2_new_entry?'🚀 Stage 2 New':`Stage ${p.weinstein_stage}`}
+                          </span>
+                        )}
+                        {!p.is_s2_new_entry&&p.weinstein_stage!=null&&p.weinstein_stage!==2&&(
                           <span style={{fontSize:9,fontWeight:700,color:C.text,background:C.border+'55',borderRadius:6,padding:'2px 6px'}}>
                             Stage {p.weinstein_stage}
+                          </span>
+                        )}
+                        {(p.fundamental_label||p.fundamental_score!=null)&&(
+                          <span style={{fontSize:9,fontWeight:800,
+                            color:fundLabelColor(p.fundamental_label),
+                            background:fundLabelColor(p.fundamental_label)+'18',
+                            borderRadius:6,padding:'2px 6px'}}>
+                            Fund {p.fundamental_label||'—'}{p.fundamental_score!=null?` ${Math.round(p.fundamental_score)}`:''}
+                          </span>
+                        )}
+                        {p.result_rating&&(
+                          <span style={{fontSize:9,fontWeight:800,
+                            color:resultRatingColor(p.result_rating),
+                            background:resultRatingColor(p.result_rating)+'18',
+                            borderRadius:6,padding:'2px 6px'}}>
+                            Result {p.result_rating}
                           </span>
                         )}
                         {p.vcp_fired&&(
@@ -14819,16 +15644,6 @@ export default function App(){
                         {(p.is_resistance_breakout||p.is_cup_handle_breakout)&&(
                           <span style={{fontSize:9,fontWeight:700,color:C.green,background:C.green+'18',borderRadius:6,padding:'2px 6px'}}>
                             Breakout
-                          </span>
-                        )}
-                        {p.eps_yoy!=null&&(
-                          <span style={{fontSize:9,fontWeight:700,color:p.eps_yoy>=0?C.green:C.red,background:(p.eps_yoy>=0?C.green:C.red)+'18',borderRadius:6,padding:'2px 6px'}}>
-                            EPS YoY {p.eps_yoy>=0?'+':''}{p.eps_yoy}%
-                          </span>
-                        )}
-                        {p.promoter_trend&&(
-                          <span style={{fontSize:9,fontWeight:700,color:C.muted,background:C.border+'55',borderRadius:6,padding:'2px 6px'}}>
-                            Promoter {p.promoter_trend}
                           </span>
                         )}
                         {p.market_cap!=null&&(
@@ -14855,7 +15670,8 @@ export default function App(){
               const bySym = trackRecordLive
               const byDate = {}
               for (const h of bestPicksHistory) {
-                (byDate[h.picked_date] = byDate[h.picked_date] || []).push(h)
+                if ((h.rank??99) > 5) continue // performance track = top 5 only
+                ;(byDate[h.picked_date] = byDate[h.picked_date] || []).push(h)
               }
               const dates = Object.keys(byDate).sort((a,b)=>b.localeCompare(a))
               if (bestPicksHistoryLoading && bestPicksHistory.length===0) {
@@ -14869,7 +15685,10 @@ export default function App(){
               return (
                 <div style={{display:'flex',flexDirection:'column',gap:18}}>
                   {dates.map(date=>{
-                    const picks = byDate[date]
+                    // Top 5 by rank for that day (AI recommendation set)
+                    const picks = [...byDate[date]]
+                      .sort((a,b)=>(a.rank??99)-(b.rank??99))
+                      .slice(0,5)
                     const withPct = picks.map(h=>{
                       const live = bySym[h.symbol]
                       const pct = (live && h.price_at_pick) ? ((live.last - h.price_at_pick)/h.price_at_pick*100) : null
@@ -15561,7 +16380,7 @@ export default function App(){
           the same panel instance in place. */}
       <ChartPanel
         sym={chartSym}
-        isIndex={indexData.some(idx=>idx.name===chartSym)}
+        isIndex={chartIsIndex || indexData.some(idx=>idx.name===chartSym)}
         wide={chartWide}
         customPct={dockStack?null:chartPanelPct}
         onToggleWide={()=>{
@@ -15572,10 +16391,14 @@ export default function App(){
             return next
           })
         }}
-        onClose={()=>{setChartSym(null);setChartPanelPct(null);setChartDetailTabHint(null)}}
+        onClose={()=>{setChartSym(null);setChartIsIndex(false);setChartPanelPct(null);setChartDetailTabHint(null)}}
         isMobile={isMobile}
-        symList={displayedRS.map(s=>s.sym)}
-        onNavigate={setChartSym}
+        symList={chartIsIndex ? [] : displayedRS.map(s=>s.sym)}
+        onNavigate={(next)=>{
+          const asIndex = indexData.some(idx=>idx.name===next)
+          setChartIsIndex(asIndex)
+          setChartSym(next)
+        }}
         stocks={stocks}
         chartSectionOrder={chartSectionOrder}
         onChartSectionOrderChange={persistChartSections}
@@ -15611,7 +16434,7 @@ export default function App(){
               minimized:!!panelWins.chart.minimized,
               onRestore:()=>patchPanel('chart',{open:true,minimized:false}),
             }]:[]),
-            ...(chartSym&&!indexData.some(idx=>idx.name===chartSym)&&(!panelWins.detail.open||panelWins.detail.minimized)?[{
+            ...(chartSym&&!(chartIsIndex||indexData.some(idx=>idx.name===chartSym))&&(!panelWins.detail.open||panelWins.detail.minimized)?[{
               id:'detail',
               title:`${chartSym} · Details`,
               minimized:!!panelWins.detail.minimized,
@@ -15702,7 +16525,7 @@ export default function App(){
             borderTop:`1px solid ${C.border}`,display:'flex',zIndex:40,
             paddingBottom:'env(safe-area-inset-bottom)'}}>
             {[
-              ['rs',TrendingUp,'RS Rating'],['market',BarChart3,'Market'],['rotation',RefreshCw,'Rotate'],['breakout',ArrowUpRight,'Break'],['52wl',Award,'52WL'],
+              ['rs',TrendingUp,'RS Rating'],['market',BarChart3,'Market'],['rotation',RefreshCw,'Rotate'],['patterns',LineChartIcon,'Patterns'],['52wl',Award,'52WL'],
             ].map(([t,Icon,label])=>(
               <button key={t} onClick={()=>setMainTab(t)}
                 style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
@@ -15716,10 +16539,10 @@ export default function App(){
               style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <MoreHorizontal size={17} strokeWidth={1.8}
-                color={['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders','patterns'].includes(mainTab)?C.accent:C.muted}/>
+                color={['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders'].includes(mainTab)?C.accent:C.muted}/>
               <span style={{fontSize:8,fontWeight:600,
-                color:['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders','patterns'].includes(mainTab)?C.accent:C.muted}}>More</span>
-              {['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders','patterns'].includes(mainTab)&&
+                color:['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders'].includes(mainTab)?C.accent:C.muted}}>More</span>
+              {['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders'].includes(mainTab)&&
                 <div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           </div>
@@ -15736,7 +16559,7 @@ export default function App(){
                 <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:'8px auto 16px'}}/>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:4}}>
                   {[
-                    ['squeeze',Zap,'Squeeze'],['weak',TrendingDown,'Weak'],['leaders',Flag,'Leaders'],['patterns',LineChartIcon,'Patterns'],
+                    ['squeeze',Zap,'Squeeze'],['weak',TrendingDown,'Weak'],['leaders',Flag,'Leaders'],
                     ['portfolio',Briefcase,'Portfolio'],['compare',GitCompare,'Compare'],['watchlist',Star,'Watchlist'],
                     ['announcements',Megaphone,'Announcements'],['themes',Layers,'Themes'],['bestpicks',Target,'AI Picks'],
                     ['feedback',MessageSquare,'Feedback'],['settings',Settings,'Account'],

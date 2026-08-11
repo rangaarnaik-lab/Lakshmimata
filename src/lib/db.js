@@ -394,6 +394,8 @@ function transformStockRow(row) {
       ma10:        row.ma10,
       ma50:        row.ma50,
     },
+    isBullSnort: row.is_bull_snort || false,
+    bullSnortVolRatio: row.bull_snort_vol_ratio || 0,
     hy: {
       isHY:      row.is_hy || false,
       pctOfMax:  row.hy_pct || 0,
@@ -862,6 +864,38 @@ export async function fetchLiveStockPrice(sym) {
   return { price: data.last_price, volume: data.volume }
 }
 
+/** Local YYYY-MM-DD (avoid UTC day-shift from toISOString in IST). */
+function localISODate(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function parseIndexPrices(raw) {
+  let prices = raw
+  if (typeof prices === 'string') {
+    try { prices = JSON.parse(prices) } catch { return null }
+  }
+  // Double-encoded JSON string (jsonb column stored via json.dumps)
+  if (typeof prices === 'string') {
+    try { prices = JSON.parse(prices) } catch { return null }
+  }
+  if (!Array.isArray(prices) || prices.length === 0) return null
+  const nums = prices.map(Number).filter(v => Number.isFinite(v))
+  return nums.length ? nums : null
+}
+
+function indexNameCandidates(name) {
+  const n = String(name || '').trim()
+  if (!n) return []
+  const out = [n]
+  if (/^Nifty\s+/i.test(n)) out.push(n.replace(/^Nifty\s+/i, ''))
+  else out.push(`Nifty ${n}`)
+  // Dedup preserve order
+  return [...new Set(out)]
+}
+
 /**
  * Fetch an index's price history for "Our Chart" — index_price_history
  * only stores a bare `prices` array (no dates/opens/highs/lows/volumes
@@ -873,18 +907,56 @@ export async function fetchLiveStockPrice(sym) {
  * than candles, which would just show degenerate flat-body candles.
  */
 export async function fetchIndexPriceHistory(name) {
-  const { data, error } = await supabase
-    .from('index_price_history')
-    .select('prices')
-    .eq('name', name)
-    .maybeSingle()
-  if (error || !data || !data.prices) {
+  const candidates = indexNameCandidates(name)
+  let row = null
+  let lastError = null
+
+  for (const candidate of candidates) {
+    const { data, error } = await supabase
+      .from('index_price_history')
+      .select('name,prices')
+      .eq('name', candidate)
+      .maybeSingle()
+    if (error) {
+      lastError = error
+      console.error(`fetchIndexPriceHistory(${candidate}) error:`, error.message || error)
+      continue
+    }
+    if (data?.prices != null) { row = data; break }
+  }
+
+  // Fuzzy fallback — some rows use slightly different labels
+  if (!row) {
+    const { data: all, error } = await supabase
+      .from('index_price_history')
+      .select('name,prices')
+      .limit(200)
+    if (error) {
+      lastError = error
+      console.error('fetchIndexPriceHistory list error:', error.message || error)
+    } else if (all?.length) {
+      const q = String(name || '').toLowerCase()
+      row = all.find(r => String(r.name || '').toLowerCase() === q)
+        || all.find(r => {
+          const rn = String(r.name || '').toLowerCase()
+          return rn.includes(q) || q.includes(rn)
+        })
+        || null
+    }
+  }
+
+  if (!row?.prices) {
+    const hint = lastError?.message?.includes('permission') || lastError?.code === '42501'
+      ? ' (DB permission — run ensure_index_price_history_public_read.sql in Supabase)'
+      : ''
+    return { error: `No price history stored yet for ${name}.${hint}` }
+  }
+
+  const prices = parseIndexPrices(row.prices)
+  if (!prices) {
     return { error: `No price history stored yet for ${name}.` }
   }
-  const prices = typeof data.prices === 'string' ? JSON.parse(data.prices) : data.prices
-  if (!Array.isArray(prices) || prices.length === 0) {
-    return { error: `No price history stored yet for ${name}.` }
-  }
+
   // Synthesize dates counting backward from today (no real per-point
   // dates exist in this table) — approximate trading days by skipping
   // weekends, close enough for a chart x-axis label.
@@ -892,11 +964,11 @@ export async function fetchIndexPriceHistory(name) {
   let d = new Date()
   for (let i = 0; i < prices.length; i++) {
     while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1)
-    dates.unshift(d.toISOString().split('T')[0])
+    dates.unshift(localISODate(d))
     d.setDate(d.getDate() - 1)
   }
   return {
-    sym: name,
+    sym: row.name || name,
     dates,
     prices,
     opens: prices, highs: prices, lows: prices,
@@ -979,6 +1051,7 @@ export async function fetchBestPicksHistory(days = 30) {
     .from('best_picks_history')
     .select('symbol,picked_date,rank,score,reasoning,price_at_pick,stop_loss,target,sector,market_cap')
     .gte('picked_date', since)
+    .lte('rank', 5) // AI Best Picks track record = top 5 only
     .order('picked_date', { ascending: false })
     .order('rank', { ascending: true })
   if (error) { console.error('fetchBestPicksHistory error:', error.message); return [] }
@@ -994,10 +1067,25 @@ export async function fetchBestPicksHistory(days = 30) {
  * `rank` already reflects the current ordering.
  */
 export async function fetchBestPicks() {
-  const { data, error } = await supabase
+  // Prefer the quality-pillar columns (fund / result / S2 new). Fall back
+  // to the older select if Supabase hasn't run ensure_best_picks_quality_cols.sql yet.
+  const full =
+    'symbol,rank,score,reasoning,last_price,stop_loss,target,chg_pct,sector,industry,market_cap,'
+    + 'rs_tv,weinstein_stage,is_s2_new_entry,fundamental_score,fundamental_label,result_rating,'
+    + 'vcp_fired,is_resistance_breakout,is_cup_handle_breakout,eps_yoy,sales_yoy,roe,promoter_trend,generated_at'
+  const legacy =
+    'symbol,rank,score,reasoning,last_price,stop_loss,target,chg_pct,sector,industry,market_cap,'
+    + 'rs_tv,weinstein_stage,vcp_fired,is_resistance_breakout,is_cup_handle_breakout,eps_yoy,sales_yoy,roe,promoter_trend,generated_at'
+  let { data, error } = await supabase
     .from('best_picks')
-    .select('symbol,rank,score,reasoning,last_price,stop_loss,target,chg_pct,sector,industry,market_cap,rs_tv,weinstein_stage,vcp_fired,is_resistance_breakout,is_cup_handle_breakout,eps_yoy,sales_yoy,roe,promoter_trend,generated_at')
+    .select(full)
     .order('rank', { ascending: true })
+  if (error && /fundamental_|result_rating|is_s2_new/i.test(error.message || '')) {
+    ;({ data, error } = await supabase
+      .from('best_picks')
+      .select(legacy)
+      .order('rank', { ascending: true }))
+  }
   if (error) {
     console.error('fetchBestPicks error:', error.message)
     // Also surface this to the app-level error banner (see App.jsx's
@@ -1723,6 +1811,29 @@ export async function fetchWatchlistAnnouncementsSince(syms, sinceISO) {
     .order('announced_at', { ascending: false })
     .limit(20)
   if (error) { console.error('fetchWatchlistAnnouncementsSince error:', error.message); return [] }
+  return data || []
+}
+
+/**
+ * Recent NSE corporate filings for one symbol — powers About → Corporate News.
+ * Skips newspaper-publication reprints so the list stays actionable.
+ */
+export async function fetchSymbolCorporateNews(symbol, limit = 12) {
+  if (!symbol) return []
+  const { data, error } = await supabase
+    .from('corporate_announcements')
+    .select('symbol,category,subject,attachment_url,announced_at,ai_rating,ai_summary')
+    .eq('symbol', String(symbol).toUpperCase())
+    .not('subject', 'ilike', '%newspaper publication%')
+    .not('category', 'ilike', '%newspaper publication%')
+    .not('subject', 'ilike', '%newspaper advertisement%')
+    .not('category', 'ilike', '%newspaper advertisement%')
+    .order('announced_at', { ascending: false })
+    .limit(limit)
+  if (error) {
+    console.error('fetchSymbolCorporateNews error:', error.message)
+    return []
+  }
   return data || []
 }
 

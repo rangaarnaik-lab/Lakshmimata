@@ -196,6 +196,90 @@ export function calcSMASeries(values, period) {
   return out
 }
 
+/** Wilder RSI (default 14). */
+export function calcRSISeries(closes, period = 14) {
+  const n = closes.length
+  const out = new Array(n).fill(null)
+  if (n <= period) return out
+  let avgGain = 0, avgLoss = 0
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1]
+    if (d >= 0) avgGain += d
+    else avgLoss -= d
+  }
+  avgGain /= period
+  avgLoss /= period
+  out[period] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss))
+  for (let i = period + 1; i < n; i++) {
+    const d = closes[i] - closes[i - 1]
+    const gain = d > 0 ? d : 0
+    const loss = d < 0 ? -d : 0
+    avgGain = (avgGain * (period - 1) + gain) / period
+    avgLoss = (avgLoss * (period - 1) + loss) / period
+    out[i] = avgLoss === 0 ? 100 : +(100 - (100 / (1 + avgGain / avgLoss))).toFixed(2)
+  }
+  return out
+}
+
+/**
+ * MACD (12, 26, 9) — returns { macd, signal, hist } series (null until seeded).
+ */
+export function calcMACDSeries(closes, fast = 12, slow = 26, signalPeriod = 9) {
+  const n = closes.length
+  const macd = new Array(n).fill(null)
+  const signal = new Array(n).fill(null)
+  const hist = new Array(n).fill(null)
+  if (n < slow) return { macd, signal, hist }
+
+  const kFast = 2 / (fast + 1)
+  const kSlow = 2 / (slow + 1)
+  const kSig = 2 / (signalPeriod + 1)
+  let eFast = closes.slice(0, fast).reduce((a, b) => a + b, 0) / fast
+  let eSlow = closes.slice(0, slow).reduce((a, b) => a + b, 0) / slow
+  for (let i = fast; i < slow; i++) eFast = closes[i] * kFast + eFast * (1 - kFast)
+
+  for (let i = slow - 1; i < n; i++) {
+    if (i > slow - 1) {
+      eFast = closes[i] * kFast + eFast * (1 - kFast)
+      eSlow = closes[i] * kSlow + eSlow * (1 - kSlow)
+    }
+    macd[i] = +(eFast - eSlow).toFixed(4)
+  }
+
+  const firstMacdIdx = slow - 1
+  const sigSeedEnd = firstMacdIdx + signalPeriod - 1
+  if (sigSeedEnd >= n) return { macd, signal, hist }
+  let eSig = 0
+  for (let i = firstMacdIdx; i <= sigSeedEnd; i++) eSig += macd[i]
+  eSig /= signalPeriod
+  signal[sigSeedEnd] = +eSig.toFixed(4)
+  hist[sigSeedEnd] = +(macd[sigSeedEnd] - eSig).toFixed(4)
+  for (let i = sigSeedEnd + 1; i < n; i++) {
+    eSig = macd[i] * kSig + eSig * (1 - kSig)
+    signal[i] = +eSig.toFixed(4)
+    hist[i] = +(macd[i] - eSig).toFixed(4)
+  }
+  return { macd, signal, hist }
+}
+
+/** EMA fast/slow cross days: 'bull' | 'bear' | null */
+export function detectEmaCrossoverDays(fastSeries, slowSeries) {
+  const n = fastSeries.length
+  const flags = new Array(n).fill(null)
+  for (let i = 1; i < n; i++) {
+    const f0 = fastSeries[i - 1], s0 = slowSeries[i - 1]
+    const f1 = fastSeries[i], s1 = slowSeries[i]
+    if (f0 == null || s0 == null || f1 == null || s1 == null) continue
+    if (f0 <= s0 && f1 > s1) flags[i] = 'bull'
+    else if (f0 >= s0 && f1 < s1) flags[i] = 'bear'
+  }
+  return flags
+}
+
+/** Classic Guppy MMA periods — short / long ribbons. */
+export const GUPPY_SHORT_PERIODS = [3, 5, 8, 10, 12, 15]
+export const GUPPY_LONG_PERIODS = [30, 35, 40, 45, 50, 60]
+
 /**
  * Swing high/low pivot detection — a bar is a swing high if its high is
  * the max within a +/- `lookback` window, swing low similarly for lows.

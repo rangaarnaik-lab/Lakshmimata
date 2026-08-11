@@ -9,6 +9,12 @@ import INDUSTRY_MAP from './industry-map.json'
 const JUNK_INDUSTRY = /^(miscellaneous|other|n\/a|na|—|-)$/i
 const PHARMA_CATCHALL = /Bulk Drugs\s*&\s*Form/i
 
+/** True for catch-all labels that must never be used as result-ranking peer groups. */
+export function isJunkIndustry(label) {
+  if (label == null || label === '') return true
+  return JUNK_INDUSTRY.test(String(label).trim())
+}
+
 const PHARMA_FORMULATIONS = 'Pharmaceuticals - Formulations'
 const PHARMA_BULK_API = 'Pharmaceuticals - Bulk Drugs / API'
 
@@ -92,36 +98,36 @@ export function resolveIndustry(sym, dbIndustry = null, dbSector = null) {
   if (pharma) return pharma
 
   let industry = (dbIndustry || '').trim()
-  if (!industry || JUNK_INDUSTRY.test(industry)) {
+  if (!industry || isJunkIndustry(industry)) {
     const stat = lookupStaticIndustry(key)
     if (stat?.industry) industry = stat.industry
   }
 
-  return normalizeIndustryLabel(industry, key) || industry || null
+  const resolved = normalizeIndustryLabel(industry, key) || industry || null
+  // Never surface "Other" / Miscellaneous — callers treat null as "no peers".
+  if (!resolved || isJunkIndustry(resolved)) return null
+  return resolved
 }
 
 export function resolveSector(sym, dbSector = null, resolvedIndustry = null) {
   const key = String(sym || '').trim().toUpperCase()
   const stat = lookupStaticIndustry(key)
   const sector = (dbSector || '').trim()
-  if (sector && !JUNK_INDUSTRY.test(sector)) return sector
+  if (sector && !isJunkIndustry(sector)) return sector
   if (stat?.sector) return stat.sector
   if (resolvedIndustry === 'Shipping & Defence') return 'Defence'
   if (resolvedIndustry === 'Leisure - Restaurants') return 'Leisure Services'
   if (resolvedIndustry === PHARMA_FORMULATIONS || resolvedIndustry === PHARMA_BULK_API) {
     return 'Healthcare'
   }
-  return dbSector || null
+  // Prefer null over "Other" so UI can hide catch-all groupings.
+  if (dbSector && !isJunkIndustry(dbSector)) return dbSector
+  return null
 }
 
 /** Peer-group key used by SectorRankingPanel — same string for all comparable names. */
 export function getPeerGroup(sym, industry = null) {
-  const key = String(sym || '').trim().toUpperCase()
-  if (PEER_GROUP_OVERRIDES[key]) return PEER_GROUP_OVERRIDES[key]
-
-  const pharma = pharmaPeerBucket(key)
-  if (pharma) return pharma
-
-  const ind = industry || resolveIndustry(sym, null)
-  return normalizeIndustryLabel(ind, key) || ind
+  // Always go through resolveIndustry so junk DB labels ("Other") fall through
+  // to the static map / overrides instead of becoming a mega peer bucket.
+  return resolveIndustry(sym, industry)
 }
