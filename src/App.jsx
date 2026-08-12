@@ -4253,9 +4253,7 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
     if(sectionId==='mgmt') return <div style={{marginBottom:10}}><MgmtFlagsCard symbol={sym} compact/></div>
     return null
   }
-  const belowFlex=readingMode?'1 1 52%':tableMode?'1 1 44%':'1 1 36%'
-  const belowMin=readingMode?(isMobile?260:280):tableMode?(isMobile?220:240):(isMobile?160:180)
-  const belowPad=readingMode?'8px 14px 14px':tableMode?'8px 14px 14px':'8px 14px 14px'
+  const belowPad='8px 14px 14px'
   // fillParent: Details PanelWindow already scrolls (scrollBody) — content is document-flow.
   // Otherwise (mobile): this root fills remaining space and scrolls.
   return (
