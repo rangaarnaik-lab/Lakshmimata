@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
- * Dockable / floating panel chrome: drag to move (undocks), minimize, close.
+ * Dockable / floating panel chrome: drag to move (undocks), maximize, minimize, close.
  * When not floating, fills its parent flex slot (docked).
  */
 export default function PanelWindow({
@@ -14,13 +14,14 @@ export default function PanelWindow({
   onMinimize,
   onRestore,
   onClose,
-  floating = null, // { x, y, w, h } | null
+  floating = null, // { x, y, w, h, maximized? } | null
   onFloatingChange,
   dockStyle = {},
   zIndex = 40,
   headerExtra = null,
   showClose = true,
   showMinimize = true,
+  showMaximize = true,
   hideHeader = false,
   onMoveUp = null,   // reorder docked tile up / earlier
   onMoveDown = null, // reorder docked tile down / later
@@ -28,6 +29,37 @@ export default function PanelWindow({
   scrollBody = false,
 }) {
   const dragRef = useRef(null)
+  const preMaxFloatRef = useRef(null)
+
+  const isMaximized = !!(floating && floating.maximized)
+
+  const fullscreenFloat = useCallback(() => ({
+    x: 8,
+    y: 40,
+    w: Math.max(320, window.innerWidth - 16),
+    h: Math.max(220, window.innerHeight - 48),
+    maximized: true,
+  }), [])
+
+  const toggleMaximize = useCallback((e) => {
+    e?.stopPropagation?.()
+    e?.preventDefault?.()
+    if (!onFloatingChange) return
+    if (isMaximized) {
+      const prev = preMaxFloatRef.current
+      preMaxFloatRef.current = null
+      onFloatingChange(prev ? { ...prev, maximized: false } : null)
+      return
+    }
+    const el = document.querySelector(`[data-panel-window="${id}"]`)
+    const rect = el?.getBoundingClientRect()
+    preMaxFloatRef.current = floating
+      ? { ...floating, maximized: false }
+      : rect
+        ? { x: rect.left, y: rect.top, w: Math.max(320, rect.width), h: Math.max(220, rect.height) }
+        : null
+    onFloatingChange(fullscreenFloat())
+  }, [floating, fullscreenFloat, id, isMaximized, onFloatingChange])
 
   const startDrag = useCallback((e) => {
     if (e.button !== 0) return
@@ -37,20 +69,23 @@ export default function PanelWindow({
     const startY = e.clientY
     const rect = e.currentTarget.closest('[data-panel-window]')?.getBoundingClientRect()
     if (!rect) return
-    const orig = floating || {
+    // Dragging off maximize restores a normal floating window at current size.
+    const orig = (floating && !floating.maximized) ? floating : {
       x: rect.left,
       y: rect.top,
       w: Math.max(320, rect.width),
       h: Math.max(220, rect.height),
     }
+    if (floating?.maximized) preMaxFloatRef.current = null
     // Undock on first drag
-    if (!floating) onFloatingChange?.(orig)
+    if (!floating || floating.maximized) onFloatingChange?.({ ...orig, maximized: false })
 
     const onMove = (ev) => {
       const dx = ev.clientX - startX
       const dy = ev.clientY - startY
       onFloatingChange?.({
         ...orig,
+        maximized: false,
         x: Math.max(0, Math.min(window.innerWidth - 120, orig.x + dx)),
         y: Math.max(0, Math.min(window.innerHeight - 48, orig.y + dy)),
       })
@@ -157,13 +192,21 @@ export default function PanelWindow({
                   onClick={onMoveDown} style={{ ...btn, opacity: onMoveDown ? 1 : 0.35 }}>▼</button>
               </>
             )}
-            {isFloat && (
+            {isFloat && !isMaximized && (
               <button
                 type="button"
                 title="Dock back"
                 onClick={() => onFloatingChange?.(null)}
                 style={btn}
               >⧉</button>
+            )}
+            {showMaximize && onFloatingChange && (
+              <button
+                type="button"
+                title={isMaximized ? 'Restore' : 'Maximize'}
+                onClick={toggleMaximize}
+                style={btn}
+              >{isMaximized ? '❐' : '□'}</button>
             )}
             {showMinimize && (
               <button type="button" title="Minimize" onClick={onMinimize} style={btn}>─</button>
@@ -190,14 +233,14 @@ export default function PanelWindow({
       }}>
         {children}
       </div>
-      {isFloat && (
+      {isFloat && !isMaximized && (
         <div
           onMouseDown={(e) => {
             e.preventDefault()
             e.stopPropagation()
             const startX = e.clientX
             const startY = e.clientY
-            const orig = { ...floating }
+            const orig = { ...floating, maximized: false }
             const onMove = (ev) => {
               onFloatingChange?.({
                 ...orig,
