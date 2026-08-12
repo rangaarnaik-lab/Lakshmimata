@@ -24,6 +24,8 @@ export default function PanelWindow({
   hideHeader = false,
   onMoveUp = null,   // reorder docked tile up / earlier
   onMoveDown = null, // reorder docked tile down / later
+  /** When true, panel body scrolls (Details). Charts keep overflow hidden. */
+  scrollBody = false,
 }) {
   const dragRef = useRef(null)
 
@@ -172,7 +174,20 @@ export default function PanelWindow({
           </div>
         </div>
       )}
-      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={scrollBody ? {
+        flex: 1,
+        minHeight: 0,
+        overflowX: 'hidden',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        overscrollBehavior: 'contain',
+      } : {
+        flex: 1,
+        minHeight: 0,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
         {children}
       </div>
       {isFloat && (

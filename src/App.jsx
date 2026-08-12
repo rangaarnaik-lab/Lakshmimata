@@ -4089,7 +4089,8 @@ function StockDetailTabs({sym, stocks, onSelectSymbol, tab, setTab, scrollable, 
   return (
     <div style={scrollable?{display:'flex',flexDirection:'column',flex:1,minHeight:0,height:'100%'}:undefined}>
       <div style={{display:'flex',alignItems:'flex-end',gap:8,marginBottom:10,
-        borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+        borderBottom:`1px solid ${C.border}`,flexShrink:0,
+        position:'sticky', top:0, zIndex:6, background:C.bg, paddingTop:2}}>
         <div style={{display:'flex',gap:4,overflowX:'auto',flex:1,minWidth:0,
           WebkitOverflowScrolling:'touch'}}>
           {STOCK_DETAIL_TABS.map(t=>{
@@ -4238,9 +4239,9 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
       )
     }
     if(sectionId==='peers'){
-      // Result-quality peer ranking — always directly under MCap line (not buried in Results tab).
+      // Result-quality peer ranking — under MCap; height-capped so About/Results stay scrollable.
       return (
-        <div style={{marginBottom:10}}>
+        <div style={{marginBottom:8, height:'100%', minHeight:0}}>
           <SectorRankingPanel symbol={sym}
             industry={mcapStock?.industry}
             stocks={stocks}
@@ -4252,14 +4253,28 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
     if(sectionId==='mgmt') return <div style={{marginBottom:10}}><MgmtFlagsCard symbol={sym} compact/></div>
     return null
   }
-  const belowFlex=readingMode?'1 1 58%':tableMode?'1 1 52%':'1 1 42%'
-  const belowMin=readingMode?(isMobile?300:340):tableMode?(isMobile?260:300):(isMobile?200:220)
+  const belowFlex=readingMode?'1 1 52%':tableMode?'1 1 44%':'1 1 36%'
+  const belowMin=readingMode?(isMobile?260:280):tableMode?(isMobile?220:240):(isMobile?160:180)
   const belowPad=readingMode?'8px 14px 14px':tableMode?'8px 14px 14px':'8px 14px 14px'
+  // fillParent: Details PanelWindow already scrolls (scrollBody) — content is document-flow.
+  // Otherwise (mobile): this root fills remaining space and scrolls.
   return (
-    <div style={{flex:fillParent?1:belowFlex,minHeight:fillParent?0:belowMin,display:'flex',flexDirection:'column',
-      overflow:'hidden',padding:belowPad,
-      borderTop:fillParent?'none':`1px solid ${C.divider}`,background:C.bg,height:fillParent?'100%':undefined}}>
-      <div style={{flexShrink:0}}>
+    <div style={{
+      flex: fillParent ? undefined : 1,
+      minHeight: fillParent ? undefined : 0,
+      display: 'flex',
+      flexDirection: 'column',
+      overflowX: 'hidden',
+      overflowY: fillParent ? 'visible' : 'auto',
+      WebkitOverflowScrolling: 'touch',
+      overscrollBehavior: 'contain',
+      padding: belowPad,
+      borderTop: fillParent ? 'none' : `1px solid ${C.divider}`,
+      background: C.bg,
+      height: fillParent ? 'auto' : '100%',
+      boxSizing: 'border-box',
+    }}>
+      <div style={{flexShrink:0, position:'sticky', top:0, zIndex:8, background:C.bg, paddingBottom:2}}>
         <div style={{display:'flex',justifyContent:'flex-end',marginBottom:customizeOpen?8:4}}>
           <button type="button" onClick={()=>setCustomizeOpen(v=>!v)}
             style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${customizeOpen?C.accent:C.border}`,
@@ -4280,14 +4295,18 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
       {sectionOrder.map(sectionId=>{
         if(sectionId==='details'){
           return (
-            <div key="details" style={{flex:'1 1 0',minHeight:160,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+            <div key="details" style={{paddingBottom:32}}>
               <StockDetailTabs sym={sym} stocks={stocks} tab={detailTab} setTab={setDetailTab}
-                onSelectSymbol={(s)=>navigateTo(s,{openResults:true})} scrollable isMobile={isMobile}/>
+                onSelectSymbol={(s)=>navigateTo(s,{openResults:true})} scrollable={false} isMobile={isMobile}/>
             </div>
           )
         }
         const block=renderBlock(sectionId)
-        return block?<div key={sectionId} style={{flexShrink:0}}>{block}</div>:null
+        return block?(
+          <div key={sectionId} style={sectionId==='peers'?{maxHeight:isMobile?110:130,marginBottom:8,overflow:'hidden'}:undefined}>
+            {block}
+          </div>
+        ):null
       })}
     </div>
   )
@@ -4377,10 +4396,11 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
   const chartExpanded=wide>=1||(customPct!=null&&customPct>=45)
   const readingMode=['about','fundamentals','concall','ppt','resultsSummary'].includes(detailTab)
   const tableMode=detailTab==='results'
-  const chartFlex=readingMode?'0 1 36%':tableMode?'0 1 44%':'1 1 58%'
-  const chartMaxH=readingMode?'40%':tableMode?'46%':undefined
-  const belowFlex=readingMode?'1 1 58%':tableMode?'1 1 52%':'1 1 42%'
-  const belowMin=readingMode?340:tableMode?300:220
+  // Prefer chart height — peer ranking is capped/scrollable in ChartBelowContent.
+  const chartFlex=readingMode?'0 1 44%':tableMode?'0 1 52%':'1 1 64%'
+  const chartMaxH=readingMode?'48%':tableMode?'56%':undefined
+  const belowFlex=readingMode?'1 1 52%':tableMode?'1 1 44%':'1 1 36%'
+  const belowMin=readingMode?280:tableMode?240:180
 
   const chartHeaderExtra=(
     <div style={{display:'flex',alignItems:'center',gap:6}} onMouseDown={e=>e.stopPropagation()}>
@@ -4520,7 +4540,9 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
           display:'flex',flexDirection:'column'}}>
           {chartTabsAndBody}
         </div>
-        {detailBody}
+        <div style={{flex:1,minHeight:0,overflow:'hidden',display:'flex',flexDirection:'column'}}>
+          {detailBody}
+        </div>
       </div>
     )
   }
@@ -4580,6 +4602,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
         onClose={()=>patchDetail({open:false})}
         onMoveUp={onMoveTile?()=>onMoveTile('detail',-1):null}
         onMoveDown={onMoveTile?()=>onMoveTile('detail',1):null}
+        scrollBody
         dockStyle={{
           flex: bundled && chartDocked ? belowFlex : 1,
           minHeight:belowMin,
@@ -4640,6 +4663,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
           onFloatingChange={f=>onPanelDetail?.({float:f})}
           onMinimize={()=>onPanelDetail?.({minimized:true})}
           onClose={()=>patchDetail({open:false})}
+          scrollBody
           zIndex={81}
         >
           {detailBody}
@@ -4918,7 +4942,7 @@ function SectorRankingPanel({symbol, industry, stocks, onSelectSymbol}){
 
   if(!groupLabel) return null
   if(ranking===undefined) return (
-    <div style={{marginTop:8,fontSize:10.5,color:C.muted,padding:'4px 2px'}}>
+    <div style={{marginTop:4,fontSize:10.5,color:C.muted,padding:'2px 0'}}>
       Ranking vs {groupLabel} industry peers…
     </div>
   )
@@ -4927,35 +4951,42 @@ function SectorRankingPanel({symbol, industry, stocks, onSelectSymbol}){
   if(myIdx===-1) return null
   const ratingColor = r => r==='Excellent'?C.green:r==='Good'?'#7dd3a8':r==='Weak'?C.red:C.yellow
   return (
-    <div style={{marginTop:8,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:'8px 10px'}}>
-      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>
+    <div style={{
+      marginTop:0, background:C.card, border:`1px solid ${C.border}`, borderRadius:8,
+      padding:'6px 8px', height:'100%', maxHeight:'100%',
+      display:'flex', flexDirection:'column', minHeight:0, overflow:'hidden',
+    }}>
+      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:4,flexShrink:0}}>
         #{myIdx+1} of {ranking.length} rated in {groupLabel}
       </div>
-      <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+      <div style={{
+        display:'flex', flexWrap:'wrap', gap:4, alignContent:'flex-start',
+        overflowY:'auto', overflowX:'hidden', minHeight:0, flex:1,
+        WebkitOverflowScrolling:'touch',
+      }}>
         {ranking.map((r,i)=>{
           const isSelf = r.sym===symbol
           const canOpen = !isSelf && typeof onSelectSymbol==='function'
           const mcap = fmtMarketCapCr(r.marketCap)
           return (
             <div key={r.sym}
-              title={canOpen ? `${r.rating}${mcap?` · ${mcap}`:''} — open ${r.sym} Results` : `${r.rating}${mcap?` · ${mcap}`:''}`}
+              title={canOpen
+                ? `${r.rating}${mcap?` · ${mcap}`:''} — open ${r.sym} Results`
+                : `${r.rating}${mcap?` · ${mcap}`:''}`}
               onClick={()=>{ if(canOpen) onSelectSymbol(r.sym) }}
               style={{
-                display:'flex', flexDirection:'column', alignItems:'flex-start', gap:1,
-                padding:'4px 8px', borderRadius:10, minWidth:72,
-                fontSize:10, fontWeight:isSelf?800:600,
+                display:'inline-flex', alignItems:'center', gap:3,
+                padding:'3px 7px', borderRadius:8,
+                fontSize:10, fontWeight:isSelf?800:600, lineHeight:1.2,
                 background:ratingColor(r.rating)+(isSelf?'33':'18'),
                 color:ratingColor(r.rating),
                 border:isSelf?`1px solid ${ratingColor(r.rating)}`:'1px solid transparent',
                 cursor:canOpen?'pointer':'default',
+                textDecoration:canOpen?'underline':'none', textUnderlineOffset:2,
+                whiteSpace:'nowrap',
               }}>
-              <div style={{display:'flex',alignItems:'center',gap:4,
-                textDecoration:canOpen?'underline':'none', textUnderlineOffset:2}}>
-                <span style={{opacity:0.7}}>#{i+1}</span> {r.sym}
-              </div>
-              <div style={{fontSize:9,fontWeight:600,opacity:0.85,color:C.muted}}>
-                {mcap || 'MCap —'}
-              </div>
+              <span style={{opacity:0.7}}>#{i+1}</span> {r.sym}
+              {mcap && <span style={{opacity:0.75,fontSize:9,fontWeight:600,color:C.muted}}>· {mcap.replace('₹','')}</span>}
             </div>
           )
         })}
