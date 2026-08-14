@@ -11689,6 +11689,9 @@ export default function App(){
   // just a handful, like a real RRG chart does, instead of always
   // plotting all ~20 sectors at once regardless of how cluttered that is.
   const [rotationSelectedIds,setRotationSelectedIds]=useState(()=>new Set())
+  // Empty Set = show all RRG quadrants; otherwise only selected ones
+  // (Leading / Improving / Lagging / Weakening).
+  const [rotationQuadrants,setRotationQuadrants]=useState(()=>new Set())
   // Date-range slider on the Rotation chart — null means "latest" (no
   // trimming). Set to a specific YYYY-MM-DD to rewind the chart to how
   // it looked as of that day, using the trail dates already in the data.
@@ -12082,10 +12085,13 @@ export default function App(){
   useEffect(()=>{ window.scrollTo(0,0) },[mainTab])
   const rotationDisplayData=useMemo(()=>{
     const data = rotationData||[]
-    const {displayData,rolledData} = computeRolledRotationData(
+    const {displayData,rolledData:allRolled} = computeRolledRotationData(
       data, rotationSelectedIds, rotationAsOfDate, rotationWindow)
-    return { data, displayData, rolledData }
-  },[rotationData,rotationSelectedIds,rotationAsOfDate,rotationWindow])
+    const rolledData = rotationQuadrants.size===0
+      ? allRolled
+      : allRolled.filter(s => rotationQuadrants.has(s.quadrant||rrgQuadrant(s.rsRatio,s.rsMom)))
+    return { data, displayData, rolledData, allRolled }
+  },[rotationData,rotationSelectedIds,rotationAsOfDate,rotationWindow,rotationQuadrants])
 
   const constituentRolledData=useMemo(()=>{
     if(!constituentRotationData) return null
@@ -15455,7 +15461,7 @@ export default function App(){
         {/* ══ SECTOR ROTATION ══ */}
         {mainTab==='rotation'&&(()=>{
           const ROTATION_WINDOWS=[{label:'10D',days:10},{label:'1M',days:22},{label:'3M',days:66},{label:'6M',days:126},{label:'1Y',days:252}]
-          const { data, displayData, rolledData } = rotationDisplayData
+          const { data, displayData, rolledData, allRolled } = rotationDisplayData
           const toggleSel=id=>setRotationSelectedIds(prev=>{
             const next=new Set(prev)
             next.has(id)?next.delete(id):next.add(id)
@@ -15470,6 +15476,16 @@ export default function App(){
             }
             return next
           })
+          const toggleQuad=q=>setRotationQuadrants(prev=>{
+            const next=new Set(prev)
+            next.has(q)?next.delete(q):next.add(q)
+            return next
+          })
+          const quadCounts={leading:0,improving:0,lagging:0,weakening:0}
+          for(const s of (allRolled||[])){
+            const q=s.quadrant||rrgQuadrant(s.rsRatio,s.rsMom)
+            if(quadCounts[q]!=null) quadCounts[q]++
+          }
           const quadColor=s=>{
             const q=s.quadrant||rrgQuadrant(s.rsRatio??s.level,s.rsMom??s.momentum)
             return RRG_QUAD[q].label
@@ -15502,7 +15518,11 @@ export default function App(){
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,flexWrap:'wrap',gap:10}}>
               <div style={{display:'flex',gap:4,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:3}}>
                 {[['sector','Sector'],['index','Index'],['watchlist','Watchlist']].map(([id,label])=>(
-                  <button key={id} onClick={()=>{setRotationScope(id);setRotationSelectedIds(new Set())}}
+                  <button key={id} onClick={()=>{
+                    setRotationScope(id)
+                    setRotationSelectedIds(new Set())
+                    setRotationQuadrants(new Set())
+                  }}
                     style={{border:'none',background:rotationScope===id?C.accent+'22':'transparent',
                       color:rotationScope===id?C.accent:C.muted,fontSize:11,fontWeight:600,
                       padding:'6px 12px',borderRadius:6,cursor:'pointer'}}>{label}</button>
@@ -15562,6 +15582,44 @@ export default function App(){
             )}
 
             {data.length>0&&(<>
+              <div style={{marginBottom:14,display:'flex',flexWrap:'wrap',alignItems:'center',gap:8}}>
+                <span style={{fontSize:11,fontWeight:700,color:C.muted,whiteSpace:'nowrap'}}>QUADRANT</span>
+                <button type="button" onClick={()=>setRotationQuadrants(new Set())}
+                  style={{padding:'5px 12px',borderRadius:20,cursor:'pointer',fontSize:11,fontWeight:700,
+                    border:`1px solid ${rotationQuadrants.size===0?C.accent:C.border}`,
+                    background:rotationQuadrants.size===0?C.accent+'22':'transparent',
+                    color:rotationQuadrants.size===0?C.accent:C.muted}}>
+                  All ({(allRolled||[]).length})
+                </button>
+                {[
+                  ['leading','Leading',RRG_QUAD.leading.label],
+                  ['improving','Improving',RRG_QUAD.improving.label],
+                  ['lagging','Lagging',RRG_QUAD.lagging.label],
+                  ['weakening','Weakening',RRG_QUAD.weakening.label],
+                ].map(([id,label,color])=>{
+                  const on=rotationQuadrants.has(id)
+                  const n=quadCounts[id]||0
+                  return(
+                    <button key={id} type="button" onClick={()=>toggleQuad(id)}
+                      title={`Show only ${label} names`}
+                      style={{padding:'5px 12px',borderRadius:20,cursor:'pointer',fontSize:11,fontWeight:700,
+                        border:`1px solid ${on?color:C.border}`,
+                        background:on?color+'22':'transparent',
+                        color:on?color:C.muted,
+                        display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{width:7,height:7,borderRadius:'50%',background:color,display:'inline-block',
+                        opacity:on||rotationQuadrants.size===0?1:0.45}}/>
+                      {label} ({n})
+                    </button>
+                  )
+                })}
+                {rotationQuadrants.size>0&&(
+                  <button type="button" onClick={()=>setRotationQuadrants(new Set())}
+                    style={{fontSize:11,fontWeight:700,color:C.accent,background:'transparent',
+                      border:'none',cursor:'pointer',padding:'2px 4px'}}>Clear</button>
+                )}
+              </div>
+
               <div style={{marginBottom:14}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
                   <span style={{fontSize:11,fontWeight:700,color:C.muted}}>
@@ -15576,12 +15634,15 @@ export default function App(){
                 <div style={{display:'flex',flexWrap:'wrap',gap:6,maxHeight:120,overflowY:'auto'}}>
                   {data.map(s=>{
                     const on=rotationSelectedIds.size===0||rotationSelectedIds.has(s.id)
+                    const rolled= (allRolled||[]).find(r=>r.id===s.id)
+                    const q=rolled?.quadrant||null
+                    const quadHidden=rotationQuadrants.size>0&&q&&!rotationQuadrants.has(q)
                     return(
                       <button key={s.id} onClick={()=>toggleSel(s.id)}
                         style={{padding:'4px 10px',borderRadius:20,cursor:'pointer',fontSize:11,fontWeight:600,
                           border:`1px solid ${rotationSelectedIds.has(s.id)?C.accent:C.border}`,
                           background:rotationSelectedIds.has(s.id)?C.accent+'22':'transparent',
-                          color:on?C.text:C.muted,opacity:on?1:0.55}}>
+                          color:on&&!quadHidden?C.text:C.muted,opacity:quadHidden?0.35:(on?1:0.55)}}>
                         {s.label}
                       </button>
                     )
@@ -15630,7 +15691,9 @@ export default function App(){
                 )}
                 {rolledData.length===0?(
                   <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:12}}>
-                    Not enough history yet to compute JdK RS-Ratio / RS-Momentum (need ~{JDK_WINDOW+JDK_ROC}+ days).
+                    {rotationQuadrants.size>0
+                      ?'No names in the selected quadrant(s) — try All or another quadrant.'
+                      :`Not enough history yet to compute JdK RS-Ratio / RS-Momentum (need ~${JDK_WINDOW+JDK_ROC}+ days).`}
                   </div>
                 ):(
                   <RRGChart rolledData={rolledData} onDotClick={goTo}
