@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchMissedAiFilings } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchUserPortfolios, saveUserPortfolios, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -1105,6 +1105,50 @@ function portfolioWeightedAvg(holdings, stocks, field){
   return sumW > 0 ? sum / sumW : null
 }
 
+/**
+ * Quiet portfolio health — EXIT only for true downtrends, not every S3 top.
+ * rank: lower = more urgent (for attention strip / sort).
+ */
+function portfolioHoldingHealth(s, pnlPct){
+  const stage = s ? calcWeinsteinStage(s) : null
+  const rs = s?.rsTv ?? s?.rs ?? null
+  const trend = s?.rsTrend?.trend || 'flat'
+  const loss = pnlPct!=null && isFinite(pnlPct) ? pnlPct : null
+
+  if(stage?.stage===4 || (rs!=null && rs<25 && (loss==null || loss<0))){
+    return {key:'exit', label:'Exit zone', short:'Exit', color:C.red, rank:0,
+      tip: stage?.desc || 'Weak RS / Stage 4 — review exit'}
+  }
+  if(stage?.stage===3 || (rs!=null && rs>=70 && trend==='declining')){
+    return {key:'watch', label:'Watch', short:'Watch', color:C.orange, rank:1,
+      tip: stage?.desc || 'Topping / RS fading — tighten stops'}
+  }
+  if((rs!=null && rs<40) || (loss!=null && loss<=-12)){
+    return {key:'weak', label:'Weak', short:'Weak', color:C.red, rank:2,
+      tip: loss!=null && loss<=-12 ? 'Deep drawdown vs cost' : 'RS lagging the market'}
+  }
+  if(stage?.stage===2 && rs!=null && rs>=70 && (loss==null || loss>=0)){
+    return {key:'strong', label:'Strong', short:'Strong', color:C.green, rank:4,
+      tip: stage?.desc || 'Stage 2 leader — hold / trail'}
+  }
+  return {key:'ok', label:'OK', short:'OK', color:C.muted, rank:3,
+    tip: stage?.desc || 'No urgent flag'}
+}
+
+function PortfolioHealthChip({health, compact=false}){
+  if(!health) return null
+  return(
+    <span title={health.tip}
+      style={{display:'inline-flex',alignItems:'center',
+        padding:compact?'1px 6px':'2px 8px',borderRadius:4,
+        fontSize:compact?9:10,fontWeight:800,letterSpacing:'0.02em',
+        background:health.color+'14',color:health.color,
+        border:`1px solid ${health.color}33`,whiteSpace:'nowrap',cursor:'help'}}>
+      {compact?health.short:health.label}
+    </span>
+  )
+}
+
 const PORTFOLIO_BENCH_INDICES = [
   { key:'nifty50',  label:'Nifty 50',     short:'Nifty',  names:['Nifty 50'], rsField:'rsNifty50' },
   { key:'midcap',   label:'Midcap 150',   short:'Midcap', names:['Midcap 150','Nifty Midcap 150'], rsField:'rsMidcap' },
@@ -1120,20 +1164,36 @@ function newPortfolioId(){
   return 'p_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,7)
 }
 
+function normalizePortfoliosPayload(raw){
+  const list=(Array.isArray(raw?.portfolios)?raw.portfolios:[])
+    .slice(0,MAX_FAMILY_PORTFOLIOS)
+    .map(p=>({
+      id:p?.id||newPortfolioId(),
+      name:String(p?.name||'Portfolio').trim().slice(0,40)||'Portfolio',
+      holdings:Array.isArray(p?.holdings)?p.holdings:[],
+    }))
+  if(!list.length) return null
+  let activeId=raw?.activeId||raw?.active_id||list[0].id
+  if(!list.some(p=>p.id===activeId)) activeId=list[0].id
+  return {portfolios:list, activeId}
+}
+
+function persistPortfoliosLocal({portfolios, activeId}){
+  const payload={portfolios, activeId}
+  try{
+    localStorage.setItem(PORTFOLIOS_KEY, JSON.stringify(payload))
+    localStorage.setItem(PORTFOLIO_ACTIVE_KEY, activeId||'')
+    const active=portfolios.find(p=>p.id===activeId)||portfolios[0]
+    localStorage.setItem(PORTFOLIO_LEGACY_KEY, JSON.stringify(active?.holdings||[]))
+  }catch{/* ignore quota */}
+}
+
 /** Load family portfolios (max 5). Migrates legacy single lm_portfolio array. */
 function loadPortfoliosState(){
   try{
     const raw=JSON.parse(localStorage.getItem(PORTFOLIOS_KEY)||'null')
-    if(raw&&Array.isArray(raw.portfolios)&&raw.portfolios.length){
-      const portfolios=raw.portfolios.slice(0,MAX_FAMILY_PORTFOLIOS).map(p=>({
-        id:p.id||newPortfolioId(),
-        name:String(p.name||'Portfolio').trim().slice(0,40)||'Portfolio',
-        holdings:Array.isArray(p.holdings)?p.holdings:[],
-      }))
-      let activeId=raw.activeId||localStorage.getItem(PORTFOLIO_ACTIVE_KEY)||portfolios[0].id
-      if(!portfolios.some(p=>p.id===activeId)) activeId=portfolios[0].id
-      return {portfolios, activeId}
-    }
+    const normalized=normalizePortfoliosPayload(raw)
+    if(normalized) return normalized
   }catch{/* ignore */}
   let holdings=[]
   try{
@@ -11801,6 +11861,15 @@ export default function App(){
   if(!portfolioBootRef.current) portfolioBootRef.current=loadPortfoliosState()
   const [portfolios,setPortfolios]=useState(()=>portfolioBootRef.current.portfolios)
   const [activePortfolioId,setActivePortfolioId]=useState(()=>portfolioBootRef.current.activeId)
+  const portfoliosSkipCloudSaveRef=useRef(true)
+  const portfoliosSaveTimer=useRef(null)
+  const portfoliosCloudUidRef=useRef(null)
+  // Block cloud upserts until hydrate finishes for this user (render-time, before effects).
+  const portfolioUid=session?.user?.id||null
+  if(portfoliosCloudUidRef.current!==portfolioUid){
+    portfoliosCloudUidRef.current=portfolioUid
+    portfoliosSkipCloudSaveRef.current=true
+  }
   const [portfolioUploadStatus,setPortfolioUploadStatus]=useState(null) // {type:'loading'|'success'|'error', message}
   const [portfolioAddOpen,setPortfolioAddOpen]=useState(false)
   const [portfolioAddSym,setPortfolioAddSym]=useState('')
@@ -11809,7 +11878,7 @@ export default function App(){
   const [portfolioAddNote,setPortfolioAddNote]=useState('')
   const [portfolioAddSuggest,setPortfolioAddSuggest]=useState(false)
   const [journalOpenSym,setJournalOpenSym]=useState(null)
-  const [portfolioSortBy,setPortfolioSortBy]=useState('invested') // sym|cost|invested|pnl|return|rs|weight|stage
+  const [portfolioSortBy,setPortfolioSortBy]=useState('invested') // sym|cost|invested|pnl|return|rs|weight|status
   const [portfolioSortDir,setPortfolioSortDir]=useState('desc')
   const handlePortfolioSort=(key)=>{
     setPortfolioSortBy(prev=>{
@@ -12116,15 +12185,54 @@ export default function App(){
       .finally(()=>setLoadingConstituentRotation(false))
   },[mainTab,rotationScope,rotationExpandedId,rotationWindow,stocks])
 
-  // Persist family portfolios (max 5) + keep legacy key in sync for the active one
+  // Persist family portfolios locally always; debounce-upsert to Supabase when signed in.
   useEffect(()=>{
-    const payload={portfolios, activeId:activePortfolioId}
-    try{
-      localStorage.setItem(PORTFOLIOS_KEY, JSON.stringify(payload))
-      localStorage.setItem(PORTFOLIO_ACTIVE_KEY, activePortfolioId||'')
-      localStorage.setItem(PORTFOLIO_LEGACY_KEY, JSON.stringify(portfolioHoldings))
-    }catch{/* ignore quota */}
-  },[portfolios, activePortfolioId, portfolioHoldings])
+    persistPortfoliosLocal({portfolios, activeId:activePortfolioId})
+    if(portfoliosSkipCloudSaveRef.current) return
+    const uid=session?.user?.id
+    if(!uid || demoMode) return
+    if(portfoliosSaveTimer.current) clearTimeout(portfoliosSaveTimer.current)
+    portfoliosSaveTimer.current=setTimeout(()=>{
+      saveUserPortfolios(uid, {portfolios, activeId:activePortfolioId}).then(res=>{
+        if(res?.error) console.warn('Portfolio save failed:', res.error)
+      })
+    }, 450)
+    return ()=>{ if(portfoliosSaveTimer.current) clearTimeout(portfoliosSaveTimer.current) }
+  },[portfolios, activePortfolioId, session?.user?.id, demoMode])
+
+  // Load cloud portfolios on login (migrate local → cloud if none yet).
+  useEffect(()=>{
+    const uid=session?.user?.id
+    if(!uid || demoMode){
+      portfoliosSkipCloudSaveRef.current=false
+      return
+    }
+    let cancelled=false
+    portfoliosSkipCloudSaveRef.current=true
+    const local=loadPortfoliosState()
+    fetchUserPortfolios(uid).then(async cloud=>{
+      if(cancelled) return
+      const cloudNorm=normalizePortfoliosPayload(cloud)
+      if(cloudNorm){
+        setPortfolios(cloudNorm.portfolios)
+        setActivePortfolioId(cloudNorm.activeId)
+        persistPortfoliosLocal(cloudNorm)
+      }else{
+        // First signed-in sync: seed cloud from this browser's local portfolios.
+        const seed=normalizePortfoliosPayload(local)||local
+        await saveUserPortfolios(uid, seed)
+        if(cancelled) return
+        setPortfolios(seed.portfolios)
+        setActivePortfolioId(seed.activeId)
+        persistPortfoliosLocal(seed)
+      }
+      if(!cancelled) portfoliosSkipCloudSaveRef.current=false
+    }).catch(err=>{
+      console.warn('Portfolio cloud load failed:', err?.message||err)
+      if(!cancelled) portfoliosSkipCloudSaveRef.current=false
+    })
+    return ()=>{ cancelled=true }
+  },[session?.user?.id, demoMode])
 
   // Filter helpers
   const applyPP=(list,f)=>f==='yes'?list.filter(s=>s.pp?.isPP):f==='no'?list.filter(s=>!s.pp?.isPP):list
@@ -14931,7 +15039,7 @@ export default function App(){
               <div>
                 <div style={{fontWeight:700,fontSize:16}}>Portfolio Tracker</div>
                 <div style={{fontSize:11,color:C.muted}}>
-                  Family portfolios — up to {MAX_FAMILY_PORTFOLIOS} · RS, Stage, exit signals &amp; trade journal
+                  What needs a look · quiet status · RS &amp; P&amp;L — synced when signed in
                 </div>
               </div>
               <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
@@ -15180,14 +15288,20 @@ export default function App(){
             )}
 
             {portfolioHoldings.length>0&&(()=>{
-              // Portfolio-level rollup. Brokerage exports don't include
-              // per-lot purchase dates, so a precise "your return since
-              // buy vs Nifty's return over the same window" isn't
-              // possible from this data alone — instead, RS-TV (already
-              // a relative-to-Nifty metric) on each holding is the
-              // apples-to-apples comparison, and the average RS-TV
-              // across the whole portfolio (weighted by position value
-              // where available) is the portfolio-level version of that.
+              // Build per-holding health once for attention strip + summary context
+              const healthRows = portfolioHoldings.map(h=>{
+                const s=stocks.find(x=>x.sym===h.sym)
+                const pnlPct = (h.entryPrice && s?.last)
+                  ? ((s.last-h.entryPrice)/h.entryPrice*100) : null
+                const health=portfolioHoldingHealth(s, pnlPct)
+                return {h, s, pnlPct, health}
+              })
+              const attention = [...healthRows]
+                .filter(r=>r.health.rank<=2)
+                .sort((a,b)=>a.health.rank-b.health.rank || (a.pnlPct??0)-(b.pnlPct??0))
+                .slice(0,6)
+
+              // Portfolio-level rollup
               let invested=0, current=0, haveValueFor=0
               let rsWeightedSum=0, rsWeight=0, rsCount=0, rsSum=0
               let dayPnl=0, dayPnlHave=0
@@ -15202,7 +15316,6 @@ export default function App(){
                   haveValueFor++
                   if(rsv!=null){ rsWeightedSum += rsv*(h.qty*s.last); rsWeight += (h.qty*s.last) }
                 }
-                // Today's ₹ P&L from LTP vs previous close (chg%)
                 if(h.qty && s.last!=null && s.chg!=null && isFinite(s.chg)){
                   const prev=s.last/(1+s.chg/100)
                   dayPnl += h.qty*(s.last-prev)
@@ -15213,7 +15326,6 @@ export default function App(){
               const pnlPct = invested>0 ? ((current-invested)/invested*100) : null
               const avgRs = rsWeight>0 ? (rsWeightedSum/rsWeight) : (rsCount>0 ? rsSum/rsCount : null)
               const todayPnl = dayPnlHave>0 ? dayPnl : null
-              // Period returns of the portfolio (value-weighted stock chg) for vs-index alpha
               const portChgD = portfolioWeightedAvg(portfolioHoldings, stocks, 'chg')
               const portChgW = portfolioWeightedAvg(portfolioHoldings, stocks, 'chgW')
               const portChgM = portfolioWeightedAvg(portfolioHoldings, stocks, 'chgM')
@@ -15240,14 +15352,60 @@ export default function App(){
                   aM: (portChgM!=null && idx?.chgM!=null) ? portChgM-idx.chgM : null,
                 }
               })
+              const exitN = healthRows.filter(r=>r.health.key==='exit').length
+              const watchN = healthRows.filter(r=>r.health.key==='watch'||r.health.key==='weak').length
+              const strongN = healthRows.filter(r=>r.health.key==='strong').length
               return(
+                <>
+                {attention.length>0&&(
+                  <div style={{marginBottom:14,padding:'12px 14px',borderRadius:10,
+                    background:C.card,border:`1px solid ${C.border}`}}>
+                    <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',
+                      gap:8,flexWrap:'wrap',marginBottom:10}}>
+                      <div style={{fontWeight:800,fontSize:13,color:C.text}}>
+                        Needs a look
+                        <span style={{fontWeight:600,fontSize:11,color:C.muted,marginLeft:8}}>
+                          {[
+                            exitN?`${exitN} exit zone`:null,
+                            watchN?`${watchN} watch/weak`:null,
+                            'click to open chart',
+                          ].filter(Boolean).join(' · ')}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                      {attention.map(({h,s,pnlPct,health})=>(
+                        <button key={h.sym} type="button"
+                          onClick={()=>s&&openChart(s.sym)}
+                          disabled={!s}
+                          title={health.tip}
+                          style={{display:'flex',alignItems:'center',gap:8,
+                            padding:'8px 12px',borderRadius:8,cursor:s?'pointer':'default',
+                            border:`1px solid ${health.color}44`,background:health.color+'10',
+                            color:C.text,textAlign:'left'}}>
+                          <PortfolioHealthChip health={health} compact/>
+                          <span style={{fontWeight:800,fontSize:12}}>{h.sym}</span>
+                          <span style={{fontSize:11,fontWeight:700,
+                            color:pnlPct==null?C.muted:pnlPct>=0?C.green:C.red}}>
+                            {pnlPct==null?'—':`${pnlPct>=0?'+':''}${pnlPct.toFixed(1)}%`}
+                          </span>
+                          <span style={{fontSize:11,fontWeight:700,
+                            color:s?(rsColor(s.rsTv??s.rs)):C.muted}}>
+                            RS {(s?.rsTv??s?.rs)??'—'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
                   padding:'12px 14px',marginBottom:14}}>
                   <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:8,flexWrap:'wrap',marginBottom:10}}>
                     <div style={{fontWeight:800,fontSize:13,color:C.text}}>
-                      Portfolio summary
+                      {activePortfolio?.name||'Portfolio'}
                       <span style={{fontWeight:600,fontSize:11,color:C.muted,marginLeft:8}}>
-                        · {activePortfolio?.name}
+                        {portfolioHoldings.length} names
+                        {strongN?` · ${strongN} strong`:''}
                       </span>
                     </div>
                     {avgRs!=null&&(
@@ -15258,7 +15416,6 @@ export default function App(){
                     )}
                   </div>
 
-                  {/* KPI strip — invested, total P&L, today's P&L, return */}
                   {haveValueFor>0?(
                     <div style={{display:'grid',
                       gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,minmax(0,1fr))',
@@ -15291,76 +15448,57 @@ export default function App(){
                     </div>
                   )}
 
-                  {/* Single compact vs-market table (Port once, α per index) */}
-                  <div style={{overflowX:'auto'}}>
-                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:11,minWidth:isMobile?420:0}}>
-                      <thead>
-                        <tr>
-                          <th style={{textAlign:'left',padding:'6px 8px',color:C.muted,fontWeight:700,fontSize:10,
-                            borderBottom:`1px solid ${C.border}`}}>vs Market</th>
-                          <th style={{textAlign:'right',padding:'6px 8px',color:C.muted,fontWeight:700,fontSize:10,
-                            borderBottom:`1px solid ${C.border}`}}>1D</th>
-                          <th style={{textAlign:'right',padding:'6px 8px',color:C.muted,fontWeight:700,fontSize:10,
-                            borderBottom:`1px solid ${C.border}`}}>1W</th>
-                          <th style={{textAlign:'right',padding:'6px 8px',color:C.muted,fontWeight:700,fontSize:10,
-                            borderBottom:`1px solid ${C.border}`}}>1M</th>
-                          <th style={{textAlign:'right',padding:'6px 8px',color:C.muted,fontWeight:700,fontSize:10,
-                            borderBottom:`1px solid ${C.border}`}}>RS</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr style={{background:C.bg}}>
-                          <td style={{padding:'7px 8px',fontWeight:800,color:C.text}}>Portfolio</td>
-                          <td style={{padding:'7px 8px',textAlign:'right',fontWeight:700,
-                            color:portChgD==null?C.muted:portChgD>=0?C.green:C.red}}>{fmtPctSigned(portChgD)}</td>
-                          <td style={{padding:'7px 8px',textAlign:'right',fontWeight:700,
-                            color:portChgW==null?C.muted:portChgW>=0?C.green:C.red}}>{fmtPctSigned(portChgW)}</td>
-                          <td style={{padding:'7px 8px',textAlign:'right',fontWeight:700,
-                            color:portChgM==null?C.muted:portChgM>=0?C.green:C.red}}>{fmtPctSigned(portChgM)}</td>
-                          <td style={{padding:'7px 8px',textAlign:'right',fontWeight:800,
-                            color:avgRs!=null?rsColor(avgRs):C.muted}}>
-                            {avgRs!=null?avgRs.toFixed(0):'—'}
-                          </td>
-                        </tr>
-                        {benches.map(b=>(
-                          <tr key={b.key}>
-                            <td style={{padding:'7px 8px',borderTop:`1px solid ${C.divider}`}}>
-                              <span
-                                onClick={()=>b.idx && openChart(b.idx.name,{isIndex:true})}
-                                style={{fontWeight:700,color:b.idx?C.accent:C.text,cursor:b.idx?'pointer':'default',
-                                  textDecoration:b.idx?'underline':'none',textDecorationColor:C.accent+'55'}}
-                                title={b.idx?`Open ${b.label} chart`:undefined}>
-                                {b.short}
-                              </span>
-                              <span style={{color:C.muted,fontSize:10,marginLeft:6}}>
-                                {fmtPctSigned(b.chgD)} · α
-                              </span>
-                            </td>
-                            <td style={{padding:'7px 8px',textAlign:'right',borderTop:`1px solid ${C.divider}`,
-                              fontWeight:800,color:alphaColor(b.aD)}} title={`Index ${fmtPctSigned(b.chgD)}`}>
-                              {fmtPctSigned(b.aD)}
-                            </td>
-                            <td style={{padding:'7px 8px',textAlign:'right',borderTop:`1px solid ${C.divider}`,
-                              fontWeight:800,color:alphaColor(b.aW)}} title={`Index ${fmtPctSigned(b.chgW)}`}>
-                              {fmtPctSigned(b.aW)}
-                            </td>
-                            <td style={{padding:'7px 8px',textAlign:'right',borderTop:`1px solid ${C.divider}`,
-                              fontWeight:800,color:alphaColor(b.aM)}} title={`Index ${fmtPctSigned(b.chgM)}`}>
-                              {fmtPctSigned(b.aM)}
-                            </td>
-                            <td style={{padding:'7px 8px',textAlign:'right',borderTop:`1px solid ${C.divider}`,
-                              fontWeight:800,color:b.rsVs!=null?rsColor(b.rsVs):C.muted}}>
-                              {b.rsVs!=null?b.rsVs.toFixed(0):'—'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div style={{fontSize:9.5,color:C.muted,marginTop:8,lineHeight:1.4}}>
-                    Today’s P&amp;L = sum of qty × (LTP − prev close). Index rows show α (portfolio − index). Hover α for index %.
+                  {/* Compact α strip */}
+                  <div style={{display:'grid',
+                    gridTemplateColumns:isMobile?'1fr':'auto repeat(3,minmax(0,1fr))',
+                    gap:8,alignItems:'stretch'}}>
+                    <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,
+                      padding:'8px 12px',display:'flex',flexDirection:isMobile?'row':'column',
+                      justifyContent:'space-between',gap:6,minWidth:isMobile?0:110}}>
+                      <div style={{fontSize:9,color:C.muted,fontWeight:700,letterSpacing:'0.04em'}}>PORTFOLIO</div>
+                      <div style={{display:'flex',gap:10,flexWrap:'wrap',fontSize:12,fontWeight:800}}>
+                        <span style={{color:portChgD==null?C.muted:portChgD>=0?C.green:C.red}}
+                          title="1D">{fmtPctSigned(portChgD)}</span>
+                        <span style={{color:portChgW==null?C.muted:portChgW>=0?C.green:C.red}}
+                          title="1W">{fmtPctSigned(portChgW)}</span>
+                        <span style={{color:portChgM==null?C.muted:portChgM>=0?C.green:C.red}}
+                          title="1M">{fmtPctSigned(portChgM)}</span>
+                      </div>
+                    </div>
+                    {benches.map(b=>(
+                      <div key={b.key} style={{background:C.bg,border:`1px solid ${C.border}`,
+                        borderRadius:8,padding:'8px 12px'}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                          <span
+                            onClick={()=>b.idx && openChart(b.idx.name,{isIndex:true})}
+                            style={{fontSize:11,fontWeight:800,color:b.idx?C.accent:C.text,
+                              cursor:b.idx?'pointer':'default'}}
+                            title={b.idx?`Open ${b.label}`:undefined}>
+                            α vs {b.short}
+                          </span>
+                          <span style={{fontSize:10,fontWeight:700,
+                            color:b.rsVs!=null?rsColor(b.rsVs):C.muted}}
+                            title="Portfolio RS vs this universe">
+                            RS {b.rsVs!=null?b.rsVs.toFixed(0):'—'}
+                          </span>
+                        </div>
+                        <div style={{display:'flex',gap:10,fontSize:12,fontWeight:800}}>
+                          <span style={{color:alphaColor(b.aD)}} title={`1D index ${fmtPctSigned(b.chgD)}`}>
+                            {fmtPctSigned(b.aD)}
+                          </span>
+                          <span style={{color:alphaColor(b.aW)}} title={`1W index ${fmtPctSigned(b.chgW)}`}>
+                            {fmtPctSigned(b.aW)}
+                          </span>
+                          <span style={{color:alphaColor(b.aM)}} title={`1M index ${fmtPctSigned(b.chgM)}`}>
+                            {fmtPctSigned(b.aM)}
+                          </span>
+                        </div>
+                        <div style={{fontSize:9,color:C.muted,marginTop:4}}>1D · 1W · 1M alpha</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
+                </>
               )
             })()}
 
@@ -15378,7 +15516,6 @@ export default function App(){
               const rowsRaw = portfolioHoldings.map(h=>{
                 const s=stocks.find(x=>x.sym===h.sym)
                 const stage=s?calcWeinsteinStage(s):null
-                const dangerZone=stage&&(stage.stage===3||stage.stage===4)
                 const invested = (h.qty!=null && h.entryPrice!=null) ? h.qty*h.entryPrice : null
                 const current = (h.qty!=null && s?.last!=null) ? h.qty*s.last : null
                 const pnlAmt = (invested!=null && current!=null) ? current-invested : null
@@ -15387,7 +15524,8 @@ export default function App(){
                   : null
                 const name = portfolioDisplayName(h, s)
                 const rs = s?.rsTv??s?.rs??null
-                return {h, s, stage, dangerZone, invested, current, pnlAmt, pnlPct, name, rs}
+                const health = portfolioHoldingHealth(s, pnlPct)
+                return {h, s, stage, invested, current, pnlAmt, pnlPct, name, rs, health}
               })
               const totalCurrent = rowsRaw.reduce((a,r)=>a+(r.current??0),0)
               const rowsUnsorted = rowsRaw.map(r=>({
@@ -15412,12 +15550,13 @@ export default function App(){
                 else if(portfolioSortBy==='return'){ av=a.pnlPct; bv=b.pnlPct }
                 else if(portfolioSortBy==='rs'){ av=a.rs; bv=b.rs }
                 else if(portfolioSortBy==='weight'){ av=a.weight; bv=b.weight }
-                else if(portfolioSortBy==='stage'){ av=a.stage?.stage??null; bv=b.stage?.stage??null }
+                else if(portfolioSortBy==='stage' || portfolioSortBy==='status'){
+                  av=a.health?.rank??9; bv=b.health?.rank??9
+                }
                 const nl=nullLast(av,bv); if(nl) return nl
                 if(av!==bv) return dir===1?(av-bv):(bv-av)
                 return a.h.sym.localeCompare(b.h.sym)
               })
-              // Split into two columns on wide screens (like common portfolio trackers)
               const useSplit = !isMobile && rows.length >= 6
               const tables = useSplit
                 ? [rows.slice(0, Math.ceil(rows.length/2)), rows.slice(Math.ceil(rows.length/2))]
@@ -15426,22 +15565,22 @@ export default function App(){
               const renderTable = (tableRows, key) => (
                 <div key={key} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
                   <div style={{overflowX:'auto'}}>
-                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:480}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:520}}>
                       <thead>
                         <tr style={{background:C.bg}}>
                           {[
                             {label:'STOCK', key:'sym', align:'left'},
+                            {label:'STATUS', key:'status', align:'left'},
                             {label:'AVG COST', key:'cost', align:'right'},
                             {label:'INVESTED', key:'invested', align:'right'},
-                            {label:'WEIGHT', key:'weight', align:'right'},
+                            {label:'WT%', key:'weight', align:'right'},
                             {label:'P&L', key:'pnl', align:'right'},
                             {label:'RETURN', key:'return', align:'right'},
                             {label:'RS', key:'rs', align:'right'},
                             {label:'', key:null, align:'right'},
-                            {label:'', key:null, align:'right'},
                           ].map((col,i)=>(
                             <th key={i} style={{
-                              padding: col.key==='weight'||col.key==='rs'?'10px 8px':'10px 12px',
+                              padding: col.key==='weight'||col.key==='rs'||col.key==='status'?'10px 8px':'10px 10px',
                               textAlign: col.align,
                               fontSize:10, fontWeight:800, color:C.muted, letterSpacing:'0.04em',
                               borderBottom:`1px solid ${C.border}`, whiteSpace:'nowrap',
@@ -15456,51 +15595,48 @@ export default function App(){
                         </tr>
                       </thead>
                       <tbody>
-                        {tableRows.map(({h,s,stage,dangerZone,invested,pnlAmt,pnlPct,name,rs,weight}, idx)=>{
+                        {tableRows.map(({h,s,invested,pnlAmt,pnlPct,name,rs,weight,health}, idx)=>{
                           const journalOpen=journalOpenSym===h.sym
                           const journal=h.journal||[]
+                          const isExit=health?.key==='exit'
                           return(
                             <React.Fragment key={h.sym}>
                               <tr style={{
                                 background: idx%2 ? C.bg : 'transparent',
-                                borderLeft: dangerZone ? `3px solid ${C.red}` : '3px solid transparent',
+                                borderLeft: isExit ? `3px solid ${C.red}`
+                                  : health?.key==='watch' ? `3px solid ${C.orange}`
+                                  : '3px solid transparent',
                               }}>
-                                <td style={{padding:'10px 12px',textAlign:'left',maxWidth:200}}>
-                                  <div style={{fontWeight:800,fontSize:13,color:C.text,cursor:s?'pointer':'default',
-                                    letterSpacing:'0.01em'}}
+                                <td style={{padding:'10px 10px',textAlign:'left',maxWidth:160}}>
+                                  <div style={{fontWeight:800,fontSize:13,color:C.text,cursor:s?'pointer':'default'}}
                                     onClick={()=>s&&openChart(s.sym)}
                                     title={s?'Open chart':undefined}>
                                     {h.sym}
                                   </div>
                                   <div style={{
-                                    fontSize:10.5, color:C.muted, marginTop:2, lineHeight:1.3,
+                                    fontSize:10, color:C.muted, marginTop:2, lineHeight:1.25,
                                     overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
                                   }} title={name||undefined}>
                                     {name || '—'}
                                   </div>
-                                  {(stage||dangerZone)&&(
-                                    <div style={{display:'flex',gap:4,flexWrap:'wrap',marginTop:5,alignItems:'center'}}>
-                                      {stage&&<StageBadge stage={stage}/>}
-                                      {dangerZone&&(
-                                        <span style={{fontSize:9,fontWeight:800,color:C.red}}>⚠ EXIT</span>
-                                      )}
-                                    </div>
-                                  )}
                                 </td>
-                                <td style={{padding:'10px 12px',textAlign:'right',fontWeight:600,color:C.text,whiteSpace:'nowrap'}}>
+                                <td style={{padding:'10px 8px',textAlign:'left',whiteSpace:'nowrap'}}>
+                                  <PortfolioHealthChip health={health} compact/>
+                                </td>
+                                <td style={{padding:'10px 10px',textAlign:'right',fontWeight:600,color:C.text,whiteSpace:'nowrap'}}>
                                   {h.entryPrice!=null ? fmtP(h.entryPrice) : '—'}
                                 </td>
-                                <td style={{padding:'10px 12px',textAlign:'right',fontWeight:600,color:C.text,whiteSpace:'nowrap'}}>
+                                <td style={{padding:'10px 10px',textAlign:'right',fontWeight:600,color:C.text,whiteSpace:'nowrap'}}>
                                   {invested!=null ? fmtAmt(invested) : '—'}
                                 </td>
                                 <td style={{padding:'10px 8px',textAlign:'right',fontWeight:700,color:C.muted,whiteSpace:'nowrap'}}>
-                                  {weight!=null ? `${weight.toFixed(1)}%` : '—'}
+                                  {weight!=null ? `${weight.toFixed(1)}` : '—'}
                                 </td>
-                                <td style={{padding:'10px 12px',textAlign:'right',fontWeight:700,whiteSpace:'nowrap',
+                                <td style={{padding:'10px 10px',textAlign:'right',fontWeight:700,whiteSpace:'nowrap',
                                   color:pnlAmt==null?C.muted:pnlAmt>=0?C.green:C.red}}>
                                   {pnlAmt==null ? '—' : `${pnlAmt>=0?'+':'-'}${fmtAmt(Math.abs(pnlAmt)).replace('₹','')}`}
                                 </td>
-                                <td style={{padding:'10px 12px',textAlign:'right',fontWeight:700,whiteSpace:'nowrap',
+                                <td style={{padding:'10px 10px',textAlign:'right',fontWeight:700,whiteSpace:'nowrap',
                                   color:pnlPct==null?C.muted:pnlPct>=0?C.green:C.red}}>
                                   {pnlPct==null ? '—' : `${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%`}
                                 </td>
@@ -15508,20 +15644,18 @@ export default function App(){
                                   color:rs!=null?rsColor(rs):C.muted}}>
                                   {rs!=null ? rs : '—'}
                                 </td>
-                                <td style={{padding:'10px 4px',textAlign:'right',width:36}}>
+                                <td style={{padding:'10px 8px',textAlign:'right',whiteSpace:'nowrap'}}>
                                   <button onClick={()=>setJournalOpenSym(journalOpen?null:h.sym)}
                                     title="Trade journal"
                                     style={{background:journalOpen?C.accent+'22':'transparent',
                                       border:`1px solid ${journalOpen?C.accent:C.border}`,
                                       color:journalOpen?C.accent:C.muted,fontSize:11,padding:'2px 6px',
-                                      borderRadius:5,cursor:'pointer'}}>
+                                      borderRadius:5,cursor:'pointer',marginRight:4}}>
                                     📝{journal.length>0?` ${journal.length}`:''}
                                   </button>
-                                </td>
-                                <td style={{padding:'10px 8px 10px 4px',textAlign:'right',width:28}}>
                                   <button onClick={()=>setPortfolioHoldings(h2=>h2.filter(x=>x.sym!==h.sym))}
                                     style={{background:'transparent',border:'none',
-                                      color:C.muted,fontSize:14,cursor:'pointer',padding:'0 4px'}}>
+                                      color:C.muted,fontSize:14,cursor:'pointer',padding:'0 2px'}}>
                                     ×
                                   </button>
                                 </td>
@@ -15589,8 +15723,19 @@ export default function App(){
 
               return (
                 <div>
-                  <div style={{fontSize:10,color:C.muted,marginBottom:8}}>
-                    Click a column header to sort · default: Invested (high → low)
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+                    gap:8,flexWrap:'wrap',marginBottom:8}}>
+                    <div style={{fontSize:10,color:C.muted}}>
+                      Sort by Status to surface Exit / Watch first · click symbol for chart
+                    </div>
+                    <button type="button" onClick={()=>{
+                      setPortfolioSortBy('status'); setPortfolioSortDir('asc')
+                    }}
+                      style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.border}`,
+                        background:portfolioSortBy==='status'?C.accent+'22':'transparent',
+                        color:portfolioSortBy==='status'?C.accent:C.muted,fontSize:10,fontWeight:700,cursor:'pointer'}}>
+                      Sort: needs attention
+                    </button>
                   </div>
                   <div style={{display:'grid',gridTemplateColumns:useSplit?'1fr 1fr':'1fr',gap:12}}>
                     {tables.map((t,i)=>renderTable(t, i))}

@@ -717,6 +717,60 @@ export async function saveUserAlertPrefs(userId, prefs) {
   return { data }
 }
 
+export const MAX_FAMILY_PORTFOLIOS = 5
+
+/** Load family portfolios blob for a user (null if none saved yet). */
+export async function fetchUserPortfolios(userId) {
+  if (!userId) return null
+  const { data, error } = await supabase
+    .from('user_portfolios')
+    .select('portfolios,active_id,updated_at')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) {
+    console.error('fetchUserPortfolios error:', error.message)
+    return null
+  }
+  if (!data) return null
+  const portfolios = Array.isArray(data.portfolios) ? data.portfolios : []
+  return {
+    portfolios,
+    activeId: data.active_id || null,
+    updatedAt: data.updated_at || null,
+  }
+}
+
+/** Upsert family portfolios + active tab for a signed-in user. */
+export async function saveUserPortfolios(userId, { portfolios, activeId } = {}) {
+  if (!userId) return { error: 'Sign in to save portfolios.' }
+  const list = (Array.isArray(portfolios) ? portfolios : [])
+    .slice(0, MAX_FAMILY_PORTFOLIOS)
+    .map((p, i) => ({
+      id: p?.id || `p_${i}`,
+      name: String(p?.name || 'Portfolio').trim().slice(0, 40) || 'Portfolio',
+      holdings: Array.isArray(p?.holdings) ? p.holdings : [],
+    }))
+  if (!list.length) return { error: 'At least one portfolio is required.' }
+  let aid = activeId || list[0].id
+  if (!list.some(p => p.id === aid)) aid = list[0].id
+  const payload = {
+    user_id: userId,
+    portfolios: list,
+    active_id: aid,
+    updated_at: new Date().toISOString(),
+  }
+  const { data, error } = await supabase
+    .from('user_portfolios')
+    .upsert(payload, { onConflict: 'user_id' })
+    .select('portfolios,active_id,updated_at')
+    .single()
+  if (error) {
+    console.error('saveUserPortfolios error:', error.message)
+    return { error: error.message || 'Could not save portfolios' }
+  }
+  return { data }
+}
+
 export async function fetchStockFullHistory(sym) {
   const cleanSym = (sym || '').trim()
   // Confirmed via direct Supabase inspection: rows exist with real data
