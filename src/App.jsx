@@ -4411,6 +4411,60 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
   )
 }
 
+function TradingViewDailyChart({symbol, exchange, onReady}){
+  // Advanced Chart widget — widgetembed often ignored interval=D and opened on 60m.
+  const wrapRef = useRef(null)
+  useEffect(()=>{
+    const wrap = wrapRef.current
+    if(!wrap || !symbol) return
+    wrap.innerHTML = ''
+    const widgetHost = document.createElement('div')
+    widgetHost.className = 'tradingview-widget-container__widget'
+    widgetHost.style.height = '100%'
+    widgetHost.style.width = '100%'
+    wrap.appendChild(widgetHost)
+    const script = document.createElement('script')
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js'
+    script.type = 'text/javascript'
+    script.async = true
+    script.text = JSON.stringify({
+      autosize: true,
+      symbol: `${exchange}:${symbol}`,
+      interval: '1D',
+      timezone: 'Asia/Kolkata',
+      theme: 'dark',
+      style: '1',
+      locale: 'en',
+      backgroundColor: '#0e1117',
+      toolbar_bg: '#0e1117',
+      enable_publishing: false,
+      hide_top_toolbar: false,
+      hide_legend: false,
+      hide_side_toolbar: false,
+      allow_symbol_change: true,
+      save_image: false,
+      withdateranges: true,
+      calendar: false,
+      studies: [
+        'RSI@tv-basicstudies',
+        'Volume@tv-basicstudies',
+        'MACD@tv-basicstudies',
+      ],
+      support_host: 'https://www.tradingview.com',
+    })
+    wrap.appendChild(script)
+    const t = setTimeout(()=>onReady?.(), 800)
+    return ()=>{
+      clearTimeout(t)
+      wrap.innerHTML = ''
+    }
+  }, [symbol, exchange]) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div ref={wrapRef} className="tradingview-widget-container"
+      style={{height:'100%', width:'100%', minHeight:0}}/>
+  )
+}
+
 function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, detailFirst=false, onMoveTile, stackLayout=false, columnsLayout=false, chartColPct=36, detailColPct=32, sideSoloChart=false, chartCellStyle=null, detailCellStyle=null, chartStackOrder=2, detailStackOrder=4}){
   const [loaded, setLoaded] = useState(false)
   // Stocks open on TradingView (1D); indices only have Our Chart.
@@ -4459,11 +4513,9 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
   // stocks), so the embed frequently fails. BSE listings still work in
   // embeds — the TV tab defaults to BSE with an exchange toggle.
   const [tvExchange, setTvExchange] = useState('BSE')
-  useEffect(() => { setLoaded(false) }, [sym])
+  useEffect(() => { setLoaded(false) }, [sym, tvExchange])
 
   if(!sym) return null
-  // Default: daily (1D) candles. Range stays multi-month so the chart isn't a single bar.
-  const src = `https://s.tradingview.com/widgetembed/?symbol=${tvExchange}%3A${encodeURIComponent(sym)}&interval=D&range=3M&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=0e1117&studies=RSI%40tv-basicstudies%1FVolume%40tv-basicstudies%1FMACD%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata&withdateranges=1&locale=en`
 
   // Prev/Next within whatever list was showing when the chart was
   // opened — so you can flip through stocks one by one without closing
@@ -4604,16 +4656,15 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
           <>
             {!loaded&&(
               <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',
-                justifyContent:'center',flexDirection:'column',gap:8,background:C.sidebar}}>
+                justifyContent:'center',flexDirection:'column',gap:8,background:C.sidebar,zIndex:1}}>
                 <div style={{fontSize:12,color:C.muted}}>Loading {sym} chart…</div>
               </div>
             )}
-            <iframe
-              key={sym+tvExchange}
-              src={src}
-              onLoad={()=>setLoaded(true)}
-              style={{width:'100%',height:'100%',border:'none'}}
-              allowFullScreen
+            <TradingViewDailyChart
+              key={`${tvExchange}:${sym}:1D`}
+              symbol={sym}
+              exchange={tvExchange}
+              onReady={()=>setLoaded(true)}
             />
           </>
         ):(
