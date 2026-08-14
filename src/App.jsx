@@ -4310,7 +4310,7 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
   )
 }
 
-function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, detailFirst=false, onMoveTile, stackLayout=false, chartStackOrder=2, detailStackOrder=4}){
+function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, detailFirst=false, onMoveTile, stackLayout=false, columnsLayout=false, sideSoloChart=false, chartCellStyle=null, detailCellStyle=null, chartStackOrder=2, detailStackOrder=4}){
   const [loaded, setLoaded] = useState(false)
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
   const sectionOrder=normalizeChartSectionOrder(chartSectionOrder)
@@ -4390,6 +4390,35 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
     borderTop:`1px solid ${C.divider}`,
     order,
   })
+  // Three-column mode: RS | Chart | Fundamentals as equal-height columns.
+  const columnsTileStyle=(order, flexGrow)=>({
+    position:'relative',
+    flex: flexGrow,
+    minWidth:160,
+    minHeight:0,
+    height:'100%',
+    alignSelf:'stretch',
+    overflow:'hidden',
+    display:'flex',
+    flexDirection:'column',
+    background:C.sidebar,
+    borderLeft:`1px solid ${C.divider}`,
+    order,
+  })
+  // Chart full-height on one side; RS + Overview share the opposite column (CSS grid parent).
+  const soloChartTileStyle={
+    position:'relative',
+    minWidth:0,minHeight:0,overflow:'hidden',
+    display:'flex',flexDirection:'column',background:C.sidebar,
+    ...(chartCellStyle||{}),
+  }
+  const soloDetailTileStyle={
+    position:'relative',
+    minWidth:0,minHeight:0,overflow:'hidden',
+    display:'flex',flexDirection:'column',background:C.bg,
+    borderTop:`1px solid ${C.divider}`,
+    ...(detailCellStyle||{}),
+  }
 
   const chartExpanded=wide>=1||(customPct!=null&&customPct>=45)
   const readingMode=['about','fundamentals','concall','ppt','resultsSummary'].includes(detailTab)
@@ -4593,7 +4622,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
       <PanelWindow
         key="detail-dock"
         id="detail"
-        title={`${sym} · Details`}
+        title={`${sym} · ${columnsLayout ? 'Fundamentals' : 'Details'}`}
         colors={C}
         floating={null}
         onFloatingChange={f=>onPanelDetail?.({float:f})}
@@ -4622,18 +4651,46 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
       {anyDocked&&stackLayout&&(
         <>
           {chartDocked&&(
-            <div style={stackTileStyle(chartStackOrder, '1 1 62%')}>
+            <div style={stackTileStyle(chartStackOrder, '1 1 62%', chartMinH)}>
               {chartWin(false)}
             </div>
           )}
           {detailDocked&&(
-            <div style={stackTileStyle(detailStackOrder, '0 1 34%')}>
+            <div style={stackTileStyle(detailStackOrder, '0 1 34%', belowMin)}>
               {detailWin(false)}
             </div>
           )}
         </>
       )}
-      {anyDocked&&!stackLayout&&(
+      {anyDocked&&!stackLayout&&columnsLayout&&(
+        <>
+          {chartDocked&&(
+            <div style={columnsTileStyle(chartStackOrder, '1 1 36%')}>
+              {chartWin(false)}
+            </div>
+          )}
+          {detailDocked&&(
+            <div style={{...columnsTileStyle(detailStackOrder, '1 1 32%'), background:C.bg}}>
+              {detailWin(false)}
+            </div>
+          )}
+        </>
+      )}
+      {anyDocked&&!stackLayout&&!columnsLayout&&sideSoloChart&&(
+        <>
+          {chartDocked&&(
+            <div style={soloChartTileStyle}>
+              {chartWin(false)}
+            </div>
+          )}
+          {detailDocked&&(
+            <div style={soloDetailTileStyle}>
+              {detailWin(false)}
+            </div>
+          )}
+        </>
+      )}
+      {anyDocked&&!stackLayout&&!columnsLayout&&!sideSoloChart&&(
         <div style={panelStyle}>
           {detailFirst ? <>{detailWin(true)}{chartWin(true)}</> : <>{chartWin(true)}{detailWin(true)}</>}
         </div>
@@ -7190,29 +7247,41 @@ function normalizeChartSectionOrder(order){
 
 /** Main workspace tiles: RS table (screener), Chart, Overview/Details. */
 const DOCK_TILE_IDS = ['screener', 'chart', 'detail']
-const DOCK_TILE_LABELS = { screener:'RS / Table', chart:'Chart', detail:'Overview' }
-const DEFAULT_DOCK_LAYOUT = { mode:'side', order:['screener','chart','detail'] }
+const DOCK_TILE_LABELS = { screener:'RS / Table', chart:'Chart', detail:'Fundamentals' }
+const DEFAULT_DOCK_LAYOUT = { mode:'side', solo:'screener', order:['screener','chart','detail'] }
 const DOCK_LAYOUT_KEY = 'lakshmimata-dock-layout'
 
-/** TradingView-style layout presets — swap RS table / Chart / Overview. */
+/** TradingView-style layout presets — swap RS table / Chart / Fundamentals.
+ *  First preset is the product default: RS left · Chart over Overview right.
+ *  `solo` (side only): which tile gets a full-height column — others stack opposite.
+ *  `columns`: three full-height panes side by side (RS | Chart | Fund). */
 const DOCK_LAYOUT_PRESETS = [
   {
     id: 'side-rs-chart',
-    label: 'RS | Chart',
-    hint: 'Table left · Chart + Overview right',
-    layout: { mode: 'side', order: ['screener', 'chart', 'detail'] },
+    label: 'Default',
+    hint: 'RS left · Chart over Overview',
+    layout: { mode: 'side', solo: 'screener', order: ['screener', 'chart', 'detail'] },
+    chartWide: 1, // ~50% right column
+  },
+  {
+    id: 'columns-rs-chart-fund',
+    label: 'RS | Chart | Fund',
+    hint: 'Three columns side by side',
+    layout: { mode: 'columns', order: ['screener', 'chart', 'detail'] },
   },
   {
     id: 'side-chart-rs',
     label: 'Chart | RS',
-    hint: 'Chart + Overview left · Table right',
-    layout: { mode: 'side', order: ['chart', 'detail', 'screener'] },
+    hint: 'Chart full left · RS + Overview right',
+    layout: { mode: 'side', solo: 'chart', order: ['chart', 'screener', 'detail'] },
+    chartWide: 1,
   },
   {
     id: 'side-rs-overview',
     label: 'RS | Overview',
     hint: 'Table left · Overview above Chart',
-    layout: { mode: 'side', order: ['screener', 'detail', 'chart'] },
+    layout: { mode: 'side', solo: 'screener', order: ['screener', 'detail', 'chart'] },
+    chartWide: 1,
   },
   {
     id: 'stack-rs-chart-ov',
@@ -7226,56 +7295,59 @@ const DOCK_LAYOUT_PRESETS = [
     hint: 'Chart → RS table → Overview',
     layout: { mode: 'stack', order: ['chart', 'screener', 'detail'] },
   },
-  {
-    id: 'stack-rs-ov-chart',
-    label: 'Stack RS→Overview',
-    hint: 'RS table → Overview → Chart',
-    layout: { mode: 'stack', order: ['screener', 'detail', 'chart'] },
-  },
 ]
 
 function dockLayoutMatches(a, b){
   if(!a || !b) return false
   if(a.mode !== b.mode) return false
+  if(a.mode === 'side'){
+    const soloA = a.solo === 'chart' ? 'chart' : 'screener'
+    const soloB = b.solo === 'chart' ? 'chart' : 'screener'
+    if(soloA !== soloB) return false
+  }
   if(a.order?.length !== b.order?.length) return false
   return a.order.every((id, i) => id === b.order[i])
 }
 
 /** Mini schematic of RS / Chart / Overview arrangement (TradingView-style). */
-function DockLayoutThumb({ mode, order, active, colors: C }){
+function DockLayoutThumb({ mode, order, solo, active, colors: C }){
   const cells = (order || DOCK_TILE_IDS).map(id => ({
     id,
-    letter: id === 'screener' ? 'RS' : id === 'chart' ? 'C' : 'O',
+    letter: id === 'screener' ? 'RS' : id === 'chart' ? 'C' : 'F',
     fill: id === 'screener' ? (C.accent || '#3b82f6')
       : id === 'chart' ? (C.teal || '#14b8a6')
       : (C.green || '#22c55e'),
   }))
-  const isSide = mode !== 'stack'
-  // Side mode: first tile that's screener vs the other two as a column (matches app).
+  const isColumns = mode === 'columns'
+  const isSide = mode === 'side'
+  const sideSolo = solo === 'chart' ? 'chart' : 'screener'
+  // Side: one full-height primary tile; the other two stack in the opposite column.
   let sidePrimary = null
   let sideSecondary = []
   if(isSide){
-    const si = cells.findIndex(c => c.id === 'screener')
-    if(si <= 0){
-      sidePrimary = cells.find(c => c.id === 'screener')
-      sideSecondary = cells.filter(c => c.id !== 'screener')
-    } else {
-      sidePrimary = cells.find(c => c.id === 'screener')
-      sideSecondary = cells.filter(c => c.id !== 'screener')
-      // Screener on the right — reverse visual
-    }
+    sidePrimary = cells.find(c => c.id === sideSolo) || cells[0]
+    sideSecondary = cells.filter(c => c.id !== sideSolo)
+    sideSecondary.sort((a, b) => (order||[]).indexOf(a.id) - (order||[]).indexOf(b.id))
   }
-  const screenerFirst = isSide && (order?.[0] === 'screener')
+  const primaryFirst = isSide && (order?.[0] === sideSolo)
   return (
     <div style={{
       width: 72, height: 48, borderRadius: 6, padding: 3, boxSizing: 'border-box',
       border: `1.5px solid ${active ? (C.accent || '#3b82f6') : (C.border || '#333')}`,
       background: active ? (C.accent || '#3b82f6') + '18' : (C.bg || '#0e1117'),
-      display: 'flex', flexDirection: isSide ? 'row' : 'column', gap: 2,
+      display: 'flex', flexDirection: (isSide || isColumns) ? 'row' : 'column', gap: 2,
     }}>
-      {isSide ? (
+      {isColumns ? (
+        cells.map(c => (
+          <div key={c.id} title={DOCK_TILE_LABELS[c.id]} style={{
+            flex:1, borderRadius:3, background:c.fill+'55',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            fontSize:7, fontWeight:800, color:c.fill,
+          }}>{c.letter}</div>
+        ))
+      ) : isSide ? (
         <>
-          {(screenerFirst ? [sidePrimary, sideSecondary] : [sideSecondary, sidePrimary]).map((block, bi) => {
+          {(primaryFirst ? [sidePrimary, sideSecondary] : [sideSecondary, sidePrimary]).map((block, bi) => {
             if(Array.isArray(block)){
               return (
                 <div key={bi} style={{flex:1, display:'flex', flexDirection:'column', gap:2, minWidth:0}}>
@@ -7313,13 +7385,26 @@ function DockLayoutThumb({ mode, order, active, colors: C }){
 }
 
 function normalizeDockLayout(raw){
-  const mode = raw?.mode === 'stack' ? 'stack' : 'side'
+  const mode = raw?.mode === 'stack' ? 'stack'
+    : raw?.mode === 'columns' ? 'columns'
+    : 'side'
   let order = Array.isArray(raw?.order) ? raw.order.filter(k=>DOCK_TILE_IDS.includes(k)) : []
   for(const k of DOCK_TILE_IDS){ if(!order.includes(k)) order.push(k) }
-  return { mode, order }
+  const solo = mode === 'side' && raw?.solo === 'chart' ? 'chart' : 'screener'
+  return { mode, order, solo }
 }
+const DOCK_DEFAULT_VER = '2' // v2: RS left · Chart over Overview (~50% right)
 function loadDockLayout(){
-  try{ return normalizeDockLayout(JSON.parse(localStorage.getItem(DOCK_LAYOUT_KEY)||'null')) }
+  try{
+    const ver=localStorage.getItem('lakshmimata-dock-default-ver')
+    if(ver!==DOCK_DEFAULT_VER){
+      localStorage.setItem('lakshmimata-dock-default-ver',DOCK_DEFAULT_VER)
+      const def={...DEFAULT_DOCK_LAYOUT,order:[...DEFAULT_DOCK_LAYOUT.order]}
+      persistDockLayout(def)
+      return def
+    }
+    return normalizeDockLayout(JSON.parse(localStorage.getItem(DOCK_LAYOUT_KEY)||'null'))
+  }
   catch{ return {...DEFAULT_DOCK_LAYOUT, order:[...DEFAULT_DOCK_LAYOUT.order]} }
 }
 function persistDockLayout(layout){
@@ -7335,11 +7420,23 @@ function moveDockTile(order, id, dir){
   return next
 }
 
+const CHART_PANEL_DEFAULT_VER = '2' // v2: ~50% right column (was 35%)
 function loadChartPanelAutoSave(){
   try{
-    const wide=parseInt(localStorage.getItem('lakshmimata-chart-wide')||'0',10)
+    // One-time migrate: product default is ~50% chart column (wide=1).
+    const ver=localStorage.getItem('lakshmimata-chart-panel-ver')
+    if(ver!==CHART_PANEL_DEFAULT_VER){
+      localStorage.setItem('lakshmimata-chart-panel-ver',CHART_PANEL_DEFAULT_VER)
+      // Only rewrite width if user never drag-resized (no custom pct).
+      const pctChk=localStorage.getItem('lakshmimata-chart-panel-pct')
+      if(pctChk==null||pctChk===''||pctChk==='null'){
+        localStorage.setItem('lakshmimata-chart-wide','1')
+      }
+    }
+    const raw=localStorage.getItem('lakshmimata-chart-wide')
+    const wide=raw==null||raw===''?1:parseInt(raw,10)
     const pctRaw=localStorage.getItem('lakshmimata-chart-panel-pct')
-    const chart_wide=[0,1,2].includes(wide)?wide:0
+    const chart_wide=[0,1,2].includes(wide)?wide:1
     const chart_panel_pct=pctRaw==null||pctRaw===''||pctRaw==='null'
       ?null
       :Math.min(80,Math.max(15,parseFloat(pctRaw)))
@@ -7347,7 +7444,7 @@ function loadChartPanelAutoSave(){
       chart_wide,
       chart_panel_pct:Number.isFinite(chart_panel_pct)?chart_panel_pct:null,
     }
-  }catch(e){ return {chart_wide:0,chart_panel_pct:null} }
+  }catch(e){ return {chart_wide:1,chart_panel_pct:null} }
 }
 
 function persistChartPanelAutoSave(wide,pct){
@@ -10747,14 +10844,21 @@ export default function App(){
     persistDockLayout(normalized)
   }
   const moveTile=(id,dir)=>{
-    // Reordering only has effect in stack mode — switch automatically.
+    // Keep columns mode when fine-tuning; otherwise switch to stack for vertical reorder.
     applyDockLayout({
-      mode:'stack',
+      mode: dockLayout.mode === 'columns' ? 'columns' : 'stack',
+      solo:'screener',
       order: moveDockTile(dockLayout.order, id, dir),
     })
   }
   const detailFirst=dockLayout.order.indexOf('detail') < dockLayout.order.indexOf('chart')
   const dockStack=dockLayout.mode==='stack'
+  const dockColumns=dockLayout.mode==='columns'
+  // Chart alone full-height; RS + Overview stack on the opposite side (see dockSoloChart below).
+  const dockSoloChartRequested=!dockStack&&!dockColumns&&dockLayout.solo==='chart'
+  const chartColFirst=dockLayout.order.indexOf('chart')
+    < Math.min(dockLayout.order.indexOf('screener'), dockLayout.order.indexOf('detail'))
+  const screenerBeforeDetail=dockLayout.order.indexOf('screener') < dockLayout.order.indexOf('detail')
   // True when the open chart is an index (Nifty 50, Midcap 150, …).
   // Kept explicitly so index charts still load even if indexData hasn't
   // arrived yet (name-only detection would briefly treat them as stocks
@@ -11047,6 +11151,8 @@ export default function App(){
   const chartPanelPctRef=useRef(chartPanelPct)
   chartWideRef.current=chartWide
   chartPanelPctRef.current=chartPanelPct
+  const chartOnLeftRef=useRef(false)
+  chartOnLeftRef.current=dockLayout.order.indexOf('chart') < dockLayout.order.indexOf('screener')
   const persistChartPanelState=(wide,pct)=>{
     setActiveLayoutSlot(null)
     persistChartPanelAutoSave(wide,pct)
@@ -11057,7 +11163,9 @@ export default function App(){
       if(!innerRowRef.current)return
       const rect=innerRowRef.current.getBoundingClientRect()
       const relX=e.clientX-rect.left
-      const chartPct=((rect.width-relX)/rect.width)*100
+      const chartPct=chartOnLeftRef.current
+        ?(relX/rect.width)*100
+        :((rect.width-relX)/rect.width)*100
       setChartPanelPct(Math.min(80,Math.max(15,chartPct)))
     }
     const onUp=()=>{
@@ -11476,9 +11584,9 @@ export default function App(){
     }catch(e){
       setVisibleRsCols(defaults)
     }
-    setChartWide(0)
+    setChartWide(1)
     setChartPanelPct(null)
-    persistChartPanelAutoSave(0,null)
+    persistChartPanelAutoSave(1,null)
     setActiveLayoutSlot(null)
     setLayoutMsg('')
   }
@@ -11527,7 +11635,7 @@ export default function App(){
     setVisibleRsCols(defaults)
     setRsColOrder(order)
     setChartSectionOrder([...CHART_SECTION_ORDER_DEFAULT])
-    setChartWide(0)
+    setChartWide(1)
     setChartPanelPct(null)
     setActiveLayoutSlot(null)
     try{
@@ -11535,7 +11643,7 @@ export default function App(){
       localStorage.setItem('lakshmimata-rs-col-ver','3')
       localStorage.setItem('lakshmimata-rs-col-order',JSON.stringify(order))
       localStorage.setItem('lakshmimata-chart-sections',JSON.stringify(CHART_SECTION_ORDER_DEFAULT))
-      persistChartPanelAutoSave(0,null)
+      persistChartPanelAutoSave(1,null)
     }catch(e){}
   }
   const [wlSearch,setWlSearch]=useState(''),[wlSigOnly,setWlSigOnly]=useState(false)
@@ -11550,6 +11658,18 @@ export default function App(){
       setChartIsIndex(true)
     }
   },[indexData, chartSym, chartIsIndex])
+  // Chart full-left layout: CSS grid places Chart | RS+Overview (or reverse).
+  const dockSoloChart=!isMobile&&dockSoloChartRequested&&!!chartSym
+    &&panelWins.screener.open&&!panelWins.screener.minimized&&!panelWins.screener.float
+    &&((panelWins.chart.open&&!panelWins.chart.minimized&&!panelWins.chart.float)
+      ||(panelWins.detail.open&&!panelWins.detail.minimized&&!panelWins.detail.float
+        &&!(chartIsIndex||indexData.some(idx=>idx.name===chartSym))))
+  const dockGridChartCol=chartColFirst?1:3
+  const dockGridSecondaryCol=chartColFirst?3:1
+  const detailDockedForGrid=!!(chartSym&&panelWins.detail.open&&!panelWins.detail.minimized&&!panelWins.detail.float
+    &&!(chartIsIndex||indexData.some(idx=>idx.name===chartSym)))
+  const screenerGridRow=detailDockedForGrid?(screenerBeforeDetail?1:2):'1 / -1'
+  const detailGridRow=screenerBeforeDetail?2:1
   const [expandedIndex,setExpandedIndex]=useState(null)
   const [idxConstituentFilters,setIdxConstituentFilters]=useState({industry:null,rsMin:0})
   const [idxSort,setIdxSort]=useState({key:'rsTv',dir:-1})
@@ -12424,9 +12544,9 @@ export default function App(){
                   <button type="button" title="Workspace layout — arrange RS table, Chart, Overview"
                     onClick={()=>setDockLayoutMenuOpen(v=>!v)}
                     style={{padding:'5px 10px',borderRadius:6,display:'inline-flex',alignItems:'center',gap:5,
-                      border:`1px solid ${dockLayoutMenuOpen||dockStack?C.accent:C.border}`,
-                      background:dockLayoutMenuOpen||dockStack?C.accent+'18':'transparent',
-                      color:dockLayoutMenuOpen||dockStack?C.accent:C.muted,
+                      border:`1px solid ${dockLayoutMenuOpen||dockStack||dockColumns||dockSoloChartRequested?C.accent:C.border}`,
+                      background:dockLayoutMenuOpen||dockStack||dockColumns||dockSoloChartRequested?C.accent+'18':'transparent',
+                      color:dockLayoutMenuOpen||dockStack||dockColumns||dockSoloChartRequested?C.accent:C.muted,
                       fontSize:10,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
                     <span style={{display:'inline-grid',gridTemplateColumns:'1fr 1fr',gap:1,width:12,height:10}}>
                       <span style={{background:'currentColor',borderRadius:1}}/>
@@ -12446,7 +12566,7 @@ export default function App(){
                         <div style={{fontSize:10,color:C.muted,marginBottom:10,lineHeight:1.4}}>
                           Swap <span style={{color:C.accent,fontWeight:700}}>RS</span> table,
                           {' '}<span style={{color:C.teal,fontWeight:700}}>C</span>hart &amp;
-                          {' '}<span style={{color:C.green,fontWeight:700}}>O</span>verview — like TradingView layouts.
+                          {' '}<span style={{color:C.green,fontWeight:700}}>F</span>undamentals — like TradingView layouts.
                         </div>
                         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
                           {DOCK_LAYOUT_PRESETS.map(p=>{
@@ -12455,9 +12575,15 @@ export default function App(){
                               <button key={p.id} type="button"
                                 onClick={()=>{
                                   applyDockLayout(p.layout)
+                                  if(p.chartWide!=null&&[0,1,2].includes(p.chartWide)){
+                                    setChartWide(p.chartWide)
+                                    setChartPanelPct(null)
+                                    persistChartPanelAutoSave(p.chartWide,null)
+                                  }
                                   patchPanel('screener',{open:true,minimized:false,float:null})
                                   patchPanel('chart',{open:true,minimized:false,float:null})
                                   patchPanel('detail',{open:true,minimized:false,float:null})
+                                  if(p.layout?.mode==='columns') setChartDetailTabHint('fundamentals')
                                   setDockLayoutMenuOpen(false)
                                 }}
                                 style={{
@@ -12467,7 +12593,7 @@ export default function App(){
                                   background:active?C.accent+'14':'transparent',
                                 }}>
                                 <DockLayoutThumb mode={p.layout.mode} order={p.layout.order}
-                                  active={active} colors={C}/>
+                                  solo={p.layout.solo} active={active} colors={C}/>
                                 <div style={{fontSize:10,fontWeight:800,color:active?C.accent:C.text}}>{p.label}</div>
                                 <div style={{fontSize:9,color:C.muted,textAlign:'center',lineHeight:1.25}}>{p.hint}</div>
                               </button>
@@ -12494,6 +12620,9 @@ export default function App(){
                         <button type="button"
                           onClick={()=>{
                             applyDockLayout({...DEFAULT_DOCK_LAYOUT,order:[...DEFAULT_DOCK_LAYOUT.order]})
+                            setChartWide(1)
+                            setChartPanelPct(null)
+                            persistChartPanelAutoSave(1,null)
                             patchPanel('screener',{open:true,minimized:false,float:null})
                             patchPanel('chart',{open:true,minimized:false,float:null})
                             patchPanel('detail',{open:true,minimized:false,float:null})
@@ -12552,8 +12681,17 @@ export default function App(){
             onSelect={openChart} onSelectIndex={name=>openChart(name,{isIndex:true})}/>
         </div>
 
-        {/* Below header: screener table | chart — or stacked up/down via Layout menu */}
-        <div ref={innerRowRef} style={{
+        {/* Below header: screener | chart | fund columns, stacked, or side layouts */}
+        <div ref={innerRowRef} style={dockSoloChart?{
+          flex:1,minWidth:0,minHeight:0,display:'grid',
+          gridTemplateColumns:chartColFirst
+            ?`minmax(0,${chartPanelPct!=null?chartPanelPct:([35,50,75][chartWide]??50)}%) 6px minmax(0,1fr)`
+            :`minmax(0,1fr) 6px minmax(0,${chartPanelPct!=null?chartPanelPct:([35,50,75][chartWide]??50)}%)`,
+          gridTemplateRows:screenerBeforeDetail
+            ?'minmax(0,1.2fr) minmax(0,0.8fr)'
+            :'minmax(0,0.8fr) minmax(0,1.2fr)',
+          overflow:'hidden',userSelect:isDraggingDivider?'none':'auto',
+        }:{
           flex:1,minWidth:0,minHeight:0,display:'flex',
           flexDirection:(!isMobile&&dockStack)?'column':'row',
           overflow:'hidden',userSelect:isDraggingDivider?'none':'auto',
@@ -12586,7 +12724,24 @@ export default function App(){
         onClose={()=>patchPanel('screener',{open:false})}
         onMoveUp={!isMobile?()=>moveTile('screener',-1):null}
         onMoveDown={!isMobile?()=>moveTile('screener',1):null}
-        dockStyle={{
+        dockStyle={dockSoloChart?{
+          gridColumn:dockGridSecondaryCol,
+          gridRow:screenerGridRow,
+          minWidth:0,minHeight:0,height:'100%',overflow:'hidden',
+          borderRight:'none',
+          borderBottom:(detailDockedForGrid&&screenerBeforeDetail)?`1px solid ${C.divider}`:'none',
+          borderTop:(detailDockedForGrid&&!screenerBeforeDetail)?`1px solid ${C.divider}`:'none',
+        }:dockColumns?{
+          order: dockLayout.order.indexOf('screener') * 2,
+          flex:(chartSym&&!isMobile&&!panelWins.screener.float
+            &&((panelWins.chart.open&&!panelWins.chart.minimized&&!panelWins.chart.float)
+              ||(panelWins.detail.open&&!panelWins.detail.minimized&&!panelWins.detail.float)))
+            ? '1 1 32%' : 1,
+          height:'100%',
+          minWidth:180,
+          minHeight:0,
+          borderRight:'none',
+        }:{
           order: dockLayout.order.indexOf('screener') * 2,
           flex:(chartSym&&!isMobile&&!panelWins.screener.float&&(
             (panelWins.chart.open&&!panelWins.chart.minimized&&!panelWins.chart.float)||
@@ -16502,15 +16657,20 @@ export default function App(){
           moving left/right updates chartPanelPct directly; the mousemove/
           mouseup listeners live in the isDraggingDivider effect above so
           dragging still works even if the cursor leaves this thin strip. */}
-      {chartSym&&!isMobile&&!dockStack&&panelWins.screener.open&&!panelWins.screener.minimized&&!panelWins.screener.float&&(
+      {chartSym&&!isMobile&&!dockStack&&!dockColumns&&panelWins.screener.open&&!panelWins.screener.minimized&&!panelWins.screener.float&&(
         (panelWins.chart.open&&!panelWins.chart.minimized&&!panelWins.chart.float)||
         (panelWins.detail.open&&!panelWins.detail.minimized&&!panelWins.detail.float)
       )&&(
         <div onMouseDown={()=>setIsDraggingDivider(true)}
-          style={{width:6,flexShrink:0,cursor:'col-resize',background:isDraggingDivider?C.accent:'transparent',
+          style={dockSoloChart?{
+            gridColumn:2,gridRow:'1 / -1',width:'100%',cursor:'col-resize',
+            background:isDraggingDivider?C.accent:'transparent',position:'relative',zIndex:10,
+          }:{
+            width:6,flexShrink:0,cursor:'col-resize',background:isDraggingDivider?C.accent:'transparent',
             position:'relative',zIndex:10,
             order: dockLayout.order.indexOf('screener')
-              + Math.min(dockLayout.order.indexOf('chart'),dockLayout.order.indexOf('detail'))}}>
+              + Math.min(dockLayout.order.indexOf('chart'),dockLayout.order.indexOf('detail')),
+          }}>
           <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',
             width:3,height:36,borderRadius:3,background:isDraggingDivider?C.accent:C.border}}/>
         </div>
@@ -16523,7 +16683,7 @@ export default function App(){
         sym={chartSym}
         isIndex={chartIsIndex || indexData.some(idx=>idx.name===chartSym)}
         wide={chartWide}
-        customPct={dockStack?null:chartPanelPct}
+        customPct={dockStack||dockColumns||dockSoloChart?null:chartPanelPct}
         onToggleWide={()=>{
           setChartPanelPct(null)
           setChartWide(v=>{
@@ -16553,6 +16713,10 @@ export default function App(){
         detailFirst={detailFirst}
         onMoveTile={!isMobile?moveTile:null}
         stackLayout={!isMobile&&dockStack}
+        columnsLayout={!isMobile&&dockColumns}
+        sideSoloChart={dockSoloChart}
+        chartCellStyle={dockSoloChart?{gridColumn:dockGridChartCol,gridRow:'1 / -1'}:null}
+        detailCellStyle={dockSoloChart?{gridColumn:dockGridSecondaryCol,gridRow:detailGridRow}:null}
         chartStackOrder={dockLayout.order.indexOf('chart') * 2}
         detailStackOrder={dockLayout.order.indexOf('detail') * 2}
       />
