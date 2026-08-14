@@ -4310,7 +4310,7 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
   )
 }
 
-function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, detailFirst=false, onMoveTile, stackLayout=false, columnsLayout=false, sideSoloChart=false, chartCellStyle=null, detailCellStyle=null, chartStackOrder=2, detailStackOrder=4}){
+function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, detailFirst=false, onMoveTile, stackLayout=false, columnsLayout=false, chartColPct=36, detailColPct=32, sideSoloChart=false, chartCellStyle=null, detailCellStyle=null, chartStackOrder=2, detailStackOrder=4}){
   const [loaded, setLoaded] = useState(false)
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
   const sectionOrder=normalizeChartSectionOrder(chartSectionOrder)
@@ -4391,9 +4391,9 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
     order,
   })
   // Three-column mode: RS | Chart | Fundamentals as equal-height columns.
-  const columnsTileStyle=(order, flexGrow)=>({
+  const columnsTileStyle=(order, pct)=>({
     position:'relative',
-    flex: flexGrow,
+    flex: `0 0 ${pct}%`,
     minWidth:160,
     minHeight:0,
     height:'100%',
@@ -4665,12 +4665,12 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
       {anyDocked&&!stackLayout&&columnsLayout&&(
         <>
           {chartDocked&&(
-            <div style={columnsTileStyle(chartStackOrder, '1 1 36%')}>
+            <div style={columnsTileStyle(chartStackOrder, chartColPct)}>
               {chartWin(false)}
             </div>
           )}
           {detailDocked&&(
-            <div style={{...columnsTileStyle(detailStackOrder, '1 1 32%'), background:C.bg}}>
+            <div style={{...columnsTileStyle(detailStackOrder, detailColPct), background:C.bg}}>
               {detailWin(false)}
             </div>
           )}
@@ -7453,6 +7453,31 @@ function persistChartPanelAutoSave(wide,pct){
     if(pct!=null) localStorage.setItem('lakshmimata-chart-panel-pct',String(pct))
     else localStorage.removeItem('lakshmimata-chart-panel-pct')
   }catch(e){}
+}
+
+const COL_WIDTHS_KEY = 'lakshmimata-col-widths'
+const DEFAULT_COL_WIDTHS = { screener: 32, chart: 36, detail: 32 }
+function normalizeColWidths(raw){
+  let s = Number(raw?.screener), c = Number(raw?.chart), d = Number(raw?.detail)
+  if(!Number.isFinite(s)) s = DEFAULT_COL_WIDTHS.screener
+  if(!Number.isFinite(c)) c = DEFAULT_COL_WIDTHS.chart
+  if(!Number.isFinite(d)) d = DEFAULT_COL_WIDTHS.detail
+  s = Math.min(70, Math.max(15, s))
+  c = Math.min(70, Math.max(15, c))
+  d = Math.min(70, Math.max(15, d))
+  const sum = s + c + d || 1
+  return {
+    screener: +(s / sum * 100).toFixed(2),
+    chart: +(c / sum * 100).toFixed(2),
+    detail: +(d / sum * 100).toFixed(2),
+  }
+}
+function loadColWidths(){
+  try{ return normalizeColWidths(JSON.parse(localStorage.getItem(COL_WIDTHS_KEY)||'null')) }
+  catch{ return {...DEFAULT_COL_WIDTHS} }
+}
+function persistColWidths(w){
+  try{ localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(normalizeColWidths(w))) }catch{/* ignore */}
 }
 
 function loadLocalLayoutSlots(){
@@ -10852,10 +10877,16 @@ export default function App(){
     })
   }
   const detailFirst=dockLayout.order.indexOf('detail') < dockLayout.order.indexOf('chart')
-  const dockStack=dockLayout.mode==='stack'
-  const dockColumns=dockLayout.mode==='columns'
+  // Workspace Layout presets (columns / Chart|RS / stack) apply on RS Rating only.
+  const rsLayoutActive=mainTab==='rs'
+  // These tabs stay full-width — no Chart/Overview dock beside the page.
+  const isFullWidthMainTab=tab=>['portfolio','settings','watchlist','compare','feedback',
+    'announcements','themes','bestpicks'].includes(tab)
+  const fullWidthTab=isFullWidthMainTab(mainTab)
+  const dockStack=rsLayoutActive&&dockLayout.mode==='stack'
+  const dockColumns=rsLayoutActive&&dockLayout.mode==='columns'
   // Chart alone full-height; RS + Overview stack on the opposite side (see dockSoloChart below).
-  const dockSoloChartRequested=!dockStack&&!dockColumns&&dockLayout.solo==='chart'
+  const dockSoloChartRequested=rsLayoutActive&&!dockStack&&!dockColumns&&dockLayout.solo==='chart'
   const chartColFirst=dockLayout.order.indexOf('chart')
     < Math.min(dockLayout.order.indexOf('screener'), dockLayout.order.indexOf('detail'))
   const screenerBeforeDetail=dockLayout.order.indexOf('screener') < dockLayout.order.indexOf('detail')
@@ -10879,6 +10910,8 @@ export default function App(){
     setChartIsIndex(asIndex)
     setChartSym(sym)
     if(isMobile) return
+    // Portfolio / settings / etc. stay full-width — remember symbol only.
+    if(isFullWidthMainTab(mainTab)) return
     setPanelWins(w=>({
       ...w,
       chart:{open:true,minimized:false,float:null},
@@ -10888,13 +10921,13 @@ export default function App(){
         ? {open:false,minimized:false,float:null}
         : {open:true,minimized:false,float:null},
     }))
-  },[isMobile])
+  },[isMobile,mainTab])
   const prevChartSymRef=useRef(null)
   useEffect(()=>{
     // First pick from null (e.g. auto-open on RS) — open panels.
     // Later prev/next keep minimize/close. openChart() always opens.
     if(!chartSym){ prevChartSymRef.current=null; return }
-    if(prevChartSymRef.current==null && mainTab!=='market'){
+    if(prevChartSymRef.current==null && !fullWidthTab){
       setPanelWins(w=>({
         ...w,
         chart:{...w.chart,open:true,minimized:false},
@@ -10904,7 +10937,7 @@ export default function App(){
       }))
     }
     prevChartSymRef.current=chartSym
-  },[chartSym,mainTab,chartIsIndex])
+  },[chartSym,mainTab,chartIsIndex,fullWidthTab])
   const autoOpenedRef=useRef(false)
   const rsTableDrag=useDragScroll()
   const idxTableDrag=useDragScroll()
@@ -11146,11 +11179,17 @@ export default function App(){
   // width % and takes over from the preset until the chart is closed.
   const [chartPanelPct,setChartPanelPct]=useState(()=>loadChartPanelAutoSave().chart_panel_pct)
   const [isDraggingDivider,setIsDraggingDivider]=useState(false)
+  // Three-column layout (RS | Chart | Fund): drag handles between panes.
+  const [colWidths,setColWidths]=useState(()=>loadColWidths())
+  const [colDrag,setColDrag]=useState(null) // {leftId, rightId} | null
   const innerRowRef=useRef(null)
   const chartWideRef=useRef(chartWide)
   const chartPanelPctRef=useRef(chartPanelPct)
+  const colWidthsRef=useRef(colWidths)
+  const colDragLastXRef=useRef(null)
   chartWideRef.current=chartWide
   chartPanelPctRef.current=chartPanelPct
+  colWidthsRef.current=colWidths
   const chartOnLeftRef=useRef(false)
   chartOnLeftRef.current=dockLayout.order.indexOf('chart') < dockLayout.order.indexOf('screener')
   const persistChartPanelState=(wide,pct)=>{
@@ -11176,6 +11215,37 @@ export default function App(){
     window.addEventListener('mouseup',onUp)
     return()=>{window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp)}
   },[isDraggingDivider])
+  useEffect(()=>{
+    if(!colDrag) return
+    colDragLastXRef.current=null
+    const onMove=(e)=>{
+      if(!innerRowRef.current)return
+      const rect=innerRowRef.current.getBoundingClientRect()
+      if(rect.width<=0)return
+      if(colDragLastXRef.current==null){
+        colDragLastXRef.current=e.clientX
+        return
+      }
+      const dPct=((e.clientX-colDragLastXRef.current)/rect.width)*100
+      colDragLastXRef.current=e.clientX
+      const {leftId,rightId}=colDrag
+      setColWidths(w=>{
+        const left=w[leftId]??33, right=w[rightId]??33
+        const pair=left+right
+        const MIN=15
+        let nl=left+dPct
+        nl=Math.max(MIN, Math.min(pair-MIN, nl))
+        return {...w, [leftId]:nl, [rightId]:pair-nl}
+      })
+    }
+    const onUp=()=>{
+      setColDrag(null)
+      persistColWidths(colWidthsRef.current)
+    }
+    window.addEventListener('mousemove',onMove)
+    window.addEventListener('mouseup',onUp)
+    return()=>{window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp)}
+  },[colDrag])
   const [rsPage,setRsPage]=useState(0)
   const RS_PAGE_SIZE=25
   const [ppFilter52WL,setPpFilter52WL]=useState('all')
@@ -11700,6 +11770,12 @@ export default function App(){
     try{return JSON.parse(localStorage.getItem('lm_portfolio')||'[]')}catch{return []}
   })
   const [portfolioUploadStatus,setPortfolioUploadStatus]=useState(null) // {type:'loading'|'success'|'error', message}
+  const [portfolioAddOpen,setPortfolioAddOpen]=useState(false)
+  const [portfolioAddSym,setPortfolioAddSym]=useState('')
+  const [portfolioAddPrice,setPortfolioAddPrice]=useState('')
+  const [portfolioAddQty,setPortfolioAddQty]=useState('')
+  const [portfolioAddNote,setPortfolioAddNote]=useState('')
+  const [portfolioAddSuggest,setPortfolioAddSuggest]=useState(false)
   const [journalOpenSym,setJournalOpenSym]=useState(null)
   const [compareSyms,setCompareSyms]=useState([])
   const [compareInput,setCompareInput]=useState('')
@@ -11843,31 +11919,34 @@ export default function App(){
     return()=>clearInterval(refreshTimer.current)
   },[autoRefresh,refreshInterval,runDBScan,historyDate,demoMode])
 
-  // Auto-open #1 RS stock once on RS (and similar) — not on Market.
+  // Auto-open #1 RS stock once — only on RS Rating (layout docks live there).
   useEffect(()=>{
-    if(!autoOpenedRef.current && stocks.length>0 && !chartSym && mainTab!=='market'){
+    if(!autoOpenedRef.current && stocks.length>0 && !chartSym && mainTab==='rs'){
       autoOpenedRef.current = true
       const top = [...stocks].sort((a,b)=>(b.rsTv??b.rs??0)-(a.rsTv??a.rs??0))[0]
       if(top){ setChartIsIndex(false); setChartSym(top.sym) }
     }
   },[stocks,chartSym,mainTab])
 
-  // Market = tables first. Chart + About are optional:
-  //  - enter Market → hide Chart/Details (full-width Overview/Indices)
-  //  - leave Market → show them again if a symbol is still selected
-  //  - tap a stock/index on Market → openChart() brings them back
+  // Full-width pages (Portfolio, etc.): hide Chart/Overview.
+  // Entering RS: restore docks if a symbol is selected.
+  // Market / Patterns / etc.: keep normal click-to-open chart (no Layout presets).
   const prevMainTabForPanelsRef=useRef(mainTab)
   useEffect(()=>{
     const prev=prevMainTabForPanelsRef.current
     prevMainTabForPanelsRef.current=mainTab
     if(isMobile) return
-    if(mainTab==='market' && prev!=='market'){
-      setPanelWins(w=>({
-        ...w,
-        chart:{open:false,minimized:false,float:null},
-        detail:{open:false,minimized:false,float:null},
-      }))
-    } else if(prev==='market' && mainTab!=='market' && chartSym){
+    const prevFullWidth=isFullWidthMainTab(prev)
+    if(fullWidthTab){
+      if(prev!==mainTab || prev==='rs'){
+        setDockLayoutMenuOpen(false)
+        setPanelWins(w=>({
+          ...w,
+          chart:{open:false,minimized:false,float:null},
+          detail:{open:false,minimized:false,float:null},
+        }))
+      }
+    } else if(mainTab==='rs' && prev!=='rs' && chartSym){
       setPanelWins(w=>({
         ...w,
         chart:{...w.chart,open:true,minimized:false},
@@ -11875,8 +11954,16 @@ export default function App(){
           ? {...w.detail,open:false,minimized:false}
           : {...w.detail,open:true,minimized:false},
       }))
+    } else if(prevFullWidth && !fullWidthTab && mainTab!=='rs'){
+      // Left a full-width tab for Market/Patterns/etc. — leave panels closed
+      // until the user clicks a symbol (openChart).
+      setPanelWins(w=>({
+        ...w,
+        chart:{open:false,minimized:false,float:null},
+        detail:{open:false,minimized:false,float:null},
+      }))
     }
-  },[mainTab,isMobile,chartSym,chartIsIndex])
+  },[mainTab,isMobile,chartSym,chartIsIndex,fullWidthTab])
 
   // Load from DB on mount, whenever the selected history date changes,
   // and whenever the scope dropdown (index / watchlist) changes — the
@@ -12386,6 +12473,8 @@ export default function App(){
                  mainTab==='watchlist'?'Watchlist':                 mainTab==='announcements'?'Announcements':
                  mainTab==='themes'?'Emerging Themes':
                  mainTab==='bestpicks'?'AI Best Picks':
+                 mainTab==='portfolio'?'Portfolio Tracker':
+                 mainTab==='compare'?'Stock Comparison':
                  mainTab==='feedback'?'User Feedback':'Account'}
               </div>
               {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1,maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
@@ -12544,8 +12633,8 @@ export default function App(){
                 </button>
               )}
 
-              {/* Layout: TradingView-style presets for RS / Chart / Overview */}
-              {!isMobile&&(
+              {/* Layout: TradingView-style presets — RS Rating page only */}
+              {!isMobile&&mainTab==='rs'&&(
                 <div style={{position:'relative'}}>
                   <button type="button" title="Workspace layout — arrange RS table, Chart, Overview"
                     onClick={()=>setDockLayoutMenuOpen(v=>!v)}
@@ -12696,11 +12785,11 @@ export default function App(){
           gridTemplateRows:screenerBeforeDetail
             ?'minmax(0,1.2fr) minmax(0,0.8fr)'
             :'minmax(0,0.8fr) minmax(0,1.2fr)',
-          overflow:'hidden',userSelect:isDraggingDivider?'none':'auto',
+          overflow:'hidden',userSelect:(isDraggingDivider||colDrag)?'none':'auto',
         }:{
           flex:1,minWidth:0,minHeight:0,display:'flex',
           flexDirection:(!isMobile&&dockStack)?'column':'row',
-          overflow:'hidden',userSelect:isDraggingDivider?'none':'auto',
+          overflow:'hidden',userSelect:(isDraggingDivider||colDrag)?'none':'auto',
         }}>
 
       {/* ── Main area (screener) — movable / minimize / close on desktop ── */}
@@ -12721,6 +12810,8 @@ export default function App(){
           mainTab==='watchlist'?'Watchlist':mainTab==='announcements'?'Announcements':
           mainTab==='themes'?'Emerging Themes':
           mainTab==='bestpicks'?'AI Best Picks':
+          mainTab==='portfolio'?'Portfolio Tracker':
+          mainTab==='compare'?'Stock Comparison':
           mainTab==='feedback'?'User Feedback':'Account'
         }
         colors={C}
@@ -12742,9 +12833,9 @@ export default function App(){
           flex:(chartSym&&!isMobile&&!panelWins.screener.float
             &&((panelWins.chart.open&&!panelWins.chart.minimized&&!panelWins.chart.float)
               ||(panelWins.detail.open&&!panelWins.detail.minimized&&!panelWins.detail.float)))
-            ? '1 1 32%' : 1,
+            ? `0 0 ${colWidths.screener}%` : 1,
           height:'100%',
-          minWidth:180,
+          minWidth:160,
           minHeight:0,
           borderRight:'none',
         }:{
@@ -14771,24 +14862,137 @@ export default function App(){
                     }}/>
                 </label>
                 <button onClick={()=>{
-                const sym=prompt('Enter stock symbol (e.g. RELIANCE):')?.toUpperCase().trim()
-                if(!sym) return
-                const entryPriceRaw=prompt('Entry price (optional — leave blank to skip):')
-                const qtyRaw=prompt('Quantity (optional — leave blank to skip):')
-                const entryPrice=entryPriceRaw&&!isNaN(+entryPriceRaw)?+entryPriceRaw:null
-                const qty=qtyRaw&&!isNaN(+qtyRaw)?+qtyRaw:null
-                const note=prompt('Why this trade? (optional — first journal entry):')
-                setPortfolioHoldings(h=>[...h.filter(x=>x.sym!==sym),{
-                  sym,addedAt:new Date().toISOString(),entryPrice,qty,
-                  journal:note?[{ts:new Date().toISOString(),note}]:[],
-                }])
-              }}
+                  setPortfolioAddOpen(v=>!v)
+                  setPortfolioAddSuggest(false)
+                }}
                 style={{padding:'7px 14px',borderRadius:7,border:'none',
-                  background:C.accent,color:'#000',fontWeight:700,fontSize:12,cursor:'pointer'}}>
-                + Add Stock
+                  background:portfolioAddOpen?C.muted+'44':C.accent,
+                  color:portfolioAddOpen?C.text:'#000',fontWeight:700,fontSize:12,cursor:'pointer'}}>
+                {portfolioAddOpen?'✕ Close':'＋ Add Stock'}
               </button>
               </div>
             </div>
+
+            {portfolioAddOpen&&(()=>{
+              const q=portfolioAddSym.toUpperCase().trim()
+              const held=new Set(portfolioHoldings.map(h=>h.sym))
+              const prefix=[],substr=[]
+              if(q.length>=1){
+                for(const st of stocks){
+                  if(!st?.sym||held.has(st.sym))continue
+                  if(st.sym.startsWith(q))prefix.push(st)
+                  else if(st.sym.includes(q))substr.push(st)
+                  if(prefix.length>=10)break
+                }
+              }
+              const suggestions=[...prefix,...substr].slice(0,10)
+              const commitAdd=(pickedSym)=>{
+                const sym=(pickedSym||portfolioAddSym).toUpperCase().trim()
+                if(!sym)return
+                const entryPrice=portfolioAddPrice!==''&&!isNaN(+portfolioAddPrice)?+portfolioAddPrice:null
+                const qty=portfolioAddQty!==''&&!isNaN(+portfolioAddQty)?+portfolioAddQty:null
+                const note=(portfolioAddNote||'').trim()
+                setPortfolioHoldings(h=>[...h.filter(x=>x.sym!==sym),{
+                  sym,
+                  name: stocks.find(s=>s.sym===sym)?.name||null,
+                  addedAt:new Date().toISOString(),
+                  entryPrice,qty,
+                  journal:note?[{ts:new Date().toISOString(),note}]:[],
+                }])
+                setPortfolioAddSym('')
+                setPortfolioAddPrice('')
+                setPortfolioAddQty('')
+                setPortfolioAddNote('')
+                setPortfolioAddSuggest(false)
+                setPortfolioAddOpen(false)
+              }
+              return(
+                <div style={{marginBottom:14,padding:14,borderRadius:10,background:C.card,
+                  border:`1px solid ${C.accent}44`}}>
+                  <div style={{fontSize:12,fontWeight:700,color:C.accent,marginBottom:10}}>Add holding</div>
+                  <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1.4fr 0.8fr 0.8fr',gap:8,marginBottom:8}}>
+                    <div style={{position:'relative'}}>
+                      <input
+                        autoFocus
+                        value={portfolioAddSym}
+                        onChange={e=>{setPortfolioAddSym(e.target.value.toUpperCase());setPortfolioAddSuggest(true)}}
+                        onFocus={()=>setPortfolioAddSuggest(true)}
+                        onBlur={()=>setTimeout(()=>setPortfolioAddSuggest(false),150)}
+                        onKeyDown={e=>{
+                          if(e.key==='Enter'){
+                            e.preventDefault()
+                            if(suggestions[0])commitAdd(suggestions[0].sym)
+                            else commitAdd()
+                          }else if(e.key==='Escape'){
+                            setPortfolioAddOpen(false)
+                          }
+                        }}
+                        placeholder="Type symbol — e.g. RELIANCE, GRSE…"
+                        style={{width:'100%',padding:'8px 12px',background:C.bg,border:`1px solid ${C.border}`,
+                          borderRadius:7,color:C.text,fontSize:13,outline:'none',fontFamily:'monospace',
+                          boxSizing:'border-box'}}
+                      />
+                      {portfolioAddSuggest&&suggestions.length>0&&(
+                        <div style={{position:'absolute',top:'100%',left:0,right:0,marginTop:4,zIndex:30,
+                          background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
+                          maxHeight:260,overflowY:'auto',boxShadow:'0 8px 20px rgba(0,0,0,0.45)'}}>
+                          {suggestions.map(st=>(
+                            <div key={st.sym}
+                              onMouseDown={e=>{e.preventDefault();setPortfolioAddSym(st.sym);setPortfolioAddSuggest(false)}}
+                              style={{padding:'8px 12px',cursor:'pointer',display:'flex',
+                                justifyContent:'space-between',alignItems:'center',gap:10,
+                                borderBottom:`1px solid ${C.divider}`,fontSize:12}}>
+                              <span style={{fontWeight:700,color:C.accent}}>{st.sym}</span>
+                              <span style={{color:C.muted,fontSize:10,textAlign:'right',
+                                overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'55%'}}>
+                                {st.sector||st.industry||''}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {portfolioAddSuggest&&q.length>=1&&suggestions.length===0&&(
+                        <div style={{position:'absolute',top:'100%',left:0,right:0,marginTop:4,zIndex:30,
+                          background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
+                          padding:'10px 12px',fontSize:11,color:C.muted}}>
+                          No matching symbols
+                        </div>
+                      )}
+                    </div>
+                    <input value={portfolioAddPrice} onChange={e=>setPortfolioAddPrice(e.target.value)}
+                      placeholder="Entry price (opt)"
+                      inputMode="decimal"
+                      style={{padding:'8px 12px',background:C.bg,border:`1px solid ${C.border}`,
+                        borderRadius:7,color:C.text,fontSize:12,outline:'none'}}/>
+                    <input value={portfolioAddQty} onChange={e=>setPortfolioAddQty(e.target.value)}
+                      placeholder="Qty (opt)"
+                      inputMode="decimal"
+                      style={{padding:'8px 12px',background:C.bg,border:`1px solid ${C.border}`,
+                        borderRadius:7,color:C.text,fontSize:12,outline:'none'}}/>
+                  </div>
+                  <input value={portfolioAddNote} onChange={e=>setPortfolioAddNote(e.target.value)}
+                    placeholder="Why this trade? (optional journal note)"
+                    style={{width:'100%',padding:'8px 12px',background:C.bg,border:`1px solid ${C.border}`,
+                      borderRadius:7,color:C.text,fontSize:12,outline:'none',marginBottom:10,
+                      boxSizing:'border-box'}}/>
+                  <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+                    <button type="button" onClick={()=>setPortfolioAddOpen(false)}
+                      style={{padding:'7px 14px',borderRadius:7,border:`1px solid ${C.border}`,
+                        background:'transparent',color:C.muted,fontSize:12,cursor:'pointer'}}>
+                      Cancel
+                    </button>
+                    <button type="button" onClick={()=>commitAdd()}
+                      disabled={!portfolioAddSym.trim()}
+                      style={{padding:'7px 16px',borderRadius:7,border:'none',
+                        background:portfolioAddSym.trim()?C.accent:C.muted+'44',
+                        color:portfolioAddSym.trim()?'#000':C.muted,
+                        fontWeight:700,fontSize:12,cursor:portfolioAddSym.trim()?'pointer':'default'}}>
+                      Add to Portfolio
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
 
             {portfolioUploadStatus&&(
               <div style={{marginBottom:14,padding:'10px 14px',borderRadius:8,fontSize:11.5,
@@ -16739,6 +16943,38 @@ export default function App(){
         </div>
       )}
 
+      {/* Three-column layout: drag handles between RS | Chart | Fundamentals */}
+      {dockColumns&&chartSym&&!isMobile&&(()=>{
+        const visible=[]
+        if(panelWins.screener.open&&!panelWins.screener.minimized&&!panelWins.screener.float) visible.push('screener')
+        if(panelWins.chart.open&&!panelWins.chart.minimized&&!panelWins.chart.float) visible.push('chart')
+        if(!(chartIsIndex||indexData.some(idx=>idx.name===chartSym))
+          &&panelWins.detail.open&&!panelWins.detail.minimized&&!panelWins.detail.float) visible.push('detail')
+        const ordered=dockLayout.order.filter(id=>visible.includes(id))
+        const pairs=[]
+        for(let i=0;i<ordered.length-1;i++) pairs.push([ordered[i],ordered[i+1]])
+        return pairs.map(([leftId,rightId])=>{
+          const leftOrd=dockLayout.order.indexOf(leftId)*2
+          const rightOrd=dockLayout.order.indexOf(rightId)*2
+          const active=colDrag&&colDrag.leftId===leftId&&colDrag.rightId===rightId
+          return(
+            <div key={`col-div-${leftId}-${rightId}`}
+              onMouseDown={()=>setColDrag({leftId,rightId})}
+              title="Drag to resize"
+              style={{
+                width:6,flexShrink:0,cursor:'col-resize',
+                background:active?C.accent:'transparent',
+                position:'relative',zIndex:10,
+                order:(leftOrd+rightOrd)/2,
+                alignSelf:'stretch',
+              }}>
+              <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',
+                width:3,height:36,borderRadius:3,background:active?C.accent:C.border}}/>
+            </div>
+          )
+        })
+      })()}
+
       {/* Global chart panel — works from any tab, right-docked on desktop,
           full-screen on mobile. Rendered once so swapping symbols updates
           the same panel instance in place. */}
@@ -16777,6 +17013,8 @@ export default function App(){
         onMoveTile={!isMobile?moveTile:null}
         stackLayout={!isMobile&&dockStack}
         columnsLayout={!isMobile&&dockColumns}
+        chartColPct={colWidths.chart}
+        detailColPct={colWidths.detail}
         sideSoloChart={dockSoloChart}
         chartCellStyle={dockSoloChart?{gridColumn:dockGridChartCol,gridRow:'1 / -1'}:null}
         detailCellStyle={dockSoloChart?{gridColumn:dockGridSecondaryCol,gridRow:detailGridRow}:null}
