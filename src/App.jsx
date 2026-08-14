@@ -4413,7 +4413,8 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
 
 function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, detailFirst=false, onMoveTile, stackLayout=false, columnsLayout=false, chartColPct=36, detailColPct=32, sideSoloChart=false, chartCellStyle=null, detailCellStyle=null, chartStackOrder=2, detailStackOrder=4}){
   const [loaded, setLoaded] = useState(false)
-  const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart
+  // Stocks open on TradingView (1D); indices only have Our Chart.
+  const [chartTab, setChartTab] = useState(isIndex ? 'own' : 'tv') // 'own' | 'tv'
   const sectionOrder=normalizeChartSectionOrder(chartSectionOrder)
   const persistSectionOrder=(order)=>{
     onChartSectionOrderChange?.(normalizeChartSectionOrder(order))
@@ -4461,6 +4462,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
   useEffect(() => { setLoaded(false) }, [sym])
 
   if(!sym) return null
+  // Default: daily (1D) candles. Range stays multi-month so the chart isn't a single bar.
   const src = `https://s.tradingview.com/widgetembed/?symbol=${tvExchange}%3A${encodeURIComponent(sym)}&interval=D&range=3M&hidesidetoolbar=0&symboledit=1&saveimage=0&toolbarbg=0e1117&studies=RSI%40tv-basicstudies%1FVolume%40tv-basicstudies%1FMACD%40tv-basicstudies&theme=dark&style=1&timezone=Asia%2FKolkata&withdateranges=1&locale=en`
 
   // Prev/Next within whatever list was showing when the chart was
