@@ -7193,6 +7193,124 @@ const DOCK_TILE_LABELS = { screener:'RS / Table', chart:'Chart', detail:'Overvie
 const DEFAULT_DOCK_LAYOUT = { mode:'side', order:['screener','chart','detail'] }
 const DOCK_LAYOUT_KEY = 'lakshmimata-dock-layout'
 
+/** TradingView-style layout presets — swap RS table / Chart / Overview. */
+const DOCK_LAYOUT_PRESETS = [
+  {
+    id: 'side-rs-chart',
+    label: 'RS | Chart',
+    hint: 'Table left · Chart + Overview right',
+    layout: { mode: 'side', order: ['screener', 'chart', 'detail'] },
+  },
+  {
+    id: 'side-chart-rs',
+    label: 'Chart | RS',
+    hint: 'Chart + Overview left · Table right',
+    layout: { mode: 'side', order: ['chart', 'detail', 'screener'] },
+  },
+  {
+    id: 'side-rs-overview',
+    label: 'RS | Overview',
+    hint: 'Table left · Overview above Chart',
+    layout: { mode: 'side', order: ['screener', 'detail', 'chart'] },
+  },
+  {
+    id: 'stack-rs-chart-ov',
+    label: 'Stack RS→Chart',
+    hint: 'RS table → Chart → Overview',
+    layout: { mode: 'stack', order: ['screener', 'chart', 'detail'] },
+  },
+  {
+    id: 'stack-chart-rs-ov',
+    label: 'Stack Chart→RS',
+    hint: 'Chart → RS table → Overview',
+    layout: { mode: 'stack', order: ['chart', 'screener', 'detail'] },
+  },
+  {
+    id: 'stack-rs-ov-chart',
+    label: 'Stack RS→Overview',
+    hint: 'RS table → Overview → Chart',
+    layout: { mode: 'stack', order: ['screener', 'detail', 'chart'] },
+  },
+]
+
+function dockLayoutMatches(a, b){
+  if(!a || !b) return false
+  if(a.mode !== b.mode) return false
+  if(a.order?.length !== b.order?.length) return false
+  return a.order.every((id, i) => id === b.order[i])
+}
+
+/** Mini schematic of RS / Chart / Overview arrangement (TradingView-style). */
+function DockLayoutThumb({ mode, order, active, colors: C }){
+  const cells = (order || DOCK_TILE_IDS).map(id => ({
+    id,
+    letter: id === 'screener' ? 'RS' : id === 'chart' ? 'C' : 'O',
+    fill: id === 'screener' ? (C.accent || '#3b82f6')
+      : id === 'chart' ? (C.teal || '#14b8a6')
+      : (C.green || '#22c55e'),
+  }))
+  const isSide = mode !== 'stack'
+  // Side mode: first tile that's screener vs the other two as a column (matches app).
+  let sidePrimary = null
+  let sideSecondary = []
+  if(isSide){
+    const si = cells.findIndex(c => c.id === 'screener')
+    if(si <= 0){
+      sidePrimary = cells.find(c => c.id === 'screener')
+      sideSecondary = cells.filter(c => c.id !== 'screener')
+    } else {
+      sidePrimary = cells.find(c => c.id === 'screener')
+      sideSecondary = cells.filter(c => c.id !== 'screener')
+      // Screener on the right — reverse visual
+    }
+  }
+  const screenerFirst = isSide && (order?.[0] === 'screener')
+  return (
+    <div style={{
+      width: 72, height: 48, borderRadius: 6, padding: 3, boxSizing: 'border-box',
+      border: `1.5px solid ${active ? (C.accent || '#3b82f6') : (C.border || '#333')}`,
+      background: active ? (C.accent || '#3b82f6') + '18' : (C.bg || '#0e1117'),
+      display: 'flex', flexDirection: isSide ? 'row' : 'column', gap: 2,
+    }}>
+      {isSide ? (
+        <>
+          {(screenerFirst ? [sidePrimary, sideSecondary] : [sideSecondary, sidePrimary]).map((block, bi) => {
+            if(Array.isArray(block)){
+              return (
+                <div key={bi} style={{flex:1, display:'flex', flexDirection:'column', gap:2, minWidth:0}}>
+                  {block.map(c => (
+                    <div key={c.id} title={DOCK_TILE_LABELS[c.id]} style={{
+                      flex:1, borderRadius:3, background:c.fill+'55',
+                      display:'flex', alignItems:'center', justifyContent:'center',
+                      fontSize:7, fontWeight:800, color:c.fill,
+                    }}>{c.letter}</div>
+                  ))}
+                </div>
+              )
+            }
+            if(!block) return null
+            return (
+              <div key={block.id} title={DOCK_TILE_LABELS[block.id]} style={{
+                flex: 1.15, borderRadius:3, background:block.fill+'55',
+                display:'flex', alignItems:'center', justifyContent:'center',
+                fontSize:8, fontWeight:800, color:block.fill,
+              }}>{block.letter}</div>
+            )
+          })}
+        </>
+      ) : (
+        cells.map(c => (
+          <div key={c.id} title={DOCK_TILE_LABELS[c.id]} style={{
+            flex:1, borderRadius:3, background:c.fill+'55',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            fontSize:7, fontWeight:800, color:c.fill,
+          }}>{c.letter}</div>
+        ))
+      )}
+    </div>
+  )
+}
+
 function normalizeDockLayout(raw){
   const mode = raw?.mode === 'stack' ? 'stack' : 'side'
   let order = Array.isArray(raw?.order) ? raw.order.filter(k=>DOCK_TILE_IDS.includes(k)) : []
@@ -12299,40 +12417,66 @@ export default function App(){
                 </button>
               )}
 
-              {/* Layout: side-by-side vs stack + tile order */}
+              {/* Layout: TradingView-style presets for RS / Chart / Overview */}
               {!isMobile&&(
                 <div style={{position:'relative'}}>
-                  <button type="button" title="Arrange tiles (Chart / RS table / Overview)"
+                  <button type="button" title="Workspace layout — arrange RS table, Chart, Overview"
                     onClick={()=>setDockLayoutMenuOpen(v=>!v)}
-                    style={{padding:'5px 10px',borderRadius:6,
+                    style={{padding:'5px 10px',borderRadius:6,display:'inline-flex',alignItems:'center',gap:5,
                       border:`1px solid ${dockLayoutMenuOpen||dockStack?C.accent:C.border}`,
                       background:dockLayoutMenuOpen||dockStack?C.accent+'18':'transparent',
                       color:dockLayoutMenuOpen||dockStack?C.accent:C.muted,
                       fontSize:10,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
-                    {dockStack?'↕ Stack':'↔ Side'} ▾
+                    <span style={{display:'inline-grid',gridTemplateColumns:'1fr 1fr',gap:1,width:12,height:10}}>
+                      <span style={{background:'currentColor',borderRadius:1}}/>
+                      <span style={{background:'currentColor',borderRadius:1,opacity:0.55}}/>
+                      <span style={{background:'currentColor',borderRadius:1,opacity:0.55}}/>
+                      <span style={{background:'currentColor',borderRadius:1,opacity:0.35}}/>
+                    </span>
+                    Layout ▾
                   </button>
                   {dockLayoutMenuOpen&&(
                     <>
                       <div onClick={()=>setDockLayoutMenuOpen(false)} style={{position:'fixed',inset:0,zIndex:80}}/>
-                      <div style={{position:'absolute',top:34,right:0,zIndex:81,width:260,
+                      <div style={{position:'absolute',top:34,right:0,zIndex:81,width:320,
                         background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
-                        padding:10,boxShadow:'0 12px 32px rgba(0,0,0,0.4)'}}>
-                        <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
-                          letterSpacing:'0.05em',marginBottom:6}}>Layout</div>
-                        <div style={{display:'flex',gap:4,marginBottom:10}}>
-                          {[['side','↔ Side by side'],['stack','↕ Stack up/down']].map(([m,label])=>(
-                            <button key={m} type="button"
-                              onClick={()=>applyDockLayout({...dockLayout, mode:m})}
-                              style={{flex:1,padding:'6px 4px',borderRadius:6,cursor:'pointer',fontSize:10,fontWeight:700,
-                                border:`1px solid ${dockLayout.mode===m?C.accent:C.border}`,
-                                background:dockLayout.mode===m?C.accent+'22':'transparent',
-                                color:dockLayout.mode===m?C.accent:C.muted}}>{label}</button>
-                          ))}
+                        padding:12,boxShadow:'0 12px 32px rgba(0,0,0,0.45)'}}>
+                        <div style={{fontSize:11,fontWeight:800,color:C.text,marginBottom:2}}>Workspace layout</div>
+                        <div style={{fontSize:10,color:C.muted,marginBottom:10,lineHeight:1.4}}>
+                          Swap <span style={{color:C.accent,fontWeight:700}}>RS</span> table,
+                          {' '}<span style={{color:C.teal,fontWeight:700}}>C</span>hart &amp;
+                          {' '}<span style={{color:C.green,fontWeight:700}}>O</span>verview — like TradingView layouts.
+                        </div>
+                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
+                          {DOCK_LAYOUT_PRESETS.map(p=>{
+                            const active=dockLayoutMatches(dockLayout, p.layout)
+                            return (
+                              <button key={p.id} type="button"
+                                onClick={()=>{
+                                  applyDockLayout(p.layout)
+                                  patchPanel('screener',{open:true,minimized:false,float:null})
+                                  patchPanel('chart',{open:true,minimized:false,float:null})
+                                  patchPanel('detail',{open:true,minimized:false,float:null})
+                                  setDockLayoutMenuOpen(false)
+                                }}
+                                style={{
+                                  display:'flex', flexDirection:'column', alignItems:'center', gap:6,
+                                  padding:'8px 6px', borderRadius:8, cursor:'pointer',
+                                  border:`1px solid ${active?C.accent:C.border}`,
+                                  background:active?C.accent+'14':'transparent',
+                                }}>
+                                <DockLayoutThumb mode={p.layout.mode} order={p.layout.order}
+                                  active={active} colors={C}/>
+                                <div style={{fontSize:10,fontWeight:800,color:active?C.accent:C.text}}>{p.label}</div>
+                                <div style={{fontSize:9,color:C.muted,textAlign:'center',lineHeight:1.25}}>{p.hint}</div>
+                              </button>
+                            )
+                          })}
                         </div>
                         <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
-                          letterSpacing:'0.05em',marginBottom:6}}>Tile order (▲▼ on each panel)</div>
+                          letterSpacing:'0.05em',marginBottom:6}}>Fine-tune order</div>
                         {dockLayout.order.map((id,i)=>(
-                          <div key={id} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 2px'}}>
+                          <div key={id} style={{display:'flex',alignItems:'center',gap:6,padding:'4px 2px'}}>
                             <span style={{fontSize:10,color:C.muted,width:14}}>{i+1}.</span>
                             <span style={{flex:1,fontSize:11,fontWeight:700,color:C.text}}>{DOCK_TILE_LABELS[id]}</span>
                             <button type="button" disabled={i===0}
@@ -12346,52 +12490,19 @@ export default function App(){
                                 opacity:i===dockLayout.order.length-1?0.35:1}}>▼</button>
                           </div>
                         ))}
-                        <div style={{display:'flex',flexDirection:'column',gap:4,marginTop:10}}>
-                          <button type="button"
-                            onClick={()=>{
-                              applyDockLayout({mode:'stack',order:['chart','screener','detail']})
-                              setDockLayoutMenuOpen(false)
-                            }}
-                            style={{padding:'6px 8px',borderRadius:6,border:`1px solid ${C.border}`,textAlign:'left',
-                              background:'transparent',color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
-                            Preset: Chart → RS table → Overview
-                          </button>
-                          <button type="button"
-                            onClick={()=>{
-                              applyDockLayout({mode:'stack',order:['screener','detail','chart']})
-                              // Park chart so Overview sits directly under the RS table
-                              patchPanel('chart',{minimized:true,open:true})
-                              patchPanel('detail',{open:true,minimized:false,float:null})
-                              patchPanel('screener',{open:true,minimized:false,float:null})
-                              setDockLayoutMenuOpen(false)
-                            }}
-                            style={{padding:'6px 8px',borderRadius:6,border:`1px solid ${C.border}`,textAlign:'left',
-                              background:'transparent',color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
-                            Preset: RS table → Overview (below)
-                          </button>
-                          <button type="button"
-                            onClick={()=>{
-                              applyDockLayout({mode:'stack',order:['screener','chart','detail']})
-                              patchPanel('chart',{open:true,minimized:false,float:null})
-                              patchPanel('detail',{open:true,minimized:false,float:null})
-                              setDockLayoutMenuOpen(false)
-                            }}
-                            style={{padding:'6px 8px',borderRadius:6,border:`1px solid ${C.border}`,textAlign:'left',
-                              background:'transparent',color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
-                            Preset: RS → Chart → Overview
-                          </button>
-                          <button type="button"
-                            onClick={()=>{
-                              applyDockLayout({...DEFAULT_DOCK_LAYOUT,order:[...DEFAULT_DOCK_LAYOUT.order]})
-                              patchPanel('chart',{open:true,minimized:false})
-                              patchPanel('detail',{open:true,minimized:false})
-                              setDockLayoutMenuOpen(false)
-                            }}
-                            style={{padding:'6px 8px',borderRadius:6,border:`1px solid ${C.border}`,textAlign:'left',
-                              background:'transparent',color:C.muted,fontSize:10,fontWeight:600,cursor:'pointer'}}>
-                            Reset: RS | Chart+Overview (side)
-                          </button>
-                        </div>
+                        <button type="button"
+                          onClick={()=>{
+                            applyDockLayout({...DEFAULT_DOCK_LAYOUT,order:[...DEFAULT_DOCK_LAYOUT.order]})
+                            patchPanel('screener',{open:true,minimized:false,float:null})
+                            patchPanel('chart',{open:true,minimized:false,float:null})
+                            patchPanel('detail',{open:true,minimized:false,float:null})
+                            setDockLayoutMenuOpen(false)
+                          }}
+                          style={{marginTop:10,width:'100%',padding:'7px 8px',borderRadius:6,
+                            border:`1px solid ${C.border}`,background:'transparent',color:C.muted,
+                            fontSize:10,fontWeight:600,cursor:'pointer'}}>
+                          Reset to default (RS | Chart + Overview)
+                        </button>
                       </div>
                     </>
                   )}
