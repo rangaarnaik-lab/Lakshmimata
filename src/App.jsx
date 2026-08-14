@@ -1106,7 +1106,8 @@ function portfolioWeightedAvg(holdings, stocks, field){
 }
 
 /**
- * Quiet portfolio health — EXIT only for true downtrends, not every S3 top.
+ * Quiet portfolio structure flags — technical state only.
+ * Never use buy/sell/exit wording (SEBI: not investment advice).
  * rank: lower = more urgent (for attention strip / sort).
  */
 function portfolioHoldingHealth(s, pnlPct){
@@ -1116,23 +1117,25 @@ function portfolioHoldingHealth(s, pnlPct){
   const loss = pnlPct!=null && isFinite(pnlPct) ? pnlPct : null
 
   if(stage?.stage===4 || (rs!=null && rs<25 && (loss==null || loss<0))){
-    return {key:'exit', label:'Exit zone', short:'Exit', color:C.red, rank:0,
-      tip: stage?.desc || 'Weak RS / Stage 4 — review exit'}
+    return {key:'exit', label:'Caution', short:'Caution', color:C.red, rank:0,
+      tip: 'Technical: Stage 4 / very weak RS vs market — educational flag only, not a sell call'}
   }
   if(stage?.stage===3 || (rs!=null && rs>=70 && trend==='declining')){
-    return {key:'watch', label:'Watch', short:'Watch', color:C.orange, rank:1,
-      tip: stage?.desc || 'Topping / RS fading — tighten stops'}
+    return {key:'watch', label:'Extended', short:'Extended', color:C.orange, rank:1,
+      tip: 'Technical: Stage 3 / RS fading — educational flag only, not investment advice'}
   }
   if((rs!=null && rs<40) || (loss!=null && loss<=-12)){
-    return {key:'weak', label:'Weak', short:'Weak', color:C.red, rank:2,
-      tip: loss!=null && loss<=-12 ? 'Deep drawdown vs cost' : 'RS lagging the market'}
+    return {key:'weak', label:'Lagging', short:'Lagging', color:C.red, rank:2,
+      tip: loss!=null && loss<=-12
+        ? 'Technical: deep drawdown vs your cost — for your review only'
+        : 'Technical: RS lagging the market — educational flag only'}
   }
   if(stage?.stage===2 && rs!=null && rs>=70 && (loss==null || loss>=0)){
-    return {key:'strong', label:'Strong', short:'Strong', color:C.green, rank:4,
-      tip: stage?.desc || 'Stage 2 leader — hold / trail'}
+    return {key:'strong', label:'Leading', short:'Leading', color:C.green, rank:4,
+      tip: 'Technical: Stage 2 + strong RS — educational flag only, not a buy/hold call'}
   }
-  return {key:'ok', label:'OK', short:'OK', color:C.muted, rank:3,
-    tip: stage?.desc || 'No urgent flag'}
+  return {key:'ok', label:'Neutral', short:'Neutral', color:C.muted, rank:3,
+    tip: stage?.desc || 'No urgent technical flag'}
 }
 
 function PortfolioHealthChip({health, compact=false}){
@@ -15039,7 +15042,7 @@ export default function App(){
               <div>
                 <div style={{fontWeight:700,fontSize:16}}>Portfolio Tracker</div>
                 <div style={{fontSize:11,color:C.muted}}>
-                  What needs a look · quiet status · RS &amp; P&amp;L — synced when signed in
+                  Technical structure flags only · not buy/sell advice · synced when signed in
                 </div>
               </div>
               <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
@@ -15366,8 +15369,8 @@ export default function App(){
                         Needs a look
                         <span style={{fontWeight:600,fontSize:11,color:C.muted,marginLeft:8}}>
                           {[
-                            exitN?`${exitN} exit zone`:null,
-                            watchN?`${watchN} watch/weak`:null,
+                            exitN?`${exitN} caution`:null,
+                            watchN?`${watchN} extended/lagging`:null,
                             'click to open chart',
                           ].filter(Boolean).join(' · ')}
                         </span>
@@ -15396,6 +15399,9 @@ export default function App(){
                         </button>
                       ))}
                     </div>
+                    <div style={{fontSize:10,color:C.muted,marginTop:10,lineHeight:1.4}}>
+                      Flags are algorithmic technical readings only — not a recommendation to buy or sell.
+                    </div>
                   </div>
                 )}
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
@@ -15405,7 +15411,7 @@ export default function App(){
                       {activePortfolio?.name||'Portfolio'}
                       <span style={{fontWeight:600,fontSize:11,color:C.muted,marginLeft:8}}>
                         {portfolioHoldings.length} names
-                        {strongN?` · ${strongN} strong`:''}
+                        {strongN?` · ${strongN} leading`:''}
                       </span>
                     </div>
                     {avgRs!=null&&(
@@ -15681,7 +15687,7 @@ export default function App(){
                                       </div>
                                       {journal.length===0?(
                                         <div style={{fontSize:11,color:C.muted,padding:'4px 0 8px'}}>
-                                          No notes yet — record why you entered, what you're watching for, or your exit plan.
+                                          No notes yet — record your thesis, what you’re watching, or risk levels.
                                         </div>
                                       ):(
                                         <div style={{display:'flex',flexDirection:'column',gap:6}}>
@@ -15723,10 +15729,18 @@ export default function App(){
 
               return (
                 <div>
+                  <div style={{background:C.yellow+'14',border:`1px solid ${C.yellow}55`,borderRadius:10,
+                    padding:'10px 12px',marginBottom:12,fontSize:11.5,lineHeight:1.5,color:C.text}}>
+                    <strong style={{color:C.yellow}}>⚠️ Not investment advice.</strong>{' '}
+                    Status chips (Caution / Extended / Lagging / Leading) are algorithmic technical
+                    readings from public market data — not buy/sell recommendations.
+                    Lakshmimata is not a SEBI-registered Investment Adviser or Research Analyst.
+                    Do your own research and consult a SEBI-registered advisor before any investment decision.
+                  </div>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',
                     gap:8,flexWrap:'wrap',marginBottom:8}}>
                     <div style={{fontSize:10,color:C.muted}}>
-                      Sort by Status to surface Exit / Watch first · click symbol for chart
+                      Sort by Status to surface Caution / Extended first · click symbol for chart
                     </div>
                     <button type="button" onClick={()=>{
                       setPortfolioSortBy('status'); setPortfolioSortDir('asc')
