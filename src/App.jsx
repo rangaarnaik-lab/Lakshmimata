@@ -10716,6 +10716,12 @@ export default function App(){
   const [rsMin,setRsMin]=useState(0),[rsMax,setRsMax]=useState(99)
   const [rsImprFilter,setRsImprFilter]=useState('all')
   const [sigFilters,setSigFilters]=useState([]) // multi-select, [] = no filter (all)
+  // Result quality multi-select: 'has' | Excellent | Good | Neutral | Weak
+  const [resultRatingFilters,setResultRatingFilters]=useState([])
+  // Fund Rating multi-select: Excellent | Good | Fair | Poor
+  const [fundRatingFilters,setFundRatingFilters]=useState([])
+  // Strategy multi-select: pead | canslim
+  const [strategyFilters,setStrategyFilters]=useState([])
   const [stageFilter,setStageFilter]=useState('all')
   const [sectorFilter,setSectorFilter]=useState('all')
   const [industryFilter,setIndustryFilter]=useState('all')
@@ -10765,6 +10771,7 @@ export default function App(){
   const currentFilterState = () => ({
     search, rsMin, rsMax, mcapMin, mcapMax, rsImprFilter,
     sigFilters, stageFilter, sectorFilter, industryFilter, presetFilter,
+    resultRatingFilters, fundRatingFilters, strategyFilters, breakoutTypeFilter,
   })
   const applyFilterState = (f) => {
     setSearch(f.search??'')
@@ -10781,6 +10788,21 @@ export default function App(){
     setSectorFilter(f.sectorFilter??'all')
     setIndustryFilter(f.industryFilter??'all')
     setPresetFilter(f.presetFilter??'all')
+    // Migrate old single result/strategy presets into multi-select arrays.
+    if(Array.isArray(f.resultRatingFilters)) setResultRatingFilters(f.resultRatingFilters)
+    else if(f.presetFilter==='resultAny') setResultRatingFilters(['has'])
+    else if(f.presetFilter==='resultEx') setResultRatingFilters(['Excellent'])
+    else if(f.presetFilter==='resultGood') setResultRatingFilters(['Good'])
+    else if(f.presetFilter==='resultNeu') setResultRatingFilters(['Neutral'])
+    else if(f.presetFilter==='resultWeak') setResultRatingFilters(['Weak'])
+    else setResultRatingFilters([])
+    if(Array.isArray(f.fundRatingFilters)) setFundRatingFilters(f.fundRatingFilters)
+    else setFundRatingFilters([])
+    if(Array.isArray(f.strategyFilters)) setStrategyFilters(f.strategyFilters)
+    else if(f.presetFilter==='canslim') setStrategyFilters(['canslim'])
+    else if(f.presetFilter==='pead') setStrategyFilters(['pead'])
+    else setStrategyFilters([])
+    if(f.breakoutTypeFilter!=null) setBreakoutTypeFilter(f.breakoutTypeFilter)
   }
   const handleSaveScanner = async () => {
     if(!session?.user?.id || !scannerNameInput.trim()) return
@@ -11537,8 +11559,8 @@ export default function App(){
     fetchAnnouncementFilterOptions().then(setAnnouncementFilterOptions)
   },[mainTab])
   const [orderSizeFilter,setOrderSizeFilter]=useState('all')
-  // Results-tab filter: All | Excellent | Good | Neutral | Weak | has
-  const [resultRatingFilterAnn,setResultRatingFilterAnn]=useState('all')
+  // Results-tab filter: multi-select (empty = all). Values: has|Excellent|Good|Neutral|Weak
+  const [resultRatingFiltersAnn,setResultRatingFiltersAnn]=useState([])
   // Scope for the Announcements tab: 'idx:all' | 'idx:nifty50' | ... |
   // 'wl:<id>' — same prefixed-value scheme as the RS table's dropdown.
   const [announcementsScope,setAnnouncementsScope]=useState('idx:all')
@@ -11591,14 +11613,16 @@ export default function App(){
       || null
   }
   useEffect(()=>{ if(announcementsCategory!=='orders')setOrderSizeFilter('all') },[announcementsCategory])
-  useEffect(()=>{ if(announcementsCategory!=='results')setResultRatingFilterAnn('all') },[announcementsCategory])
-  useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter,resultRatingFilterAnn,announcementsScope,announcementsDateFilter])
+  useEffect(()=>{ if(announcementsCategory!=='results')setResultRatingFiltersAnn([]) },[announcementsCategory])
+  useEffect(()=>{ setAnnouncementsPage(0) },[announcementsCategory,sectorFilterAnn,industryFilterAnn,mcapMinAnn,mcapMaxAnn,orderSizeFilter,resultRatingFiltersAnn,announcementsScope,announcementsDateFilter])
 
   // Load result ratings for RS Result column, Quick Filters, or Announcements → Results.
   const resultRatingsLoadedRef=useRef(false)
   useEffect(()=>{
     const needRatings =
       String(presetFilter||'').startsWith('result')
+      || resultRatingFilters.length>0
+      || resultRatingFiltersAnn.length>0
       || mainTab==='rs'
       || mainTab==='patterns'
       || (mainTab==='announcements' && announcementsCategory==='results')
@@ -11616,7 +11640,7 @@ export default function App(){
       resultRatingsLoadedRef.current=true
     }).finally(()=>{ if(!cancelled) setResultRatingsLoading(false) })
     return()=>{cancelled=true}
-  },[presetFilter, mainTab, announcementsCategory])
+  },[presetFilter, resultRatingFilters, resultRatingFiltersAnn, mainTab, announcementsCategory])
   const ANNOUNCEMENTS_PAGE_SIZE=50
   useEffect(()=>{
     if(mainTab!=='announcements') return
@@ -12368,8 +12392,28 @@ export default function App(){
       if(presetFilter==='resultNeu'&&rating!=='Neutral') return false
       if(presetFilter==='resultWeak'&&rating!=='Weak') return false
     }
+    // Multi-select Result quality (Filters panel) — OR within selection
+    if(resultRatingFilters.length>0){
+      const rating=resultRatingsMap[String(s.sym||'').toUpperCase()]||null
+      const wantsHas=resultRatingFilters.includes('has')
+      const ratingOpts=resultRatingFilters.filter(x=>x!=='has')
+      const match=(wantsHas&&!!rating)||(ratingOpts.length>0&&ratingOpts.includes(rating))
+      if(!match) return false
+    }
+    // Multi-select Fund Rating — OR within selection
+    if(fundRatingFilters.length>0){
+      const label=ensureFundamentalQuality(s).label
+      if(!label||!fundRatingFilters.includes(label)) return false
+    }
     if(presetFilter==='canslim'&&!s.isCanslim) return false
     if(presetFilter==='pead'&&!s.isPead) return false
+    // Multi-select PEAD / CANSLIM (Filters panel) — OR within selection
+    if(strategyFilters.length>0){
+      const ok=strategyFilters.some(f=>
+        (f==='pead'&&s.isPead)||(f==='canslim'&&s.isCanslim)
+      )
+      if(!ok) return false
+    }
     // Breakout type filter (RS Filters panel)
     if(breakoutTypeFilter==='hyht'&&!calcHYHTBreakout(s).isBreakout)return false
     if(breakoutTypeFilter==='r1'&&!s.isResistanceBreakout)return false
@@ -12409,7 +12453,7 @@ export default function App(){
     // (e.g. P/E) sorting by chg% wouldn't make as much sense.
     if(sortBy==='rs'||sortBy==='rsTv') return (b.chg??0)-(a.chg??0)
     return 0
-  }),[scopedStocks,search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,presetFilter,resultRatingsMap,breakoutTypeFilter,sortBy,sortDir])
+  }),[scopedStocks,search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,presetFilter,resultRatingsMap,resultRatingFilters,fundRatingFilters,strategyFilters,breakoutTypeFilter,sortBy,sortDir])
   const displayedRS=rsBase
   const rsTotalPages=Math.max(1,Math.ceil(displayedRS.length/RS_PAGE_SIZE))
   const rsPageClamped=Math.min(rsPage,rsTotalPages-1)
@@ -12421,7 +12465,7 @@ export default function App(){
   // would otherwise kick you back to page 1 mid-scroll every minute even
   // though nothing you asked for actually changed.
   useEffect(()=>{ setRsPage(0) },
-    [search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,sectorFilter,industryFilter,presetFilter,sortBy,sortDir])
+    [search,rsMin,rsMax,mcapMin,mcapMax,rsImprFilter,sigFilters,stageFilter,sectorFilter,industryFilter,presetFilter,resultRatingFilters,fundRatingFilters,strategyFilters,breakoutTypeFilter,sortBy,sortDir])
 
   // Rotation chart's rolling-momentum trail computation — same issue as
   // the Industries table above: this was an inline IIFE inside JSX,
@@ -13416,6 +13460,12 @@ export default function App(){
                           if(f.stageFilter&&f.stageFilter!=='all') parts.push(`Stage ${f.stageFilter}`)
                           if(f.sectorFilter&&f.sectorFilter!=='all') parts.push(f.sectorFilter)
                           if(f.industryFilter&&f.industryFilter!=='all') parts.push(f.industryFilter)
+                          if(Array.isArray(f.resultRatingFilters)&&f.resultRatingFilters.length)
+                            parts.push(`Result ${f.resultRatingFilters.join('/')}`)
+                          if(Array.isArray(f.fundRatingFilters)&&f.fundRatingFilters.length)
+                            parts.push(`Fund ${f.fundRatingFilters.join('/')}`)
+                          if(Array.isArray(f.strategyFilters)&&f.strategyFilters.length)
+                            parts.push(f.strategyFilters.map(x=>x.toUpperCase()).join('/'))
                           if(f.presetFilter&&f.presetFilter!=='all') parts.push(f.presetFilter)
                           return parts.length ? parts.join(' · ') : 'No filters (all stocks)'
                         }
@@ -13601,27 +13651,96 @@ export default function App(){
                     </div>
                     <div style={{marginTop:10}}>
                       <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>
-                        Result quality
+                        Result quality <span style={{color:C.muted,fontWeight:400}}>(tap multiple — matches any selected)</span>
                         {resultRatingsLoading&&<span style={{color:C.muted,fontWeight:400}}> (loading…)</span>}
                         {!resultRatingsLoading&&Object.keys(resultRatingsMap).length>0&&(
                           <span style={{color:C.muted,fontWeight:400}}> ({Object.keys(resultRatingsMap).length} rated)</span>
                         )}
                       </div>
                       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                        <button onClick={()=>{
+                          setResultRatingFilters([])
+                          if(String(presetFilter).startsWith('result')) setPresetFilter('all')
+                        }}
+                          style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${resultRatingFilters.length===0?C.muted:C.border}`,
+                            cursor:'pointer',fontSize:12,fontWeight:600,
+                            background:resultRatingFilters.length===0?C.muted+'22':'transparent',
+                            color:resultRatingFilters.length===0?C.text:C.muted}}>All</button>
                         {[
-                          ['all','All',C.muted],
-                          ['resultAny','Has Results',C.accent],
-                          ['resultEx','⭐ Excellent',C.green],
-                          ['resultGood','✓ Good','#7dd3a8'],
-                          ['resultNeu','– Neutral',C.yellow],
-                          ['resultWeak','⚠ Weak',C.red],
-                        ].map(([v,label,color])=>(
-                          <button key={v} onClick={()=>setPresetFilter(v==='all'?'all':v)}
-                            style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${(v==='all'?presetFilter==='all':presetFilter===v)?color:C.border}`,
-                              cursor:'pointer',fontSize:12,fontWeight:600,
-                              background:(v==='all'?presetFilter==='all':presetFilter===v)?color+'22':'transparent',
-                              color:(v==='all'?presetFilter==='all':presetFilter===v)?color:C.muted}}>{label}</button>
-                        ))}
+                          ['has','Has Results',C.accent],
+                          ['Excellent','⭐ Excellent',C.green],
+                          ['Good','✓ Good','#7dd3a8'],
+                          ['Neutral','– Neutral',C.yellow],
+                          ['Weak','⚠ Weak',C.red],
+                        ].map(([v,label,color])=>{
+                          const active=resultRatingFilters.includes(v)
+                          return (
+                            <button key={v} onClick={()=>{
+                              setResultRatingFilters(prev=>active?prev.filter(x=>x!==v):[...prev,v])
+                              if(String(presetFilter).startsWith('result')) setPresetFilter('all')
+                            }}
+                              style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${active?color:C.border}`,
+                                cursor:'pointer',fontSize:12,fontWeight:600,
+                                background:active?color+'22':'transparent',color:active?color:C.muted}}>{label}</button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                    <div style={{marginTop:10}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>
+                        Fund Rating <span style={{color:C.muted,fontWeight:400}}>(tap multiple — matches any selected)</span>
+                      </div>
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                        <button onClick={()=>setFundRatingFilters([])}
+                          style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${fundRatingFilters.length===0?C.muted:C.border}`,
+                            cursor:'pointer',fontSize:12,fontWeight:600,
+                            background:fundRatingFilters.length===0?C.muted+'22':'transparent',
+                            color:fundRatingFilters.length===0?C.text:C.muted}}>All</button>
+                        {[
+                          ['Excellent','⭐ Excellent',C.green],
+                          ['Good','✓ Good','#7dd3a8'],
+                          ['Fair','~ Fair',C.yellow],
+                          ['Poor','⚠ Poor',C.red],
+                        ].map(([v,label,color])=>{
+                          const active=fundRatingFilters.includes(v)
+                          return (
+                            <button key={v} onClick={()=>setFundRatingFilters(prev=>active?prev.filter(x=>x!==v):[...prev,v])}
+                              style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${active?color:C.border}`,
+                                cursor:'pointer',fontSize:12,fontWeight:600,
+                                background:active?color+'22':'transparent',color:active?color:C.muted}}>{label}</button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                    <div style={{marginTop:10}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>
+                        Strategy <span style={{color:C.muted,fontWeight:400}}>(PEAD / CANSLIM — tap multiple)</span>
+                      </div>
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                        <button onClick={()=>{
+                          setStrategyFilters([])
+                          if(presetFilter==='pead'||presetFilter==='canslim') setPresetFilter('all')
+                        }}
+                          style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${strategyFilters.length===0?C.muted:C.border}`,
+                            cursor:'pointer',fontSize:12,fontWeight:600,
+                            background:strategyFilters.length===0?C.muted+'22':'transparent',
+                            color:strategyFilters.length===0?C.text:C.muted}}>All</button>
+                        {[
+                          ['pead','📈 PEAD',C.green],
+                          ['canslim','🎯 CANSLIM',C.accent],
+                        ].map(([v,label,color])=>{
+                          const active=strategyFilters.includes(v)
+                          return (
+                            <button key={v} title={SIGNAL_TOOLTIPS[v]||''}
+                              onClick={()=>{
+                                setStrategyFilters(prev=>active?prev.filter(x=>x!==v):[...prev,v])
+                                if(presetFilter==='pead'||presetFilter==='canslim') setPresetFilter('all')
+                              }}
+                              style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${active?color:C.border}`,
+                                cursor:'pointer',fontSize:12,fontWeight:600,
+                                background:active?color+'22':'transparent',color:active?color:C.muted}}>{label}</button>
+                          )
+                        })}
                       </div>
                     </div>
                     <div style={{marginTop:10}}>
@@ -16985,36 +17104,51 @@ export default function App(){
 
             {announcementsCategory==='results'&&(
               <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+                <button onClick={()=>setResultRatingFiltersAnn([])}
+                  style={{padding:'5px 10px',borderRadius:14,fontSize:10.5,fontWeight:700,cursor:'pointer',
+                    border:`1px solid ${resultRatingFiltersAnn.length===0?C.muted:C.border}`,
+                    background:resultRatingFiltersAnn.length===0?C.muted+'22':'transparent',
+                    color:resultRatingFiltersAnn.length===0?C.text:C.muted}}>
+                  All Ratings
+                </button>
                 {[
-                  {id:'all',label:'All Ratings',color:C.muted},
                   {id:'has',label:'Has Numbers',color:C.accent},
                   {id:'Excellent',label:'⭐ Excellent',color:C.green},
                   {id:'Good',label:'✓ Good',color:'#7dd3a8'},
                   {id:'Neutral',label:'– Neutral',color:C.yellow},
                   {id:'Weak',label:'⚠ Weak',color:C.red},
-                ].map(o=>(
-                  <button key={o.id} onClick={()=>setResultRatingFilterAnn(o.id)}
-                    style={{padding:'5px 10px',borderRadius:14,fontSize:10.5,fontWeight:700,cursor:'pointer',
-                      border:`1px solid ${resultRatingFilterAnn===o.id?o.color:C.border}`,
-                      background:resultRatingFilterAnn===o.id?o.color+'22':'transparent',
-                      color:resultRatingFilterAnn===o.id?o.color:C.muted}}>
-                    {o.label}
-                  </button>
-                ))}
+                ].map(o=>{
+                  const active=resultRatingFiltersAnn.includes(o.id)
+                  return (
+                    <button key={o.id} onClick={()=>setResultRatingFiltersAnn(prev=>
+                      active?prev.filter(x=>x!==o.id):[...prev,o.id])}
+                      style={{padding:'5px 10px',borderRadius:14,fontSize:10.5,fontWeight:700,cursor:'pointer',
+                        border:`1px solid ${active?o.color:C.border}`,
+                        background:active?o.color+'22':'transparent',
+                        color:active?o.color:C.muted}}>
+                      {o.label}
+                    </button>
+                  )
+                })}
                 {resultRatingsLoading&&(
                   <span style={{fontSize:10,color:C.muted}}>Loading ratings…</span>
+                )}
+                {resultRatingFiltersAnn.length>0&&(
+                  <span style={{fontSize:9,color:C.muted}}>any of {resultRatingFiltersAnn.length} selected</span>
                 )}
               </div>
             )}
 
             {(()=>{
               const visibleAnnouncements=announcements.filter(a=>{
-                if(announcementsCategory!=='results'||resultRatingFilterAnn==='all') return true
+                if(announcementsCategory!=='results'||resultRatingFiltersAnn.length===0) return true
                 const sym=String(a.symbol||'').toUpperCase()
                 const rating=resultRatingsMap[sym]
                   || computeResultRating(resultsHistoryCache[a.symbol]||resultsHistoryCache[sym]||null)
-                if(resultRatingFilterAnn==='has') return !!rating || !!resultRowFor(a.symbol)
-                return rating===resultRatingFilterAnn
+                const wantsHas=resultRatingFiltersAnn.includes('has')
+                const ratingOpts=resultRatingFiltersAnn.filter(x=>x!=='has')
+                return (wantsHas&&(!!rating||!!resultRowFor(a.symbol)))
+                  || (ratingOpts.length>0&&ratingOpts.includes(rating))
               })
               if(announcementsLoading&&announcements.length===0){
                 return <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>Loading…</div>
