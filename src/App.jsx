@@ -1111,6 +1111,39 @@ const PORTFOLIO_BENCH_INDICES = [
   { key:'smallcap', label:'Smallcap 250', short:'Small',  names:['Smallcap 250','Nifty Smallcap 250'], rsField:'rsSmallcap' },
 ]
 
+const MAX_FAMILY_PORTFOLIOS = 5
+const PORTFOLIOS_KEY = 'lm_portfolios'
+const PORTFOLIO_LEGACY_KEY = 'lm_portfolio'
+const PORTFOLIO_ACTIVE_KEY = 'lm_portfolio_active'
+
+function newPortfolioId(){
+  return 'p_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,7)
+}
+
+/** Load family portfolios (max 5). Migrates legacy single lm_portfolio array. */
+function loadPortfoliosState(){
+  try{
+    const raw=JSON.parse(localStorage.getItem(PORTFOLIOS_KEY)||'null')
+    if(raw&&Array.isArray(raw.portfolios)&&raw.portfolios.length){
+      const portfolios=raw.portfolios.slice(0,MAX_FAMILY_PORTFOLIOS).map(p=>({
+        id:p.id||newPortfolioId(),
+        name:String(p.name||'Portfolio').trim().slice(0,40)||'Portfolio',
+        holdings:Array.isArray(p.holdings)?p.holdings:[],
+      }))
+      let activeId=raw.activeId||localStorage.getItem(PORTFOLIO_ACTIVE_KEY)||portfolios[0].id
+      if(!portfolios.some(p=>p.id===activeId)) activeId=portfolios[0].id
+      return {portfolios, activeId}
+    }
+  }catch{/* ignore */}
+  let holdings=[]
+  try{
+    const legacy=JSON.parse(localStorage.getItem(PORTFOLIO_LEGACY_KEY)||'[]')
+    if(Array.isArray(legacy)) holdings=legacy
+  }catch{/* ignore */}
+  const id=newPortfolioId()
+  return {portfolios:[{id, name:'My Portfolio', holdings}], activeId:id}
+}
+
 // Cleans a brokerage's raw symbol text into the plain NSE ticker this
 // app uses — strips exchange prefixes ("NSE:", "BSE:"), "-EQ"/"-BE"
 // series suffixes some brokers append, and surrounding whitespace.
@@ -1260,10 +1293,9 @@ function HistoryCalendarPicker({historyDate, setHistoryDate, availableDates, isM
     setViewMonth(`${d.getFullYear()}-${pad(d.getMonth()+1)}`)
   }
 
-  const todayStr = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short'})
   const label = historyDate
     ? `📅 ${new Date(historyDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}`
-    : `📅 ${todayStr}`
+    : '⚡ Live'
 
   return (
     <div style={{position:'relative'}}>
@@ -7978,8 +8010,7 @@ const HELP_CONTENT = [
     52-week lows (potential value or falling knives — check the trend before assuming either).`},
   {id:'weak', title:'Weak RS', body:`The inverse scanner — stocks with deteriorating relative strength, useful for 
     avoiding laggards or for short-side/hedge ideas.`},
-  {id:'portfolio', title:'Portfolio', body:`Track your actual holdings against their RS rank and stage over time, so 
-    you can see if a position you're holding is quietly weakening.`},
+  {id:'portfolio', title:'Portfolio', body:`Track up to 5 family portfolios — your holdings and theirs — against RS rank and stage, with a trade journal on each so you can see if a position is quietly weakening.`},
   {id:'compare', title:'Compare', body:`Side-by-side comparison of up to a few stocks across all metrics — RS, 
     fundamentals, stage, signals — to decide between similar candidates.`},
   {id:'watchlist', title:'Watchlist', body:`Your saved stock lists. Set one as active from the header dropdown on 
@@ -11766,9 +11797,10 @@ export default function App(){
   // trimming). Set to a specific YYYY-MM-DD to rewind the chart to how
   // it looked as of that day, using the trail dates already in the data.
   const [rotationAsOfDate,setRotationAsOfDate]=useState(null)
-  const [portfolioHoldings,setPortfolioHoldings]=useState(()=>{
-    try{return JSON.parse(localStorage.getItem('lm_portfolio')||'[]')}catch{return []}
-  })
+  const portfolioBootRef=useRef(null)
+  if(!portfolioBootRef.current) portfolioBootRef.current=loadPortfoliosState()
+  const [portfolios,setPortfolios]=useState(()=>portfolioBootRef.current.portfolios)
+  const [activePortfolioId,setActivePortfolioId]=useState(()=>portfolioBootRef.current.activeId)
   const [portfolioUploadStatus,setPortfolioUploadStatus]=useState(null) // {type:'loading'|'success'|'error', message}
   const [portfolioAddOpen,setPortfolioAddOpen]=useState(false)
   const [portfolioAddSym,setPortfolioAddSym]=useState('')
@@ -11777,6 +11809,62 @@ export default function App(){
   const [portfolioAddNote,setPortfolioAddNote]=useState('')
   const [portfolioAddSuggest,setPortfolioAddSuggest]=useState(false)
   const [journalOpenSym,setJournalOpenSym]=useState(null)
+  const [portfolioSortBy,setPortfolioSortBy]=useState('invested') // sym|cost|invested|pnl|return|rs|weight|stage
+  const [portfolioSortDir,setPortfolioSortDir]=useState('desc')
+  const handlePortfolioSort=(key)=>{
+    setPortfolioSortBy(prev=>{
+      if(prev===key){ setPortfolioSortDir(d=>d==='asc'?'desc':'asc'); return prev }
+      setPortfolioSortDir(key==='sym'?'asc':'desc')
+      return key
+    })
+  }
+  const activePortfolio=portfolios.find(p=>p.id===activePortfolioId)||portfolios[0]
+  const portfolioHoldings=activePortfolio?.holdings||[]
+  const setPortfolioHoldings=(updater)=>{
+    const pid=activePortfolio?.id||activePortfolioId
+    setPortfolios(prev=>prev.map(p=>{
+      if(p.id!==pid) return p
+      const next=typeof updater==='function'?updater(p.holdings||[]):updater
+      return {...p, holdings:Array.isArray(next)?next:[]}
+    }))
+  }
+  const createFamilyPortfolio=()=>{
+    if(portfolios.length>=MAX_FAMILY_PORTFOLIOS) return
+    const name=(prompt(`New family portfolio name (${portfolios.length+1}/${MAX_FAMILY_PORTFOLIOS})`,
+      `Family ${portfolios.length+1}`)||'').trim().slice(0,40)
+    if(!name) return
+    const id=newPortfolioId()
+    setPortfolios(prev=>[...prev,{id, name, holdings:[]}])
+    setActivePortfolioId(id)
+    setPortfolioAddOpen(false)
+    setPortfolioAddSuggest(false)
+    setJournalOpenSym(null)
+  }
+  const renameFamilyPortfolio=(id)=>{
+    const cur=portfolios.find(p=>p.id===id)
+    if(!cur) return
+    const name=(prompt('Rename portfolio', cur.name)||'').trim().slice(0,40)
+    if(!name) return
+    setPortfolios(prev=>prev.map(p=>p.id===id?{...p, name}:p))
+  }
+  const deleteFamilyPortfolio=(id)=>{
+    if(portfolios.length<=1) return
+    const cur=portfolios.find(p=>p.id===id)
+    if(!confirm(`Delete “${cur?.name||'this portfolio'}” and all its holdings?`)) return
+    const next=portfolios.filter(p=>p.id!==id)
+    setPortfolios(next)
+    if(activePortfolioId===id) setActivePortfolioId(next[0].id)
+    setPortfolioAddOpen(false)
+    setJournalOpenSym(null)
+  }
+  const switchFamilyPortfolio=(id)=>{
+    if(id===activePortfolioId) return
+    setActivePortfolioId(id)
+    setPortfolioAddOpen(false)
+    setPortfolioAddSuggest(false)
+    setJournalOpenSym(null)
+    setPortfolioUploadStatus(null)
+  }
   const [compareSyms,setCompareSyms]=useState([])
   const [compareInput,setCompareInput]=useState('')
   const [historyDate,setHistoryDate]=useState(null) // null = live today, else 'YYYY-MM-DD'
@@ -12028,10 +12116,15 @@ export default function App(){
       .finally(()=>setLoadingConstituentRotation(false))
   },[mainTab,rotationScope,rotationExpandedId,rotationWindow,stocks])
 
-  // Save portfolio to localStorage whenever it changes
+  // Persist family portfolios (max 5) + keep legacy key in sync for the active one
   useEffect(()=>{
-    localStorage.setItem('lm_portfolio', JSON.stringify(portfolioHoldings))
-  },[portfolioHoldings])
+    const payload={portfolios, activeId:activePortfolioId}
+    try{
+      localStorage.setItem(PORTFOLIOS_KEY, JSON.stringify(payload))
+      localStorage.setItem(PORTFOLIO_ACTIVE_KEY, activePortfolioId||'')
+      localStorage.setItem(PORTFOLIO_LEGACY_KEY, JSON.stringify(portfolioHoldings))
+    }catch{/* ignore quota */}
+  },[portfolios, activePortfolioId, portfolioHoldings])
 
   // Filter helpers
   const applyPP=(list,f)=>f==='yes'?list.filter(s=>s.pp?.isPP):f==='no'?list.filter(s=>!s.pp?.isPP):list
@@ -13429,12 +13522,30 @@ export default function App(){
         {mainTab==='market'&&(
           <div style={{padding:'0 0 20px',position:'relative'}}>
 
-            {/* History date picker — same shared historyDate state the
-                RS Rating tab uses; Market Breadth stats below are
-                computed from `stocks`, which already refetches for
-                whatever date this is set to, so no backend change
-                needed to make this tab historical-aware too. */}
-            <div style={{display:'flex',justifyContent:'flex-end',marginBottom:10}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,
+              flexWrap:'wrap',marginBottom:10}}>
+              <div style={{fontSize:11,color:C.muted}}>
+                {historyDate?(
+                  <span style={{color:C.purple,fontWeight:700}}>
+                    Viewing history · {new Date(historyDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
+                    {' · '}
+                    <button type="button" onClick={()=>setHistoryDate(null)}
+                      style={{background:'none',border:'none',color:C.accent,cursor:'pointer',
+                        fontWeight:700,fontSize:11,padding:0}}>Back to Live</button>
+                  </span>
+                ):(
+                  <span>
+                    Live market
+                    {scanMeta?.last_scan && (
+                      <> · updated {new Date(scanMeta.last_scan).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}
+                        {' '}IST · {scanMeta.stocks_count||'—'} stocks</>
+                    )}
+                    {!scanMeta?.last_scan && lastRefresh && (
+                      <> · client refresh {new Date(lastRefresh).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</>
+                    )}
+                  </span>
+                )}
+              </div>
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
                 availableDates={availableDates} isMobile={isMobile}/>
             </div>
@@ -14816,12 +14927,14 @@ export default function App(){
         {/* ══ PORTFOLIO TRACKER ══ */}
         {mainTab==='portfolio'&&(
           <div style={{padding:'0 0 20px'}}>
-            <div style={{marginBottom:14,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <div style={{marginBottom:14,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
               <div>
                 <div style={{fontWeight:700,fontSize:16}}>Portfolio Tracker</div>
-                <div style={{fontSize:11,color:C.muted}}>Track your holdings — RS, Stage, exit signals &amp; trade journal</div>
+                <div style={{fontSize:11,color:C.muted}}>
+                  Family portfolios — up to {MAX_FAMILY_PORTFOLIOS} · RS, Stage, exit signals &amp; trade journal
+                </div>
               </div>
-              <div style={{display:'flex',gap:8}}>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                 <label style={{padding:'7px 14px',borderRadius:7,border:`1px solid ${C.accent}`,
                   background:C.accent+'18',color:C.accent,fontWeight:700,fontSize:12,cursor:'pointer'}}>
                   📤 Upload Holdings
@@ -14854,7 +14967,7 @@ export default function App(){
                           return [...bySym.values()]
                         })
                         setPortfolioUploadStatus({type:'success',
-                          message:`Imported ${holdings.length} holding${holdings.length===1?'':'s'}`
+                          message:`Imported ${holdings.length} holding${holdings.length===1?'':'s'} into “${activePortfolio?.name||'Portfolio'}”`
                             + (skipped.length?` — ${skipped.length} row(s) skipped (missing quantity): ${skipped.slice(0,5).join(', ')}${skipped.length>5?'…':''}`:'')})
                       }catch(err){
                         setPortfolioUploadStatus({type:'error',message:err.message||'Could not parse that file'})
@@ -14871,6 +14984,64 @@ export default function App(){
                 {portfolioAddOpen?'✕ Close':'＋ Add Stock'}
               </button>
               </div>
+            </div>
+
+            {/* Family portfolio switcher — max 5 */}
+            <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:14,
+              padding:'10px 12px',background:C.card,border:`1px solid ${C.border}`,borderRadius:10}}>
+              {portfolios.map(p=>{
+                const active=p.id===(activePortfolio?.id||activePortfolioId)
+                return(
+                  <div key={p.id} style={{display:'flex',alignItems:'center',gap:0}}>
+                    <button type="button" onClick={()=>switchFamilyPortfolio(p.id)}
+                      onDoubleClick={()=>renameFamilyPortfolio(p.id)}
+                      title="Click to open · double-click to rename"
+                      style={{padding:'6px 12px',borderRadius:portfolios.length>1? '7px 0 0 7px':7,
+                        border:`1px solid ${active?C.accent:C.border}`,
+                        borderRight:portfolios.length>1?'none':undefined,
+                        background:active?C.accent+'22':'transparent',
+                        color:active?C.accent:C.text,fontWeight:700,fontSize:12,cursor:'pointer',
+                        maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                      {p.name}
+                      <span style={{marginLeft:6,fontWeight:600,opacity:0.7,fontSize:10}}>
+                        {p.holdings?.length||0}
+                      </span>
+                    </button>
+                    {portfolios.length>1&&(
+                      <button type="button" onClick={()=>deleteFamilyPortfolio(p.id)}
+                        title={`Delete ${p.name}`}
+                        style={{padding:'6px 8px',borderRadius:'0 7px 7px 0',
+                          border:`1px solid ${active?C.accent:C.border}`,
+                          background:active?C.accent+'12':'transparent',
+                          color:C.muted,fontSize:12,cursor:'pointer',lineHeight:1}}>
+                        ×
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+              <button type="button" onClick={createFamilyPortfolio}
+                disabled={portfolios.length>=MAX_FAMILY_PORTFOLIOS}
+                title={portfolios.length>=MAX_FAMILY_PORTFOLIOS
+                  ?`Maximum ${MAX_FAMILY_PORTFOLIOS} family portfolios`
+                  :'Create another family portfolio'}
+                style={{padding:'6px 12px',borderRadius:7,
+                  border:`1px dashed ${portfolios.length>=MAX_FAMILY_PORTFOLIOS?C.border:C.accent}`,
+                  background:'transparent',
+                  color:portfolios.length>=MAX_FAMILY_PORTFOLIOS?C.muted:C.accent,
+                  fontWeight:700,fontSize:12,
+                  cursor:portfolios.length>=MAX_FAMILY_PORTFOLIOS?'default':'pointer'}}>
+                ＋ New family
+              </button>
+              <span style={{fontSize:10,color:C.muted,marginLeft:'auto'}}>
+                {portfolios.length}/{MAX_FAMILY_PORTFOLIOS}
+                {' · '}
+                <button type="button" onClick={()=>renameFamilyPortfolio(activePortfolio?.id)}
+                  style={{background:'none',border:'none',color:C.accent,cursor:'pointer',
+                    fontSize:10,fontWeight:700,padding:0}}>
+                  Rename
+                </button>
+              </span>
             </div>
 
             {portfolioAddOpen&&(()=>{
@@ -14909,7 +15080,9 @@ export default function App(){
               return(
                 <div style={{marginBottom:14,padding:14,borderRadius:10,background:C.card,
                   border:`1px solid ${C.accent}44`}}>
-                  <div style={{fontSize:12,fontWeight:700,color:C.accent,marginBottom:10}}>Add holding</div>
+                  <div style={{fontSize:12,fontWeight:700,color:C.accent,marginBottom:10}}>
+                    Add holding to “{activePortfolio?.name||'Portfolio'}”
+                  </div>
                   <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1.4fr 0.8fr 0.8fr',gap:8,marginBottom:8}}>
                     <div style={{position:'relative'}}>
                       <input
@@ -15017,6 +15190,7 @@ export default function App(){
               // where available) is the portfolio-level version of that.
               let invested=0, current=0, haveValueFor=0
               let rsWeightedSum=0, rsWeight=0, rsCount=0, rsSum=0
+              let dayPnl=0, dayPnlHave=0
               for(const h of portfolioHoldings){
                 const s=stocks.find(x=>x.sym===h.sym)
                 if(!s) continue
@@ -15028,10 +15202,17 @@ export default function App(){
                   haveValueFor++
                   if(rsv!=null){ rsWeightedSum += rsv*(h.qty*s.last); rsWeight += (h.qty*s.last) }
                 }
+                // Today's ₹ P&L from LTP vs previous close (chg%)
+                if(h.qty && s.last!=null && s.chg!=null && isFinite(s.chg)){
+                  const prev=s.last/(1+s.chg/100)
+                  dayPnl += h.qty*(s.last-prev)
+                  dayPnlHave++
+                }
               }
               const pnlAmt = haveValueFor>0 ? (current-invested) : null
               const pnlPct = invested>0 ? ((current-invested)/invested*100) : null
               const avgRs = rsWeight>0 ? (rsWeightedSum/rsWeight) : (rsCount>0 ? rsSum/rsCount : null)
+              const todayPnl = dayPnlHave>0 ? dayPnl : null
               // Period returns of the portfolio (value-weighted stock chg) for vs-index alpha
               const portChgD = portfolioWeightedAvg(portfolioHoldings, stocks, 'chg')
               const portChgW = portfolioWeightedAvg(portfolioHoldings, stocks, 'chgW')
@@ -15039,161 +15220,162 @@ export default function App(){
               const fmtPctSigned = (v, digits=2) => v==null || !isFinite(v) ? '—'
                 : `${v>=0?'+':''}${v.toFixed(digits)}%`
               const alphaColor = (a) => a==null ? C.muted : a>=0 ? C.green : C.red
-              const stageColorOf = (st) => ({1:C.yellow,2:C.green,3:C.orange,4:C.red}[st] || C.muted)
+              const fmtSignedAmt = (v) => {
+                if(v==null || !isFinite(v)) return '—'
+                const sign = v>=0 ? '+' : '-'
+                return sign + fmtAmt(Math.abs(v)).replace('₹','')
+              }
+              const benches = PORTFOLIO_BENCH_INDICES.map(bench=>{
+                const idx = findIndexRow(indexData, bench.names)
+                const rsVs = portfolioWeightedAvg(portfolioHoldings, stocks, bench.rsField)
+                return {
+                  ...bench,
+                  idx,
+                  rsVs,
+                  chgD: idx?.chgD ?? null,
+                  chgW: idx?.chgW ?? null,
+                  chgM: idx?.chgM ?? null,
+                  aD: (portChgD!=null && idx?.chgD!=null) ? portChgD-idx.chgD : null,
+                  aW: (portChgW!=null && idx?.chgW!=null) ? portChgW-idx.chgW : null,
+                  aM: (portChgM!=null && idx?.chgM!=null) ? portChgM-idx.chgM : null,
+                }
+              })
               return(
-                <>
-                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(3,1fr)',gap:10,marginBottom:12}}>
-                  {haveValueFor>0?(<>
-                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px 16px'}}>
-                      <div style={{fontSize:10,color:C.muted,marginBottom:4,fontWeight:700,letterSpacing:'0.04em'}}>TOTAL INVESTED</div>
-                      <div style={{fontWeight:800,fontSize:20,color:C.text}}>{fmtAmt(invested)}</div>
-                    </div>
-                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px 16px'}}>
-                      <div style={{fontSize:10,color:C.muted,marginBottom:4,fontWeight:700,letterSpacing:'0.04em'}}>TOTAL P&amp;L</div>
-                      <div style={{fontWeight:800,fontSize:20,color:pnlAmt>=0?C.green:C.red}}>
-                        {pnlAmt>=0?'+':'-'}{fmtAmt(Math.abs(pnlAmt)).replace('₹','')}
-                      </div>
-                    </div>
-                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px 16px'}}>
-                      <div style={{fontSize:10,color:C.muted,marginBottom:4,fontWeight:700,letterSpacing:'0.04em'}}>PORTFOLIO RETURN</div>
-                      <div style={{fontWeight:800,fontSize:20,color:pnlPct>=0?C.green:C.red}}>
-                        {pnlPct>=0?'+':''}{pnlPct.toFixed(2)}%
-                      </div>
-                      <div style={{fontSize:9,color:C.muted,marginTop:4}}>
-                        vs cost · period moves below
-                      </div>
-                    </div>
-                  </>):(
-                    <div style={{gridColumn:'1 / -1',background:C.card,border:`1px solid ${C.border}`,
-                      borderRadius:10,padding:'12px 16px',fontSize:11,color:C.muted}}>
-                      Add quantity + entry price (via upload or "+ Add Stock") to see invested value and P&amp;L.
-                    </div>
-                  )}
-                </div>
-
-                {/* Portfolio performance vs Nifty 50 / Midcap / Smallcap trends */}
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
-                  padding:'14px 16px',marginBottom:12}}>
-                  <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:10,flexWrap:'wrap',marginBottom:10}}>
-                    <div>
-                      <div style={{fontWeight:800,fontSize:13,color:C.text}}>Performance vs Market</div>
-                      <div style={{fontSize:10,color:C.muted,marginTop:2}}>
-                        Value-weighted portfolio % vs index trend · α = portfolio − index
-                      </div>
+                  padding:'12px 14px',marginBottom:14}}>
+                  <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:8,flexWrap:'wrap',marginBottom:10}}>
+                    <div style={{fontWeight:800,fontSize:13,color:C.text}}>
+                      Portfolio summary
+                      <span style={{fontWeight:600,fontSize:11,color:C.muted,marginLeft:8}}>
+                        · {activePortfolio?.name}
+                      </span>
                     </div>
-                    <div style={{display:'flex',gap:10,flexWrap:'wrap',fontSize:11}}>
-                      {[['1D',portChgD],['1W',portChgW],['1M',portChgM]].map(([lab,v])=>(
-                        <span key={lab} style={{color:C.muted}}>
-                          Port {lab}{' '}
-                          <b style={{color:v==null?C.muted:v>=0?C.green:C.red}}>{fmtPctSigned(v)}</b>
-                        </span>
+                    {avgRs!=null&&(
+                      <div style={{fontSize:11,color:C.muted}}>
+                        RS-TV{haveValueFor>0?' (wtd)':''}{' '}
+                        <b style={{fontSize:16,color:rsColor(avgRs)}}>{avgRs.toFixed(0)}</b>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* KPI strip — invested, total P&L, today's P&L, return */}
+                  {haveValueFor>0?(
+                    <div style={{display:'grid',
+                      gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,minmax(0,1fr))',
+                      gap:8,marginBottom:12}}>
+                      {[
+                        {lab:'INVESTED', val:fmtAmt(invested), color:C.text},
+                        {lab:'TOTAL P&L', val:fmtSignedAmt(pnlAmt), color:pnlAmt>=0?C.green:C.red},
+                        {lab:"TODAY'S P&L", val:fmtSignedAmt(todayPnl),
+                          color:todayPnl==null?C.muted:todayPnl>=0?C.green:C.red,
+                          sub:todayPnl!=null?fmtPctSigned(portChgD):null},
+                        {lab:'RETURN', val:pnlPct==null?'—':`${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%`,
+                          color:pnlPct==null?C.muted:pnlPct>=0?C.green:C.red, sub:'vs cost'},
+                      ].map(k=>(
+                        <div key={k.lab} style={{background:C.bg,border:`1px solid ${C.border}`,
+                          borderRadius:8,padding:'10px 12px'}}>
+                          <div style={{fontSize:9,color:C.muted,fontWeight:700,letterSpacing:'0.04em',marginBottom:3}}>
+                            {k.lab}
+                          </div>
+                          <div style={{fontWeight:800,fontSize:18,color:k.color,lineHeight:1.15}}>{k.val}</div>
+                          {k.sub&&(
+                            <div style={{fontSize:10,color:C.muted,marginTop:3}}>{k.sub}</div>
+                          )}
+                        </div>
                       ))}
                     </div>
+                  ):(
+                    <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,
+                      padding:'10px 12px',marginBottom:12,fontSize:11,color:C.muted}}>
+                      Add quantity + entry price to see invested value, P&amp;L, and today’s profit.
+                    </div>
+                  )}
+
+                  {/* Single compact vs-market table (Port once, α per index) */}
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:11,minWidth:isMobile?420:0}}>
+                      <thead>
+                        <tr>
+                          <th style={{textAlign:'left',padding:'6px 8px',color:C.muted,fontWeight:700,fontSize:10,
+                            borderBottom:`1px solid ${C.border}`}}>vs Market</th>
+                          <th style={{textAlign:'right',padding:'6px 8px',color:C.muted,fontWeight:700,fontSize:10,
+                            borderBottom:`1px solid ${C.border}`}}>1D</th>
+                          <th style={{textAlign:'right',padding:'6px 8px',color:C.muted,fontWeight:700,fontSize:10,
+                            borderBottom:`1px solid ${C.border}`}}>1W</th>
+                          <th style={{textAlign:'right',padding:'6px 8px',color:C.muted,fontWeight:700,fontSize:10,
+                            borderBottom:`1px solid ${C.border}`}}>1M</th>
+                          <th style={{textAlign:'right',padding:'6px 8px',color:C.muted,fontWeight:700,fontSize:10,
+                            borderBottom:`1px solid ${C.border}`}}>RS</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr style={{background:C.bg}}>
+                          <td style={{padding:'7px 8px',fontWeight:800,color:C.text}}>Portfolio</td>
+                          <td style={{padding:'7px 8px',textAlign:'right',fontWeight:700,
+                            color:portChgD==null?C.muted:portChgD>=0?C.green:C.red}}>{fmtPctSigned(portChgD)}</td>
+                          <td style={{padding:'7px 8px',textAlign:'right',fontWeight:700,
+                            color:portChgW==null?C.muted:portChgW>=0?C.green:C.red}}>{fmtPctSigned(portChgW)}</td>
+                          <td style={{padding:'7px 8px',textAlign:'right',fontWeight:700,
+                            color:portChgM==null?C.muted:portChgM>=0?C.green:C.red}}>{fmtPctSigned(portChgM)}</td>
+                          <td style={{padding:'7px 8px',textAlign:'right',fontWeight:800,
+                            color:avgRs!=null?rsColor(avgRs):C.muted}}>
+                            {avgRs!=null?avgRs.toFixed(0):'—'}
+                          </td>
+                        </tr>
+                        {benches.map(b=>(
+                          <tr key={b.key}>
+                            <td style={{padding:'7px 8px',borderTop:`1px solid ${C.divider}`}}>
+                              <span
+                                onClick={()=>b.idx && openChart(b.idx.name,{isIndex:true})}
+                                style={{fontWeight:700,color:b.idx?C.accent:C.text,cursor:b.idx?'pointer':'default',
+                                  textDecoration:b.idx?'underline':'none',textDecorationColor:C.accent+'55'}}
+                                title={b.idx?`Open ${b.label} chart`:undefined}>
+                                {b.short}
+                              </span>
+                              <span style={{color:C.muted,fontSize:10,marginLeft:6}}>
+                                {fmtPctSigned(b.chgD)} · α
+                              </span>
+                            </td>
+                            <td style={{padding:'7px 8px',textAlign:'right',borderTop:`1px solid ${C.divider}`,
+                              fontWeight:800,color:alphaColor(b.aD)}} title={`Index ${fmtPctSigned(b.chgD)}`}>
+                              {fmtPctSigned(b.aD)}
+                            </td>
+                            <td style={{padding:'7px 8px',textAlign:'right',borderTop:`1px solid ${C.divider}`,
+                              fontWeight:800,color:alphaColor(b.aW)}} title={`Index ${fmtPctSigned(b.chgW)}`}>
+                              {fmtPctSigned(b.aW)}
+                            </td>
+                            <td style={{padding:'7px 8px',textAlign:'right',borderTop:`1px solid ${C.divider}`,
+                              fontWeight:800,color:alphaColor(b.aM)}} title={`Index ${fmtPctSigned(b.chgM)}`}>
+                              {fmtPctSigned(b.aM)}
+                            </td>
+                            <td style={{padding:'7px 8px',textAlign:'right',borderTop:`1px solid ${C.divider}`,
+                              fontWeight:800,color:b.rsVs!=null?rsColor(b.rsVs):C.muted}}>
+                              {b.rsVs!=null?b.rsVs.toFixed(0):'—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                  <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(3,1fr)',gap:10}}>
-                    {PORTFOLIO_BENCH_INDICES.map(bench=>{
-                      const idx = findIndexRow(indexData, bench.names)
-                      const periods = [
-                        {lab:'1D', port:portChgD, idx:idx?.chgD},
-                        {lab:'1W', port:portChgW, idx:idx?.chgW},
-                        {lab:'1M', port:portChgM, idx:idx?.chgM},
-                      ]
-                      const rsVs = portfolioWeightedAvg(portfolioHoldings, stocks, bench.rsField)
-                      const stColor = stageColorOf(idx?.stage)
-                      return (
-                        <div key={bench.key} style={{
-                          background:C.bg, border:`1px solid ${C.border}`, borderRadius:8,
-                          padding:'12px 12px 10px',
-                        }}>
-                          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:8}}>
-                            <div
-                              onClick={()=>idx && openChart(idx.name,{isIndex:true})}
-                              style={{fontWeight:800,fontSize:12.5,color:idx?C.accent:C.text,cursor:idx?'pointer':'default',
-                                textDecoration:idx?'underline':'none',textDecorationColor:C.accent+'55'}}
-                              title={idx?`Open ${bench.label} chart`:undefined}>
-                              {bench.label}
-                            </div>
-                            {idx?.stageLabel ? (
-                              <span style={{
-                                fontSize:9, fontWeight:800, padding:'2px 6px', borderRadius:4,
-                                background:stColor+'22', color:stColor,
-                              }}>{idx.stageLabel}</span>
-                            ) : (
-                              <span style={{fontSize:9,color:C.muted}}>No index data</span>
-                            )}
-                          </div>
-                          {idx?.lastPrice!=null && (
-                            <div style={{fontSize:10,color:C.muted,marginBottom:8}}>
-                              {fmtP(idx.lastPrice)}
-                              {idx.rsTv!=null && <> · RS-TV <b style={{color:rsColor(idx.rsTv)}}>{idx.rsTv}</b></>}
-                            </div>
-                          )}
-                          <div style={{display:'grid',gridTemplateColumns:'36px 1fr 1fr 1fr',gap:4,fontSize:10,marginBottom:4}}>
-                            <div style={{color:C.muted}}/>
-                            <div style={{color:C.muted,fontWeight:700,textAlign:'right'}}>Port</div>
-                            <div style={{color:C.muted,fontWeight:700,textAlign:'right'}}>Index</div>
-                            <div style={{color:C.muted,fontWeight:700,textAlign:'right'}}>α</div>
-                            {periods.map(p=>{
-                              const alpha = (p.port!=null && p.idx!=null) ? (p.port - p.idx) : null
-                              return (
-                                <React.Fragment key={p.lab}>
-                                  <div style={{color:C.muted,fontWeight:700}}>{p.lab}</div>
-                                  <div style={{textAlign:'right',fontWeight:700,color:p.port==null?C.muted:p.port>=0?C.green:C.red}}>
-                                    {fmtPctSigned(p.port)}
-                                  </div>
-                                  <div style={{textAlign:'right',fontWeight:600,color:p.idx==null?C.muted:p.idx>=0?C.green:C.red}}>
-                                    {fmtPctSigned(p.idx)}
-                                  </div>
-                                  <div style={{textAlign:'right',fontWeight:800,color:alphaColor(alpha)}}>
-                                    {fmtPctSigned(alpha)}
-                                  </div>
-                                </React.Fragment>
-                              )
-                            })}
-                          </div>
-                          <div style={{
-                            marginTop:8, paddingTop:8, borderTop:`1px solid ${C.border}`,
-                            display:'flex', justifyContent:'space-between', alignItems:'center', gap:8,
-                          }}>
-                            <span style={{fontSize:10,color:C.muted}}>Holdings RS vs {bench.short}</span>
-                            <span style={{fontWeight:800,fontSize:14,color:rsVs!=null?rsColor(rsVs):C.muted}}>
-                              {rsVs!=null ? rsVs.toFixed(0) : '—'}
-                            </span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <div style={{fontSize:9.5,color:C.muted,marginTop:10,lineHeight:1.4}}>
-                    Period % uses each holding’s market move (1D/1W/1M), weighted by position value — not your cost-basis return.
-                    Positive α means the portfolio beat that index over the window. Holdings RS is relative strength vs that universe (1–99).
+                  <div style={{fontSize:9.5,color:C.muted,marginTop:8,lineHeight:1.4}}>
+                    Today’s P&amp;L = sum of qty × (LTP − prev close). Index rows show α (portfolio − index). Hover α for index %.
                   </div>
                 </div>
-
-                {avgRs!=null&&(
-                  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
-                    padding:'12px 16px',marginBottom:14}}>
-                    <div style={{display:'flex',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
-                      <div style={{fontSize:10,color:C.muted,fontWeight:700}}>Portfolio RS-TV{haveValueFor>0?' (wtd)':''}</div>
-                      <div style={{fontWeight:800,fontSize:22,color:rsColor(avgRs)}}>{avgRs.toFixed(0)}</div>
-                    </div>
-                    <div style={{fontSize:10,color:C.muted,marginTop:6,lineHeight:1.4}}>
-                      RS-TV is each stock's strength vs Nifty (1–99). Above 50 = portfolio outperforming Nifty on balance.
-                    </div>
-                  </div>
-                )}
-                </>
               )
             })()}
 
             {portfolioHoldings.length===0?(
               <div style={{textAlign:'center',padding:'60px 20px',color:C.muted}}>
                 <div style={{fontSize:36,marginBottom:10}}>💼</div>
-                <div style={{fontSize:14,fontWeight:700,color:C.text}}>No holdings yet</div>
-                <div style={{fontSize:12,marginTop:6}}>Click "+ Add Stock" to track your positions</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text}}>
+                  No holdings in “{activePortfolio?.name||'Portfolio'}” yet
+                </div>
+                <div style={{fontSize:12,marginTop:6}}>
+                  Click "+ Add Stock", or use "+ New family" for spouse / kids (max {MAX_FAMILY_PORTFOLIOS})
+                </div>
               </div>
             ):(()=>{
-              const rows = portfolioHoldings.map(h=>{
+              const rowsRaw = portfolioHoldings.map(h=>{
                 const s=stocks.find(x=>x.sym===h.sym)
                 const stage=s?calcWeinsteinStage(s):null
                 const dangerZone=stage&&(stage.stage===3||stage.stage===4)
@@ -15204,7 +15386,36 @@ export default function App(){
                   ? ((s.last-h.entryPrice)/h.entryPrice*100)
                   : null
                 const name = portfolioDisplayName(h, s)
-                return {h, s, stage, dangerZone, invested, pnlAmt, pnlPct, name}
+                const rs = s?.rsTv??s?.rs??null
+                return {h, s, stage, dangerZone, invested, current, pnlAmt, pnlPct, name, rs}
+              })
+              const totalCurrent = rowsRaw.reduce((a,r)=>a+(r.current??0),0)
+              const rowsUnsorted = rowsRaw.map(r=>({
+                ...r,
+                weight: (r.current!=null && totalCurrent>0) ? (r.current/totalCurrent*100) : null,
+              }))
+              const dir = portfolioSortDir==='asc'?1:-1
+              const rows = [...rowsUnsorted].sort((a,b)=>{
+                const nullLast=(av,bv)=>{
+                  if(av==null&&bv==null) return 0
+                  if(av==null) return 1
+                  if(bv==null) return -1
+                  return 0
+                }
+                if(portfolioSortBy==='sym'){
+                  return dir===1?a.h.sym.localeCompare(b.h.sym):b.h.sym.localeCompare(a.h.sym)
+                }
+                let av=null, bv=null
+                if(portfolioSortBy==='cost'){ av=a.h.entryPrice; bv=b.h.entryPrice }
+                else if(portfolioSortBy==='invested'){ av=a.invested; bv=b.invested }
+                else if(portfolioSortBy==='pnl'){ av=a.pnlAmt; bv=b.pnlAmt }
+                else if(portfolioSortBy==='return'){ av=a.pnlPct; bv=b.pnlPct }
+                else if(portfolioSortBy==='rs'){ av=a.rs; bv=b.rs }
+                else if(portfolioSortBy==='weight'){ av=a.weight; bv=b.weight }
+                else if(portfolioSortBy==='stage'){ av=a.stage?.stage??null; bv=b.stage?.stage??null }
+                const nl=nullLast(av,bv); if(nl) return nl
+                if(av!==bv) return dir===1?(av-bv):(bv-av)
+                return a.h.sym.localeCompare(b.h.sym)
               })
               // Split into two columns on wide screens (like common portfolio trackers)
               const useSplit = !isMobile && rows.length >= 6
@@ -15215,20 +15426,37 @@ export default function App(){
               const renderTable = (tableRows, key) => (
                 <div key={key} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
                   <div style={{overflowX:'auto'}}>
-                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:420}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:480}}>
                       <thead>
                         <tr style={{background:C.bg}}>
-                          {['STOCK','AVG COST','INVESTED','P&L','RETURN','',''].map((label,i)=>(
+                          {[
+                            {label:'STOCK', key:'sym', align:'left'},
+                            {label:'AVG COST', key:'cost', align:'right'},
+                            {label:'INVESTED', key:'invested', align:'right'},
+                            {label:'WEIGHT', key:'weight', align:'right'},
+                            {label:'P&L', key:'pnl', align:'right'},
+                            {label:'RETURN', key:'return', align:'right'},
+                            {label:'RS', key:'rs', align:'right'},
+                            {label:'', key:null, align:'right'},
+                            {label:'', key:null, align:'right'},
+                          ].map((col,i)=>(
                             <th key={i} style={{
-                              padding:'10px 12px', textAlign: i===0?'left':'right',
+                              padding: col.key==='weight'||col.key==='rs'?'10px 8px':'10px 12px',
+                              textAlign: col.align,
                               fontSize:10, fontWeight:800, color:C.muted, letterSpacing:'0.04em',
                               borderBottom:`1px solid ${C.border}`, whiteSpace:'nowrap',
-                            }}>{label}</th>
+                            }}>
+                              {col.key?(
+                                <SortableHeader label={col.label} sortKey={col.key}
+                                  sortBy={portfolioSortBy} sortDir={portfolioSortDir}
+                                  onSort={handlePortfolioSort} align={col.align}/>
+                              ):null}
+                            </th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {tableRows.map(({h,s,stage,dangerZone,invested,pnlAmt,pnlPct,name}, idx)=>{
+                        {tableRows.map(({h,s,stage,dangerZone,invested,pnlAmt,pnlPct,name,rs,weight}, idx)=>{
                           const journalOpen=journalOpenSym===h.sym
                           const journal=h.journal||[]
                           return(
@@ -15250,13 +15478,8 @@ export default function App(){
                                   }} title={name||undefined}>
                                     {name || '—'}
                                   </div>
-                                  {(stage||dangerZone||(s&&(s.rsTv!=null||s.rs!=null)))&&(
+                                  {(stage||dangerZone)&&(
                                     <div style={{display:'flex',gap:4,flexWrap:'wrap',marginTop:5,alignItems:'center'}}>
-                                      {s&&(s.rsTv!=null||s.rs!=null)&&(
-                                        <span style={{fontSize:9,fontWeight:800,color:rsColor(s.rsTv||s.rs)}}>
-                                          RS {(s.rsTv||s.rs)}
-                                        </span>
-                                      )}
                                       {stage&&<StageBadge stage={stage}/>}
                                       {dangerZone&&(
                                         <span style={{fontSize:9,fontWeight:800,color:C.red}}>⚠ EXIT</span>
@@ -15270,6 +15493,9 @@ export default function App(){
                                 <td style={{padding:'10px 12px',textAlign:'right',fontWeight:600,color:C.text,whiteSpace:'nowrap'}}>
                                   {invested!=null ? fmtAmt(invested) : '—'}
                                 </td>
+                                <td style={{padding:'10px 8px',textAlign:'right',fontWeight:700,color:C.muted,whiteSpace:'nowrap'}}>
+                                  {weight!=null ? `${weight.toFixed(1)}%` : '—'}
+                                </td>
                                 <td style={{padding:'10px 12px',textAlign:'right',fontWeight:700,whiteSpace:'nowrap',
                                   color:pnlAmt==null?C.muted:pnlAmt>=0?C.green:C.red}}>
                                   {pnlAmt==null ? '—' : `${pnlAmt>=0?'+':'-'}${fmtAmt(Math.abs(pnlAmt)).replace('₹','')}`}
@@ -15277,6 +15503,10 @@ export default function App(){
                                 <td style={{padding:'10px 12px',textAlign:'right',fontWeight:700,whiteSpace:'nowrap',
                                   color:pnlPct==null?C.muted:pnlPct>=0?C.green:C.red}}>
                                   {pnlPct==null ? '—' : `${pnlPct>=0?'+':''}${pnlPct.toFixed(2)}%`}
+                                </td>
+                                <td style={{padding:'10px 8px',textAlign:'right',fontWeight:800,whiteSpace:'nowrap',
+                                  color:rs!=null?rsColor(rs):C.muted}}>
+                                  {rs!=null ? rs : '—'}
                                 </td>
                                 <td style={{padding:'10px 4px',textAlign:'right',width:36}}>
                                   <button onClick={()=>setJournalOpenSym(journalOpen?null:h.sym)}
@@ -15298,7 +15528,7 @@ export default function App(){
                               </tr>
                               {journalOpen&&(
                                 <tr>
-                                  <td colSpan={7} style={{padding:'0 12px 12px',background:idx%2?C.bg:'transparent'}}>
+                                  <td colSpan={9} style={{padding:'0 12px 12px',background:idx%2?C.bg:'transparent'}}>
                                     <div style={{paddingTop:4,borderTop:`1px solid ${C.divider}`}}>
                                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,marginTop:8}}>
                                         <div style={{fontSize:11,fontWeight:700,color:C.muted}}>TRADE JOURNAL · {h.sym}</div>
@@ -15358,8 +15588,13 @@ export default function App(){
               )
 
               return (
-                <div style={{display:'grid',gridTemplateColumns:useSplit?'1fr 1fr':'1fr',gap:12}}>
-                  {tables.map((t,i)=>renderTable(t, i))}
+                <div>
+                  <div style={{fontSize:10,color:C.muted,marginBottom:8}}>
+                    Click a column header to sort · default: Invested (high → low)
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:useSplit?'1fr 1fr':'1fr',gap:12}}>
+                    {tables.map((t,i)=>renderTable(t, i))}
+                  </div>
                 </div>
               )
             })()}
@@ -16358,7 +16593,9 @@ export default function App(){
                     <div style={{padding:'0 12px 12px'}}>
                       <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,flexWrap:'wrap'}}>
                         <div style={{fontSize:10,color:C.muted,flex:1,minWidth:180}}>
-                          Filings with no AI summary yet, or pending/failed (last {aiCatchup?.days||45} days). Done and skipped are excluded. Tap a row to open the AI tab.
+                          Filings with no AI summary yet, or pending/failed (last {aiCatchup?.days||45} days).
+                          Done and skipped are excluded. Concall = transcript PDFs only (not audio recordings).
+                          Tap a row to open the AI tab.
                         </div>
                         <button type="button" onClick={loadAiCatchup} disabled={aiCatchupLoading}
                           style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.border}`,

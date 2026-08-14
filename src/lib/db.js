@@ -1959,6 +1959,11 @@ export async function fetchIndexSymbols(indexFilter) {
  *   - status done / skipped       → already processed; not missed
  *
  * Match key is (symbol, attachment_url) — same as the worker upsert.
+ *
+ * Filters intentionally match the Railway worker (shared.py):
+ *   Concall = subject/category contains "transcript" (not audio recordings /
+ *             call invites). PPT = "presentation". Audio-only NSE links are
+ *             not Gemini-readable and must not inflate the Waiting queue.
  */
 export async function fetchMissedAiFilings({ days = 45, limitPerType = 80 } = {}) {
   const since = new Date(Date.now() - days * 86400000).toISOString()
@@ -1970,23 +1975,26 @@ export async function fetchMissedAiFilings({ days = 45, limitPerType = 80 } = {}
       table: 'concall_summaries',
       detailTab: 'resultsSummary',
       keywords: ['financial result', 'quarterly result', 'results for the quarter', 'unaudited results', 'audited results'],
-      exclude: ['newspaper publication', 'newspaper advertisement', 'transcript', 'press release', 'investor presentation', 'clarification'],
+      exclude: ['newspaper publication', 'newspaper advertisement', 'transcript', 'press release', 'investor presentation', 'clarification', 'audio recording', 'audio'],
     },
     {
       key: 'ppt',
       label: 'PPT',
       table: 'ppt_summaries',
       detailTab: 'ppt',
+      // Same signal as worker _PPT_ANN_KEYWORDS / _is_ppt_announcement
       keywords: ['investor presentation', 'analyst presentation', 'corporate presentation', 'earnings presentation', 'presentation'],
-      exclude: ['transcript'],
+      exclude: ['transcript', 'audio recording', 'audio', 'schedule of', 'intimation of'],
     },
     {
       key: 'concall',
       label: 'Concall',
       table: 'transcript_summaries',
       detailTab: 'concall',
-      keywords: ['transcript', 'con call', 'con-call', 'concall', 'conference call', 'earnings call'],
-      exclude: ['presentation', 'schedule of', 'intimation of'],
+      // Same signal as worker _TRANSCRIPT_ANN_KEYWORDS — "conference call" alone
+      // matches audio recordings / invites that have no extractable text.
+      keywords: ['transcript'],
+      exclude: ['presentation', 'audio recording', 'audio', 'schedule of', 'intimation of'],
     },
   ]
 
