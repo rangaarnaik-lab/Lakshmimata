@@ -1333,7 +1333,7 @@ function RefreshBar({lastRefresh,interval,loading,onRefresh}){
 // available snapshot dates are clickable, everything else is greyed
 // out. availableDates comes from fetchAvailableHistoryDates(), sorted
 // newest-first.
-function HistoryCalendarPicker({historyDate, setHistoryDate, availableDates, isMobile}){
+function HistoryCalendarPicker({historyDate, setHistoryDate, availableDates, isMobile, onOpenRefresh}){
   const [open, setOpen] = useState(false)
   const availSet = useMemo(() => new Set(availableDates), [availableDates])
   const initialMonth = useMemo(() => {
@@ -1342,6 +1342,12 @@ function HistoryCalendarPicker({historyDate, setHistoryDate, availableDates, isM
   }, [historyDate, availableDates])
   const [viewMonth, setViewMonth] = useState(initialMonth)
   useEffect(() => { if(open) setViewMonth(initialMonth) }, [open, initialMonth])
+
+  const openCalendar = ()=>{
+    const next=!open
+    setOpen(next)
+    if(next && typeof onOpenRefresh==='function') onOpenRefresh()
+  }
 
   const [y, m] = viewMonth.split('-').map(Number)
   const firstOfMonth = new Date(y, m-1, 1)
@@ -1362,7 +1368,7 @@ function HistoryCalendarPicker({historyDate, setHistoryDate, availableDates, isM
 
   return (
     <div style={{position:'relative'}}>
-      <button onClick={()=>setOpen(v=>!v)}
+      <button onClick={openCalendar}
         style={{padding:isMobile?'8px':'5px 8px',background:historyDate?C.purple+'22':C.card,
           border:`1px solid ${historyDate?C.purple+'66':C.border}`,
           borderRadius:isMobile?8:6,color:historyDate?C.purple:C.text,fontSize:isMobile?11:11,
@@ -11942,10 +11948,17 @@ export default function App(){
   const [historyDate,setHistoryDate]=useState(null) // null = live today, else 'YYYY-MM-DD'
   const [hoveredNavId,setHoveredNavId]=useState(null) // sidebar hover polish
   const [availableDates,setAvailableDates]=useState([])
+  const refreshHistoryDates=useCallback(()=>{
+    fetchAvailableHistoryDates().then(setAvailableDates).catch(()=>{})
+  },[])
 
   useEffect(()=>{
-    fetchAvailableHistoryDates().then(setAvailableDates)
-  },[])
+    refreshHistoryDates()
+    // History calendar was stuck on Aug 12 for users who loaded the app
+    // before stock_history gaps were repaired — refresh periodically.
+    const t=setInterval(refreshHistoryDates, 3*60*1000)
+    return ()=>clearInterval(t)
+  },[refreshHistoryDates])
 
   const runDBScan=useCallback(async()=>{
     setLoading(true);setProgress(0);setProgressMsg(historyDate?`Loading ${historyDate}…`:'Loading from database…')
@@ -12773,7 +12786,7 @@ export default function App(){
               {/* History date picker */}
               {!isMobile&&(
                 <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
-                  availableDates={availableDates} isMobile={false}/>
+                  availableDates={availableDates} isMobile={false} onOpenRefresh={refreshHistoryDates}/>
               )}
 
               {/* Auto refresh toggle */}
@@ -13195,7 +13208,7 @@ export default function App(){
                   )}
                 </select>
                 <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
-                  availableDates={availableDates} isMobile={true}/>
+                  availableDates={availableDates} isMobile={true} onOpenRefresh={refreshHistoryDates}/>
                 {loading&&(
                   <span style={{flex:1,padding:'12px',textAlign:'center',fontSize:12,color:C.muted}}>
                     ⏳ {progress}%
@@ -13658,7 +13671,7 @@ export default function App(){
                 )}
               </div>
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
-                availableDates={availableDates} isMobile={isMobile}/>
+                availableDates={availableDates} isMobile={isMobile} onOpenRefresh={refreshHistoryDates}/>
             </div>
 
             <div style={{position:'sticky',top:0,zIndex:5,background:C.bg,
@@ -14778,7 +14791,7 @@ export default function App(){
           <div style={{padding:'0 0 20px'}}>
             <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
-                availableDates={availableDates} isMobile={isMobile}/>
+                availableDates={availableDates} isMobile={isMobile} onOpenRefresh={refreshHistoryDates}/>
             </div>
             <div style={{marginBottom:10}}>
               <div style={{fontWeight:700,fontSize:16,color:C.text}}>Leaders</div>
@@ -14840,7 +14853,7 @@ export default function App(){
           <div style={{padding:'0 0 20px'}}>
             <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
-                availableDates={availableDates} isMobile={isMobile}/>
+                availableDates={availableDates} isMobile={isMobile} onOpenRefresh={refreshHistoryDates}/>
             </div>
             <div style={{marginBottom:14}}>
               <div style={{fontWeight:700,fontSize:16,color:C.text}}>Patterns</div>
@@ -15765,7 +15778,7 @@ export default function App(){
           <div style={{padding:'0 0 20px'}}>
             <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
-                availableDates={availableDates} isMobile={isMobile}/>
+                availableDates={availableDates} isMobile={isMobile} onOpenRefresh={refreshHistoryDates}/>
             </div>
             <div style={{marginBottom:14}}>
               <div style={{fontWeight:700,fontSize:16}}>Stock Comparison</div>
@@ -15880,7 +15893,7 @@ export default function App(){
             )}
             <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
-                availableDates={availableDates} isMobile={isMobile}/>
+                availableDates={availableDates} isMobile={isMobile} onOpenRefresh={refreshHistoryDates}/>
             </div>
             <div style={{background:C.card,border:`1px solid ${C.teal}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
               <div style={{fontWeight:800,fontSize:15,color:C.teal,marginBottom:6}}>🌀 Squeeze Scanner</div>
@@ -15971,7 +15984,7 @@ export default function App(){
             )}
             <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
-                availableDates={availableDates} isMobile={isMobile}/>
+                availableDates={availableDates} isMobile={isMobile} onOpenRefresh={refreshHistoryDates}/>
             </div>
 
             {displayed52WL.length>0&&<TVCopyPanel stocks={displayed52WL} label="52WL Crossover"/>}
