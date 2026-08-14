@@ -4378,10 +4378,10 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
         borderLeft:`1px solid ${C.divider}`,transition:customPct!=null||expandCol?'none':'flex 0.2s ease'}
   // In stack mode, Chart and Details are independent flex siblings of the RS table
   // (so Overview can sit directly under the RS rating table).
-  const stackTileStyle=(order, flexGrow)=>({
+  const stackTileStyle=(order, flexGrow, minH=180)=>({
     position:'relative',
     flex: flexGrow,
-    minHeight: 180,
+    minHeight: minH,
     alignSelf:'stretch',
     overflow:'hidden',
     display:'flex',
@@ -4394,11 +4394,12 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
   const chartExpanded=wide>=1||(customPct!=null&&customPct>=45)
   const readingMode=['about','fundamentals','concall','ppt','resultsSummary'].includes(detailTab)
   const tableMode=detailTab==='results'
-  // Prefer chart height — peer ranking is capped/scrollable in ChartBelowContent.
-  const chartFlex=readingMode?'0 1 44%':tableMode?'0 1 52%':'1 1 64%'
-  const chartMaxH=readingMode?'48%':tableMode?'56%':undefined
-  const belowFlex=readingMode?'1 1 52%':tableMode?'1 1 44%':'1 1 36%'
-  const belowMin=readingMode?280:tableMode?240:180
+  // Chart always keeps the larger share; Details scrolls in the remaining space.
+  const chartFlex=readingMode?'1 1 62%':tableMode?'1 1 65%':'1 1 70%'
+  const chartMaxH=undefined
+  const belowFlex=readingMode?'0 1 38%':tableMode?'0 1 35%':'0 1 30%'
+  const belowMin=readingMode?150:tableMode?140:120
+  const chartMinH=readingMode?200:tableMode?220:240
 
   const chartHeaderExtra=(
     <div style={{display:'flex',alignItems:'center',gap:6}} onMouseDown={e=>e.stopPropagation()}>
@@ -4533,7 +4534,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
               lineHeight:1}}>×
           </button>
         </div>
-        <div style={{flex:chartFlex,minHeight:readingMode?120:tableMode?140:160,
+        <div style={{flex:chartFlex,minHeight:chartMinH,
           maxHeight:chartMaxH,position:'relative',overflow:'hidden',
           display:'flex',flexDirection:'column'}}>
           {chartTabsAndBody}
@@ -4576,7 +4577,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
         onMoveDown={onMoveTile?()=>onMoveTile('chart',1):null}
         dockStyle={{
           flex: bundled && detailDocked ? chartFlex : 1,
-          minHeight:readingMode?120:tableMode?140:160,
+          minHeight: chartMinH,
           maxHeight: bundled && detailDocked ? chartMaxH : undefined,
           border:'none',borderRadius:0,background:C.sidebar,
           height: bundled ? undefined : '100%',
@@ -4621,12 +4622,12 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
       {anyDocked&&stackLayout&&(
         <>
           {chartDocked&&(
-            <div style={stackTileStyle(chartStackOrder, '1 1 38%')}>
+            <div style={stackTileStyle(chartStackOrder, '1 1 62%')}>
               {chartWin(false)}
             </div>
           )}
           {detailDocked&&(
-            <div style={stackTileStyle(detailStackOrder, '1 1 42%')}>
+            <div style={stackTileStyle(detailStackOrder, '0 1 34%')}>
               {detailWin(false)}
             </div>
           )}
