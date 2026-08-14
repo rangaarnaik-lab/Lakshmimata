@@ -4634,20 +4634,31 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
         ))}
       </div>
       {chartTab==='tv'&&(
-        <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 14px',
+        <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:6,padding:'6px 14px',
           borderBottom:`1px solid ${C.divider}`,flexShrink:0}}>
           <span style={{fontSize:10,color:C.muted}}>Exchange:</span>
-          {['NSE','BSE'].map(ex=>(
-            <button key={ex} type="button" onClick={()=>{setTvExchange(ex);setLoaded(false)}}
+          {['BSE','NSE'].map(ex=>(
+            <button key={ex} type="button"
+              onClick={()=>{
+                if(ex==='NSE'){
+                  // Free TradingView embeds cannot license NSE — opening full TV instead.
+                  window.open(`https://www.tradingview.com/chart/?symbol=NSE:${encodeURIComponent(sym)}`,'_blank','noopener,noreferrer')
+                  return
+                }
+                setTvExchange(ex)
+                setLoaded(false)
+              }}
+              title={ex==='NSE'?'NSE is blocked inside embeds by TradingView — opens full TradingView':'BSE works in the in-app chart'}
               style={{padding:'2px 10px',borderRadius:6,border:`1px solid ${tvExchange===ex?C.accent:C.border}`,
                 background:tvExchange===ex?C.accent+'22':'transparent',
                 color:tvExchange===ex?C.accent:C.muted,fontSize:10,fontWeight:700,cursor:'pointer'}}>
-              {ex}
+              {ex}{ex==='NSE'?' ↗':''}
             </button>
           ))}
-          {tvExchange==='NSE'&&(
-            <span style={{fontSize:9,color:C.yellow}}>NSE often blocked in embeds — try BSE if this fails</span>
-          )}
+          <span style={{fontSize:9,color:C.muted,flex:'1 1 160px',lineHeight:1.35}}>
+            In-app chart uses <b style={{color:C.text,fontWeight:700}}>BSE</b> (TradingView blocks NSE in free embeds).
+            NSE opens the full TradingView site.
+          </span>
         </div>
       )}
       <div style={{flex:1,minHeight:0,position:'relative',overflow:'hidden',
@@ -4661,9 +4672,9 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
               </div>
             )}
             <TradingViewDailyChart
-              key={`${tvExchange}:${sym}:1D`}
+              key={`BSE:${sym}:1D`}
               symbol={sym}
-              exchange={tvExchange}
+              exchange="BSE"
               onReady={()=>setLoaded(true)}
             />
           </>
