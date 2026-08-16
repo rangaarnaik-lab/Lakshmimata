@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useContext } from 'react'
 import PanelWindow, { PanelTaskbar, ScreenerFrame } from './components/PanelWindow'
 import EarningsTracker from './components/EarningsTracker'
+import PaymentPage from './components/PaymentPage'
+import { SUBSCRIPTION_PLANS } from './lib/plans'
 import {
   TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap,
   TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal, Layers,
@@ -8914,14 +8916,7 @@ function TickerBanner({stocks, indices, onSelect, onSelectIndex}){
   )
 }
 
-// Plan pricing — shared between the landing page, the paywall screen,
-// and (once Razorpay is wired up) the actual checkout flow, so there's
-// one source of truth for prices rather than duplicating them.
-const SUBSCRIPTION_PLANS = [
-  {cycle:'monthly',   label:'Monthly',   price:699,  perMonth:699,    badge:null},
-  {cycle:'quarterly', label:'Quarterly', price:1500, perMonth:500,    badge:'Save 28%'},
-  {cycle:'yearly',    label:'Yearly',    price:5000, perMonth:417,    badge:'Save 40%'},
-]
+// Plan pricing lives in src/lib/plans.js (landing + PaymentPage).
 
 function LandingPage({onEnroll,onSignIn,onDemo}){
   const [slide,setSlide]=useState(0)
@@ -10054,62 +10049,16 @@ function CompleteProfileScreen({session,onDone,onLogout}){
   )
 }
 
-// ── Paywall Screen — shown once a user's trial expires or their
-// subscription becomes inactive/past-due. Payment integration itself
-// isn't wired up yet (pending Razorpay account approval), so the plan
-// cards are real (real prices, real selection) but the actual "Pay"
-// button honestly says payments are launching soon rather than
-// pretending to charge anyone.
-function PaywallScreen({reason,onLogout}){
-  const [selectedCycle,setSelectedCycle]=useState('yearly')
-  const messages={
-    trial_expired:{title:'Your free trial has ended',
-      body:'Your 30-day trial of Lakshmimata has ended. Choose a plan below to continue — payments are launching soon, reach out to us in the meantime to keep your access active.'},
-    cancelled:{title:'Subscription cancelled',
-      body:'Your subscription was cancelled. Choose a plan below to resubscribe once payments are live, or reach out to us directly.'},
-    past_due:{title:'Payment issue',
-      body:'We couldn\'t process your last payment. Please reach out to us to sort this out and restore your access.'},
-  }
-  const msg=messages[reason]||messages.trial_expired
-  return(
-    <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',
-      justifyContent:'center',padding:24,color:C.text,fontFamily:"'Inter','SF Pro Display',sans-serif"}}>
-      <div style={{width:'100%',maxWidth:460,textAlign:'center'}}>
-        <div style={{width:60,height:60,background:`linear-gradient(135deg,${C.accent},${C.purple})`,
-          borderRadius:18,display:'inline-flex',alignItems:'center',justifyContent:'center',
-          fontWeight:900,color:'#000',fontSize:30,marginBottom:20}}>L</div>
-        <div style={{fontWeight:800,fontSize:22,marginBottom:12}}>{msg.title}</div>
-        <div style={{fontSize:14,color:C.muted,lineHeight:1.6,marginBottom:24}}>{msg.body}</div>
-
-        <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:20}}>
-          {SUBSCRIPTION_PLANS.map(p=>(
-            <div key={p.cycle} onClick={()=>setSelectedCycle(p.cycle)}
-              style={{border:`2px solid ${selectedCycle===p.cycle?C.accent:C.border}`,
-                borderRadius:12,padding:'14px 18px',cursor:'pointer',textAlign:'left',
-                background:selectedCycle===p.cycle?C.accent+'11':C.card,
-                display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-              <div>
-                <div style={{fontWeight:700,fontSize:14}}>{p.label}</div>
-                <div style={{fontSize:11,color:C.muted}}>₹{p.perMonth}/month equivalent</div>
-              </div>
-              <div style={{textAlign:'right'}}>
-                <div style={{fontWeight:800,fontSize:16}}>₹{p.price}</div>
-                {p.badge&&<div style={{fontSize:10,fontWeight:700,color:C.green}}>{p.badge}</div>}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <button disabled style={{width:'100%',background:C.border,border:'none',color:C.muted,
-          borderRadius:10,padding:'12px 20px',fontSize:14,fontWeight:700,cursor:'not-allowed',marginBottom:12}}>
-          Payments launching soon
-        </button>
-        <button onClick={onLogout} style={{background:'none',border:`1px solid ${C.border}`,
-          color:C.muted,borderRadius:10,padding:'10px 20px',fontSize:13,cursor:'pointer'}}>
-          Sign out
-        </button>
-      </div>
-    </div>
+// ── Paywall — full payment page (Razorpay when key is configured)
+function PaywallScreen({reason, session, onLogout, onPaid}){
+  return (
+    <PaymentPage
+      session={session}
+      reason={reason}
+      onLogout={onLogout}
+      onPaid={onPaid}
+      theme={C}
+    />
   )
 }
 
@@ -10380,7 +10329,7 @@ function UserFeedbackPanel({session,onExitDemo}){
 }
 
 // ── Settings Panel ────────────────────────────────────────────────────
-function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchTheme,ambient,userSubscription}){
+function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchTheme,ambient,userSubscription,onOpenPayment}){
 
   // Demo mode: session is deliberately null (see the demoMode feature —
   // it's real sample data, not a fake account), and this whole panel is
@@ -10462,9 +10411,31 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
                   {userSubscription.current_period_end&&` · renews ${new Date(userSubscription.current_period_end).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`}
                 </div>
               )}
+              {onOpenPayment&&userSubscription.status!=='active'&&(
+                <button type="button" onClick={onOpenPayment}
+                  style={{marginTop:12,width:'100%',padding:'10px 12px',borderRadius:8,border:'none',
+                    background:C.accent,color:'#000',fontWeight:800,fontSize:13,cursor:'pointer'}}>
+                  Choose a plan &amp; pay
+                </button>
+              )}
+              {onOpenPayment&&userSubscription.status==='active'&&(
+                <button type="button" onClick={onOpenPayment}
+                  style={{marginTop:12,width:'100%',padding:'9px 12px',borderRadius:8,
+                    border:`1px solid ${C.border}`,background:'transparent',color:C.muted,
+                    fontWeight:600,fontSize:12,cursor:'pointer'}}>
+                  Change / renew plan
+                </button>
+              )}
             </div>
           )
         })()}
+        {!userSubscription&&onOpenPayment&&(
+          <button type="button" onClick={onOpenPayment}
+            style={{marginBottom:20,width:'100%',padding:'11px 12px',borderRadius:8,border:'none',
+              background:C.accent,color:'#000',fontWeight:800,fontSize:13,cursor:'pointer'}}>
+            View plans &amp; payment
+          </button>
+        )}
         <button onClick={handleLogout}
           style={{width:'100%',padding:'11px',background:'transparent',color:C.red,
             border:`1px solid ${C.red}44`,borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer'}}>
@@ -10996,6 +10967,7 @@ export default function App(){
   const [authLoading,setAuthLoading]=useState(true)
   const [userSubscription,setUserSubscription]=useState(null) // {status, trial_end, current_period_end} or null (not yet loaded)
   const [subscriptionLoading,setSubscriptionLoading]=useState(true)
+  const [showPayment,setShowPayment]=useState(false)
 
   useEffect(()=>{
     // Load owner token from Supabase at runtime (refreshed daily by cron)
@@ -11066,7 +11038,7 @@ export default function App(){
   useEffect(()=>{
     if(!session){ setSubscriptionLoading(false); return }
     setSubscriptionLoading(true)
-    supabase.from('subscriptions').select('status,trial_end,current_period_end')
+    supabase.from('subscriptions').select('status,trial_end,current_period_end,plan_cycle,razorpay_payment_id')
       .eq('user_id',session.user.id).single()
       .then(({data})=>{ setUserSubscription(data||null); setSubscriptionLoading(false) })
   },[session?.user?.id])
@@ -12776,8 +12748,23 @@ export default function App(){
     const inactive = ['cancelled','past_due'].includes(userSubscription.status)
     if(trialExpired || inactive){
       return (<PaywallScreen reason={trialExpired?'trial_expired':userSubscription.status}
-        onLogout={async()=>{await supabase.auth.signOut();setSession(null)}}/>)
+        session={session}
+        onLogout={async()=>{await supabase.auth.signOut();setSession(null)}}
+        onPaid={row=>{ setUserSubscription(prev=>({...(prev||{}),...row,status:'active'})); setShowPayment(false) }}/>)
     }
+  }
+
+  if(session && !demoMode && showPayment){
+    return (
+      <PaymentPage
+        session={session}
+        reason="upgrade"
+        theme={C}
+        onClose={()=>setShowPayment(false)}
+        onLogout={async()=>{await supabase.auth.signOut();setSession(null);setShowPayment(false)}}
+        onPaid={row=>{ setUserSubscription(prev=>({...(prev||{}),...row,status:'active'})); setShowPayment(false) }}
+      />
+    )
   }
 
   // Active watchlist label
