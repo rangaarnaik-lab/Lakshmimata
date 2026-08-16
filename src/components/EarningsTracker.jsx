@@ -73,6 +73,40 @@ function fmtPct(v){
   return `${n>=0?'+':''}${n.toFixed(1)}%`
 }
 
+function daysBetween(isoOrDate){
+  if(!isoOrDate) return null
+  const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate)
+  if(isNaN(d.getTime())) return null
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000))
+}
+
+/**
+ * Approximate post-result reaction from live scan fields.
+ * We don't store price-at-filing yet, so pick 1D / Gap / 1W / 1M by how
+ * recently the result was filed — good enough for a movers screen.
+ */
+function pickReactionMove(stock, daysSince){
+  if(!stock) return {move:null, label:null}
+  const d = daysSince
+  if(d!=null && d<=1){
+    const gap = stock.gapPct
+    const day = stock.chg
+    if(gap!=null && (day==null || Math.abs(gap)>=Math.abs(day)))
+      return {move:Number(gap), label:'Gap'}
+    if(day!=null) return {move:Number(day), label:'1D'}
+  }
+  if(d!=null && d<=7){
+    if(stock.chgW!=null) return {move:Number(stock.chgW), label:'1W'}
+    if(stock.chg!=null) return {move:Number(stock.chg), label:'1D'}
+  }
+  if(d==null || d<=45){
+    if(stock.chgM!=null) return {move:Number(stock.chgM), label:'1M'}
+    if(stock.chgW!=null) return {move:Number(stock.chgW), label:'1W'}
+    if(stock.chg!=null) return {move:Number(stock.chg), label:'1D'}
+  }
+  return {move:null, label:null}
+}
+
 function avg(nums){
   const xs = nums.filter(n=>n!=null && !Number.isNaN(n))
   if(!xs.length) return null
@@ -111,10 +145,11 @@ export default function EarningsTracker({
   const [indexId,setIndexId]=useState('nifty500')
   const [fy,setFy]=useState(defaults.fy)
   const [quarter,setQuarter]=useState(defaults.quarter)
-  const [subTab,setSubTab]=useState('sectormap') // sectormap | declared | live | upcoming | leaderboard
+  const [subTab,setSubTab]=useState('sectormap') // sectormap | declared | live | upcoming | leaderboard | movers
   // Click a summary / sector rectangle → list announced names under that bucket.
   // {kind:'outcome', value:'beat'|'miss'|'none'|'all'} | {kind:'sector', value:string} | null
   const [drill,setDrill]=useState(null)
+  const [moversSide,setMoversSide]=useState('both') // both | up | down
   const [grouped,setGrouped]=useState(null)
   const [loading,setLoading]=useState(true)
 
@@ -301,6 +336,38 @@ export default function EarningsTracker({
       .slice(0,80)
   ,[seasonRows])
 
+  // Declared this season + live price move ≈ post-result reaction.
+  const postResultMovers = useMemo(()=>{
+    const rows = []
+    for(const r of declaredList){
+      const st = r.stock
+      const days = daysBetween(r.filedAt) ?? st?.daysSinceResults ?? null
+      // Keep recent-enough reactions so a stale 1M move isn't sold as "post result".
+      if(days!=null && days>45) continue
+      const {move, label} = pickReactionMove(st, days)
+      if(move==null || Number.isNaN(move)) continue
+      rows.push({
+        ...r,
+        daysSince: days,
+        reaction: move,
+        reactionLabel: label,
+        last: st?.last ?? null,
+        rs: st?.rsTv ?? st?.rs ?? null,
+        isPead: !!st?.isPead,
+        gapPct: st?.gapPct ?? null,
+      })
+    }
+    rows.sort((a,b)=>Math.abs(b.reaction)-Math.abs(a.reaction))
+    return rows
+  },[declaredList])
+
+  const moversUp = useMemo(()=>
+    postResultMovers.filter(r=>r.reaction>0).sort((a,b)=>b.reaction-a.reaction).slice(0,40)
+  ,[postResultMovers])
+  const moversDown = useMemo(()=>
+    postResultMovers.filter(r=>r.reaction<0).sort((a,b)=>a.reaction-b.reaction).slice(0,40)
+  ,[postResultMovers])
+
   const indexLabel = INDEX_OPTIONS.find(o=>o.id===indexId)?.label || 'Universe'
   const isLive = summary.declaredCount>0 && summary.declaredPct<100
 
@@ -418,6 +485,7 @@ export default function EarningsTracker({
           <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:16}}>
             {[
               ['sectormap','Sector Map'],
+              ['movers','Post-result movers'],
               ['live','Live Feed'],
               ['upcoming','Upcoming'],
               ['declared','Declared'],
@@ -478,6 +546,96 @@ export default function EarningsTracker({
                   </div>
                 )
               })}
+            </div>
+          )}
+
+          {subTab==='movers'&&(
+            <div>
+              <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
+                padding:'10px 12px',marginBottom:12,fontSize:11.5,lineHeight:1.5,color:C.text}}>
+                <strong style={{color:C.accent}}>Post-result movers</strong>
+                {' '}— declared in {quarter} {fy}, filed ≤45 days ago, ranked by live Gap/1D/1W/1M (picked by days since filing).
+                Not exact event-day open→close (price-at-filing isn&apos;t stored yet). PEAD badge = positive drift screen on RS.
+              </div>
+              <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12,alignItems:'center'}}>
+                {[
+                  ['both',`Both (${postResultMovers.length})`],
+                  ['up',`↑ Gainers (${moversUp.length})`],
+                  ['down',`↓ Losers (${moversDown.length})`],
+                ].map(([id,label])=>(
+                  <button key={id} type="button" onClick={()=>setMoversSide(id)}
+                    style={{...chip(moversSide===id), borderRadius:20}}>{label}</button>
+                ))}
+              </div>
+              {postResultMovers.length===0?(
+                <div style={{padding:28,textAlign:'center',color:C.muted,fontSize:13,
+                  border:`1px dashed ${C.border}`,borderRadius:12}}>
+                  No recent post-result moves in this filter — need declared names with live price change data.
+                </div>
+              ):(
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:12}}>
+                  {(moversSide==='both'||moversSide==='up')&&(
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
+                      <div style={{padding:'10px 14px',borderBottom:`1px solid ${C.divider}`,fontSize:12,fontWeight:800,color:C.green}}>
+                        ↑ Gainers after results
+                      </div>
+                      {moversUp.length===0?(
+                        <div style={{padding:20,color:C.muted,fontSize:12}}>No gainers yet.</div>
+                      ):moversUp.map((r,i)=>(
+                        <div key={r.sym} onClick={()=>onOpenSymbol?.(r.sym)}
+                          style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',
+                            borderBottom:`1px solid ${C.divider}`,cursor:onOpenSymbol?'pointer':'default'}}>
+                          <div style={{width:22,fontSize:11,fontWeight:700,color:C.muted}}>#{i+1}</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontWeight:700,fontSize:13}}>
+                              {r.sym}
+                              {r.isPead&&(
+                                <span style={{marginLeft:6,fontSize:9,fontWeight:800,color:C.green,
+                                  background:C.green+'18',borderRadius:5,padding:'1px 5px'}}>PEAD</span>
+                              )}
+                            </div>
+                            <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+                              {r.rating||'Unrated'} · {r.daysSince!=null?`${r.daysSince}d since filing`:'filing date n/a'}
+                              {r.sector?` · ${r.sector}`:''}
+                            </div>
+                          </div>
+                          <div style={{textAlign:'right',flexShrink:0}}>
+                            <div style={{fontSize:14,fontWeight:800,color:C.green}}>{fmtPct(r.reaction)}</div>
+                            <div style={{fontSize:9,color:C.muted,fontWeight:700}}>{r.reactionLabel} · PAT {fmtPct(r.patYoy)}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {(moversSide==='both'||moversSide==='down')&&(
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
+                      <div style={{padding:'10px 14px',borderBottom:`1px solid ${C.divider}`,fontSize:12,fontWeight:800,color:C.red}}>
+                        ↓ Losers after results
+                      </div>
+                      {moversDown.length===0?(
+                        <div style={{padding:20,color:C.muted,fontSize:12}}>No losers yet.</div>
+                      ):moversDown.map((r,i)=>(
+                        <div key={r.sym} onClick={()=>onOpenSymbol?.(r.sym)}
+                          style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',
+                            borderBottom:`1px solid ${C.divider}`,cursor:onOpenSymbol?'pointer':'default'}}>
+                          <div style={{width:22,fontSize:11,fontWeight:700,color:C.muted}}>#{i+1}</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontWeight:700,fontSize:13}}>{r.sym}</div>
+                            <div style={{fontSize:10,color:C.muted,marginTop:2}}>
+                              {r.rating||'Unrated'} · {r.daysSince!=null?`${r.daysSince}d since filing`:'filing date n/a'}
+                              {r.sector?` · ${r.sector}`:''}
+                            </div>
+                          </div>
+                          <div style={{textAlign:'right',flexShrink:0}}>
+                            <div style={{fontSize:14,fontWeight:800,color:C.red}}>{fmtPct(r.reaction)}</div>
+                            <div style={{fontSize:9,color:C.muted,fontWeight:700}}>{r.reactionLabel} · PAT {fmtPct(r.patYoy)}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
