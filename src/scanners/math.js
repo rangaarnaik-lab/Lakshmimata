@@ -143,6 +143,14 @@ export function calcHT(volumes) {
   return { isHT: todayVol >= maxVol * 0.95, todayVol, maxVolAllTime: maxVol, pctOfATH: +(todayVol / maxVol * 100).toFixed(1) }
 }
 
+// RS 90+ near 5-EMA (short pullback)
+export function calcNearEMA5(prices, rs) {
+  const e5 = ema(prices, 5)
+  if (!e5 || rs < 90) return { isNearEMA5: false, ema5: e5, pctFromEMA5: null }
+  const last = prices[prices.length - 1], pct = +((last - e5) / e5 * 100).toFixed(2)
+  return { isNearEMA5: Math.abs(pct) <= 3, ema5: e5, pctFromEMA5: pct }
+}
+
 // RS 90+ near 9-EMA
 export function calcNearEMA9(prices, rs) {
   const e9 = ema(prices, 9)

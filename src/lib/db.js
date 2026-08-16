@@ -409,6 +409,22 @@ function transformStockRow(row) {
       history:   row.ht_hist || [],
     },
     ibvHistory: row.ibv_hist || [],
+    nearEMA5: (() => {
+      const ema5 = row.ema5
+      const last = row.last_price
+      const rs = row.rs ?? 0
+      let pct = row.pct_from_ema5
+      let isNear = row.near_ema5
+      if (isNear == null && ema5 && last && rs >= 90) {
+        pct = +((last - ema5) / ema5 * 100).toFixed(2)
+        isNear = Math.abs(pct) <= 3
+      }
+      return {
+        isNearEMA5: !!isNear,
+        ema5,
+        pctFromEMA5: pct ?? null,
+      }
+    })(),
     nearEMA9: {
       isNearEMA9:  row.near_ema9 || false,
       ema9:        row.ema9,
