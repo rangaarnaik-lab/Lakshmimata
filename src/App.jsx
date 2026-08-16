@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useContext } from 'react'
 import PanelWindow, { PanelTaskbar, ScreenerFrame } from './components/PanelWindow'
+import EarningsTracker from './components/EarningsTracker'
 import {
   TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap,
   TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal, Layers,
@@ -12770,6 +12771,7 @@ export default function App(){
           {id:'compare',   label:'Compare',          short:'Compare',  Icon:GitCompare},
           {id:'watchlist', label:'Watchlist',        short:'Watch',    Icon:Star},
           {id:'announcements', label:'Announcements',short:'News',     Icon:Megaphone},
+          {id:'earnings', label:'Earnings',          short:'Earnings', Icon:BarChart3},
           {id:'themes', label:'Emerging Themes', short:'Themes', Icon:Layers},
           {id:'bestpicks', label:'AI Best Picks',    short:'AI Picks', Icon:Target},
           {id:'feedback',  label:'User Feedback',     short:'Feedback', Icon:MessageSquare},
@@ -12880,6 +12882,7 @@ export default function App(){
                  mainTab==='leaders'?'Leaders':
                  mainTab==='patterns'?'Patterns':
                  mainTab==='watchlist'?'Watchlist':                 mainTab==='announcements'?'Announcements':
+                 mainTab==='earnings'?'Earnings':
                  mainTab==='themes'?'Emerging Themes':
                  mainTab==='bestpicks'?'AI Best Picks':
                  mainTab==='portfolio'?'Portfolio Tracker':
@@ -13217,6 +13220,7 @@ export default function App(){
           mainTab==='leaders'?'Leaders':
           mainTab==='patterns'?'Patterns':
           mainTab==='watchlist'?'Watchlist':mainTab==='announcements'?'Announcements':
+          mainTab==='earnings'?'Earnings':
           mainTab==='themes'?'Emerging Themes':
           mainTab==='bestpicks'?'AI Best Picks':
           mainTab==='portfolio'?'Portfolio Tracker':
@@ -16798,6 +16802,18 @@ export default function App(){
           )
         })()}
 
+        {mainTab==='earnings'&&(
+          <EarningsTracker
+            C={C}
+            stocks={stocks}
+            watchlists={watchlists}
+            activeWl={activeWl}
+            portfolios={portfolios}
+            activePortfolioId={activePortfolioId}
+            onOpenSymbol={openChart}
+          />
+        )}
+
         {mainTab==='themes'&&(
           <ThemesRadarPanel onOpenSymbol={openChart}/>
         )}
@@ -17901,7 +17917,7 @@ export default function App(){
                   {[
                     ['squeeze',Zap,'Squeeze'],['weak',TrendingDown,'Weak'],['leaders',Flag,'Leaders'],
                     ['portfolio',Briefcase,'Portfolio'],['compare',GitCompare,'Compare'],['watchlist',Star,'Watchlist'],
-                    ['announcements',Megaphone,'Announcements'],['themes',Layers,'Themes'],['bestpicks',Target,'AI Picks'],
+                    ['announcements',Megaphone,'Announcements'],['earnings',BarChart3,'Earnings'],['themes',Layers,'Themes'],['bestpicks',Target,'AI Picks'],
                     ['feedback',MessageSquare,'Feedback'],['settings',Settings,'Account'],
                   ].map(([t,Icon,label])=>(
                     <button key={t} onClick={()=>{setMainTab(t);setShowMoreMenu(false)}}
