@@ -17665,7 +17665,8 @@ export default function App(){
             onLogout={async()=>{await supabase.auth.signOut();setSession(null);setShowAuth(false)}}
             onExitDemo={()=>{setDemoMode(false);setStocks([]);setAuthMode('register');setShowAuth(true)}}
             themeKey={themeKey} switchTheme={switchTheme} ambient={ambient}
-            userSubscription={userSubscription}/>
+            userSubscription={userSubscription}
+            onOpenPayment={()=>setShowPayment(true)}/>
         )}
 
         {mainTab==='feedback'&&(
