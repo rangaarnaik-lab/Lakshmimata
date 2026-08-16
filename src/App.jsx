@@ -250,11 +250,53 @@ function calcHYHTBreakout(s){
   }
 }
 
+// ── Vol climax → near EMA / IBV ───────────────────────────────────────
+// Recently HY / HT / Bull Snort, and price now near EMA9, EMA21, IBV,
+// or still sitting on a HY/HT day (pullback / hold after volume climax).
+function calcVolClimaxNearSupport(s, lookback=10){
+  const hyHist = s.hy?.history || []
+  const htHist = s.ht?.history || []
+  const recentHY = !!(s.hy?.isHY) || hyHist.slice(-lookback).some(Boolean)
+  const recentHT = !!(s.ht?.isHT) || htHist.slice(-lookback).some(Boolean)
+  const recentSnort = !!s.isBullSnort
+  const hadRecentClimax = recentHY || recentHT || recentSnort
+
+  const nearEma9 = !!s.nearEMA9?.isNearEMA9
+  const nearEma21 = !!s.nearEMA21?.isNearEMA21
+  const nearIbv = !!calcIBV(s).isIBV
+  const nearHyHt = !!(s.hy?.isHY) || !!(s.ht?.isHT)
+  const nearSupport = nearEma9 || nearEma21 || nearIbv || nearHyHt
+
+  const isMatch = hadRecentClimax && nearSupport
+  const tags = []
+  if(recentHY) tags.push('HY')
+  if(recentHT) tags.push('HT')
+  if(recentSnort) tags.push('Snort')
+  const near = []
+  if(nearEma9) near.push('EMA9')
+  if(nearEma21) near.push('EMA21')
+  if(nearIbv) near.push('IBV')
+  if(nearHyHt && !nearIbv) near.push(s.ht?.isHT?'HT':'HY')
+
+  return {
+    isMatch,
+    hadRecentClimax,
+    nearSupport,
+    recentHY, recentHT, recentSnort,
+    nearEma9, nearEma21, nearIbv, nearHyHt,
+    label: isMatch ? `🔥→⚡ ${tags.join('/')} · ${near.join('/')}` : null,
+    desc: isMatch
+      ? `Recent ${tags.join('/')} + near ${near.join(' / ')}`
+      : 'No vol-climax + near-support setup',
+  }
+}
+
 // ── Preset filter definitions ─────────────────────────────────────────
 const PRESETS = [
   {id:'all',       label:'All',          icon:'🌐', desc:'Show all stocks'},
   {id:'s2',        label:'Stage 2',      icon:'🚀', desc:'Weinstein Stage 2 uptrend — best buys'},
   {id:'breakout',  label:'HY/HT Break',  icon:'💥', desc:'Had HY/HT in last 5 days + breaking out today'},
+  {id:'volpull',   label:'Vol→EMA',      icon:'🔥', desc:'Recent HY/HT/Bull Snort + price near EMA9, EMA21, IBV, or HY/HT'},
   {id:'ibv',       label:'IBV',          icon:'🏛️', desc:'Institutional-style buying activity detected'},
   {id:'pp',        label:'PP Today',     icon:'🔥', desc:'Pocket Pivot today'},
   {id:'bullsnort', label:'Bull Snort',   icon:'🐂', desc:'Bullish volume climax — up close, 2× vol vs 20d avg, close in upper 30% of range'},
@@ -366,6 +408,8 @@ const SIGNAL_TOOLTIPS = {
   r1: 'Price just crossed above a significant resistance level it had been held under for a while.',
   cup: 'Price just broke out above a cup-and-handle pattern. Algorithmic — treat as a visual aid, not a precise signal.',
   guppy: 'EMA9 just crossed above EMA50 — a fresh golden-cross-style momentum shift.',
+  hyht: 'Had HY/HT (or PP proxy) in the last 5 days and price is breaking out today with RS ≥ 60.',
+  volpull: 'Recent HY, HT, or Bull Snort (last 10 days) and price is near EMA9, EMA21, IBV, or still on a HY/HT day — volume climax then hold/pullback.',
   canslim: 'William O\'Neil CANSLIM growth checklist — passes 5+ of 7 criteria (earnings, new highs, volume, RS leader, institutional buying, Stage 2).',
   pead: 'Post-Earnings Announcement Drift — reported within the last 3–60 days, EPS grew, and price/RS still drifting up.',
 }
@@ -406,6 +450,8 @@ const SIGNAL_GLOSSARY = [
   ['🔥 PP >2 in 10d', 'More than two Pocket Pivot days total within the last 10 days (don\'t need to be consecutive) — repeated accumulation interest.'],
   ['⚡ EMA9 / EMA21 / EMA50', 'Price has pulled back to within 3% of its 9/21/50-day average — a common "buy the dip in an uptrend" zone, shown only for stocks already ranked in the top 10% by RS.'],
   ['⭐ Power', 'A Pocket Pivot day combined with a Relative Strength rating of 80 or higher — strong momentum plus fresh buying pressure together.'],
+  ['💥 HY/HT Break', 'Had a high-volume day (HY/HT) recently and price is breaking out today with RS ≥ 60.'],
+  ['🔥→⚡ Vol→EMA', 'Recent HY, HT, or Bull Snort (within ~10 days) and price is near EMA9, EMA21, IBV, or still on a HY/HT day — volume climax then hold/pullback.'],
   ['🎯 R1 Breakout', 'Price just crossed above a significant resistance level it had been held under for a while — a fresh breakout, not one that happened days ago.'],
   ['☕ Cup Breakout', 'Price just broke out above a cup-and-handle chart pattern. Algorithmic pattern-matching — treat as a visual aid, not a precise signal.'],
   ['🐠 Guppy Crossover', 'The 9-day EMA just crossed above the 50-day EMA — a fresh golden-cross-style signal, short-term momentum shifting ahead of the broader trend.'],
@@ -2107,6 +2153,7 @@ function PresetFilterBar({active,setActive,stocks,resultRatingsMap}){
     else if(p.id === 'surge')    counts[p.id] = stocks.filter(s=>s.hy?.pctOfMax>=95).length
     else if(p.id === 'ibv')      counts[p.id] = stocks.filter(s=>topVolumeSignal(s)==='ibv').length
     else if(p.id === 'breakout') counts[p.id] = stocks.filter(s=>calcHYHTBreakout(s).isBreakout).length
+    else if(p.id === 'volpull')  counts[p.id] = stocks.filter(s=>calcVolClimaxNearSupport(s).isMatch).length
     else if(p.id === 'resultEx') counts[p.id] = stocks.filter(s=>ratingOf(s)==='Excellent').length
     else if(p.id === 'resultGood') counts[p.id] = stocks.filter(s=>ratingOf(s)==='Good').length
     else if(p.id === 'resultNeu') counts[p.id] = stocks.filter(s=>ratingOf(s)==='Neutral').length
@@ -11458,6 +11505,7 @@ export default function App(){
     if(sig==='guppy') return !!s.isGuppyBullishCrossover
     if(sig==='52wh') return !!s.is52whBreakout
     if(sig==='hyht') return !!calcHYHTBreakout(s).isBreakout
+    if(sig==='volpull') return !!calcVolClimaxNearSupport(s).isMatch
     if(sig==='s2new') return !!s.isS2NewEntry
     if(sig==='vcp2t') return !!s.isVCP && s.vcpStage===2
     if(sig==='vcp3t') return !!s.isVCP && s.vcpStage===3
@@ -12384,6 +12432,7 @@ export default function App(){
     if(presetFilter==='surge'&&(s.hy?.pctOfMax||0)<95)return false
     if(presetFilter==='ibv'&&!calcIBV(s).isIBV)return false
     if(presetFilter==='breakout'&&!calcHYHTBreakout(s).isBreakout)return false
+    if(presetFilter==='volpull'&&!calcVolClimaxNearSupport(s).isMatch)return false
     if(presetFilter==='resultEx'||presetFilter==='resultGood'||presetFilter==='resultNeu'||presetFilter==='resultWeak'||presetFilter==='resultAny'){
       const rating=resultRatingsMap[String(s.sym||'').toUpperCase()]||null
       if(presetFilter==='resultAny'&&!rating) return false
@@ -12416,6 +12465,7 @@ export default function App(){
     }
     // Breakout type filter (RS Filters panel)
     if(breakoutTypeFilter==='hyht'&&!calcHYHTBreakout(s).isBreakout)return false
+    if(breakoutTypeFilter==='volpull'&&!calcVolClimaxNearSupport(s).isMatch)return false
     if(breakoutTypeFilter==='r1'&&!s.isResistanceBreakout)return false
     if(breakoutTypeFilter==='52wh'&&!s.is52whBreakout)return false
     if(breakoutTypeFilter==='cup'&&!s.isCupHandleBreakout)return false
@@ -13337,6 +13387,7 @@ export default function App(){
                   {label:'🏛️IBV',val:scopedStocks.filter(s=>topVolumeSignal(s)==='ibv').length,color:C.blue,f:'ibv'},
                   {label:'🔥PP',val:scopedStocks.filter(s=>topVolumeSignal(s)==='pp').length,color:C.green,f:'pp'},
                   {label:'🐂Snort',val:scopedStocks.filter(s=>s.isBullSnort).length,color:'#f59e0b',f:'bullsnort'},
+                  {label:'🔥→⚡',val:scopedStocks.filter(s=>calcVolClimaxNearSupport(s).isMatch).length,color:C.accent,f:'volpull'},
                   {label:'⚡EMA9',val:scopedStocks.filter(s=>s.nearEMA9.isNearEMA9).length,color:C.teal,f:'ema9'},
                   {label:'🎯R1',val:scopedStocks.filter(s=>s.isResistanceBreakout).length,color:C.red,f:'r1breakout'},
                   {label:'↑↑Impr',val:scopedStocks.filter(s=>s.rsTrend.trend==='improving').length,color:C.green,f:'__impr'},
@@ -13627,7 +13678,7 @@ export default function App(){
                           style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilters.length===0?C.muted:C.border}`,
                             cursor:'pointer',fontSize:12,fontWeight:600,
                             background:sigFilters.length===0?C.muted+'22':'transparent',color:sigFilters.length===0?C.text:C.muted}}>All</button>
-                        {[['ht','🚀HT',C.orange],['hy','📊HY',C.pink],['ibv','🏛️IBV',C.blue],['pp','🔥PP',C.green],['bullsnort','🐂Bull Snort','#f59e0b'],['ppconsec2','🔥PP 2x Consecutive',C.green],['ppgt2','🔥PP >2 in 10d',C.green],['ema9','⚡EMA9',C.teal],['ema21','⚡EMA21',C.teal],['ema50','⚡EMA50',C.teal],['power','⭐Power',C.accent],['hyht','💥HY/HT Break',C.accent],['r1breakout','🎯R1 Breakout',C.red],['52wh','🏆52W High',C.yellow],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.purple],['s2new','🚀Stage 2 New',C.green],['vcp2t','🌀VCP 2T',C.purple],['vcp3t','🌀VCP 3T',C.purple],['vcp4t','🌀VCP 4T',C.purple]].map(([v,label,color])=>{
+                        {[['ht','🚀HT',C.orange],['hy','📊HY',C.pink],['ibv','🏛️IBV',C.blue],['pp','🔥PP',C.green],['bullsnort','🐂Bull Snort','#f59e0b'],['volpull','🔥→⚡ Vol→EMA',C.accent],['ppconsec2','🔥PP 2x Consecutive',C.green],['ppgt2','🔥PP >2 in 10d',C.green],['ema9','⚡EMA9',C.teal],['ema21','⚡EMA21',C.teal],['ema50','⚡EMA50',C.teal],['power','⭐Power',C.accent],['hyht','💥HY/HT Break',C.accent],['r1breakout','🎯R1 Breakout',C.red],['52wh','🏆52W High',C.yellow],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.purple],['s2new','🚀Stage 2 New',C.green],['vcp2t','🌀VCP 2T',C.purple],['vcp3t','🌀VCP 3T',C.purple],['vcp4t','🌀VCP 4T',C.purple]].map(([v,label,color])=>{
                           const active = sigFilters.includes(v)
                           return (
                             <button key={v} onClick={()=>setSigFilters(prev=>active?prev.filter(x=>x!==v):[...prev,v])}
@@ -13749,6 +13800,7 @@ export default function App(){
                         {[
                           ['all','All',C.muted],
                           ['hyht','💥 HY/HT',C.accent],
+                          ['volpull','🔥→⚡ Vol→EMA',C.accent],
                           ['r1','🎯 R1',C.red],
                           ['52wh','🏆 52W High',C.yellow],
                           ['cup','☕ Cup',C.yellow],
@@ -15083,6 +15135,7 @@ export default function App(){
               const GROUPS = [
                 {id:'breakouts', group:'📈 Breakouts', items:[
                   {key:'hyht',     label:'HY/HT Breakout', color:C.accent, filter:s=>calcHYHTBreakout(s).isBreakout},
+                  {key:'volpull',  label:'Vol climax → EMA/IBV', color:'#f59e0b', filter:s=>calcVolClimaxNearSupport(s).isMatch},
                   {key:'resBreak', label:'Resistance Breakout', color:C.green, filter:s=>s.isResistanceBreakout},
                   {key:'h52',      label:'52-Week High Breakout', color:C.green, filter:s=>s.is52whBreakout},
                   {key:'cupBreak', label:'Cup & Handle Breakout', color:C.green, filter:s=>s.isCupHandleBreakout},
