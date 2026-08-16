@@ -112,6 +112,9 @@ export default function EarningsTracker({
   const [fy,setFy]=useState(defaults.fy)
   const [quarter,setQuarter]=useState(defaults.quarter)
   const [subTab,setSubTab]=useState('sectormap') // sectormap | declared | live | upcoming | leaderboard
+  // Click a summary / sector rectangle → list announced names under that bucket.
+  // {kind:'outcome', value:'beat'|'miss'|'none'|'all'} | {kind:'sector', value:string} | null
+  const [drill,setDrill]=useState(null)
   const [grouped,setGrouped]=useState(null)
   const [loading,setLoading]=useState(true)
 
@@ -124,6 +127,9 @@ export default function EarningsTracker({
       .finally(()=>{ if(!cancelled) setLoading(false) })
     return ()=>{ cancelled=true }
   },[])
+
+  // Season / universe change → clear drill so the list matches the new filter.
+  useEffect(()=>{ setDrill(null) },[fy,quarter,scope,indexId])
 
   const universeSyms = useMemo(()=>{
     const stockBySym = new Map((stocks||[]).map(s=>[String(s.sym||'').toUpperCase(), s]))
@@ -250,6 +256,37 @@ export default function EarningsTracker({
       .sort((a,b)=>String(b.filedAt||'').localeCompare(String(a.filedAt||'')))
   ,[seasonRows])
 
+  const drillList = useMemo(()=>{
+    if(!drill) return declaredList
+    if(drill.kind==='outcome'){
+      if(drill.value==='all') return declaredList
+      return declaredList.filter(r=>r.outcome===drill.value)
+    }
+    if(drill.kind==='sector'){
+      return declaredList.filter(r=>r.sector===drill.value)
+    }
+    return declaredList
+  },[declaredList,drill])
+
+  const drillTitle = useMemo(()=>{
+    if(!drill) return null
+    if(drill.kind==='outcome'){
+      return ({
+        all:'All declared',
+        beat:'Strong (Excellent / Good)',
+        miss:'Weak quality',
+        none:'Neutral / unrated',
+      })[drill.value] || 'Declared'
+    }
+    if(drill.kind==='sector') return `${drill.value} · declared`
+    return 'Declared'
+  },[drill])
+
+  const openDrill=(next)=>{
+    setDrill(next)
+    setSubTab('declared')
+  }
+
   const leaderboard = useMemo(()=>{
     return [...declaredList]
       .filter(r=>r.patYoy!=null)
@@ -273,17 +310,31 @@ export default function EarningsTracker({
     fontSize:12,fontWeight:700,cursor:'pointer',
   })
 
-  const MetricCard=({label,value,sub,valueColor})=>{
+  const MetricCard=({label,value,sub,valueColor,active,onClick,hint})=>{
+    const clickable=typeof onClick==='function'
     return(
-      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'18px 16px'}}>
+      <div role={clickable?'button':undefined} tabIndex={clickable?0:undefined}
+        onClick={onClick}
+        onKeyDown={clickable?(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); onClick() } }:undefined}
+        title={hint||(clickable?'Show announced stocks in this group':undefined)}
+        style={{background:C.card,border:`1px solid ${active?C.accent:C.border}`,borderRadius:12,padding:'18px 16px',
+          cursor:clickable?'pointer':'default',boxShadow:active?`0 0 0 1px ${C.accent}44`:'none',
+          transition:'border-color 0.15s, box-shadow 0.15s'}}>
         <div style={{fontSize:12,color:C.muted,marginBottom:8}}>{label}</div>
         <div style={{fontSize:28,fontWeight:800,color:valueColor||C.text,letterSpacing:'-0.02em'}}>{value}</div>
         {sub&&<div style={{fontSize:11,color:C.muted,marginTop:6}}>{sub}</div>}
+        {clickable&&(
+          <div style={{fontSize:10,fontWeight:700,color:active?C.accent:C.muted,marginTop:8}}>
+            {active?'Showing list below ↓':'Tap → see announced'}
+          </div>
+        )}
       </div>
     )
   }
 
   const growthColor=v=>v==null?C.muted:v>=0?C.green:C.red
+  const outcomeActive=v=>drill?.kind==='outcome'&&drill.value===v
+  const sectorActive=sec=>drill?.kind==='sector'&&drill.value===sec
 
   return(
     <div style={{padding:'4px 0 28px'}}>
@@ -332,19 +383,36 @@ export default function EarningsTracker({
         <div style={{textAlign:'center',padding:'48px 0',color:C.muted,fontSize:13}}>Loading earnings season…</div>
       ):(
         <>
+          <div style={{background:C.yellow+'14',border:`1px solid ${C.yellow}44`,borderRadius:10,
+            padding:'10px 12px',marginBottom:14,fontSize:11.5,lineHeight:1.5,color:C.text}}>
+            <strong style={{color:C.yellow}}>Result quality, not Street estimates.</strong>
+            {' '}“Strong / Weak” here maps Excellent·Good vs Weak from our filings math — Lakshmimata does not store analyst consensus, so this is not a classic Beat vs Estimate.
+          </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:12,marginBottom:18}}>
             <MetricCard label="Declared" value={`${summary.declaredCount} / ${summary.total}`}
-              sub={`${summary.declaredPct}% declared · ${indexLabel}`}/>
-            <MetricCard label="Beat (quality)" value={String(summary.beats)}
-              sub={`of ${summary.declaredCount} declared results`} valueColor={C.green}/>
-            <MetricCard label="Missed (quality)" value={String(summary.misses)}
-              sub={`of ${summary.declaredCount} declared results`} valueColor={C.red}/>
-            <MetricCard label="No / Neutral" value={String(summary.none)}
-              sub={`of ${summary.declaredCount} declared results`}/>
+              sub={`${summary.declaredPct}% declared · ${indexLabel}`}
+              active={outcomeActive('all')}
+              onClick={()=>openDrill({kind:'outcome',value:'all'})}/>
+            <MetricCard label="Strong (Ex/Good)" value={String(summary.beats)}
+              sub="Our result quality — not Street beat/miss" valueColor={C.green}
+              active={outcomeActive('beat')}
+              onClick={()=>openDrill({kind:'outcome',value:'beat'})}/>
+            <MetricCard label="Weak quality" value={String(summary.misses)}
+              sub="Our result quality — not Street beat/miss" valueColor={C.red}
+              active={outcomeActive('miss')}
+              onClick={()=>openDrill({kind:'outcome',value:'miss'})}/>
+            <MetricCard label="Neutral / unrated" value={String(summary.none)}
+              sub="No Excellent/Good/Weak rating yet"
+              active={outcomeActive('none')}
+              onClick={()=>openDrill({kind:'outcome',value:'none'})}/>
             <MetricCard label="Sales Growth (YoY)" value={fmtPct(summary.salesYoy)}
-              sub={`from ${summary.declaredCount} declared`} valueColor={growthColor(summary.salesYoy)}/>
+              sub={`from ${summary.declaredCount} declared`} valueColor={growthColor(summary.salesYoy)}
+              onClick={()=>openDrill({kind:'outcome',value:'all'})}
+              hint="Open all declared stocks"/>
             <MetricCard label="PAT Growth (YoY)" value={fmtPct(summary.patYoy)}
-              sub={`from ${summary.declaredCount} declared`} valueColor={growthColor(summary.patYoy)}/>
+              sub={`from ${summary.declaredCount} declared`} valueColor={growthColor(summary.patYoy)}
+              onClick={()=>openDrill({kind:'outcome',value:'all'})}
+              hint="Open all declared stocks"/>
           </div>
 
           <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:16}}>
@@ -355,7 +423,7 @@ export default function EarningsTracker({
               ['declared','Declared'],
               ['leaderboard','Leaderboard'],
             ].map(([id,label])=>(
-              <button key={id} type="button" onClick={()=>setSubTab(id)}
+              <button key={id} type="button" onClick={()=>{ setSubTab(id); if(id!=='declared'&&id!=='live') setDrill(null) }}
                 style={{...chip(subTab===id), borderRadius:20}}>{label}</button>
             ))}
           </div>
@@ -369,8 +437,14 @@ export default function EarningsTracker({
                 const beatW=(s.beats/n)*100
                 const missW=(s.misses/n)*100
                 const noneW=(s.none/n)*100
+                const active=sectorActive(s.sector)
                 return(
-                  <div key={s.sector} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'16px 14px'}}>
+                  <div key={s.sector} role="button" tabIndex={0}
+                    onClick={()=>openDrill({kind:'sector',value:s.sector})}
+                    onKeyDown={e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); openDrill({kind:'sector',value:s.sector}) } }}
+                    title={`Show ${s.declared.length} announced in ${s.sector}`}
+                    style={{background:C.card,border:`1px solid ${active?C.accent:C.border}`,borderRadius:12,padding:'16px 14px',
+                      cursor:'pointer',boxShadow:active?`0 0 0 1px ${C.accent}44`:'none'}}>
                     <div style={{display:'flex',justifyContent:'space-between',gap:8,marginBottom:10}}>
                       <div style={{fontWeight:800,fontSize:14,color:C.text}}>{s.sector}</div>
                       <div style={{fontSize:11,color:C.muted,whiteSpace:'nowrap'}}>{s.declared.length}/{s.total} declared</div>
@@ -381,9 +455,9 @@ export default function EarningsTracker({
                       <div style={{width:`${noneW}%`,background:C.muted+'55'}}/>
                     </div>
                     <div style={{fontSize:11,color:C.muted,marginBottom:12,display:'flex',gap:10,flexWrap:'wrap'}}>
-                      <span><span style={{color:C.green}}>●</span> {s.beats} Beats</span>
-                      <span><span style={{color:C.red}}>●</span> {s.misses} Misses</span>
-                      <span><span style={{color:C.muted}}>●</span> {s.none} No / Neutral</span>
+                      <span><span style={{color:C.green}}>●</span> {s.beats} Strong</span>
+                      <span><span style={{color:C.red}}>●</span> {s.misses} Weak</span>
+                      <span><span style={{color:C.muted}}>●</span> {s.none} Neutral</span>
                     </div>
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                       {[
@@ -398,6 +472,9 @@ export default function EarningsTracker({
                         </div>
                       ))}
                     </div>
+                    <div style={{fontSize:10,fontWeight:700,color:active?C.accent:C.muted,marginTop:12}}>
+                      Tap → see all announced in this sector
+                    </div>
                   </div>
                 )
               })}
@@ -406,14 +483,28 @@ export default function EarningsTracker({
 
           {(subTab==='declared'||subTab==='live')&&(
             <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
-              <div style={{padding:'10px 14px',borderBottom:`1px solid ${C.divider}`,fontSize:12,fontWeight:700,color:C.muted}}>
-                {declaredList.length} declared · newest first
+              <div style={{padding:'10px 14px',borderBottom:`1px solid ${C.divider}`,display:'flex',
+                alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.muted}}>
+                  {drill
+                    ? <>{drillList.length} announced · <span style={{color:C.accent}}>{drillTitle}</span> · newest first</>
+                    : <>{declaredList.length} declared · newest first</>}
+                </div>
+                {drill&&(
+                  <button type="button" onClick={()=>setDrill(null)}
+                    style={{padding:'4px 10px',borderRadius:7,border:`1px solid ${C.border}`,background:'transparent',
+                      color:C.muted,fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                    Clear filter
+                  </button>
+                )}
               </div>
-              {declaredList.length===0?(
-                <div style={{padding:24,color:C.muted,fontSize:13}}>No filings matched this FY / quarter yet.</div>
+              {drillList.length===0?(
+                <div style={{padding:24,color:C.muted,fontSize:13}}>
+                  {drill?'No announced stocks in this group for the selected FY / quarter.':'No filings matched this FY / quarter yet.'}
+                </div>
               ):(
                 <div style={{maxHeight:520,overflowY:'auto'}}>
-                  {declaredList.slice(0,120).map(r=>(
+                  {drillList.slice(0,120).map(r=>(
                     <div key={r.sym} onClick={()=>onOpenSymbol?.(r.sym)}
                       style={{display:'flex',justifyContent:'space-between',gap:10,padding:'11px 14px',
                         borderBottom:`1px solid ${C.divider}`,cursor:onOpenSymbol?'pointer':'default'}}>
@@ -422,7 +513,8 @@ export default function EarningsTracker({
                           <span style={{marginLeft:8,fontSize:11,color:C.muted,fontWeight:500}}>{r.sector}</span>
                         </div>
                         <div style={{fontSize:10,color:C.muted,marginTop:2}}>
-                          {r.rating||'Unrated'} · {r.outcome==='beat'?'Beat':r.outcome==='miss'?'Miss':'Neutral/None'}
+                          {r.rating||'Unrated'} · {r.outcome==='beat'?'Strong quality':r.outcome==='miss'?'Weak quality':'Neutral / unrated'}
+                          {onOpenSymbol?' · tap for chart':''}
                         </div>
                       </div>
                       <div style={{textAlign:'right',flexShrink:0}}>

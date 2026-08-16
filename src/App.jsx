@@ -2250,7 +2250,7 @@ function PresetFilterBar({active,setActive,stocks,resultRatingsMap}){
 }
 
 // ── Watchlist Manager ─────────────────────────────────────────────────
-function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKnownStocks}){
+function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKnownStocks,annAlertsOn,onToggleAnnAlerts}){
   const [wlName,setWlName]=useState('')
   const [manualSym,setManualSym]=useState('')
   const [showSuggest,setShowSuggest]=useState(false)
@@ -2258,7 +2258,6 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
   const [editStocks,setEditStocks]=useState([])
   const [dragOver,setDragOver]=useState(false)
   const fileRef=useRef()
-  const {copy,copied}=useCopy()
 
   // Autocomplete suggestions — match ticker OR company name (e.g. "reliance").
   const suggestQuery=manualSym.split(/[\s,;]+/).pop().trim()
@@ -2312,6 +2311,19 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
   const startEdit=wl=>{setEditId(wl.id);setEditStocks([...wl.stocks]);setWlName(wl.name)}
   const startCreate=()=>{setEditId('__draft__');setEditStocks([]);setWlName('')}
 
+  const activeList=watchlists.find(w=>w.id===activeWl)
+  const exportSyms=activeList?.stocks?.length
+    ? activeList.stocks
+    : [...new Set(watchlists.flatMap(w=>w.stocks||[]))]
+  const exportLabel=activeList?.name||'All watchlists'
+  const exportCsv=()=>{
+    if(!exportSyms.length){ alert('No symbols to export — add stocks to a watchlist first'); return }
+    const blob=new Blob([`Symbol\n${exportSyms.join('\n')}`],{type:'text/csv'})
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob)
+    a.download=`${String(exportLabel).replace(/[^\w\-]+/g,'_')}.csv`; a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
   return(
     <div>
       {/* Watchlist selector row */}
@@ -2339,6 +2351,35 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
           + New Watchlist
         </button>
       </div>
+
+      {/* Bulk export + filing alerts — always visible on watchlist tab */}
+      {!editId&&(
+        <div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'center',marginBottom:14,
+          padding:'10px 12px',borderRadius:10,border:`1px solid ${C.border}`,background:C.card}}>
+          <span style={{fontSize:11,color:C.muted,fontWeight:600}}>
+            {activeList?`Export “${activeList.name}”`:'Export all lists'} · {exportSyms.length} syms
+          </span>
+          {exportSyms.length>0&&(
+            <TVCopyPanel stocks={exportSyms.map(sym=>({sym}))} label={exportLabel}/>
+          )}
+          <button type="button" onClick={exportCsv} disabled={!exportSyms.length}
+            style={{padding:'6px 10px',borderRadius:8,border:`1px solid ${C.border}`,
+              background:C.bg,color:exportSyms.length?C.text:C.muted,fontSize:11,fontWeight:700,
+              cursor:exportSyms.length?'pointer':'not-allowed',opacity:exportSyms.length?1:0.55}}>
+            ⬇ Export CSV
+          </button>
+          {typeof onToggleAnnAlerts==='function'&&(
+            <button type="button" onClick={onToggleAnnAlerts}
+              title="Sound + notification when a watchlist stock files (while the app is open)"
+              style={{marginLeft:'auto',padding:'6px 10px',borderRadius:8,fontSize:11,fontWeight:700,cursor:'pointer',
+                border:`1px solid ${annAlertsOn?C.green:C.border}`,
+                background:annAlertsOn?C.green+'22':C.bg,
+                color:annAlertsOn?C.green:C.muted}}>
+              {annAlertsOn?'🔔 Alerts On':'🔕 Alerts Off'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Create/Edit panel — one unified flow instead of a separate
           "name it, click Create, THEN see a different screen to add
@@ -6066,38 +6107,59 @@ function ThemesRadarPanel({onOpenSymbol}){
     )
   }
   const rows=radar[selected]||[]
+  const selectedLabel=EMERGING_THEME_LABELS[selected]||selected||''
   return (
     <div style={{padding:'12px 14px',display:'flex',flexDirection:'column',gap:12}}>
       <div>
         <div style={{fontSize:14,fontWeight:800,color:C.text}}>Emerging Themes</div>
-        <div style={{fontSize:11,color:C.muted,marginTop:2}}>From concall + PPT summaries · last 30 days</div>
+        <div style={{fontSize:11,color:C.muted,marginTop:2}}>
+          Tap a theme chip → see matching stocks · open any row for the chart · from concall + PPT · last 30 days
+        </div>
       </div>
       <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
         {themes.map(t=>(
-          <button key={t} onClick={()=>setSelected(t)}
+          <button key={t} type="button" onClick={()=>setSelected(t)}
+            title={`Show ${radar[t].length} stocks tagged “${EMERGING_THEME_LABELS[t]||t}”`}
             style={{
-              padding:'6px 10px',borderRadius:999,cursor:'pointer',fontSize:11,fontWeight:700,
+              padding:'7px 12px',borderRadius:999,cursor:'pointer',fontSize:11,fontWeight:700,
               border:`1px solid ${selected===t?C.accent:C.border}`,
               background:selected===t?C.accent+'22':C.card,
               color:selected===t?C.accent:C.text,
+              boxShadow:selected===t?`0 0 0 1px ${C.accent}33`:'none',
             }}>
             {EMERGING_THEME_LABELS[t]||t} · {radar[t].length}
           </button>
         ))}
       </div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+        <div style={{fontSize:12,fontWeight:700,color:C.text}}>
+          Showing {rows.length} stock{rows.length===1?'':'s'}
+          {selectedLabel?<> in <span style={{color:C.accent}}>{selectedLabel}</span></>:null}
+        </div>
+        <div style={{fontSize:10,color:C.muted}}>Tap a row to open the chart</div>
+      </div>
       <div style={{display:'flex',flexDirection:'column',gap:8}}>
-        {rows.map(r=>(
-          <div key={`${r.symbol}-${r.source}`} style={{
-            background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',
-          }}>
+        {rows.length===0?(
+          <div style={{padding:'20px 12px',textAlign:'center',fontSize:12,color:C.muted,border:`1px dashed ${C.border}`,borderRadius:10}}>
+            No stocks for this theme yet — pick another chip above.
+          </div>
+        ):rows.map(r=>(
+          <div key={`${r.symbol}-${r.source}`}
+            role="button" tabIndex={0}
+            onClick={()=>onOpenSymbol?.(r.symbol)}
+            onKeyDown={e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); onOpenSymbol?.(r.symbol) } }}
+            style={{
+              background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',
+              cursor:onOpenSymbol?'pointer':'default',
+            }}>
             <div style={{display:'flex',justifyContent:'space-between',gap:8,alignItems:'center'}}>
-              <span onClick={()=>onOpenSymbol?.(r.symbol)}
-                style={{fontWeight:800,fontSize:13,color:C.accent,cursor:'pointer',textDecoration:'underline',
-                  textDecorationColor:C.accent+'55'}}>{r.symbol}</span>
-              <div style={{fontSize:10,color:C.muted,display:'flex',gap:8}}>
+              <span style={{fontWeight:800,fontSize:13,color:C.accent,textDecoration:'underline',
+                textDecorationColor:C.accent+'55'}}>{r.symbol}</span>
+              <div style={{fontSize:10,color:C.muted,display:'flex',gap:8,alignItems:'center'}}>
                 <span>{r.source==='concall'?'🎙️ Concall':'📊 PPT'}</span>
                 <span>{new Date(r.announced_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>
                 {r.intensity && r.intensity!=='none' && <span style={{fontWeight:700,color:C.text}}>{r.intensity}</span>}
+                <span style={{fontWeight:700,color:C.accent}}>Chart →</span>
               </div>
             </div>
             {r.evidence?.length>0 && (
@@ -12161,8 +12223,25 @@ export default function App(){
     setJournalOpenSym(null)
     setPortfolioUploadStatus(null)
   }
-  const [compareSyms,setCompareSyms]=useState([])
+  const [compareSyms,setCompareSyms]=useState(()=>{
+    try{
+      const q=new URLSearchParams(window.location.search).get('compare')
+      if(q) return q.split(/[,+]/).map(s=>s.trim().toUpperCase()).filter(Boolean).slice(0,4)
+      const saved=JSON.parse(localStorage.getItem('lakshmimata-compare')||'[]')
+      if(Array.isArray(saved)) return saved.map(s=>String(s).toUpperCase()).filter(Boolean).slice(0,4)
+    }catch(_){}
+    return []
+  })
   const [compareInput,setCompareInput]=useState('')
+  useEffect(()=>{
+    try{ localStorage.setItem('lakshmimata-compare', JSON.stringify(compareSyms)) }catch(_){}
+    try{
+      const url=new URL(window.location.href)
+      if(compareSyms.length) url.searchParams.set('compare', compareSyms.join(','))
+      else url.searchParams.delete('compare')
+      window.history.replaceState({}, '', url)
+    }catch(_){}
+  },[compareSyms])
   const [historyDate,setHistoryDate]=useState(null) // null = live today, else 'YYYY-MM-DD'
   const [hoveredNavId,setHoveredNavId]=useState(null) // sidebar hover polish
   const [availableDates,setAvailableDates]=useState([])
@@ -13378,11 +13457,12 @@ export default function App(){
             <div style={{marginBottom:16}}>
               <div style={{fontWeight:800,fontSize:16,marginBottom:4}}>📋 Watchlists</div>
               <div style={{fontSize:12,color:C.muted}}>
-                Create custom lists, add stocks manually or upload a CSV, then run the scanner on them.
+                Create lists, import CSV, copy to TradingView, and toggle filing alerts for watchlist stocks.
               </div>
             </div>
             <WatchlistManager watchlists={watchlists} activeWl={activeWl} setActiveWl={id=>{setActiveWl(id);setMainTab('rs')}}
               onSave={saveWL} onDelete={deleteWL}
+              annAlertsOn={annAlertsOn} onToggleAnnAlerts={toggleAnnAlerts}
               allKnownStocks={stocks.length>0
                 ? stocks.map(s=>({sym:s.sym,sector:s.sector}))
                 : [...new Set([...NIFTY50,...MIDCAP,...SMALLCAP])].map(sym=>({sym,sector:null}))}/>
@@ -14958,6 +15038,12 @@ export default function App(){
             Self-contained: recomputes its own inputs from `stocks`
             rather than reaching into the stats-grid IIFE above, since
             that block's local consts aren't in scope this far down. */}
+        {mainTab==='market'&&(marketSubTab==='gaps'||marketSubTab==='smartmoney')&&stocks.length===0&&(
+          <div style={{textAlign:'center',padding:'48px 20px',color:C.muted,fontSize:13,lineHeight:1.55}}>
+            <div style={{fontWeight:700,color:C.text,marginBottom:6}}>No scan loaded</div>
+            Load RS / Market data first — Gaps and Smart Money need the live stock universe.
+          </div>
+        )}
         {mainTab==='market'&&(marketSubTab==='gaps'||marketSubTab==='smartmoney')&&stocks.length>0&&(()=>{
           const GAP_THRESH = 5
           const gapUps   = stocks.filter(s=>s.gapPct!=null&&s.gapPct>=GAP_THRESH).sort((a,b)=>b.gapPct-a.gapPct)
@@ -15021,11 +15107,15 @@ export default function App(){
                     <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>Gap Up / Gap Down</div>
                     <div style={{fontSize:11,color:C.muted}}>
                       Open ≥{GAP_THRESH}% from prior close — live intraday only
+                      {lastRefresh?` · data as of ${new Date(lastRefresh).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}`:''}
+                      {historyDate?` · viewing history ${historyDate}`:''}
                     </div>
                   </div>
                   {gapUps.length===0&&gapDowns.length===0&&(
-                    <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
-                      No ≥{GAP_THRESH}% gaps right now (or viewing a historical day without open data).
+                    <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13,lineHeight:1.55}}>
+                      No ≥{GAP_THRESH}% gaps right now
+                      {historyDate?' on this historical day':''}.
+                      Gaps need open vs prior close — empty if the scan hasn&apos;t loaded opens yet.
                     </div>
                   )}
               {gapUps.length>0&&(
@@ -15057,13 +15147,18 @@ export default function App(){
                     <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>Smart Money</div>
                     <div style={{fontSize:11,color:C.muted}}>
                       Daily FII/DII cash flows (NSE) plus quarterly sector holdings and price/volume momentum
+                      {fiiDiiHistory?.length
+                        ? ` · ${fiiDiiHistory.length} daily flow rows loaded`
+                        : ' · daily flows still loading or empty'}
+                      {lastRefresh?` · scan ${new Date(lastRefresh).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}`:''}
                     </div>
                   </div>
                   <FiiDiiDailyPanel data={fiiDiiHistory} isMobile={isMobile}
                     range={fiiDiiRange} setRange={setFiiDiiRange}/>
                   {smartMoneyBySector.length===0&&volumeSmartMoneyBySector.length===0&&fiiDiiHistory.length===0&&(
-                    <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
-                      Smart money data not available yet.
+                    <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13,lineHeight:1.55}}>
+                      No FII/DII flow or sector shareholding data yet.
+                      Daily flows need the worker&apos;s fii_dii_daily table; sector holdings come from stock fundamentals.
                     </div>
                   )}
               {smartMoneyBySector.length>0&&(
@@ -15418,7 +15513,13 @@ export default function App(){
               <div>
                 <div style={{fontWeight:700,fontSize:16}}>Portfolio Tracker</div>
                 <div style={{fontSize:11,color:C.muted}}>
-                  Technical structure flags only · not buy/sell advice · synced when signed in
+                  Technical structure flags only · not buy/sell advice
+                  {session
+                    ? ` · cloud sync ${portfolioUploadStatus?.type==='loading'?'saving…':'on'}`
+                    : ' · sign in to sync'}
+                  {activePortfolio?.updatedAt
+                    ? ` · last change ${new Date(activePortfolio.updatedAt).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}`
+                    : ''}
                 </div>
               </div>
               <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'flex-start'}}>
@@ -15891,13 +15992,60 @@ export default function App(){
             })()}
 
             {portfolioHoldings.length===0?(
-              <div style={{textAlign:'center',padding:'60px 20px',color:C.muted}}>
+              <div style={{textAlign:'center',padding:'48px 20px',color:C.muted}}>
                 <div style={{fontSize:36,marginBottom:10}}>💼</div>
                 <div style={{fontSize:14,fontWeight:700,color:C.text}}>
                   No holdings in “{activePortfolio?.name||'Portfolio'}” yet
                 </div>
-                <div style={{fontSize:12,marginTop:6}}>
-                  Click "+ Add Stock", or use "+ New family" for spouse / kids (max {MAX_FAMILY_PORTFOLIOS})
+                <div style={{fontSize:12,marginTop:8,lineHeight:1.5,maxWidth:380,marginLeft:'auto',marginRight:'auto'}}>
+                  Import a brokerage holdings file (Zerodha / Dhan / Groww / Upstox / Angel) or add symbols manually.
+                  {session?' Cloud sync is on when you&apos;re signed in.':' Sign in to sync across devices.'}
+                </div>
+                <div style={{display:'flex',gap:10,justifyContent:'center',flexWrap:'wrap',marginTop:16}}>
+                  <label style={{padding:'10px 16px',borderRadius:8,border:`1px solid ${C.accent}`,
+                    background:C.accent,color:'#000',fontWeight:800,fontSize:12,cursor:'pointer'}}>
+                    📤 Import CSV / XLSX
+                    <input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
+                      onChange={async e=>{
+                        const file=e.target.files?.[0]
+                        e.target.value=''
+                        if(!file) return
+                        setPortfolioUploadStatus({type:'loading',message:'Reading file…'})
+                        try{
+                          const {holdings,skipped}=await parseBrokerageHoldingsFile(file)
+                          if(holdings.length===0){
+                            setPortfolioUploadStatus({type:'error',
+                              message:'No valid holdings found — need a Symbol / Trading Symbol column.'})
+                            return
+                          }
+                          setPortfolioHoldings(prev=>{
+                            const bySym=new Map(prev.map(h=>[h.sym,h]))
+                            for(const row of holdings){
+                              const existing=bySym.get(row.sym)
+                              bySym.set(row.sym,{
+                                sym:row.sym,
+                                name: row.name || existing?.name || getCompanyName(row.sym) || null,
+                                addedAt:existing?.addedAt||new Date().toISOString(),
+                                entryPrice: row.entryPrice ?? existing?.entryPrice ?? null,
+                                qty: row.qty ?? existing?.qty ?? null,
+                                journal: existing?.journal||[],
+                              })
+                            }
+                            return [...bySym.values()]
+                          })
+                          setPortfolioUploadStatus({type:'success',
+                            message:`Imported ${holdings.length} holding${holdings.length===1?'':'s'}`
+                              +(skipped.length?` — ${skipped.length} skipped`:'')})
+                        }catch(err){
+                          setPortfolioUploadStatus({type:'error',message:err.message||'Could not parse that file'})
+                        }
+                      }}/>
+                  </label>
+                  <button type="button" onClick={()=>{setPortfolioAddOpen(true);setPortfolioAddSuggest(false)}}
+                    style={{padding:'10px 16px',borderRadius:8,border:`1px solid ${C.border}`,
+                      background:C.card,color:C.text,fontWeight:700,fontSize:12,cursor:'pointer'}}>
+                    ＋ Add stock
+                  </button>
                 </div>
               </div>
             ):(()=>{
@@ -16151,7 +16299,7 @@ export default function App(){
             </div>
             <div style={{marginBottom:14}}>
               <div style={{fontWeight:700,fontSize:16}}>Stock Comparison</div>
-              <div style={{fontSize:11,color:C.muted}}>Compare up to 4 stocks side by side</div>
+              <div style={{fontSize:11,color:C.muted}}>Compare up to 4 stocks side by side · saved in this browser · share via URL (?compare=SYM1,SYM2)</div>
             </div>
             <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
               <input value={compareInput} onChange={e=>setCompareInput(e.target.value.toUpperCase())}
@@ -16164,6 +16312,20 @@ export default function App(){
                 placeholder="Type symbol + Enter (e.g. RELIANCE)"
                 style={{flex:1,padding:'8px 12px',background:C.card,border:`1px solid ${C.border}`,
                   borderRadius:7,color:C.text,fontSize:12,outline:'none',minWidth:200}}/>
+              <button onClick={()=>{
+                  try{
+                    const url=new URL(window.location.href)
+                    url.searchParams.set('compare', compareSyms.join(','))
+                    navigator.clipboard?.writeText(url.toString())
+                  }catch(_){}
+                }}
+                disabled={compareSyms.length===0}
+                title="Copy shareable link"
+                style={{padding:'8px 14px',borderRadius:7,border:`1px solid ${C.border}`,
+                  background:'transparent',color:compareSyms.length?C.accent:C.muted,fontSize:12,
+                  cursor:compareSyms.length?'pointer':'default',opacity:compareSyms.length?1:0.5}}>
+                Copy link
+              </button>
               <button onClick={()=>setCompareSyms([])}
                 style={{padding:'8px 14px',borderRadius:7,border:`1px solid ${C.border}`,
                   background:'transparent',color:C.muted,fontSize:12,cursor:'pointer'}}>
@@ -16503,6 +16665,12 @@ export default function App(){
                 {rotationScope==='sector'&&` Tap a sector to open its RS list.`}
                 {rotationScope==='index'&&` Tap an index to drill into constituents.`}
                 {rotationScope==='watchlist'&&' Tap a stock to open its chart.'}
+              </div>
+              <div style={{marginTop:10,padding:'10px 12px',borderRadius:10,border:`1px solid ${C.border}`,
+                background:C.card,fontSize:11.5,color:C.muted,lineHeight:1.55}}>
+                <strong style={{color:C.text}}>How to read:</strong> Right of 100 = relative strength vs benchmark;
+                above 100 = momentum improving. Leaders (top-right) are strong and still accelerating;
+                Laggards (bottom-left) are weak and worsening. Prefer names rotating <em style={{color:C.accent}}>into</em> Leading from Improving.
               </div>
             </div>
 
@@ -16947,13 +17115,30 @@ export default function App(){
             {bestPicksLoading&&bestPicks.length===0?(
               <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>Loading…</div>
             ):bestPicks.length===0?(
-              <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
-                No picks yet — the scanner refreshes this list hourly during market hours. Check back soon.
+              <div style={{textAlign:'center',padding:'48px 20px',color:C.muted}}>
+                <div style={{fontSize:36,marginBottom:10}}>🎯</div>
+                <div style={{fontSize:14,fontWeight:700,color:C.text,marginBottom:8}}>No AI picks yet</div>
+                <div style={{fontSize:12,lineHeight:1.55,maxWidth:420,margin:'0 auto'}}>
+                  The hourly scanner writes today&apos;s top 5 during market hours. If this stays empty, the Railway live scan may be paused or Gemini quota is exhausted — tap Refresh after the next cycle.
+                </div>
+                <button type="button" onClick={loadBestPicks} disabled={bestPicksLoading}
+                  style={{marginTop:14,padding:'8px 16px',borderRadius:8,border:`1px solid ${C.accent}`,
+                    background:C.accent+'18',color:C.accent,fontWeight:700,fontSize:12,cursor:'pointer'}}>
+                  Refresh now
+                </button>
               </div>
             ):(
               <div style={{display:'flex',flexDirection:'column',gap:8}}>
                 <TVCopyPanel stocks={bestPicks.slice(0,5).map(p=>({sym:p.symbol}))} label="AI Best Picks"/>
-                {bestPicks.slice(0,5).map((p)=>(
+                {bestPicks.slice(0,5).map((p)=>{
+                  const why=p.reasoning||[
+                    p.is_s2_new_entry||p.weinstein_stage===2?'Stage 2 structure':'',
+                    p.rs_tv!=null?`RS ${p.rs_tv}`:'',
+                    p.fundamental_label?`Fund ${p.fundamental_label}`:'',
+                    p.result_rating?`Result ${p.result_rating}`:'',
+                    p.score!=null?`Composite ${p.score}/100`:'',
+                  ].filter(Boolean).join(' · ')||'Scored from Stage 2, RS, fundamentals and latest result quality.'
+                  return (
                   <div key={p.symbol} style={{background:C.card,border:`1px solid ${C.border}`,
                     borderRadius:10,padding:'12px 14px',display:'flex',gap:12,alignItems:'flex-start'}}>
                     <div style={{minWidth:30,textAlign:'center'}}>
@@ -16975,11 +17160,9 @@ export default function App(){
                         )}
                         {p.sector&&<span style={{fontSize:10,color:C.muted}}>{p.sector}</span>}
                       </div>
-                      {p.reasoning&&(
-                        <div style={{fontSize:11,fontWeight:600,color:C.accent,marginTop:4,lineHeight:1.4}}>
-                          🤖 {p.reasoning}
-                        </div>
-                      )}
+                      <div style={{fontSize:11,fontWeight:600,color:C.accent,marginTop:4,lineHeight:1.4}}>
+                        💡 Why: {why}
+                      </div>
                       {(p.stop_loss!=null||p.target!=null)&&(
                         <div title="ATR-based reference levels (2x/4x average true range) — a quality-of-life guide, not a guaranteed exit point or a recommendation."
                           style={{display:'flex',gap:12,marginTop:5,fontSize:10,cursor:'help'}}>
@@ -17037,7 +17220,8 @@ export default function App(){
                       </div>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
             </>)}
@@ -17179,8 +17363,8 @@ export default function App(){
                       <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,flexWrap:'wrap'}}>
                         <div style={{fontSize:10,color:C.muted,flex:1,minWidth:180}}>
                           Filings with no AI summary yet, or pending/failed (last {aiCatchup?.days||45} days).
-                          Done and skipped are excluded. Concall = transcript PDFs only (not audio recordings).
-                          Tap a row to open the AI tab.
+                          Done and skipped are excluded. PDF transcripts + audio concalls are both supported after the latest worker deploy.
+                          Tap a row to open the stock (AI tab).
                         </div>
                         <button type="button" onClick={loadAiCatchup} disabled={aiCatchupLoading}
                           style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${C.border}`,
@@ -17203,7 +17387,9 @@ export default function App(){
                         <div style={{fontSize:11,color:C.muted,padding:'12px 4px'}}>Scanning filings…</div>
                       ):!rows.length?(
                         <div style={{fontSize:11,color:C.muted,padding:'12px 4px'}}>
-                          No unread {aiCatchupTab==='results'?'Results PDF':aiCatchupTab==='ppt'?'PPT':'Concall/transcript'} filings in this window.
+                          {aiCatchup?.error
+                            ? `Could not load catch-up (${aiCatchup.error}). Tap Refresh.`
+                            : `No unread ${aiCatchupTab==='results'?'Results PDF':aiCatchupTab==='ppt'?'PPT':'Concall'} filings in this window — AI is caught up, or none filed yet.`}
                         </div>
                       ):(
                         <div style={{display:'flex',flexDirection:'column',gap:6,maxHeight:260,overflowY:'auto'}}>
@@ -17412,21 +17598,57 @@ export default function App(){
                     : null
                   const ratingColor=rowRating==='Excellent'?C.green:rowRating==='Good'?'#7dd3a8':
                     rowRating==='Weak'?C.red:C.yellow
+                  const catchKinds=announcementsCategory==='results'?'results'
+                    :announcementsCategory==='ppt'?'ppt'
+                    :announcementsCategory==='concall'||announcementsCategory==='transcript'?'concall'
+                    :null
+                  const catchRow=catchKinds&&aiCatchup
+                    ?(aiCatchup[catchKinds]||[]).find(r=>String(r.symbol||'').toUpperCase()===symU)
+                    :null
+                  const aiPending=!a.ai_summary && ['results','ppt','concall','transcript'].includes(announcementsCategory)
                   return(
                     <div key={`${a.symbol}-${i}`} style={{background:C.card,border:`1px solid ${C.border}`,
                       borderRadius:10,padding:'12px 14px',display:'flex',gap:12,alignItems:'flex-start'}}>
                       <div style={{minWidth:76}}>
-                      <div onClick={()=>openChart(a.symbol)}
+                      <div onClick={()=>{
+                          if(announcementsCategory==='results') setChartDetailTabHint('resultsSummary')
+                          else if(announcementsCategory==='ppt') setChartDetailTabHint('ppt')
+                          else if(announcementsCategory==='concall'||announcementsCategory==='transcript') setChartDetailTabHint('concall')
+                          openChart(a.symbol)
+                        }}
                         style={{fontWeight:800,fontSize:13,color:C.accent,cursor:'pointer',
                             textDecoration:'underline',textDecorationColor:C.accent+'55'}}>
                         {a.symbol}
                         </div>
+                        <button type="button" onClick={()=>{
+                          if(announcementsCategory==='results') setChartDetailTabHint('resultsSummary')
+                          else if(announcementsCategory==='ppt') setChartDetailTabHint('ppt')
+                          else if(announcementsCategory==='concall'||announcementsCategory==='transcript') setChartDetailTabHint('concall')
+                          openChart(a.symbol)
+                        }}
+                          style={{marginTop:6,padding:'2px 7px',borderRadius:6,border:`1px solid ${C.border}`,
+                            background:'transparent',color:C.muted,fontSize:9,fontWeight:700,cursor:'pointer'}}>
+                          📈 Chart
+                        </button>
                         {rowRating&&(
                           <div title="Result quality from Sales/PAT YoY (+ QoQ/OPM checks)"
                             style={{marginTop:4,fontSize:9,fontWeight:800,color:ratingColor,
                               background:ratingColor+'22',borderRadius:999,padding:'1px 6px',display:'inline-block'}}>
                             {rowRating==='Excellent'?'⭐ Excellent':rowRating==='Good'?'✓ Good':
                               rowRating==='Weak'?'⚠ Weak':'– Neutral'}
+                          </div>
+                        )}
+                        {catchRow&&(
+                          <div style={{marginTop:4,fontSize:9,fontWeight:800,
+                            color:catchRow.status==='failed'?C.red:catchRow.status==='pending'?C.accent:C.yellow,
+                            background:(catchRow.status==='failed'?C.red:catchRow.status==='pending'?C.accent:C.yellow)+'22',
+                            borderRadius:999,padding:'1px 6px',display:'inline-block'}}>
+                            AI {catchRow.status==='failed'?'failed':catchRow.status==='pending'?'reading…':'waiting'}
+                          </div>
+                        )}
+                        {!catchRow&&aiPending&&!a.ai_summary&&(
+                          <div style={{marginTop:4,fontSize:9,fontWeight:700,color:C.muted}}>
+                            AI summary not ready
                           </div>
                         )}
                       </div>
@@ -17969,7 +18191,7 @@ export default function App(){
             borderTop:`1px solid ${C.border}`,display:'flex',zIndex:40,
             paddingBottom:'env(safe-area-inset-bottom)'}}>
             {[
-              ['rs',TrendingUp,'RS Rating'],['market',BarChart3,'Market'],['rotation',RefreshCw,'Rotate'],['patterns',LineChartIcon,'Patterns'],['52wl',Award,'52WL'],
+              ['rs',TrendingUp,'RS'],['market',BarChart3,'Market'],['earnings',BarChart3,'Earnings'],['rotation',RefreshCw,'Rotate'],['patterns',LineChartIcon,'Patterns'],
             ].map(([t,Icon,label])=>(
               <button key={t} onClick={()=>setMainTab(t)}
                 style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
@@ -17983,10 +18205,10 @@ export default function App(){
               style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <MoreHorizontal size={17} strokeWidth={1.8}
-                color={['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders'].includes(mainTab)?C.accent:C.muted}/>
+                color={['52wl','squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders'].includes(mainTab)?C.accent:C.muted}/>
               <span style={{fontSize:8,fontWeight:600,
-                color:['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders'].includes(mainTab)?C.accent:C.muted}}>More</span>
-              {['squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders'].includes(mainTab)&&
+                color:['52wl','squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders'].includes(mainTab)?C.accent:C.muted}}>More</span>
+              {['52wl','squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders'].includes(mainTab)&&
                 <div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           </div>
@@ -18003,10 +18225,10 @@ export default function App(){
                 <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:'8px auto 16px'}}/>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:4}}>
                   {[
-                    ['squeeze',Zap,'Squeeze'],['weak',TrendingDown,'Weak'],['leaders',Flag,'Leaders'],
-                    ['portfolio',Briefcase,'Portfolio'],['compare',GitCompare,'Compare'],['watchlist',Star,'Watchlist'],
-                    ['announcements',Megaphone,'Announcements'],['earnings',BarChart3,'Earnings'],['themes',Layers,'Themes'],['bestpicks',Target,'AI Picks'],
-                    ['feedback',MessageSquare,'Feedback'],['settings',Settings,'Account'],
+                    ['themes',Layers,'Themes'],['bestpicks',Target,'AI Picks'],['announcements',Megaphone,'News'],
+                    ['watchlist',Star,'Watchlist'],['portfolio',Briefcase,'Portfolio'],['compare',GitCompare,'Compare'],
+                    ['52wl',Award,'52WL'],['leaders',Flag,'Leaders'],['squeeze',Zap,'Squeeze'],
+                    ['weak',TrendingDown,'Weak'],['feedback',MessageSquare,'Feedback'],['settings',Settings,'Account'],
                   ].map(([t,Icon,label])=>(
                     <button key={t} onClick={()=>{setMainTab(t);setShowMoreMenu(false)}}
                       style={{padding:'16px 8px',background:mainTab===t?C.accent+'18':'transparent',
