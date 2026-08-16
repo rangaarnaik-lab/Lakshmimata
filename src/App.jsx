@@ -926,6 +926,42 @@ function Badge({color,children,glow,title}){
     background:color+'22',color,whiteSpace:'nowrap',boxShadow:glow?`0 0 6px ${color}66`:'none',
     cursor:title?'help':'default'}}>{children}</span>
 }
+
+/** Shared page chrome — title, subtitle, optional tip box (all tabs). */
+function PageHeader({title, subtitle, accent, tip, right, style}){
+  return(
+    <div style={{marginBottom:14,display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:12,flexWrap:'wrap',...(style||{})}}>
+      <div style={{minWidth:0,flex:1}}>
+        <div style={{fontWeight:800,fontSize:16,color:accent||C.text,letterSpacing:'-0.01em'}}>{title}</div>
+        {subtitle&&(
+          <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.5,maxWidth:640}}>{subtitle}</div>
+        )}
+        {tip&&(
+          <div style={{marginTop:10,padding:'9px 12px',borderRadius:10,border:`1px solid ${C.border}`,
+            background:C.card,fontSize:11.5,color:C.muted,lineHeight:1.55,maxWidth:720}}>
+            <strong style={{color:C.text}}>How to use:</strong> {tip}
+          </div>
+        )}
+      </div>
+      {right}
+    </div>
+  )
+}
+
+/** Consistent empty / no-data panel across scanner tabs. */
+function EmptyPanel({title, body, icon}){
+  return(
+    <div style={{textAlign:'center',padding:'44px 20px',border:`1px dashed ${C.border}`,
+      borderRadius:12,background:C.card}}>
+      {icon&&<div style={{fontSize:32,marginBottom:10,lineHeight:1}}>{icon}</div>}
+      <div style={{fontSize:14,fontWeight:700,color:C.text,marginBottom:8}}>{title}</div>
+      {body&&(
+        <div style={{fontSize:12,color:C.muted,lineHeight:1.55,maxWidth:420,margin:'0 auto'}}>{body}</div>
+      )}
+    </div>
+  )
+}
+
 function Sparkline({data,width=70,height=26,color}){
   const valid=data.filter(v=>v!==null)
   if(valid.length<2)return null
@@ -10325,8 +10361,12 @@ function UserFeedbackPanel({session,onExitDemo}){
       )}
       <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:24,marginBottom:20}}>
         <div style={{fontWeight:800,fontSize:18,marginBottom:4}}>User Feedback</div>
-        <div style={{color:C.muted,fontSize:12,marginBottom:18,lineHeight:1.6}}>
+        <div style={{color:C.muted,fontSize:12,marginBottom:12,lineHeight:1.6}}>
           Rate Lakshmimata (1–5 stars) and tell us what’s working or what we should improve. Public feedback may appear on the home page (first name only).
+        </div>
+        <div style={{marginBottom:16,padding:'9px 12px',borderRadius:10,border:`1px solid ${C.border}`,
+          background:C.bg,fontSize:11.5,color:C.muted,lineHeight:1.55}}>
+          <strong style={{color:C.text}}>How to use:</strong> Pick a star rating, write at least a few words, optionally keep it public for the landing page, then submit.
         </div>
         <div style={{marginBottom:14}}>
           <div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:8}}>Your rating *</div>
@@ -10429,8 +10469,13 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
     <div style={{maxWidth:480,margin:'32px auto',padding:'0 16px'}}>
       <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:24}}>
         <div style={{fontWeight:800,fontSize:18,marginBottom:4}}>Account Settings</div>
-        <div style={{color:C.muted,fontSize:12,marginBottom:16}}>
+        <div style={{color:C.muted,fontSize:12,marginBottom:12,lineHeight:1.5}}>
           Signed in as <strong style={{color:C.accent}}>{session.user.email}</strong>
+        </div>
+        <div style={{marginBottom:16,padding:'9px 12px',borderRadius:10,border:`1px solid ${C.border}`,
+          background:C.bg,fontSize:11.5,color:C.muted,lineHeight:1.55}}>
+          <strong style={{color:C.text}}>Tip:</strong> Theme, zoom, and ambient sound live on the palette button (top-right) from any tab.
+          Plans &amp; billing are below.
         </div>
         {(displayName||displayPhone)&&(
           <div style={{marginBottom:16,background:C.bg,border:`1px solid ${C.border}`,
@@ -10439,10 +10484,6 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
             {displayPhone&&<div><strong style={{color:C.text}}>Phone:</strong> {displayPhone}</div>}
           </div>
         )}
-        <div style={{marginBottom:20,fontSize:12,color:C.muted,background:C.bg,
-          border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px'}}>
-          🎨 Theme and ambient sound moved — look for the palette icon in the top-right corner, on any tab.
-        </div>
 
         {/* My Subscription — status only for now (payment integration
             is separate, still pending Razorpay approval). Shows
@@ -13453,13 +13494,12 @@ export default function App(){
 
         {/* ══ WATCHLIST TAB ══ */}
         {mainTab==='watchlist'&&(
-          <div>
-            <div style={{marginBottom:16}}>
-              <div style={{fontWeight:800,fontSize:16,marginBottom:4}}>📋 Watchlists</div>
-              <div style={{fontSize:12,color:C.muted}}>
-                Create lists, import CSV, copy to TradingView, and toggle filing alerts for watchlist stocks.
-              </div>
-            </div>
+          <div style={{padding:'0 0 20px'}}>
+            <PageHeader
+              title="Watchlists"
+              subtitle="Create custom lists, import CSV, copy to TradingView, and toggle filing alerts for watchlist stocks."
+              tip="Select a list chip to run the RS scanner on it. Use Export CSV / TV copy on the toolbar. Alerts fire while the app is open."
+            />
             <WatchlistManager watchlists={watchlists} activeWl={activeWl} setActiveWl={id=>{setActiveWl(id);setMainTab('rs')}}
               onSave={saveWL} onDelete={deleteWL}
               annAlertsOn={annAlertsOn} onToggleAnnAlerts={toggleAnnAlerts}
@@ -15249,16 +15289,16 @@ export default function App(){
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
                 availableDates={availableDates} isMobile={isMobile} onOpenRefresh={refreshHistoryDates}/>
             </div>
-            <div style={{marginBottom:10}}>
-              <div style={{fontWeight:700,fontSize:16,color:C.text}}>Leaders</div>
-              <div style={{fontSize:11,color:C.muted}}>
-                {historyDate
-                  ? `Leadership signals on ${new Date(historyDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`
-                  : 'Leadership signals — pick a section below'}
-              </div>
-            </div>
+            <PageHeader
+              title="Leaders"
+              subtitle={historyDate
+                ? `Leadership signals on ${new Date(historyDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`
+                : 'RS-line highs, new Stage 2 entries, and fresh 52-week highs — early leadership, not just price spikes.'}
+              tip="Pick a chip below. Copy to TradingView, then tap a row for the chart. Use the calendar to review a past session."
+            />
             {stocks.length===0?(
-              <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>No data loaded yet.</div>
+              <EmptyPanel icon="🏁" title="No scan data yet"
+                body="Load the live RS universe first (open RS Rating or wait for refresh), then return here for leadership lists."/>
             ):(<>
               <div style={{position:'sticky',top:0,zIndex:5,background:C.bg,
                 marginLeft:-16,marginRight:-16,padding:'8px 16px',
@@ -15277,11 +15317,8 @@ export default function App(){
                 </div>
               </div>
               {emptyAll?(
-                <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
-                  {historyDate
-                    ? `No leadership signals on ${new Date(historyDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}.`
-                    : 'No leadership signals today.'}
-                </div>
+                <EmptyPanel icon="🏁" title={historyDate?'No leadership signals that day':'No leadership signals today'}
+                  body="Quiet sessions happen — try another date, or check Patterns / Squeeze for setups that haven’t broken out yet."/>
               ):(
                 <div style={{background:C.card,border:`1px solid ${active.color}33`,borderRadius:10,padding:'14px'}}>
                   <div style={{fontWeight:700,fontSize:13,color:active.color,marginBottom:4}}>
@@ -15289,7 +15326,8 @@ export default function App(){
                   </div>
                   <div style={{fontSize:11,color:C.muted,marginBottom:10,lineHeight:1.45}}>{active.blurb}</div>
                   {matches.length===0?(
-                    <div style={{fontSize:12,color:C.muted,padding:'12px 0'}}>None in this section right now.</div>
+                    <EmptyPanel title="None in this section right now"
+                      body="Try another Leaders chip — RS-line highs, Stage 2, and 52W highs rotate through the day."/>
                   ):(<>
                     <TVCopyPanel stocks={matches} label={active.label}/>
                     <BreakoutTable stocks={matches}
@@ -15311,10 +15349,11 @@ export default function App(){
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
                 availableDates={availableDates} isMobile={isMobile} onOpenRefresh={refreshHistoryDates}/>
             </div>
-            <div style={{marginBottom:14}}>
-              <div style={{fontWeight:700,fontSize:16,color:C.text}}>Patterns</div>
-              <div style={{fontSize:11,color:C.muted}}>Every chart pattern the scanner detects, in one place</div>
-            </div>
+            <PageHeader
+              title="Patterns"
+              subtitle="Every chart pattern the scanner detects — breakouts, coiling bases, classics, MA crosses, and volume — in one place."
+              tip="Use the chips to switch groups. Empty groups mean no matches in the current universe / watchlist filter."
+            />
             {stocks.length>0&&(
               <div style={{position:'sticky',top:0,zIndex:5,background:C.bg,
                 marginLeft:-16,marginRight:-16,padding:'8px 16px',
@@ -15339,14 +15378,14 @@ export default function App(){
                 </div>
               </div>
             )}
-            <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,
-              padding:'8px 12px',marginBottom:14,fontSize:10.5,color:C.muted,lineHeight:1.5}}>
-              ⚠️ Classic Chart Patterns (Head & Shoulders, Double Top/Bottom, Triangles, Wedges, Flags/Pennants) are
-              new — swing-point heuristics, not exact textbook geometry. Expect some false positives while thresholds
-              get tuned against real results.
+            <div style={{background:C.yellow+'12',border:`1px solid ${C.yellow}44`,borderRadius:10,
+              padding:'10px 12px',marginBottom:14,fontSize:11.5,color:C.text,lineHeight:1.5}}>
+              <strong style={{color:C.yellow}}>Heuristic patterns.</strong>
+              {' '}Head &amp; Shoulders, triangles, wedges, flags are swing-point approximations — not exact textbook geometry. Expect some false positives.
             </div>
             {stocks.length===0?(
-              <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>No data loaded yet.</div>
+              <EmptyPanel icon="📐" title="No scan data yet"
+                body="Patterns need the live stock universe. Open RS Rating once so data loads, then come back."/>
             ):(()=>{
               // One definition per pattern, grouped for readability.
               // Reuses signals already computed server-side elsewhere in
@@ -15497,7 +15536,8 @@ export default function App(){
                   {items
                     .filter(({key})=>id!=='breakouts'||patternsBreakoutType==='all'||patternsBreakoutType===key)
                     .every(({filter})=>stocks.filter(filter).length===0)&&(
-                    <div style={{fontSize:11,color:C.muted,padding:'4px 0 4px'}}>None right now.</div>
+                    <EmptyPanel title="None in this group right now"
+                      body="Switch chips above, widen the index/watchlist filter, or check back after the next scan."/>
                   )}
                 </div>
               ))
@@ -15509,17 +15549,22 @@ export default function App(){
         {/* ══ PORTFOLIO TRACKER ══ */}
         {mainTab==='portfolio'&&(
           <div style={{padding:'0 0 20px'}}>
-            <div style={{marginBottom:14,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
-              <div>
-                <div style={{fontWeight:700,fontSize:16}}>Portfolio Tracker</div>
-                <div style={{fontSize:11,color:C.muted}}>
+            <div style={{marginBottom:14,display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+              <div style={{minWidth:0,flex:1}}>
+                <div style={{fontWeight:800,fontSize:16}}>Portfolio Tracker</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:4,lineHeight:1.5}}>
                   Technical structure flags only · not buy/sell advice
                   {session
                     ? ` · cloud sync ${portfolioUploadStatus?.type==='loading'?'saving…':'on'}`
-                    : ' · sign in to sync'}
+                    : ' · sign in to sync across devices'}
                   {activePortfolio?.updatedAt
                     ? ` · last change ${new Date(activePortfolio.updatedAt).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}`
                     : ''}
+                </div>
+                <div style={{marginTop:10,padding:'9px 12px',borderRadius:10,border:`1px solid ${C.border}`,
+                  background:C.card,fontSize:11.5,color:C.muted,lineHeight:1.55,maxWidth:720}}>
+                  <strong style={{color:C.text}}>How to use:</strong> Import brokerage CSV/XLSX or add symbols manually.
+                  Switch family portfolios above the table. Tap a holding to open the chart.
                 </div>
               </div>
               <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'flex-start'}}>
@@ -16297,10 +16342,11 @@ export default function App(){
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
                 availableDates={availableDates} isMobile={isMobile} onOpenRefresh={refreshHistoryDates}/>
             </div>
-            <div style={{marginBottom:14}}>
-              <div style={{fontWeight:700,fontSize:16}}>Stock Comparison</div>
-              <div style={{fontSize:11,color:C.muted}}>Compare up to 4 stocks side by side · saved in this browser · share via URL (?compare=SYM1,SYM2)</div>
-            </div>
+            <PageHeader
+              title="Stock Comparison"
+              subtitle="Compare up to 4 stocks side by side · saved in this browser · share via URL (?compare=SYM1,SYM2)"
+              tip="Type a symbol and press Enter. Copy link to share the same set. Clear resets the board."
+            />
             <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
               <input value={compareInput} onChange={e=>setCompareInput(e.target.value.toUpperCase())}
                 onKeyDown={e=>{
@@ -16334,11 +16380,8 @@ export default function App(){
             </div>
 
             {compareSyms.length===0?(
-              <div style={{textAlign:'center',padding:'60px 20px',color:C.muted}}>
-                <div style={{fontSize:36,marginBottom:10}}>⚖️</div>
-                <div style={{fontSize:14,fontWeight:700,color:C.text}}>Type a symbol and press Enter</div>
-                <div style={{fontSize:12,marginTop:6}}>Add up to 4 stocks to compare</div>
-              </div>
+              <EmptyPanel icon="⚖️" title="Add stocks to compare"
+                body="Type a symbol and press Enter — up to 4 names. Your set is saved in this browser and can be shared with Copy link."/>
             ):(
               <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(compareSyms.length,4)},1fr)`,gap:10}}>
                 {compareSyms.map(sym=>{
@@ -16413,7 +16456,7 @@ export default function App(){
         {mainTab==='squeeze'&&(()=>{
           const stocks = scopedStocks
           return (
-          <div>
+          <div style={{padding:'0 0 20px'}}>
             {isMobile&&(
               <LastUpdatedBar
                 scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
@@ -16426,19 +16469,25 @@ export default function App(){
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
                 availableDates={availableDates} isMobile={isMobile} onOpenRefresh={refreshHistoryDates}/>
             </div>
+            <PageHeader
+              title="Squeeze & VCP"
+              accent={C.teal}
+              subtitle="Bollinger squeeze (volatility contraction) plus Minervini-style VCP — coiled setups and those just expanding."
+              tip="In Squeeze = still coiled. Fired = bands expanding with activity. Sort tables by RS and open charts from any row."
+            />
+            {stocks.length===0?(
+              <EmptyPanel icon="🌀" title="No scan data yet"
+                body="Squeeze needs the live universe. Open RS Rating so data loads, then return here."/>
+            ):(<>
             <div style={{background:C.card,border:`1px solid ${C.teal}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:15,color:C.teal,marginBottom:6}}>🌀 Squeeze Scanner</div>
-              <div style={{fontSize:12,color:C.muted,marginBottom:12}}>
-                Bollinger Band Squeeze (volatility contraction) + VCP (Volatility Contraction Pattern, Minervini style)
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8}}>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8}}>
                 {[
                   {l:'🔵 BB In Squeeze',v:stocks.filter(s=>s.squeeze?.inSqueeze).length,c:C.blue},
                   {l:'🟢 BB Fired',v:stocks.filter(s=>s.squeeze?.squeezeFired).length,c:C.green},
                   {l:'📐 VCP Forming',v:stocks.filter(s=>s.vcp?.isVCP).length,c:C.purple},
                   {l:'🚀 VCP Fired',v:stocks.filter(s=>s.vcp?.vcpFired).length,c:C.accent},
                 ].map(({l,v,c})=>(
-                  <div key={l} style={{background:C.bg,borderRadius:8,padding:'12px',textAlign:'center'}}>
+                  <div key={l} style={{background:C.bg,borderRadius:8,padding:'12px',textAlign:'center',border:`1px solid ${C.border}`}}>
                     <div style={{fontSize:24,fontWeight:900,color:c}}>{v}</div>
                     <div style={{fontSize:10,color:C.muted,marginTop:3}}>{l}</div>
                   </div>
@@ -16457,9 +16506,8 @@ export default function App(){
               {(()=>{
                 const inSqueeze = stocks.filter(s=>s.squeeze?.inSqueeze || s.vcp?.isVCP).sort((a,b)=>b.rs-a.rs)
                 if(inSqueeze.length===0) return(
-                  <div style={{textAlign:'center',padding:'30px 0',color:C.muted,fontSize:12}}>
-                    No stocks currently in squeeze
-                  </div>
+                  <EmptyPanel title="No stocks currently in squeeze"
+                    body="Coiled names come and go — check Fired below, or widen your index filter."/>
                 )
                 return(
                   <>
@@ -16482,11 +16530,8 @@ export default function App(){
               {(()=>{
                 const fired = stocks.filter(s=>s.squeeze?.squeezeFired || s.vcp?.vcpFired).sort((a,b)=>b.rs-a.rs)
                 if(fired.length===0) return(
-                  <div style={{textAlign:'center',padding:'40px 0',color:C.muted}}>
-                    <div style={{fontSize:36,marginBottom:10}}>🌀</div>
-                    <div style={{fontSize:13,fontWeight:700,color:C.text}}>No squeeze fires yet</div>
-                    <div style={{fontSize:11,marginTop:4}}>Check back after market activity</div>
-                  </div>
+                  <EmptyPanel icon="🌀" title="No squeeze fires yet"
+                    body="Fires show up when bands expand after a coil. Check back after the next scan cycle."/>
                 )
                 return(
                   <>
@@ -16497,6 +16542,7 @@ export default function App(){
                 )
               })()}
             </div>
+            </>)}
           </div>
           )
         })()}
@@ -16504,7 +16550,7 @@ export default function App(){
 
         {/* ══ 52WL ══ */}
         {mainTab==='52wl'&&(
-          <div>
+          <div style={{padding:'0 0 20px'}}>
             {isMobile&&(
               <LastUpdatedBar
                 scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
@@ -16518,16 +16564,25 @@ export default function App(){
                 availableDates={availableDates} isMobile={isMobile} onOpenRefresh={refreshHistoryDates}/>
             </div>
 
+            <PageHeader
+              title="52-Week Low Crossover"
+              accent={C.pink}
+              subtitle="Near a 52-week low, crossed back above EMA5, with PP-style volume — potential early turn candidates (not advice)."
+              tip="Full Signal Only narrows to the complete setup. Use PP filter and search to refine, then open the chart."
+            />
+
+            {stocks.length===0?(
+              <EmptyPanel icon="🎯" title="No scan data yet"
+                body="Open RS Rating so the universe loads, then return for 52WL signals."/>
+            ):(<>
             {displayed52WL.length>0&&<TVCopyPanel stocks={displayed52WL} label="52WL Crossover"/>}
             <div style={{background:C.card,border:`1px solid ${C.pink}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:15,color:C.pink,marginBottom:6}}>🎯 52-Week Low Crossover</div>
-              <div style={{fontSize:12,color:C.muted,marginBottom:12}}>Within 15% of 52W low · crossed 5-EMA · PP-style volume</div>
               <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                 {[{l:'Near 52WL',v:stocks.filter(s=>s.scanner52wl.near52wLow).length,c:C.yellow},
                   {l:'🎯 Full Signal',v:stocks.filter(s=>s.scanner52wl.isSignal).length,c:C.pink},
                   {l:'EMA5 ✅',v:stocks.filter(s=>s.scanner52wl.crossedAboveEMA5).length,c:C.green},
                   {l:'PP Vol ✅',v:stocks.filter(s=>s.scanner52wl.ppVolume).length,c:C.orange}].map(({l,v,c})=>(
-                  <div key={l} style={{flex:'1 1 80px',background:C.bg,borderRadius:8,padding:'10px 12px',textAlign:'center'}}>
+                  <div key={l} style={{flex:'1 1 80px',background:C.bg,borderRadius:8,padding:'10px 12px',textAlign:'center',border:`1px solid ${C.border}`}}>
                     <div style={{fontSize:20,fontWeight:800,color:c}}>{v}</div>
                     <div style={{fontSize:10,color:C.muted,marginTop:2}}>{l}</div>
                   </div>
@@ -16550,14 +16605,20 @@ export default function App(){
                 </div>
               </>
             )}
-            <BreakoutTable stocks={displayed52WL} isMobile={isMobile}
-              visibleRsCols={{...visibleRsCols,wl52:true}} onChartOpen={openChart}/>
+            {displayed52WL.length===0?(
+              <EmptyPanel icon="🎯" title="No 52WL matches right now"
+                body="Try turning off Full Signal Only, clear search, or widen the index filter."/>
+            ):(
+              <BreakoutTable stocks={displayed52WL} isMobile={isMobile}
+                visibleRsCols={{...visibleRsCols,wl52:true}} onChartOpen={openChart}/>
+            )}
+            </>)}
           </div>
         )}
 
         {/* ══ WEAK RS ══ */}
         {mainTab==='weak'&&(
-          <div>
+          <div style={{padding:'0 0 20px'}}>
             {isMobile&&(
               <LastUpdatedBar
                 scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
@@ -16567,10 +16628,19 @@ export default function App(){
               />
             )}
 
+            <PageHeader
+              title="Weak RS + Big Move"
+              accent={C.lime}
+              subtitle={`RS below 50 but price jumped more than +${weakThreshold}% today — catch-up or short-covering candidates to investigate.`}
+              tip="Raise the threshold to cut noise. Vol spike / PP badges highlight stronger interest. Always open the chart before acting."
+            />
+
+            {stocks.length===0?(
+              <EmptyPanel icon="🚨" title="No scan data yet"
+                body="Open RS Rating so the universe loads, then return for weak-RS movers."/>
+            ):(<>
             {displayedWeak.length>0&&<TVCopyPanel stocks={displayedWeak} label={`Weak RS > +${weakThreshold}%`}/>}
             <div style={{background:C.card,border:`1px solid ${C.lime}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{fontWeight:800,fontSize:15,color:C.lime,marginBottom:6}}>🚨 Weak RS + Big Move</div>
-              <div style={{fontSize:12,color:C.muted,marginBottom:12}}>RS &lt; 50 but moved more than +{weakThreshold}% today.</div>
               <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginBottom:12}}>
                 <span style={{fontSize:12,color:C.muted,fontWeight:600}}>Threshold:</span>
                 {[5,8,10,15].map(v=>(
@@ -16584,7 +16654,7 @@ export default function App(){
               <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                 {[{l:'Signals',v:displayedWeak.length,c:C.lime},{l:'Vol Spike',v:displayedWeak.filter(s=>s.weakRS.isVolSpike).length,c:C.orange},
                   {l:'PP Today',v:displayedWeak.filter(s=>s.pp.isPP).length,c:C.orange}].map(({l,v,c})=>(
-                  <div key={l} style={{flex:'1 1 80px',background:C.bg,borderRadius:8,padding:'10px 12px',textAlign:'center'}}>
+                  <div key={l} style={{flex:'1 1 80px',background:C.bg,borderRadius:8,padding:'10px 12px',textAlign:'center',border:`1px solid ${C.border}`}}>
                     <div style={{fontSize:20,fontWeight:800,color:c}}>{v}</div>
                     <div style={{fontSize:10,color:C.muted,marginTop:2}}>{l}</div>
                   </div>
@@ -16595,8 +16665,14 @@ export default function App(){
               <PPFilterBar ppFilter={ppFilterWeak} setPpFilter={setPpFilterWeak}
                 ppCount={weakBase.filter(s=>s.pp.isPP).length} total={displayedWeak.length}/>
             )}
-            <BreakoutTable stocks={displayedWeak} isMobile={isMobile}
-              visibleRsCols={{...visibleRsCols,weakrs:true}} onChartOpen={openChart}/>
+            {displayedWeak.length===0?(
+              <EmptyPanel icon="🚨" title="No weak-RS big movers right now"
+                body="Try a lower threshold, clear PP filters, or check again after a volatile session."/>
+            ):(
+              <BreakoutTable stocks={displayedWeak} isMobile={isMobile}
+                visibleRsCols={{...visibleRsCols,weakrs:true}} onChartOpen={openChart}/>
+            )}
+            </>)}
           </div>
         )}
 
@@ -17077,10 +17153,15 @@ export default function App(){
         {mainTab==='bestpicks'&&(
           <div>
             <div style={{marginBottom:14,display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10}}>
-              <div>
-                <div style={{fontWeight:800,fontSize:15,color:C.accent}}>🎯 AI Best Picks</div>
-                <div style={{fontSize:12,color:C.muted,marginTop:2}}>
+              <div style={{minWidth:0,flex:1}}>
+                <div style={{fontWeight:800,fontSize:15,color:C.accent}}>AI Best Picks</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:2,lineHeight:1.5}}>
                   Score top 10 (Stage&nbsp;2 · RS · Fund · Result) → AI recommends best 5. Refreshed hourly.
+                </div>
+                <div style={{marginTop:10,padding:'9px 12px',borderRadius:10,border:`1px solid ${C.border}`,
+                  background:C.card,fontSize:11.5,color:C.muted,lineHeight:1.55,maxWidth:720}}>
+                  <strong style={{color:C.text}}>How to use:</strong> Read the Why line, check SL/target as ATR references only,
+                  then open the chart. Track Record shows how past top-5 picks moved since pick day.
                 </div>
               </div>
               <button onClick={loadBestPicks} disabled={bestPicksLoading}
@@ -17321,10 +17402,15 @@ export default function App(){
         {mainTab==='announcements'&&(
           <div>
             <div style={{marginBottom:14,display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10}}>
-              <div>
-                <div style={{fontWeight:800,fontSize:15,color:C.accent}}>📢 Corporate Announcements</div>
-                <div style={{fontSize:12,color:C.muted,marginTop:2}}>
-                  Board meetings, results, and other filings across all tracked stocks — from NSE, near real-time
+              <div style={{minWidth:0,flex:1}}>
+                <div style={{fontWeight:800,fontSize:15,color:C.accent}}>Corporate Announcements</div>
+                <div style={{fontSize:12,color:C.muted,marginTop:2,lineHeight:1.5}}>
+                  Board meetings, results, and other filings across tracked stocks — from NSE, near real-time
+                </div>
+                <div style={{marginTop:10,padding:'9px 12px',borderRadius:10,border:`1px solid ${C.border}`,
+                  background:C.card,fontSize:11.5,color:C.muted,lineHeight:1.55,maxWidth:720}}>
+                  <strong style={{color:C.text}}>How to use:</strong> Filter by category, open AI catch-up for unread digests,
+                  and turn Alerts On for watchlist filings while the app is open. Tap a row for the chart / AI tab.
                 </div>
               </div>
               <button onClick={toggleAnnAlerts}
