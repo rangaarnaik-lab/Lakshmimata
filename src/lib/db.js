@@ -2,7 +2,7 @@
 // Called by App.jsx instead of running live scans in browser
 
 import { supabase } from './supabase'
-import { resolveIndustry, resolveSector } from '../data/industries'
+import { resolveIndustry, resolveSector, getCompanyName } from '../data/industries'
 import { enrichHistoryLeaderFlags } from './historyLeaders'
 
 /**
@@ -288,6 +288,7 @@ function transformStockRow(row) {
   const sector = resolveSector(row.sym, row.sector, industry) || row.sector || 'Other'
   return {
     sym:        row.sym,
+    name:       row.name || getCompanyName(row.sym) || null,
     rs:         row.rs || 0,
     rsTv:       row.rs_tv,        // TradingView / Lakshmi Mata Pine Script RS
     rsNifty50:  row.rs_nifty50,

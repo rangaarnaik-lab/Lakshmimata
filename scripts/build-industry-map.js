@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-/** Regenerate src/data/industry-map.json from all-stocks.csv (NSE Code → sector/industry). */
+/** Regenerate src/data/industry-map.json from all-stocks.csv
+ *  (NSE Code → {sector, industry, name}). */
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -23,15 +24,16 @@ function parseLine(line) {
   return out
 }
 
-const lines = fs.readFileSync(csvPath, 'utf8').trim().split('\n')
+const lines = fs.readFileSync(csvPath, 'utf8').trim().split(/\r?\n/)
 const map = {}
 for (const line of lines.slice(1)) {
   const cols = parseLine(line)
+  const name = (cols[0] || '').trim()
   const sym = (cols[2] || '').trim()
   if (!sym) continue
   const sector = (cols[4] || '').trim()
   const industry = (cols[5] || '').trim()
-  if (sector || industry) map[sym] = { sector, industry }
+  if (sector || industry || name) map[sym] = { sector, industry, name: name || undefined }
 }
 
 fs.writeFileSync(outPath, JSON.stringify(map))

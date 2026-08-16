@@ -89,6 +89,44 @@ export function lookupStaticIndustry(sym) {
   return INDUSTRY_MAP[key] || null
 }
 
+/** Company display name from static master (all-stocks.csv). */
+export function getCompanyName(sym) {
+  const n = lookupStaticIndustry(sym)?.name
+  return (n && String(n).trim()) || null
+}
+
+/** Case-insensitive match on ticker OR company name. */
+export function stockMatchesQuery(stock, query) {
+  const q = String(query || '').trim().toLowerCase()
+  if (!q) return true
+  const sym = String(stock?.sym || '').toLowerCase()
+  if (sym.includes(q)) return true
+  const name = String(stock?.name || getCompanyName(stock?.sym) || '').toLowerCase()
+  return !!(name && name.includes(q))
+}
+
+/**
+ * Ranked autocomplete: symbol prefix → name prefix → symbol substr → name substr.
+ * `query` may be mixed case (company names); matching is case-insensitive.
+ */
+export function rankStockSuggestions(stocks, query, { limit = 10, exclude = null } = {}) {
+  const q = String(query || '').trim().toLowerCase()
+  if (!q || q.length < 1) return []
+  const skip = exclude instanceof Set ? exclude : new Set(exclude || [])
+  const symPrefix = [], namePrefix = [], symSub = [], nameSub = []
+  for (const st of stocks || []) {
+    if (!st?.sym || skip.has(st.sym)) continue
+    const sym = String(st.sym).toLowerCase()
+    const name = String(st.name || getCompanyName(st.sym) || '').toLowerCase()
+    if (sym.startsWith(q)) symPrefix.push(st)
+    else if (name.startsWith(q)) namePrefix.push(st)
+    else if (sym.includes(q)) symSub.push(st)
+    else if (name.includes(q)) nameSub.push(st)
+    if (symPrefix.length >= limit) break
+  }
+  return [...symPrefix, ...namePrefix, ...symSub, ...nameSub].slice(0, limit)
+}
+
 /** Resolved industry for display + peer filters (never "Miscellaneous" when we know better). */
 export function resolveIndustry(sym, dbIndustry = null, dbSector = null) {
   const key = String(sym || '').trim().toUpperCase()

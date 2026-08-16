@@ -15,7 +15,7 @@ import {
   detect52WLCrossover, detectWeakRSBigMove, buildSectorRS
 } from './scanners/math'
 import { SECTOR_MAP, NIFTY50, MIDCAP, SMALLCAP, getSector } from './data/sectors'
-import { resolveIndustry, resolveSector, getPeerGroup, isJunkIndustry } from './data/industries'
+import { resolveIndustry, resolveSector, getPeerGroup, isJunkIndustry, getCompanyName, stockMatchesQuery, rankStockSuggestions } from './data/industries'
 import {
   calcSMASeries, findSwingPoints, computeSupportResistance,
   detectInsideBars, detectAccDistDays, detectVCPContractions, detectCupAndHandle,
@@ -1095,17 +1095,17 @@ function MergedSignalDots({s}){
     </div>
   )
 }
-// Parses a brokerage holdings export (Zerodha, Groww, Upstox, ICICI
-// Direct, Angel One, etc.) into {sym, qty, entryPrice} rows. Every
-// brokerage names its columns differently, so instead of requiring one
-// fixed template, this scores each column header against a keyword set
+// Parses a brokerage holdings export (Zerodha Console, Dhan, Groww,
+// Upstox, ICICI Direct, Angel One, etc.) into {sym, qty, entryPrice} rows.
+// Every brokerage names its columns differently, so instead of requiring
+// one fixed template, this scores each column header against a keyword set
 // per field and picks whichever header matches best — works across
 // exports without the person needing to reformat anything first.
-const SYMBOL_COL_HINTS = ['tradingsymbol','trading symbol','symbol','instrument','stock symbol','scrip']
-const NAME_COL_HINTS = ['company name','stock name','security name','name of company','company','name']
-const QTY_COL_HINTS = ['qty', 'quantity', 'net qty', 'shares', 'holding qty']
+const SYMBOL_COL_HINTS = ['tradingsymbol','trading symbol','symbol','instrument','stock symbol','scrip','security id','security']
+const NAME_COL_HINTS = ['company name','stock name','security name','name of company','company','name','isin name']
+const QTY_COL_HINTS = ['qty', 'quantity', 'net qty', 'shares', 'holding qty', 'available quantity', 'net quantity', 'free qty']
 const PRICE_COL_HINTS = ['avg. cost', 'avg cost', 'average price', 'avg price', 'average buy price',
-  'buy avg', 'avg. cost price', 'average cost', 'purchase price', 'buy price']
+  'buy avg', 'avg. cost price', 'average cost', 'purchase price', 'buy price', 'avg buy price', 'average']
 
 function bestColumnMatch(headers, hints){
   let best=null, bestScore=-1
@@ -1119,11 +1119,11 @@ function bestColumnMatch(headers, hints){
   return best
 }
 
-/** Prefer brokerage company name, then industry, then sector. */
+/** Prefer brokerage company name, then static master name, then industry/sector. */
 function portfolioDisplayName(holding, stock){
   const fromFile = (holding?.name || '').trim()
   if (fromFile && fromFile.toUpperCase() !== holding?.sym) return fromFile
-  return stock?.industry || stock?.sector || null
+  return stock?.name || getCompanyName(holding?.sym || stock?.sym) || stock?.industry || stock?.sector || null
 }
 
 function findIndexRow(indexData, names){
@@ -1296,7 +1296,7 @@ function parseBrokerageHoldingsFile(file){
           if(qtyCol && (qty==null || isNaN(qty))){ skipped.push(sym); continue }
           holdings.push({
             sym,
-            name: rawName && rawName.toUpperCase() !== sym ? rawName : null,
+            name: (rawName && rawName.toUpperCase() !== sym ? rawName : null) || getCompanyName(sym) || null,
             qty: (qty!=null && !isNaN(qty)) ? qty : null,
             entryPrice: (entryPrice!=null && !isNaN(entryPrice)) ? entryPrice : null,
           })
@@ -2208,24 +2208,11 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
   const fileRef=useRef()
   const {copy,copied}=useCopy()
 
-  // Autocomplete suggestions for the manual-add input, sourced from the
-  // full live stock universe (allKnownStocks) — previously this prop was
-  // passed in but never actually used, so this field was pure blind text
-  // entry with no way to browse/search what's trackable. Matches on the
-  // last comma/space-separated token being typed, so multi-symbol paste
-  // still works; prefix matches rank above substring matches.
-  const suggestQuery=manualSym.split(/[\s,;]+/).pop().toUpperCase().trim()
-  const suggestions=suggestQuery.length>=1?(()=>{
-    const already=new Set(editStocks)
-    const prefix=[],substr=[]
-    for(const st of allKnownStocks){
-      if(already.has(st.sym))continue
-      if(st.sym.startsWith(suggestQuery))prefix.push(st)
-      else if(st.sym.includes(suggestQuery))substr.push(st)
-      if(prefix.length>=8)break
-    }
-    return [...prefix,...substr].slice(0,8)
-  })():[]
+  // Autocomplete suggestions — match ticker OR company name (e.g. "reliance").
+  const suggestQuery=manualSym.split(/[\s,;]+/).pop().trim()
+  const suggestions=suggestQuery.length>=1
+    ? rankStockSuggestions(allKnownStocks, suggestQuery, {limit:8, exclude:editStocks})
+    : []
 
   const pickSuggestion=sym=>{
     const parts=manualSym.split(/[\s,;]+/).map(s=>s.trim().toUpperCase()).filter(Boolean)
@@ -2350,9 +2337,9 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
                   onFocus={()=>setShowSuggest(true)}
                   onBlur={()=>setTimeout(()=>setShowSuggest(false),150)}
                   onKeyDown={e=>e.key==='Enter'&&addManual()}
-                  placeholder="RELIANCE, TCS, INFY..."
+                  placeholder="Symbol or company — RELIANCE, TCS, Infosys…"
                   style={{flex:1,padding:'8px 12px',background:C.bg,border:`1px solid ${C.border}`,
-                    borderRadius:8,color:C.text,fontSize:13,outline:'none',fontFamily:'monospace'}}/>
+                    borderRadius:8,color:C.text,fontSize:13,outline:'none'}}/>
                 <button onClick={addManual}
                   style={{padding:'8px 14px',borderRadius:8,border:'none',cursor:'pointer',
                     background:C.accent,color:'#000',fontWeight:700,fontSize:13}}>Add</button>
@@ -2364,10 +2351,15 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
                   {suggestions.map(st=>(
                     <div key={st.sym} onMouseDown={()=>pickSuggestion(st.sym)}
                       style={{padding:'8px 12px',cursor:'pointer',display:'flex',
-                        justifyContent:'space-between',alignItems:'center',
+                        justifyContent:'space-between',alignItems:'center',gap:8,
                         borderBottom:`1px solid ${C.divider}`,fontSize:12}}>
-                      <span style={{fontWeight:700}}>{st.sym}</span>
-                      {st.sector&&<span style={{color:C.muted,fontSize:10}}>{st.sector}</span>}
+                      <span>
+                        <span style={{fontWeight:700}}>{st.sym}</span>
+                        {(st.name||getCompanyName(st.sym))&&(
+                          <span style={{color:C.muted,fontSize:11,marginLeft:8}}>{st.name||getCompanyName(st.sym)}</span>
+                        )}
+                      </span>
+                      {st.sector&&<span style={{color:C.muted,fontSize:10,flexShrink:0}}>{st.sector}</span>}
                     </div>
                   ))}
                 </div>
@@ -12408,7 +12400,7 @@ export default function App(){
   }),[stocks,sectorFilter,industryFilter])
 
   const rsBase=useMemo(()=>scopedStocks.filter(s=>{
-    if(!s.sym.toLowerCase().includes(search.toLowerCase()))return false
+    if(!stockMatchesQuery(s, search))return false
     if(s.rs<rsMin||s.rs>rsMax)return false
     if(mcapMin!==''&&(s.marketCap==null||s.marketCap<+mcapMin))return false
     if(mcapMax!==''&&(s.marketCap==null||s.marketCap>+mcapMax))return false
@@ -12597,10 +12589,10 @@ export default function App(){
     return { rows, hiddenCount: allRows.length - rows.length }
   },[stocks])
 
-  const wlBase=scopedStocks.filter(s=>s.scanner52wl.near52wLow&&s.sym.toLowerCase().includes(wlSearch.toLowerCase())&&(!wlSigOnly||s.scanner52wl.isSignal)).sort((a,b)=>a.scanner52wl.pctFrom52wLow-b.scanner52wl.pctFrom52wLow)
+  const wlBase=scopedStocks.filter(s=>s.scanner52wl.near52wLow&&stockMatchesQuery(s,wlSearch)&&(!wlSigOnly||s.scanner52wl.isSignal)).sort((a,b)=>a.scanner52wl.pctFrom52wLow-b.scanner52wl.pctFrom52wLow)
   const displayed52WL=applyPP(wlBase,ppFilter52WL)
 
-  const weakBase=scopedStocks.filter(s=>s.weakRS.chg1d>=weakThreshold&&s.rs<50&&s.sym.toLowerCase().includes(weakSearch.toLowerCase())&&(!weakSigOnly||s.weakRS.isSignal)).sort((a,b)=>b.weakRS.chg1d-a.weakRS.chg1d)
+  const weakBase=scopedStocks.filter(s=>s.weakRS.chg1d>=weakThreshold&&s.rs<50&&stockMatchesQuery(s,weakSearch)&&(!weakSigOnly||s.weakRS.isSignal)).sort((a,b)=>b.weakRS.chg1d-a.weakRS.chg1d)
   const displayedWeak=applyPP(weakBase,ppFilterWeak)
 
   const tabs=[['rs','📊','RS Rating'],['market','🌐','Market'],['squeeze','🌀','Squeeze'],['patterns','📐','Patterns'],['52wl','🎯','52WL'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
@@ -13409,7 +13401,7 @@ export default function App(){
             {stocks.length>0&&(
               <div style={{marginBottom:12}}>
                 <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}>
-                  <input placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)}
+                  <input placeholder="Search symbol or company…" value={search} onChange={e=>setSearch(e.target.value)}
                     style={{flex:1,minWidth:140,padding:'8px 12px',background:C.card,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:13,outline:'none'}}/>
                   <button onClick={()=>{setShowFilters(v=>!v);setShowColumns(false)}}
                     style={{padding:'8px 14px',borderRadius:8,border:`1px solid ${showFilters?C.accent:C.border}`,
@@ -15294,46 +15286,51 @@ export default function App(){
                   Technical structure flags only · not buy/sell advice · synced when signed in
                 </div>
               </div>
-              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                <label style={{padding:'7px 14px',borderRadius:7,border:`1px solid ${C.accent}`,
-                  background:C.accent+'18',color:C.accent,fontWeight:700,fontSize:12,cursor:'pointer'}}>
-                  📤 Upload Holdings
-                  <input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
-                    onChange={async e=>{
-                      const file=e.target.files?.[0]
-                      e.target.value='' // allow re-selecting the same file later
-                      if(!file) return
-                      setPortfolioUploadStatus({type:'loading',message:'Reading file…'})
-                      try{
-                        const {holdings,skipped}=await parseBrokerageHoldingsFile(file)
-                        if(holdings.length===0){
-                          setPortfolioUploadStatus({type:'error',
-                            message:'No valid holdings found in that file — check it has a symbol column with recognizable data.'})
-                          return
-                        }
-                        setPortfolioHoldings(prev=>{
-                          const bySym=new Map(prev.map(h=>[h.sym,h]))
-                          for(const row of holdings){
-                            const existing=bySym.get(row.sym)
-                            bySym.set(row.sym,{
-                              sym:row.sym,
-                              name: row.name || existing?.name || null,
-                              addedAt:existing?.addedAt||new Date().toISOString(),
-                              entryPrice: row.entryPrice ?? existing?.entryPrice ?? null,
-                              qty: row.qty ?? existing?.qty ?? null,
-                              journal: existing?.journal||[],
-                            })
+              <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'flex-start'}}>
+                <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'flex-end'}}>
+                  <label style={{padding:'7px 14px',borderRadius:7,border:`1px solid ${C.accent}`,
+                    background:C.accent+'18',color:C.accent,fontWeight:700,fontSize:12,cursor:'pointer'}}>
+                    📤 Import from brokerage
+                    <input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
+                      onChange={async e=>{
+                        const file=e.target.files?.[0]
+                        e.target.value='' // allow re-selecting the same file later
+                        if(!file) return
+                        setPortfolioUploadStatus({type:'loading',message:'Reading file…'})
+                        try{
+                          const {holdings,skipped}=await parseBrokerageHoldingsFile(file)
+                          if(holdings.length===0){
+                            setPortfolioUploadStatus({type:'error',
+                              message:'No valid holdings found — need a Symbol / Trading Symbol column (Zerodha, Dhan, Groww, Upstox, Angel…).'})
+                            return
                           }
-                          return [...bySym.values()]
-                        })
-                        setPortfolioUploadStatus({type:'success',
-                          message:`Imported ${holdings.length} holding${holdings.length===1?'':'s'} into “${activePortfolio?.name||'Portfolio'}”`
-                            + (skipped.length?` — ${skipped.length} row(s) skipped (missing quantity): ${skipped.slice(0,5).join(', ')}${skipped.length>5?'…':''}`:'')})
-                      }catch(err){
-                        setPortfolioUploadStatus({type:'error',message:err.message||'Could not parse that file'})
-                      }
-                    }}/>
-                </label>
+                          setPortfolioHoldings(prev=>{
+                            const bySym=new Map(prev.map(h=>[h.sym,h]))
+                            for(const row of holdings){
+                              const existing=bySym.get(row.sym)
+                              bySym.set(row.sym,{
+                                sym:row.sym,
+                                name: row.name || existing?.name || getCompanyName(row.sym) || null,
+                                addedAt:existing?.addedAt||new Date().toISOString(),
+                                entryPrice: row.entryPrice ?? existing?.entryPrice ?? null,
+                                qty: row.qty ?? existing?.qty ?? null,
+                                journal: existing?.journal||[],
+                              })
+                            }
+                            return [...bySym.values()]
+                          })
+                          setPortfolioUploadStatus({type:'success',
+                            message:`Imported ${holdings.length} holding${holdings.length===1?'':'s'} into “${activePortfolio?.name||'Portfolio'}”`
+                              + (skipped.length?` — ${skipped.length} row(s) skipped (missing quantity): ${skipped.slice(0,5).join(', ')}${skipped.length>5?'…':''}`:'')})
+                        }catch(err){
+                          setPortfolioUploadStatus({type:'error',message:err.message||'Could not parse that file'})
+                        }
+                      }}/>
+                  </label>
+                  <div style={{fontSize:9,color:C.muted,maxWidth:220,textAlign:'right',lineHeight:1.35}}>
+                    Upload holdings CSV/XLSX from <b style={{color:C.text}}>Zerodha</b>, <b style={{color:C.text}}>Dhan</b>, Groww, Upstox, Angel One…
+                  </div>
+                </div>
                 <button onClick={()=>{
                   setPortfolioAddOpen(v=>!v)
                   setPortfolioAddSuggest(false)
@@ -15405,27 +15402,21 @@ export default function App(){
             </div>
 
             {portfolioAddOpen&&(()=>{
-              const q=portfolioAddSym.toUpperCase().trim()
+              const q=portfolioAddSym.trim()
               const held=new Set(portfolioHoldings.map(h=>h.sym))
-              const prefix=[],substr=[]
-              if(q.length>=1){
-                for(const st of stocks){
-                  if(!st?.sym||held.has(st.sym))continue
-                  if(st.sym.startsWith(q))prefix.push(st)
-                  else if(st.sym.includes(q))substr.push(st)
-                  if(prefix.length>=10)break
-                }
-              }
-              const suggestions=[...prefix,...substr].slice(0,10)
+              const suggestions=q.length>=1
+                ? rankStockSuggestions(stocks, q, {limit:10, exclude:held})
+                : []
               const commitAdd=(pickedSym)=>{
                 const sym=(pickedSym||portfolioAddSym).toUpperCase().trim()
                 if(!sym)return
                 const entryPrice=portfolioAddPrice!==''&&!isNaN(+portfolioAddPrice)?+portfolioAddPrice:null
                 const qty=portfolioAddQty!==''&&!isNaN(+portfolioAddQty)?+portfolioAddQty:null
                 const note=(portfolioAddNote||'').trim()
+                const known=stocks.find(s=>s.sym===sym)
                 setPortfolioHoldings(h=>[...h.filter(x=>x.sym!==sym),{
                   sym,
-                  name: stocks.find(s=>s.sym===sym)?.name||null,
+                  name: known?.name || getCompanyName(sym) || null,
                   addedAt:new Date().toISOString(),
                   entryPrice,qty,
                   journal:note?[{ts:new Date().toISOString(),note}]:[],
@@ -15460,9 +15451,9 @@ export default function App(){
                             setPortfolioAddOpen(false)
                           }
                         }}
-                        placeholder="Type symbol — e.g. RELIANCE, GRSE…"
+                        placeholder="Symbol or company — RELIANCE, Infosys…"
                         style={{width:'100%',padding:'8px 12px',background:C.bg,border:`1px solid ${C.border}`,
-                          borderRadius:7,color:C.text,fontSize:13,outline:'none',fontFamily:'monospace',
+                          borderRadius:7,color:C.text,fontSize:13,outline:'none',
                           boxSizing:'border-box'}}
                       />
                       {portfolioAddSuggest&&suggestions.length>0&&(
@@ -15475,9 +15466,16 @@ export default function App(){
                               style={{padding:'8px 12px',cursor:'pointer',display:'flex',
                                 justifyContent:'space-between',alignItems:'center',gap:10,
                                 borderBottom:`1px solid ${C.divider}`,fontSize:12}}>
-                              <span style={{fontWeight:700,color:C.accent}}>{st.sym}</span>
+                              <span>
+                                <span style={{fontWeight:700,color:C.accent}}>{st.sym}</span>
+                                {(st.name||getCompanyName(st.sym))&&(
+                                  <span style={{color:C.muted,fontSize:11,marginLeft:8}}>
+                                    {st.name||getCompanyName(st.sym)}
+                                  </span>
+                                )}
+                              </span>
                               <span style={{color:C.muted,fontSize:10,textAlign:'right',
-                                overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'55%'}}>
+                                overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'40%'}}>
                                 {st.sector||st.industry||''}
                               </span>
                             </div>
@@ -15488,7 +15486,7 @@ export default function App(){
                         <div style={{position:'absolute',top:'100%',left:0,right:0,marginTop:4,zIndex:30,
                           background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
                           padding:'10px 12px',fontSize:11,color:C.muted}}>
-                          No matching symbols
+                          No matching symbols or company names
                         </div>
                       )}
                     </div>
