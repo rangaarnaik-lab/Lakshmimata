@@ -3,6 +3,41 @@ import { supabase } from '../lib/supabase'
 import { SUBSCRIPTION_PLANS, PLAN_FEATURES, periodEndForCycle } from '../lib/plans'
 import { loadRazorpayScript, paymentsEnabled, razorpayKeyId } from '../lib/razorpay'
 
+const PAYMENT_FAQ = [
+  {
+    q: 'What do I get after paying?',
+    a: 'Full terminal access for the plan period: live RS ratings, volume & pattern scanners, market breadth / FII–DII / rotation, results–PPT–concall AI digests, watchlists, portfolio import, and in-app alerts — same product as during the trial.',
+  },
+  {
+    q: 'Which plan should I choose?',
+    a: 'Monthly (₹699) if you want to try paid access short-term. Quarterly (₹1,500) saves ~28% vs monthly. Yearly (₹5,000) is the best value (~₹417/mo). You can pick any plan each time you renew.',
+  },
+  {
+    q: 'How does payment work?',
+    a: 'Checkout runs through Razorpay (UPI, cards, netbanking). Amounts are in INR. After a successful payment, your account is marked active for the selected plan length (30 / 90 / 365 days from payment).',
+  },
+  {
+    q: 'Is GST included?',
+    a: 'Prices shown are the amount charged at checkout in INR. If GST invoicing is required for your use, email us after payment with your GSTIN and we will share an invoice where applicable.',
+  },
+  {
+    q: 'Can I cancel or get a refund?',
+    a: 'Access lasts until the current period end. There is no auto-renewal until we enable renewals in Settings — you won’t be charged again unless you pay again. Refunds are case-by-case within a few days of purchase if access was unused; write to us with your payment id.',
+  },
+  {
+    q: 'What if payment succeeds but the app still says trial ended?',
+    a: 'Refresh the page or sign out and back in. If it still blocks you, email support with your Razorpay payment id and registered email — we can activate the plan manually.',
+  },
+  {
+    q: 'Is this investment advice?',
+    a: 'No. Lakshmimata is an educational market-data and screening terminal. Outputs are algorithmic and for research only — not SEBI-registered investment advice. Do your own research before trading.',
+  },
+  {
+    q: 'Who do I contact?',
+    a: 'Use the in-app Feedback tab after sign-in, or email the address listed on the landing / Settings page. Include your account email and Razorpay payment id for billing issues.',
+  },
+]
+
 /**
  * Checkout / paywall — plan picker + Razorpay when VITE_RAZORPAY_KEY_ID is set.
  * Without a key, shows plans and a contact path (payments not live yet).
@@ -24,6 +59,7 @@ export default function PaymentPage({
   const [paying, setPaying] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
+  const [openFaq, setOpenFaq] = useState(0)
   const live = paymentsEnabled()
   const plan = useMemo(
     () => SUBSCRIPTION_PLANS.find(p => p.cycle === selectedCycle) || SUBSCRIPTION_PLANS[2],
@@ -271,6 +307,36 @@ export default function PaymentPage({
             <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.5, textAlign: 'center' }}>
               UPI · Cards · Netbanking via Razorpay · Prices in INR · For education only — not investment advice
             </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 36, maxWidth: 880 }}>
+          <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6 }}>FAQ</div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 14, lineHeight: 1.5 }}>
+            Common questions before you pay. Tap a row to expand.
+          </div>
+          <div style={{ border: `1px solid ${C.border}`, borderRadius: 14, overflow: 'hidden', background: C.card }}>
+            {PAYMENT_FAQ.map((item, i) => {
+              const open = openFaq === i
+              return (
+                <div key={item.q} style={{ borderBottom: i < PAYMENT_FAQ.length - 1 ? `1px solid ${C.border}` : 'none' }}>
+                  <button type="button" onClick={() => setOpenFaq(open ? -1 : i)}
+                    aria-expanded={open}
+                    style={{ width: '100%', textAlign: 'left', padding: '14px 16px', border: 'none',
+                      background: open ? C.accent + '10' : 'transparent', color: C.text, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.4 }}>{item.q}</span>
+                    <span style={{ color: C.muted, fontSize: 14, flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none',
+                      transition: 'transform 0.15s' }}>▾</span>
+                  </button>
+                  {open && (
+                    <div style={{ padding: '0 16px 14px', fontSize: 12.5, color: C.muted, lineHeight: 1.65 }}>
+                      {item.a}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
 
