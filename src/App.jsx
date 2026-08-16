@@ -440,6 +440,7 @@ const SEC_COLUMN_TOOLTIPS = {
   rank: "This sector's current rank vs all other sectors, by average RS.",
   avgRS: 'Average Relative Strength (1-99) across every stock in this sector — the core leadership signal.',
   count: 'How many stocks are tracked in this sector.',
+  results: 'Latest quarterly result quality among stocks in this sector: Excellent / Good / Weak (from financial results). Neutral & unrated are omitted from the counts.',
   ppCount: "Stocks in this sector showing a Pocket Pivot today — early accumulation, real-time.",
   improving: "Count of this sector's stocks whose RS trend is currently improving, not just high.",
   advancesD: '% of this sector\'s stocks that are up today.',
@@ -11735,6 +11736,8 @@ export default function App(){
       || resultRatingFiltersAnn.length>0
       || mainTab==='rs'
       || mainTab==='patterns'
+      || mainTab==='earnings'
+      || (mainTab==='market' && marketSubTab==='sectors')
       || (mainTab==='announcements' && announcementsCategory==='results')
     if(!needRatings || resultRatingsLoadedRef.current) return
     let cancelled=false
@@ -11750,7 +11753,7 @@ export default function App(){
       resultRatingsLoadedRef.current=true
     }).finally(()=>{ if(!cancelled) setResultRatingsLoading(false) })
     return()=>{cancelled=true}
-  },[presetFilter, resultRatingFilters, resultRatingFiltersAnn, mainTab, announcementsCategory])
+  },[presetFilter, resultRatingFilters, resultRatingFiltersAnn, mainTab, announcementsCategory, marketSubTab])
   const ANNOUNCEMENTS_PAGE_SIZE=50
   useEffect(()=>{
     if(mainTab!=='announcements') return
@@ -14544,16 +14547,17 @@ export default function App(){
                       overflowY: String(expandedIndex||'').startsWith('sector:') ? 'visible' : 'auto',
                       maxHeight: String(expandedIndex||'').startsWith('sector:') ? 'none' : 520,
                       border:`1px solid ${C.border}`,borderRadius:12}}>
-                      <div style={{minWidth:760}}>
+                      <div style={{minWidth:880}}>
                         <div style={{display:'grid',
-                          gridTemplateColumns:'170px 70px 60px 60px 70px 70px 90px 90px 90px',
+                          gridTemplateColumns:'170px 70px 60px 55px 120px 70px 70px 90px 90px 90px',
                           gap:4,padding:'10px 12px',background:C.bg,
                           borderBottom:`1px solid ${C.border}`,position:'sticky',top:0,zIndex:1}}>
                           {[['Sector','sector'],['Rank','rank'],['Avg RS','avgRS'],['Stocks','count'],
+                            ['Results','resultsEx'],
                             ['PP Today','ppCount'],['Improving','improving'],
                             ['Adv 1D','advancesD'],['Adv 1W','advancesW'],['Adv 1M','advancesM']].map(([h,key],hi)=>(
                             <div key={h} onClick={()=>setSecSort(s=>({key,dir:s.key===key?-s.dir:-1}))}
-                              title={SEC_COLUMN_TOOLTIPS[key]}
+                              title={SEC_COLUMN_TOOLTIPS[key==='resultsEx'?'results':key]}
                               style={{fontSize:10,fontWeight:700,cursor:'pointer',userSelect:'none',
                                 color:secSort.key===key?C.accent:C.muted,textTransform:'uppercase',
                                 ...(hi===0?{position:'sticky',left:0,background:C.bg,zIndex:2,paddingRight:8}:{})}}>
@@ -14562,15 +14566,33 @@ export default function App(){
                           ))}
                         </div>
                         {(()=>{
-                          const sortVal = x => secSort.key==='sector'?(x.sector||''):(x[secSort.key]??-Infinity)
+                          const resultCountsFor = (sec)=>{
+                            const members = getSectorMemberStocks(sec.sector, stocks, sec)
+                            let excellent=0, good=0, weak=0
+                            for(const s of members){
+                              const r = resultRatingsMap[String(s.sym||'').toUpperCase()]
+                              if(r==='Excellent') excellent++
+                              else if(r==='Good') good++
+                              else if(r==='Weak') weak++
+                            }
+                            return {excellent, good, weak, resultsEx:excellent, resultsGood:good, resultsWeak:weak}
+                          }
+                          const sortVal = x => {
+                            if(secSort.key==='sector') return x.sector||''
+                            if(secSort.key==='resultsEx'||secSort.key==='resultsGood'||secSort.key==='resultsWeak'){
+                              const c=resultCountsFor(x)
+                              return c[secSort.key]??0
+                            }
+                            return x[secSort.key]??-Infinity
+                          }
                           const dir = secSort.key==='rank' ? -secSort.dir : secSort.dir
                           return [...sectorData].sort((a,b)=>{
                             const av=sortVal(a), bv=sortVal(b)
                             return (typeof av==='string' ? av.localeCompare(bv) : av-bv) * dir
-                          })
-                        })().map((sec,i)=>{
+                          }).map((sec,i)=>{
                           const isExp = expandedIndex==='sector:'+sec.sector
                           const cellStyle = {display:'flex',flexDirection:'column',justifyContent:'center'}
+                          const rc = resultCountsFor(sec)
                           const advCell = (val)=>(
                             <div style={cellStyle}>
                               <div style={{fontWeight:700,fontSize:11,color:val!=null?(val>=50?C.green:C.red):C.muted}}>
@@ -14597,7 +14619,7 @@ export default function App(){
                                   }
                                 }}
                                 style={{display:'grid',
-                                gridTemplateColumns:'170px 70px 60px 60px 70px 70px 90px 90px 90px',
+                                gridTemplateColumns:'170px 70px 60px 55px 120px 70px 70px 90px 90px 90px',
                                 gap:4,padding:'10px 12px',alignItems:'center',cursor:'pointer',
                                 background:isExp?C.active:(i%2===0?'transparent':C.bg+'55'),
                                 borderBottom:`1px solid ${C.border}33`}}>
@@ -14618,6 +14640,19 @@ export default function App(){
                                 </div>
                                 <div style={cellStyle}>
                                   <div style={{fontSize:11,color:C.muted}}>{sec.count}</div>
+                                </div>
+                                <div style={cellStyle} title={`Excellent ${rc.excellent} · Good ${rc.good} · Weak ${rc.weak}`}>
+                                  {resultRatingsLoading&&Object.keys(resultRatingsMap).length===0?(
+                                    <div style={{fontSize:10,color:C.muted}}>—</div>
+                                  ):(rc.excellent+rc.good+rc.weak)===0?(
+                                    <div style={{fontSize:10,color:C.muted}}>—</div>
+                                  ):(
+                                    <div style={{display:'flex',flexWrap:'wrap',gap:4,alignItems:'center',fontSize:10,fontWeight:700,lineHeight:1.25}}>
+                                      <span style={{color:C.green}}>Ex {rc.excellent}</span>
+                                      <span style={{color:'#7dd3a8'}}>Gd {rc.good}</span>
+                                      <span style={{color:C.red}}>Wk {rc.weak}</span>
+                                    </div>
+                                  )}
                                 </div>
                                 <div style={cellStyle}>
                                   <div style={{fontSize:11,color:sec.ppCount>0?C.orange:C.muted,fontWeight:700}}>
@@ -14668,6 +14703,13 @@ export default function App(){
                                     )}
                                     <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8,textTransform:'uppercase'}}>
                                       {sec.sector} stocks ({filteredSecStocks.length}{filteredSecStocks.length!==secStocks.length?` of ${secStocks.length}`:''})
+                                      {(rc.excellent+rc.good+rc.weak)>0&&(
+                                        <span style={{marginLeft:8,fontWeight:600,textTransform:'none'}}>
+                                          · Results <span style={{color:C.green}}>Ex {rc.excellent}</span>
+                                          {' / '}<span style={{color:'#7dd3a8'}}>Good {rc.good}</span>
+                                          {' / '}<span style={{color:C.red}}>Weak {rc.weak}</span>
+                                        </span>
+                                      )}
                                     </div>
                                     {secStocks.length===0?(
                                       <div style={{fontSize:12,color:C.muted,padding:'8px 0'}}>
@@ -14715,7 +14757,8 @@ export default function App(){
                               })()}
                             </div>
                           )
-                        })}
+                        })
+                        })()}
                       </div>
                     </div>
                   </>
