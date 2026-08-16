@@ -8885,7 +8885,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
   const [usageStats,setUsageStats]=useState(null) // {uniqueUsers, dailyTrend} | null while loading
   const [publicFeedback,setPublicFeedback]=useState([])
   const [feedbackStats,setFeedbackStats]=useState(null)
-  const slideCount=3
+  const slideCount=5
   useEffect(()=>{
     if(paused) return
     const t=setInterval(()=>setSlide(s=>(s+1)%slideCount),4200)
@@ -8917,6 +8917,22 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
     </div>
   )
   const rulesLine={borderBottom:`1px solid ${C.divider}`}
+  const productModules=[
+    {icon:'📊', title:'RS Rating', desc:'Every NSE stock ranked 1–99 vs market and peers — live through the session, not a stale EOD print.'},
+    {icon:'🌐', title:'Market pulse', desc:'Index dashboard, breadth (advancers / EMA9·21·50), FII–DII flows, and sector/index rotation in one place.'},
+    {icon:'🔥', title:'Volume & entries', desc:'Pocket Pivot, HY/HT, IBV, Bull Snort, plus Vol→EMA pullbacks to EMA5 / 9 / 21 / 50 after climax volume.'},
+    {icon:'📐', title:'Patterns & squeezes', desc:'R1 breaks, cup & handle, Guppy cross, Stage 2 new, BB squeeze, VCP contractions, and 52WL crossovers.'},
+    {icon:'📢', title:'Announcements & AI', desc:'NSE filings, results, PPT & concall summaries, result / fund ratings, PEAD & CANSLIM screens, AI Best Picks.'},
+    {icon:'💼', title:'Portfolio & lists', desc:'Multi-watchlists, brokerage CSV import (Zerodha, Dhan, etc.), stock compare, company-name search, and alerts.'},
+  ]
+  const howItWorks=[
+    ['I.','Relative Strength (RS-TV)','Every stock ranked 1–99 against the broader market and its own peer group, recalculated through the trading session — not a static end-of-day number.'],
+    ['II.','Volume conviction','Pocket Pivots, HY/HT surges, IBV, Bull Snort — then Vol→EMA when price pulls back near EMA5/9/21/50 after that climax.'],
+    ['III.','Structure & breakouts','Resistance breaks, cup-and-handle, Guppy crosses, Stage 2 entries, squeezes and VCP — flagged the day they happen.'],
+    ['IV.','Market & sector context','Index tape, market breadth, FII–DII, and sector/index rotation so you know if a stock is leading or just riding a theme.'],
+    ['V.','Filings & fundamentals AI','Results, PPT and concall digests with ratings, PEAD / CANSLIM filters, emerging themes, and AI Best Picks.'],
+    ['VI.','Your lists, your book','Watchlists, portfolio tracker with brokerage import, compare side-by-side, and alerts — search by symbol or company name.'],
+  ]
 
   return(
     <div style={{background:C.bg,color:C.text,fontFamily:"'Inter',sans-serif",lineHeight:1.55,minHeight:'100vh'}}>
@@ -8953,16 +8969,16 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
 
         {/* Hero */}
         <section style={{padding:'76px 0 52px',textAlign:'center'}}>
-          {smallcaps('An NSE Relative-Strength Scanner',true)}
+          {smallcaps('NSE Relative-Strength & Signal Terminal',true)}
           <h1 style={{...serif,fontWeight:600,fontSize:'clamp(34px,4.8vw,56px)',lineHeight:1.14,
             maxWidth:800,margin:'0 auto',color:'#fff'}}>
             See which stocks are<br/>
             <em style={{color:goldSoft,fontStyle:'italic'}}>gathering strength</em><br/>
             before the crowd does.
           </h1>
-          <p style={{maxWidth:540,margin:'24px auto 0',fontSize:16,color:'#aab0c0',lineHeight:1.7}}>
-            A daily, systematic read on relative strength, volume conviction, and breakout structure
-            across the NSE universe — for traders who would rather scan the whole market than one chart at a time.
+          <p style={{maxWidth:560,margin:'24px auto 0',fontSize:16,color:'#aab0c0',lineHeight:1.7}}>
+            Live RS rankings, volume climaxes, EMA pullback entries, breakouts, squeezes, market breadth,
+            filings &amp; AI digests, portfolios and watchlists — across 2,300+ NSE stocks in one terminal.
           </p>
           <div style={{marginTop:32}}>
             <button onClick={onEnroll} style={{background:gold,color:'#0a0d12',padding:'14px 32px',
@@ -8978,7 +8994,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
             </div>
           </div>
           <p style={{fontSize:11.5,color:C.muted,...mono,letterSpacing:'0.03em',marginTop:14}}>
-            2,380+ NSE STOCKS TRACKED · UPDATED THROUGH THE SESSION
+            2,380+ NSE STOCKS · LIVE SCAN · FILINGS &amp; AI · PORTFOLIO
           </p>
           {usageStats&&usageStats.uniqueUsers!=null&&(
             <div style={{marginTop:18}}>
@@ -9032,7 +9048,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
               borderBottom:`1px solid ${C.divider}`,background:C.sidebar}}>
               <span style={{...mono,fontSize:11.5,color:C.muted,letterSpacing:'0.04em'}}>● LIVE PREVIEW — SAMPLE DATA</span>
               <div style={{display:'flex',gap:5}}>
-                {[0,1,2].map(i=><div key={i} style={{width:7,height:7,borderRadius:'50%',background:C.border}}/>)}
+                {Array.from({length:slideCount}).map((_,i)=><div key={i} style={{width:7,height:7,borderRadius:'50%',background:C.border}}/>)}
               </div>
             </div>
             <div style={{padding:'22px 24px 26px',minHeight:280}}>
@@ -9053,8 +9069,8 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
                       {[
                         ['LODHA','Realty','99',C.green,badge(C.orange+'26',C.orange,'🔥PP'),'+3.4%'],
                         ['KIRLOSENG','Engineering','98',C.green,badge(C.blue+'26',C.blue,'📊HY'),'+2.1%'],
-                        ['IPCALAB','Pharma','99',C.green,badge(C.green+'26',C.green,'⚡EMA9'),'+1.8%'],
-                        ['GODREJPROP','Realty','99',C.green,badge(C.yellow+'26',C.yellow,'☕Cup'),'+0.9%'],
+                        ['IPCALAB','Pharma','99',C.green,badge(C.green+'26',C.green,'⚡EMA5'),'+1.8%'],
+                        ['GODREJPROP','Realty','99',C.green,badge(C.accent+'26',C.accent,'🔥→⚡'),'+0.9%'],
                         ['GREAVESCOT','Engineering','95',C.accent,badge(C.purple+'26',C.purple,'🚀HT'),'+1.2%'],
                       ].map(([sym,sec,rs,rsColor2,bdg,chg])=>(
                         <tr key={sym}>
@@ -9075,8 +9091,40 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
               {slide===1 && (
                 <div>
                   <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:16}}>
+                    <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>Vol→EMA · Entries</h4>
+                    <span style={{fontSize:11,color:C.muted,...mono}}>HY/HT/IBV then pullback near EMA5/9/21/50</span>
+                  </div>
+                  <table style={{width:'100%',borderCollapse:'collapse'}}>
+                    <thead><tr>
+                      {['Symbol','Climax','Near EMA','RS','Chg'].map(h=>(
+                        <th key={h} style={{textAlign:'left',padding:'8px 10px',...mono,fontSize:9.5,
+                          letterSpacing:'0.06em',textTransform:'uppercase',color:C.muted,...rulesLine,fontWeight:400}}>{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody style={mono}>
+                      {[
+                        ['TITAN',badge(C.pink+'26',C.pink,'📊HY'),'EMA9 · −1.2%','94','+0.6%'],
+                        ['PERSISTENT',badge(C.orange+'26',C.orange,'🚀HT'),'EMA5 · +0.8%','91','−0.4%'],
+                        ['DIXON',badge(C.blue+'26',C.blue,'🏛️IBV'),'EMA21 · −2.1%','88','+1.1%'],
+                        ['POLYCAB',badge(C.accent+'26',C.accent,'🔥→⚡'),'EMA50 · +1.4%','96','+0.3%'],
+                      ].map(([sym,bdg,detail,rs,chg])=>(
+                        <tr key={sym}>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{sym}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{bdg}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{detail}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{rs}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine,color:chg.startsWith('+')?C.green:C.red}}>{chg}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {slide===2 && (
+                <div>
+                  <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:16}}>
                     <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>Patterns · Breakouts</h4>
-                    <span style={{fontSize:11,color:C.muted,...mono}}>HY/HT, resistance, cup &amp; handle, Stage 2</span>
+                    <span style={{fontSize:11,color:C.muted,...mono}}>R1, cup, Guppy, Stage 2, squeeze &amp; VCP</span>
                   </div>
                   <table style={{width:'100%',borderCollapse:'collapse'}}>
                     <thead><tr>
@@ -9091,6 +9139,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
                         ['THERMAX',badge(C.yellow+'26',C.yellow,'☕Cup'),'Depth 21%','84','+2.4%'],
                         ['GRINDWELL',badge(C.green+'26',C.green,'🐠Guppy'),'EMA9 crossed above EMA50','86','+1.7%'],
                         ['DLF',badge(C.teal+'26',C.teal,'🏛️IBV'),'2× vol, DCR 81%','92','+2.9%'],
+                        ['BHEL',badge(C.purple+'26',C.purple,'🌀VCP 3T'),'3 contractions, fired','81','+1.5%'],
                       ].map(([sym,bdg,detail,rs,chg])=>(
                         <tr key={sym}>
                           <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{sym}</td>
@@ -9104,7 +9153,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
                   </table>
                 </div>
               )}
-              {slide===2 && (
+              {slide===3 && (
                 <div>
                   <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:16}}>
                     <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>Sector Rotation</h4>
@@ -9120,9 +9169,10 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
                     <tbody style={mono}>
                       {[
                         ['Realty','#1 ▲',92,C.green,8],
-                        ['Consumption','#2',99,C.green,6],
+                        ['IT','#2 ▲',89,C.green,14],
                         ['Pharma','#3',94,C.green,12],
                         ['Private Bank','#4 ▼',78,C.accent,11],
+                        ['Auto','#5',71,C.accent,9],
                       ].map(([sec,rank,rs,barColor,n])=>(
                         <tr key={sec}>
                           <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{sec}</td>
@@ -9140,9 +9190,41 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
                   </table>
                 </div>
               )}
+              {slide===4 && (
+                <div>
+                  <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:16}}>
+                    <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>Filings · AI digests</h4>
+                    <span style={{fontSize:11,color:C.muted,...mono}}>Results, PPT, concalls — rated &amp; searchable</span>
+                  </div>
+                  <table style={{width:'100%',borderCollapse:'collapse'}}>
+                    <thead><tr>
+                      {['Symbol','Filing','AI take','Rating','When'].map(h=>(
+                        <th key={h} style={{textAlign:'left',padding:'8px 10px',...mono,fontSize:9.5,
+                          letterSpacing:'0.06em',textTransform:'uppercase',color:C.muted,...rulesLine,fontWeight:400}}>{h}</th>
+                      ))}
+                    </tr></thead>
+                    <tbody style={mono}>
+                      {[
+                        ['MTARTECH','Results','Revenue +130% YoY; guidance raised',badge(C.green+'26',C.green,'A'),'2d ago'],
+                        ['POLYCAB','Concall','Capex on track; margin stable',badge(C.green+'26',C.green,'B+'),'5d ago'],
+                        ['KFINTECH','PPT','New mandate wins; PEAD setup',badge(C.accent+'26',C.accent,'PEAD'),'1d ago'],
+                        ['HAL','Results','Order book strong; Stage 2 + CANSLIM',badge(C.purple+'26',C.purple,'5/7'),'3d ago'],
+                      ].map(([sym,filing,take,rating,when])=>(
+                        <tr key={sym}>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{sym}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{filing}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine,color:'#aab0c0'}}>{take}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{rating}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine,color:C.muted}}>{when}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
             <div style={{display:'flex',justifyContent:'center',gap:8,padding:'16px 0 6px'}}>
-              {[0,1,2].map(i=>(
+              {Array.from({length:slideCount}).map((_,i)=>(
                 <div key={i} onClick={()=>setSlide(i)} style={{width:7,height:7,borderRadius:'50%',
                   cursor:'pointer',background:slide===i?gold:C.border,transition:'background .2s'}}/>
               ))}
@@ -9165,27 +9247,45 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
           <div style={{height:1,background:C.divider,flex:1,maxWidth:240}}/>
         </div>
 
+        {/* What's inside — full product map */}
+        <section style={{padding:'72px 0 24px'}}>
+          <div style={{maxWidth:640,margin:'0 auto 40px',textAlign:'center'}}>
+            {smallcaps('Inside the terminal',true)}
+            <h2 style={{...serif,fontWeight:600,fontSize:'clamp(26px,3.2vw,36px)',color:'#fff'}}>
+              Everything the app actually does.
+            </h2>
+            <p style={{color:'#9aa0b0',fontSize:14.5,marginTop:12,lineHeight:1.7}}>
+              Not just an RS table — scanners, market context, filings AI, and your own book in one place.
+            </p>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:14,maxWidth:920,margin:'0 auto'}}>
+            {productModules.map(m=>(
+              <div key={m.title} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
+                padding:'22px 20px'}}>
+                <div style={{fontSize:22,marginBottom:10}}>{m.icon}</div>
+                <h3 style={{fontSize:16,fontWeight:700,color:'#fff',marginBottom:8}}>{m.title}</h3>
+                <p style={{fontSize:13.5,color:'#9aa0b0',lineHeight:1.65,margin:0}}>{m.desc}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
         {/* How it works */}
-        <section style={{padding:'88px 0'}}>
+        <section style={{padding:'72px 0 88px'}}>
           <div style={{maxWidth:600,margin:'0 auto 52px',textAlign:'center'}}>
             {smallcaps('How It Works',true)}
             <h2 style={{...serif,fontWeight:600,fontSize:'clamp(26px,3.2vw,36px)',color:'#fff'}}>
-              Four signals. One ranked list.
+              Six layers. One workflow.
             </h2>
           </div>
           <div style={{borderTop:`1px solid ${C.divider}`,maxWidth:820,margin:'0 auto'}}>
-            {[
-              ['I.','Relative Strength (RS-TV)','Every stock ranked 1–99 against the broader market and its own peer group, recalculated through the trading session — not a static end-of-day number.'],
-              ['II.','Volume conviction','Pocket Pivots, HY/HT volume surges, and institutional-style buying pressure — the difference between a move with real participation and a move without it.'],
-              ['III.','Structure & breakouts','Resistance breaks, cup-and-handle formations, and Guppy moving-average crossovers, flagged the day they happen — not three candles later.'],
-              ['IV.','Sector & index context','See which sectors are actually leading this week versus which stock is just borrowing strength from a hot theme.'],
-            ].map(([num,title,desc])=>(
+            {howItWorks.map(([num,title,desc])=>(
               <div key={num} style={{display:'grid',gridTemplateColumns:'64px 1fr',gap:24,padding:'26px 0',
                 borderBottom:`1px solid ${C.divider}`}}>
                 <div style={{...serif,fontStyle:'italic',color:gold,fontSize:20}}>{num}</div>
                 <div>
                   <h3 style={{fontSize:18,marginBottom:7,fontWeight:600,color:'#fff'}}>{title}</h3>
-                  <p style={{color:'#9aa0b0',fontSize:14,maxWidth:480}}>{desc}</p>
+                  <p style={{color:'#9aa0b0',fontSize:14,maxWidth:520}}>{desc}</p>
                 </div>
               </div>
             ))}
@@ -9280,8 +9380,8 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
           <h2 style={{...serif,fontWeight:600,fontSize:'clamp(28px,3.6vw,40px)',maxWidth:600,margin:'0 auto 16px',color:'#fff'}}>
             Your watchlist is already moving. Go see it.
           </h2>
-          <p style={{color:'#9aa0b0',maxWidth:440,margin:'0 auto 30px',fontSize:15}}>
-            Create a free account and get today's ranked scan the moment you log in.
+          <p style={{color:'#9aa0b0',maxWidth:480,margin:'0 auto 30px',fontSize:15}}>
+            Create a free account for today&apos;s RS scan, Vol→EMA entries, filings AI, and your watchlists.
           </p>
           <button onClick={onEnroll} style={{background:gold,color:'#0a0d12',padding:'14px 32px',fontWeight:700,
             fontSize:14,letterSpacing:'0.02em',border:`1px solid ${gold}`,cursor:'pointer'}}>
