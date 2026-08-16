@@ -969,20 +969,47 @@ function indexDisplayName(name){
   }
   return name
 }
+function indexLookupKey(idxName){
+  const raw=String(idxName||'').trim()
+  if(!raw) return ''
+  if(INDEX_TO_SECTOR[raw] || INDEX_CONSTITUENT_SYMS[raw]) return raw
+  const stripped=raw.replace(/^Nifty\s+/i,'').trim()
+  if(INDEX_TO_SECTOR[stripped] || INDEX_CONSTITUENT_SYMS[stripped]) return stripped
+  // Common dashboard / history aliases
+  const aliases={
+    'Nifty Next 50':'Next 50', 'Next50':'Next 50',
+    'Nifty 500':'500', 'Nifty500':'500',
+    'Nifty IPO':'IPO',
+    'Nifty PSE':'PSE', 'Nifty CPSE':'CPSE',
+    'Nifty MNC':'MNC', 'Nifty Consumption':'Consumption',
+    'Bank Nifty':'Private Bank', // imperfect; Private Bank is closest single bucket
+  }
+  if(aliases[raw]) return aliases[raw]
+  if(aliases[stripped]) return aliases[stripped]
+  return stripped||raw
+}
 function getIndexConstituents(idxName, allStocks){
-  if(idxName==='Nifty 50')     return allStocks.filter(s=>s.inNifty50)
-  if(idxName==='Midcap 150')   return allStocks.filter(s=>s.inMidcap)
-  if(idxName==='Smallcap 250') return allStocks.filter(s=>s.inSmallcap)
-  if(idxName==='Microcap 250') return allStocks.filter(s=>s.inMicrocap)
-  const sectorKey = INDEX_TO_SECTOR[idxName]
+  const key=indexLookupKey(idxName)
+  if(key==='Nifty 50' || idxName==='Nifty 50') return allStocks.filter(s=>s.inNifty50)
+  if(key==='Midcap 150' || idxName==='Midcap 150') return allStocks.filter(s=>s.inMidcap)
+  if(key==='Smallcap 250' || idxName==='Smallcap 250') return allStocks.filter(s=>s.inSmallcap)
+  if(key==='Microcap 250' || idxName==='Microcap 250') return allStocks.filter(s=>s.inMicrocap)
+  if(key==='50') return allStocks.filter(s=>s.inNifty50)
+  const sectorKey = INDEX_TO_SECTOR[key] || INDEX_TO_SECTOR[idxName]
   if(sectorKey) return getSectorMemberStocks(sectorKey, allStocks)
-  // Official thematic Nifty lists (PSE, Consumption, MNC, …)
-  const fixed = INDEX_CONSTITUENT_SYMS[idxName]
+  // Official thematic Nifty lists (PSE, Consumption, MNC, Next 50, 500, …)
+  const fixed = INDEX_CONSTITUENT_SYMS[key] || INDEX_CONSTITUENT_SYMS[idxName]
   if(fixed?.length){
     const set = new Set(fixed)
     return (allStocks||[]).filter(s=>set.has(s.sym)).sort((a,b)=>(b.rs??0)-(a.rs??0))
   }
   return null // no reliable constituent mapping for this index yet
+}
+function indexHasConstituents(idxName){
+  const key=indexLookupKey(idxName)
+  if(['Nifty 50','Midcap 150','Smallcap 250','Microcap 250','50'].includes(key)||idxName==='Nifty 50') return true
+  if(INDEX_TO_SECTOR[key] || INDEX_TO_SECTOR[idxName]) return true
+  return !!(INDEX_CONSTITUENT_SYMS[key]||INDEX_CONSTITUENT_SYMS[idxName])?.length
 }
 
 /** Stocks belonging to a sector row — prefers live `sector` tags, then
@@ -16354,7 +16381,18 @@ export default function App(){
           }
           const goTo=s=>{
             if(rotationScope==='sector'){setSectorFilter(s.id);setIndustryFilter('all');setMainTab('rs')}
-            else if(rotationScope==='index'){setRotationExpandedId(prev=>prev===s.id?null:s.id);setIdxConstituentFilters({industry:null,rsMin:0})}
+            else if(rotationScope==='index'){
+              setRotationExpandedId(prev=>{
+                const next=prev===s.id?null:s.id
+                if(next){
+                  queueMicrotask(()=>{
+                    document.getElementById('rotation-constituents')?.scrollIntoView({behavior:'smooth',block:'nearest'})
+                  })
+                }
+                return next
+              })
+              setIdxConstituentFilters({industry:null,rsMin:0})
+            }
             else{openChart(s.id)}
           }
           const effectiveWlId=rotationWlId??activeWl??watchlists[0]?.id??null
@@ -16632,6 +16670,9 @@ export default function App(){
 
               <div style={{fontSize:11,fontWeight:700,color:C.muted,marginBottom:8}}>
                 {rotationScope==='index'?'INDICES RANKED BY QUADRANT':'RANKED BY QUADRANT'} — distance from benchmark (100, 100)
+                {rotationScope==='index'&&(
+                  <span style={{fontWeight:500,marginLeft:8,color:C.accent}}> · tap a row to show underlying stocks</span>
+                )}
               </div>
               {rrgGroups.length===0?(
                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'20px',
@@ -16647,95 +16688,111 @@ export default function App(){
                         <span style={{fontWeight:800,fontSize:12,color:g.color}}>{g.label}</span>
                         <span style={{fontSize:10,color:C.muted}}>{g.rows.length}</span>
                       </div>
-                      {g.rows.map((s,i)=>(
-                  <div key={s.id} onClick={()=>goTo(s)}
+                      {g.rows.map((s,i)=>{
+                        const expanded=rotationScope==='index'&&rotationExpandedId===s.id
+                        const canDrill=rotationScope==='index'&&indexHasConstituents(s.id)
+                        return(
+                        <div key={s.id}>
+                  <div onClick={()=>goTo(s)}
                     style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,
-                            padding:'10px 14px',borderBottom:i<g.rows.length-1?`1px solid ${C.divider}`:'none',cursor:'pointer'}}>
+                            padding:'10px 14px',
+                            borderBottom:(i<g.rows.length-1||expanded)?`1px solid ${C.divider}`:'none',
+                            cursor:'pointer',
+                            background:expanded?C.accent+'18':'transparent',
+                            borderLeft:expanded?`3px solid ${C.accent}`:'3px solid transparent'}}>
                       <div style={{minWidth:0}}>
-                        <div style={{fontWeight:700,fontSize:13}}>{s.label}</div>
+                        <div style={{fontWeight:700,fontSize:13,textDecoration:canDrill?'underline':'none',
+                          textUnderlineOffset:3,textDecorationColor:C.accent+'88'}}>{s.label}</div>
                             <div style={{fontSize:10,color:C.muted,marginTop:2}}>
                               {s.meta||''} · {rawLevelLabel} {s.trail?.[s.trail.length-1]?.rawLevel??s.level}
                               {' · '}dist {s.dist?.toFixed(1)}
                       </div>
                     </div>
-                          <div style={{textAlign:'right',flexShrink:0}}>
-                            <div style={{fontWeight:800,fontSize:13,color:g.color}}>
-                              {s.rsRatio?.toFixed(1)} / {s.rsMom?.toFixed(1)}
+                          <div style={{textAlign:'right',flexShrink:0,display:'flex',alignItems:'center',gap:10}}>
+                            <div>
+                              <div style={{fontWeight:800,fontSize:13,color:g.color}}>
+                                {s.rsRatio?.toFixed(1)} / {s.rsMom?.toFixed(1)}
                           </div>
-                            <div style={{fontSize:9,color:C.muted}}>Ratio / Mom</div>
+                              <div style={{fontSize:9,color:C.muted}}>Ratio / Mom</div>
+                            </div>
+                            {rotationScope==='index'&&(
+                              <span style={{fontSize:11,fontWeight:700,color:canDrill?C.accent:C.muted,whiteSpace:'nowrap'}}>
+                                {expanded?'▾':'▸'} {canDrill?'stocks':'—'}
+                              </span>
+                            )}
                       </div>
                     </div>
-                      ))}
+                        {expanded&&(()=>{
+                          const constituents=getIndexConstituents(s.id,stocks)
+                          const rotIndustries = constituents
+                            ? [...new Set(constituents.map(x=>x.industry).filter(Boolean))].sort()
+                            : []
+                          const rotActiveIndustry = idxConstituentFilters.industry
+                          const rotActiveRsMin = idxConstituentFilters.rsMin
+                          const filteredRotConstituents = constituents
+                            ? constituents.filter(x=>
+                                (!rotActiveIndustry || x.industry===rotActiveIndustry) &&
+                                (x.rs??0) >= rotActiveRsMin)
+                            : null
+                          return(
+                            <div id="rotation-constituents" style={{padding:'12px 14px 14px',background:C.bg,
+                              borderBottom:i<g.rows.length-1?`1px solid ${C.divider}`:'none'}}>
+                              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                                <div style={{fontWeight:800,fontSize:12,color:C.accent}}>
+                                  📋 {s.label} — Constituent Stocks
+                                  {constituents?` (${filteredRotConstituents.length}${filteredRotConstituents.length!==constituents.length?` of ${constituents.length}`:''})`:''}
+                                </div>
+                                <button type="button" onClick={e=>{e.stopPropagation();setRotationExpandedId(null);setIdxConstituentFilters({industry:null,rsMin:0})}}
+                                  style={{background:'transparent',border:'none',color:C.muted,cursor:'pointer',fontSize:16,padding:0}}>×</button>
+                              </div>
+                              {constituents===null?(
+                                <div style={{fontSize:12,color:C.muted,padding:'8px 0'}}>
+                                  No constituent list available for this index yet.
+                                </div>
+                              ):constituents.length===0?(
+                                <div style={{fontSize:12,color:C.muted,padding:'8px 0'}}>
+                                  Constituent symbols are mapped, but none matched the current scan universe.
+                                </div>
+                              ):(
+                                <>
+                                  <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10,alignItems:'center'}}>
+                                    {rotIndustries.length>1&&(
+                                      <select value={rotActiveIndustry||''} onChange={e=>setIdxConstituentFilters(f=>({...f,industry:e.target.value||null}))}
+                                        style={{padding:'5px 8px',background:C.card,border:`1px solid ${rotActiveIndustry?C.accent:C.border}`,
+                                          borderRadius:6,color:rotActiveIndustry?C.accent:C.text,fontSize:11,outline:'none',cursor:'pointer'}}>
+                                        <option value="">All industries ({rotIndustries.length})</option>
+                                        {rotIndustries.map(ind=>(
+                                          <option key={ind} value={ind}>{ind}</option>
+                                        ))}
+                                      </select>
+                                    )}
+                                    <div style={{display:'flex',gap:4}}>
+                                      {[['RS: All',0],['70+',70],['80+',80],['90+',90]].map(([label,mn])=>(
+                                        <button key={label} type="button" onClick={()=>setIdxConstituentFilters(f=>({...f,rsMin:mn}))}
+                                          style={{padding:'5px 10px',borderRadius:14,border:`1px solid ${rotActiveRsMin===mn?C.accent:C.border}`,
+                                            background:rotActiveRsMin===mn?C.accent+'22':'transparent',
+                                            color:rotActiveRsMin===mn?C.accent:C.muted,fontSize:11,fontWeight:600,cursor:'pointer'}}>
+                                          {label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <TVCopyPanel stocks={filteredRotConstituents} label={`${s.label} Constituents`}/>
+                                  <BreakoutTable key={`${s.id}-${rotActiveIndustry}-${rotActiveRsMin}`}
+                                    stocks={filteredRotConstituents} isMobile={isMobile}
+                                    visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
+                                </>
+                              )}
+                            </div>
+                          )
+                        })()}
+                        </div>
+                        )
+                      })}
                   </div>
                 ))}
               </div>
               )}
-
-              {rotationScope==='index'&&rotationExpandedId&&(()=>{
-                const constituents=getIndexConstituents(rotationExpandedId,stocks)
-                const rotIndustries = constituents
-                  ? [...new Set(constituents.map(s=>s.industry).filter(Boolean))].sort()
-                  : []
-                const rotActiveIndustry = idxConstituentFilters.industry
-                const rotActiveRsMin = idxConstituentFilters.rsMin
-                const filteredRotConstituents = constituents
-                  ? constituents.filter(s=>
-                      (!rotActiveIndustry || s.industry===rotActiveIndustry) &&
-                      (s.rs??0) >= rotActiveRsMin)
-                  : null
-                return(
-                  <div style={{marginTop:14,background:C.card,border:`1px solid ${C.accent}44`,borderRadius:10,padding:'14px'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                      <div style={{fontWeight:800,fontSize:13,color:C.accent}}>
-                        📋 {rotationExpandedId} — Constituent Stocks
-                      </div>
-                      <button onClick={()=>{setRotationExpandedId(null);setIdxConstituentFilters({industry:null,rsMin:0})}}
-                        style={{background:'transparent',border:'none',color:C.muted,cursor:'pointer',fontSize:16,padding:0}}>×</button>
-                    </div>
-                    {constituents===null?(
-                      <div style={{fontSize:12,color:C.muted,padding:'10px 0'}}>
-                        No constituent list available for this index yet.
-                      </div>
-                    ):(
-                      <>
-                        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10,alignItems:'center'}}>
-                          {rotIndustries.length>1&&(
-                            <select value={rotActiveIndustry||''} onChange={e=>setIdxConstituentFilters(f=>({...f,industry:e.target.value||null}))}
-                              style={{padding:'5px 8px',background:C.bg,border:`1px solid ${rotActiveIndustry?C.accent:C.border}`,
-                                borderRadius:6,color:rotActiveIndustry?C.accent:C.text,fontSize:11,outline:'none',cursor:'pointer'}}>
-                              <option value="">All industries ({rotIndustries.length})</option>
-                              {rotIndustries.map(ind=>(
-                                <option key={ind} value={ind}>{ind}</option>
-                              ))}
-                            </select>
-                          )}
-                          <div style={{display:'flex',gap:4}}>
-                            {[['RS: All',0],['70+',70],['80+',80],['90+',90]].map(([label,mn])=>(
-                              <button key={label} onClick={()=>setIdxConstituentFilters(f=>({...f,rsMin:mn}))}
-                                style={{padding:'5px 10px',borderRadius:14,border:`1px solid ${rotActiveRsMin===mn?C.accent:C.border}`,
-                                  background:rotActiveRsMin===mn?C.accent+'22':'transparent',
-                                  color:rotActiveRsMin===mn?C.accent:C.muted,fontSize:11,fontWeight:600,cursor:'pointer'}}>
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                          {(rotActiveIndustry||rotActiveRsMin>0)&&(
-                            <button onClick={()=>setIdxConstituentFilters({industry:null,rsMin:0})}
-                              style={{padding:'5px 10px',borderRadius:14,border:`1px solid ${C.border}`,
-                                background:'transparent',color:C.muted,fontSize:11,cursor:'pointer'}}>
-                              ✕ Clear
-                            </button>
-                          )}
-                        </div>
-                        <TVCopyPanel stocks={filteredRotConstituents} label={`${rotationExpandedId} Constituents`}/>
-                        <BreakoutTable key={`${rotationExpandedId}-${rotActiveIndustry}-${rotActiveRsMin}`}
-                          stocks={filteredRotConstituents} isMobile={isMobile}
-                          visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
-                      </>
-                    )}
-                  </div>
-                )
-              })()}
             </>)}
           </div>
           )
