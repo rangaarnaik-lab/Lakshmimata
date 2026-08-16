@@ -4,7 +4,7 @@ import EarningsTracker from './components/EarningsTracker'
 import {
   TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap,
   TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal, Layers,
-  ThumbsUp, ThumbsDown, MessageSquare
+  ThumbsUp, ThumbsDown, MessageSquare, RotateCcw
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
@@ -11597,6 +11597,36 @@ export default function App(){
   // clickable filter chips instead of 5 always-stacked sections.
   // RS Rating → Filters → Breakout type (single-select, like Result quality).
   const [breakoutTypeFilter,setBreakoutTypeFilter]=useState('all')
+  const resetAllRsFilters=()=>{
+    setSearch('')
+    setRsMin(0); setRsMax(99)
+    setMcapMin(''); setMcapMax('')
+    setRsImprFilter('all')
+    setSigFilters([])
+    setStageFilter('all')
+    setSectorFilter('all')
+    setIndustryFilter('all')
+    setPresetFilter('all')
+    setResultRatingFilters([])
+    setFundRatingFilters([])
+    setStrategyFilters([])
+    setBreakoutTypeFilter('all')
+    setSelectedScannerId('')
+  }
+  const rsFiltersActive = !!(
+    (search&&String(search).trim())
+    || rsMin!==0 || rsMax!==99
+    || mcapMin!=='' || mcapMax!==''
+    || rsImprFilter!=='all'
+    || (sigFilters&&sigFilters.length)
+    || stageFilter!=='all'
+    || sectorFilter!=='all' || industryFilter!=='all'
+    || presetFilter!=='all'
+    || (resultRatingFilters&&resultRatingFilters.length)
+    || (fundRatingFilters&&fundRatingFilters.length)
+    || (strategyFilters&&strategyFilters.length)
+    || breakoutTypeFilter!=='all'
+  )
   const [announcements,setAnnouncements]=useState([])
   const [announcementsLoading,setAnnouncementsLoading]=useState(false)
   // AI Best Picks — Stage-2 + RS + Fundamental + Result (+ tech confluence),
@@ -13422,19 +13452,19 @@ export default function App(){
             {/* Summary chips (counts respect Sector/Industry scope) */}
             {scopedStocks.length>0&&(
               <div style={{display:'flex',gap:8,marginBottom:12,overflowX:'auto',paddingBottom:4}}>
-                {[{label:'All',val:scopedStocks.length,color:C.text,f:'all'},
-                  {label:'🚀HT',val:scopedStocks.filter(s=>topVolumeSignal(s)==='ht').length,color:C.orange,f:'ht'},
-                  {label:'📊HY',val:scopedStocks.filter(s=>topVolumeSignal(s)==='hy').length,color:C.pink,f:'hy'},
-                  {label:'🏛️IBV',val:scopedStocks.filter(s=>topVolumeSignal(s)==='ibv').length,color:C.blue,f:'ibv'},
-                  {label:'🔥PP',val:scopedStocks.filter(s=>topVolumeSignal(s)==='pp').length,color:C.green,f:'pp'},
-                  {label:'🐂Snort',val:scopedStocks.filter(s=>s.isBullSnort).length,color:'#f59e0b',f:'bullsnort'},
-                  {label:'🔥→⚡',val:scopedStocks.filter(s=>calcVolClimaxNearSupport(s).isMatch).length,color:C.accent,f:'volpull'},
-                  {label:'⚡EMA5',val:scopedStocks.filter(s=>s.nearEMA5?.isNearEMA5).length,color:C.teal,f:'ema5'},
-                  {label:'⚡EMA9',val:scopedStocks.filter(s=>s.nearEMA9.isNearEMA9).length,color:C.teal,f:'ema9'},
-                  {label:'🎯R1',val:scopedStocks.filter(s=>s.isResistanceBreakout).length,color:C.red,f:'r1breakout'},
-                  {label:'↑↑Impr',val:scopedStocks.filter(s=>s.rsTrend.trend==='improving').length,color:C.green,f:'__impr'},
-                ].map(({label,val,color,f})=>(
-                  <div key={label} onClick={()=>{
+                {[{label:'All',val:scopedStocks.length,color:C.text,f:'all',tip:'Show all stocks in the current sector/industry scope'},
+                  {label:'🚀HT',val:scopedStocks.filter(s=>topVolumeSignal(s)==='ht').length,color:C.orange,f:'ht',tip:SIGNAL_TOOLTIPS.ht},
+                  {label:'📊HY',val:scopedStocks.filter(s=>topVolumeSignal(s)==='hy').length,color:C.pink,f:'hy',tip:SIGNAL_TOOLTIPS.hy},
+                  {label:'🏛️IBV',val:scopedStocks.filter(s=>topVolumeSignal(s)==='ibv').length,color:C.blue,f:'ibv',tip:SIGNAL_TOOLTIPS.ibv},
+                  {label:'🔥PP',val:scopedStocks.filter(s=>topVolumeSignal(s)==='pp').length,color:C.green,f:'pp',tip:SIGNAL_TOOLTIPS.pp},
+                  {label:'🐂Snort',val:scopedStocks.filter(s=>s.isBullSnort).length,color:'#f59e0b',f:'bullsnort',tip:'Bullish volume climax — up close, volume ≥ 2× the 20-day average, close in the upper 30% of the day\'s range.'},
+                  {label:'🔥→⚡',val:scopedStocks.filter(s=>calcVolClimaxNearSupport(s).isMatch).length,color:C.accent,f:'volpull',tip:SIGNAL_TOOLTIPS.volpull},
+                  {label:'⚡EMA5',val:scopedStocks.filter(s=>s.nearEMA5?.isNearEMA5).length,color:C.teal,f:'ema5',tip:SIGNAL_TOOLTIPS.ema5},
+                  {label:'⚡EMA9',val:scopedStocks.filter(s=>s.nearEMA9.isNearEMA9).length,color:C.teal,f:'ema9',tip:SIGNAL_TOOLTIPS.ema9},
+                  {label:'🎯R1',val:scopedStocks.filter(s=>s.isResistanceBreakout).length,color:C.red,f:'r1breakout',tip:SIGNAL_TOOLTIPS.r1},
+                  {label:'↑↑Impr',val:scopedStocks.filter(s=>s.rsTrend.trend==='improving').length,color:C.green,f:'__impr',tip:'RS trend is improving — relative strength is rising, not just high.'},
+                ].map(({label,val,color,f,tip})=>(
+                  <div key={label} title={tip} onClick={()=>{
                     if(f==='__impr')setRsImprFilter(v=>v==='improving'?'all':'improving')
                     else if(f==='all')setSigFilters([])
                     else setSigFilters(prev=>prev.includes(f)?prev.filter(x=>x!==f):[...prev,f])
@@ -13457,6 +13487,17 @@ export default function App(){
                     style={{padding:'8px 14px',borderRadius:8,border:`1px solid ${showFilters?C.accent:C.border}`,
                       cursor:'pointer',fontSize:12,fontWeight:600,background:showFilters?C.accent+'22':'transparent',
                       color:showFilters?C.accent:C.muted,whiteSpace:'nowrap'}}>⚙ Filters</button>
+                  <button type="button" onClick={resetAllRsFilters} disabled={!rsFiltersActive}
+                    title="Reset all filters"
+                    aria-label="Reset all filters"
+                    style={{width:36,height:36,padding:0,borderRadius:8,
+                      border:`1px solid ${rsFiltersActive?C.accent:C.border}`,
+                      cursor:rsFiltersActive?'pointer':'default',
+                      background:rsFiltersActive?C.accent+'18':'transparent',
+                      color:rsFiltersActive?C.accent:C.muted,
+                      display:'flex',alignItems:'center',justifyContent:'center',opacity:rsFiltersActive?1:0.45}}>
+                    <RotateCcw size={15} strokeWidth={2.2}/>
+                  </button>
                   <button onClick={()=>{setShowColumns(v=>!v);setShowFilters(false)}}
                     style={{padding:'8px 14px',borderRadius:8,border:`1px solid ${showColumns?C.accent:C.border}`,
                       cursor:'pointer',fontSize:12,fontWeight:600,background:showColumns?C.accent+'22':'transparent',
