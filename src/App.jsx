@@ -15,6 +15,7 @@ import {
   detect52WLCrossover, detectWeakRSBigMove, buildSectorRS
 } from './scanners/math'
 import { SECTOR_MAP, NIFTY50, MIDCAP, SMALLCAP, getSector } from './data/sectors'
+import { INDEX_CONSTITUENT_SYMS } from './data/index-constituents'
 import { resolveIndustry, resolveSector, getPeerGroup, isJunkIndustry, getCompanyName, stockMatchesQuery, rankStockSuggestions } from './data/industries'
 import {
   calcSMASeries, findSwingPoints, computeSupportResistance,
@@ -945,15 +946,10 @@ function RSCells({history,compact}){
 // ── Ranked Bar Chart (Chartink-style Index Strength / Segment Advances) ──
 const BAR_PALETTE = ['#4f8ef7','#e0575b','#4caf50','#d4a72c','#8b7fd6','#2ba7a0','#e0825b','#5b9bd5','#c85a9e']
 // Maps an Index Dashboard name to the closest matching SECTOR_MAP key, for
-// showing "constituent stocks" when an index row is expanded. Only the
-// indices with a genuine matching sector are listed. Nifty 500/Next 50/
-// Bank Nifty are deliberately excluded — they span every sector (or, for
-// Bank Nifty, both Private+PSU banks at once) by design, so there's no
-// single matching bucket, not a gap to fill. MNC/Housing/Financial
-// Services/Consumption/PSE/Commodities/Chemicals/Oil & Gas/Consumer
-// Durables also excluded — no verified official constituent data exists
-// for these without risking an inaccurate list, which would be worse
-// than the honest "not available" message for a financial tool.
+// showing "constituent stocks" when an index row is expanded. Broad indices
+// (Nifty 500 / Next 50 / Bank Nifty) stay excluded — they span too many
+// sectors for a single bucket. Thematic Nifty indices (PSE, MNC, etc.) use
+// INDEX_CONSTITUENT_SYMS from niftyindices.com official CSVs instead.
 const INDEX_TO_SECTOR = {
   'IT': 'IT', 'Pharma': 'Pharma', 'Auto': 'Auto', 'FMCG': 'FMCG',
   'Metal': 'Metals', 'Realty': 'Realty', 'Energy': 'Energy',
@@ -966,9 +962,9 @@ const INDEX_TO_SECTOR = {
 function indexDisplayName(name){
   if(!name) return ''
   if(/^Nifty\b/i.test(name) || /^Bank Nifty$/i.test(name) || /^India VIX$/i.test(name)) return name
-  if(INDEX_TO_SECTOR[name] || ['Next 50','500','Midcap 150','Smallcap 250','Microcap 250',
+  if(INDEX_TO_SECTOR[name] || INDEX_CONSTITUENT_SYMS[name] || ['Next 50','500','Midcap 150','Smallcap 250','Microcap 250',
     'MNC','IPO','Consumption','PSE','Commodities','Chemicals','Oil & Gas',
-    'Consumer Durables','Financial Services','Housing','EV & New Age Auto'].includes(name)){
+    'Consumer Durables','Financial Services','Housing','EV & New Age Auto','CPSE'].includes(name)){
     return `Nifty ${name}`
   }
   return name
@@ -980,6 +976,12 @@ function getIndexConstituents(idxName, allStocks){
   if(idxName==='Microcap 250') return allStocks.filter(s=>s.inMicrocap)
   const sectorKey = INDEX_TO_SECTOR[idxName]
   if(sectorKey) return getSectorMemberStocks(sectorKey, allStocks)
+  // Official thematic Nifty lists (PSE, Consumption, MNC, …)
+  const fixed = INDEX_CONSTITUENT_SYMS[idxName]
+  if(fixed?.length){
+    const set = new Set(fixed)
+    return (allStocks||[]).filter(s=>set.has(s.sym)).sort((a,b)=>(b.rs??0)-(a.rs??0))
+  }
   return null // no reliable constituent mapping for this index yet
 }
 
@@ -16599,9 +16601,11 @@ export default function App(){
                     return(
                       <div style={{background:C.bg,border:`1px solid ${C.orange}44`,borderRadius:8,padding:'10px 12px',fontSize:11,color:C.muted}}>
                         ⚠️ No rotation chart yet for {rotationExpandedId} stocks —{' '}
-                        {constituentRotationData===null?'no historical data returned for these symbols yet.':
-                         constituentRotationData.length===0?'query returned zero rows.':
-                         'data returned but none of the stocks have a usable trail (need at least 2 days of history).'}
+                        {constituents.length===0
+                          ? 'no constituent symbol list is mapped for this index yet (or none of those symbols are in the current scan).'
+                          : constituentRotationData===null?'no historical data returned for these symbols yet.':
+                            constituentRotationData.length===0?'query returned zero rows.':
+                            'data returned but none of the stocks have a usable trail (need at least 2 days of history).'}
                         {' '}({(constituentRotationData||[]).length} stocks matched, requesting {constituents.length} symbols
                         over the last {rotationWindow}d)
                       </div>
