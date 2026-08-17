@@ -734,6 +734,41 @@ export async function saveUserAlertPrefs(userId, prefs) {
   return { data }
 }
 
+/** Load per-user Our Chart indicator params (null if none saved yet). */
+export async function fetchUserChartIndicatorPrefs(userId) {
+  if (!userId) return null
+  const { data, error } = await supabase
+    .from('user_chart_indicator_prefs')
+    .select('prefs,updated_at')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) {
+    console.error('fetchUserChartIndicatorPrefs error:', error.message)
+    return null
+  }
+  return data?.prefs && typeof data.prefs === 'object' ? data.prefs : null
+}
+
+/** Upsert per-user Our Chart indicator params. */
+export async function saveUserChartIndicatorPrefs(userId, prefs) {
+  if (!userId) return { error: 'Sign in to save chart indicator settings.' }
+  const payload = {
+    user_id: userId,
+    prefs: prefs || {},
+    updated_at: new Date().toISOString(),
+  }
+  const { data, error } = await supabase
+    .from('user_chart_indicator_prefs')
+    .upsert(payload, { onConflict: 'user_id' })
+    .select('prefs,updated_at')
+    .single()
+  if (error) {
+    console.error('saveUserChartIndicatorPrefs error:', error.message)
+    return { error: error.message || 'Could not save chart indicator settings' }
+  }
+  return { data }
+}
+
 export const MAX_FAMILY_PORTFOLIOS = 5
 
 /** Load family portfolios blob for a user (null if none saved yet). */

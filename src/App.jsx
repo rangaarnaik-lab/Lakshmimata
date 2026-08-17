@@ -4,13 +4,21 @@ import EarningsTracker from './components/EarningsTracker'
 import PaymentPage from './components/PaymentPage'
 import { SUBSCRIPTION_PLANS } from './lib/plans'
 import {
+  loadChartDrawings, saveChartDrawings, newDrawingId, nextDrawColor, DRAW_TOOLS,
+} from './lib/chartDrawings'
+import {
+  loadChartIndicatorPrefs, persistChartIndicatorPrefsLocal, normalizeChartIndicatorPrefs,
+  setIndicatorEnabled, setIndicatorParam, resetIndicatorParams, INDICATOR_PARAM_FIELDS,
+  indEnabled, indParams,
+} from './lib/chartIndicatorPrefs'
+import {
   TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap,
   TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal, Layers,
   ThumbsUp, ThumbsDown, MessageSquare, RotateCcw
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchUserPortfolios, saveUserPortfolios, fetchMissedAiFilings } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -26,7 +34,8 @@ import {
   detectPPDays, detectHYDays, detectHTDays, detectIBVDays, detectNearEMA9Days,
   detectBullSnortDays, aggregateToWeekly, aggregateToMonthly, aggregateToYearly,
   calcRSISeries, calcMACDSeries, detectEmaCrossoverDays,
-  detectLakshmiBuySellSignals, alignSeriesFromEnd,
+  detectLakshmiBuySellSignals, alignSeriesFromEnd, calcLakshmiSuperCycle,
+  calcLakshmiCandleBarColors, LAKSHMI_BAR_COLORS,
   GUPPY_SHORT_PERIODS, GUPPY_LONG_PERIODS,
 } from './scanners/chartAnalysis'
 
@@ -4637,10 +4646,10 @@ function TradingViewDailyChart({symbol, exchange, onReady}){
   )
 }
 
-function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, detailFirst=false, onMoveTile, stackLayout=false, columnsLayout=false, chartColPct=36, detailColPct=32, sideSoloChart=false, chartCellStyle=null, detailCellStyle=null, chartStackOrder=2, detailStackOrder=4}){
+function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, detailFirst=false, onMoveTile, stackLayout=false, columnsLayout=false, chartColPct=36, detailColPct=32, sideSoloChart=false, chartCellStyle=null, detailCellStyle=null, chartStackOrder=2, detailStackOrder=4, userId=null}){
   const [loaded, setLoaded] = useState(false)
   // Stocks open on TradingView (1D); indices only have Our Chart.
-  const [chartTab, setChartTab] = useState(isIndex ? 'own' : 'tv') // 'own' | 'tv'
+  const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart first (Super Cycle, drawings, …)
   const sectionOrder=normalizeChartSectionOrder(chartSectionOrder)
   const persistSectionOrder=(order)=>{
     onChartSectionOrderChange?.(normalizeChartSectionOrder(order))
@@ -4851,7 +4860,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
             />
           </>
         ):(
-          <CandlestickChart sym={sym} isMobile={isMobile} isIndex={isIndex} chartExpanded={chartExpanded}/>
+          <CandlestickChart sym={sym} isMobile={isMobile} isIndex={isIndex} chartExpanded={chartExpanded} userId={userId}/>
         )}
       </div>
     </div>
@@ -6264,26 +6273,56 @@ function TvFxIcon({active, muted}) {
   )
 }
 
-function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
+function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [range, setRange] = useState('1Y')
   const [barInterval, setBarInterval] = useState('D') // D/W/M/Y candle size
   const [zoomBars, setZoomBars] = useState(RANGE_BARS_BY_INTERVAL.D['1Y'])
   const [panOffset, setPanOffset] = useState(0) // bars back from the most recent
-  const [showMA, setShowMA] = useState(true)
   const [chartStyle, setChartStyle] = useState('candle') // candle | line — all intervals
-  const [showSR, setShowSR] = useState(true)
-  const [showPatterns, setShowPatterns] = useState(true)
-  const [showBullSnort, setShowBullSnort] = useState(true)
-  const [showGuppy, setShowGuppy] = useState(false)
-  const [showRSI, setShowRSI] = useState(false)
-  const [showMACD, setShowMACD] = useState(false)
-  const [showForecast, setShowForecast] = useState(false)
-  const [showBuySell, setShowBuySell] = useState(true)
+  const [indPrefs, setIndPrefs] = useState(() => loadChartIndicatorPrefs(userId))
+  const [indSettingsId, setIndSettingsId] = useState(null) // which indicator settings panel is open
+  const skipIndSaveRef = useRef(true)
+  const indSaveTimer = useRef(null)
+  const prefsN = useMemo(() => normalizeChartIndicatorPrefs(indPrefs), [indPrefs])
+  const showMA = prefsN.indicators.ma.enabled
+  const showGuppy = prefsN.indicators.guppy.enabled
+  const showSR = prefsN.indicators.sr.enabled
+  const showPatterns = prefsN.indicators.patterns.enabled
+  const showBullSnort = prefsN.indicators.bullsnort.enabled
+  const showRSI = prefsN.indicators.rsi.enabled
+  const showMACD = prefsN.indicators.macd.enabled
+  const showForecast = prefsN.indicators.forecast.enabled
+  const showBuySell = prefsN.indicators.buysell.enabled
+  const showSuperCycle = prefsN.indicators.supercycle.enabled
+  const showCandleColors = prefsN.indicators.barcolor.enabled
+  const maP = prefsN.indicators.ma.params
+  const rsiP = prefsN.indicators.rsi.params
+  const macdP = prefsN.indicators.macd.params
+  const scP = prefsN.indicators.supercycle.params
+  const buyP = prefsN.indicators.buysell.params
+  const barP = prefsN.indicators.barcolor.params
+  const snortP = prefsN.indicators.bullsnort.params
+  const fcP = prefsN.indicators.forecast.params
+  const setShowMA = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'ma', typeof v === 'function' ? v(showMA) : v))
+  const setShowGuppy = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'guppy', typeof v === 'function' ? v(showGuppy) : v))
+  const setShowSR = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'sr', typeof v === 'function' ? v(showSR) : v))
+  const setShowPatterns = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'patterns', typeof v === 'function' ? v(showPatterns) : v))
+  const setShowBullSnort = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'bullsnort', typeof v === 'function' ? v(showBullSnort) : v))
+  const setShowRSI = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'rsi', typeof v === 'function' ? v(showRSI) : v))
+  const setShowMACD = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'macd', typeof v === 'function' ? v(showMACD) : v))
+  const setShowForecast = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'forecast', typeof v === 'function' ? v(showForecast) : v))
+  const setShowBuySell = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'buysell', typeof v === 'function' ? v(showBuySell) : v))
+  const setShowSuperCycle = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'supercycle', typeof v === 'function' ? v(showSuperCycle) : v))
+  const setShowCandleColors = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'barcolor', typeof v === 'function' ? v(showCandleColors) : v))
   const [niftyCloses, setNiftyCloses] = useState(null)
   const [showIndMenu, setShowIndMenu] = useState(false)
   const [indSearch, setIndSearch] = useState('')
+  const [drawTool, setDrawTool] = useState('pan') // pan | trend | ray | hline | vline | rect
+  const [drawings, setDrawings] = useState([])
+  const [drawDraft, setDrawDraft] = useState(null) // { type, p1, p2? }
+  const [selectedDrawId, setSelectedDrawId] = useState(null)
   const [hoverIdx, setHoverIdx] = useState(null)
   const [pinnedIdx, setPinnedIdx] = useState(null)
   const [chartBox, setChartBox] = useState({w:900, h: chartExpanded?520:480})
@@ -6296,6 +6335,74 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const rangeBars = RANGE_BARS_BY_INTERVAL[barInterval] || RANGE_BARS_BY_INTERVAL.D
   const intervalMeta = BAR_INTERVAL_META[barInterval] || BAR_INTERVAL_META.D
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
+
+  // Load indicator prefs per user (local → cloud); remember params across sessions
+  useEffect(() => {
+    skipIndSaveRef.current = true
+    setIndPrefs(loadChartIndicatorPrefs(userId))
+    setIndSettingsId(null)
+    if (!userId) return
+    let cancelled = false
+    fetchUserChartIndicatorPrefs(userId).then(cloud => {
+      if (cancelled || !cloud) return
+      const next = normalizeChartIndicatorPrefs(cloud)
+      skipIndSaveRef.current = true
+      setIndPrefs(next)
+      persistChartIndicatorPrefsLocal(next, userId)
+    })
+    return () => { cancelled = true }
+  }, [userId])
+  useEffect(() => {
+    if (skipIndSaveRef.current) {
+      skipIndSaveRef.current = false
+      return
+    }
+    persistChartIndicatorPrefsLocal(indPrefs, userId || null)
+    if (!userId) return
+    if (indSaveTimer.current) clearTimeout(indSaveTimer.current)
+    indSaveTimer.current = setTimeout(() => {
+      saveUserChartIndicatorPrefs(userId, indPrefs).then(res => {
+        if (res?.error) console.warn('Chart indicator prefs save failed:', res.error)
+      })
+    }, 500)
+    return () => { if (indSaveTimer.current) clearTimeout(indSaveTimer.current) }
+  }, [indPrefs, userId])
+
+  const skipDrawSaveRef = useRef(true)
+  // Load / persist drawings per symbol + candle size (survives refresh & revisit)
+  useEffect(() => {
+    skipDrawSaveRef.current = true
+    setDrawings(loadChartDrawings(sym, barInterval))
+    setDrawDraft(null)
+    setSelectedDrawId(null)
+    setDrawTool('pan')
+  }, [sym, barInterval])
+  useEffect(() => {
+    if (!sym) return
+    if (skipDrawSaveRef.current) {
+      skipDrawSaveRef.current = false
+      return
+    }
+    saveChartDrawings(sym, barInterval, drawings)
+  }, [sym, barInterval, drawings])
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        setDrawDraft(null)
+        setSelectedDrawId(null)
+        setDrawTool('pan')
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedDrawId) {
+        const tag = e.target?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return
+        e.preventDefault()
+        setDrawings(ds => ds.filter(d => d.id !== selectedDrawId))
+        setSelectedDrawId(null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectedDrawId])
 
   // Close TradingView-style Indicators menu on outside click / Escape
   useEffect(()=>{
@@ -6364,25 +6471,29 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
     const closes = seriesData.closes, highs = seriesData.highs, lows = seriesData.lows
     const volumes = seriesData.volumes, opens = seriesData.opens
     const _swings = findSwingPoints(highs, lows, intervalMeta.swing)
-    const ema9 = emaArr(closes, 9)
+    const ema9 = emaArr(closes, maP.ema9 ?? 9)
     const ema50 = emaArr(closes, 50)
-    const niftyAligned = (!isIndex && showBuySell)
+    const niftyAligned = (!isIndex && (showBuySell || showSuperCycle))
       ? alignSeriesFromEnd(closes.length, niftyCloses)
       : null
     const buySell = (!isIndex && showBuySell)
-      ? detectLakshmiBuySellSignals(highs, lows, closes, niftyAligned)
+      ? detectLakshmiBuySellSignals(highs, lows, closes, niftyAligned, buyP)
       : { buy: [], sell: [], trend: [] }
+    const superCycle = (!isIndex && showSuperCycle)
+      ? calcLakshmiSuperCycle(highs, lows, closes, niftyAligned, scP)
+      : null
+    const candleBar = calcLakshmiCandleBarColors(opens, highs, lows, closes, volumes, barP)
     return {
-      ma20: calcSMASeries(closes, 20),
-      ma50: calcSMASeries(closes, 50),
-      ma200: calcSMASeries(closes, 200),
+      ma20: calcSMASeries(closes, maP.ma20 ?? 20),
+      ma50: calcSMASeries(closes, maP.ma50 ?? 50),
+      ma200: calcSMASeries(closes, maP.ma200 ?? 200),
       ema9,
       ema50,
       guppyShort: GUPPY_SHORT_PERIODS.map(p => emaArr(closes, p)),
       guppyLong: GUPPY_LONG_PERIODS.map(p => emaArr(closes, p)),
-      guppyCross: detectEmaCrossoverDays(ema9, ema50),
-      rsi: calcRSISeries(closes, 14),
-      macd: calcMACDSeries(closes, 12, 26, 9),
+      guppyCross: detectEmaCrossoverDays(emaArr(closes, 9), ema50),
+      rsi: calcRSISeries(closes, rsiP.length ?? 14),
+      macd: calcMACDSeries(closes, macdP.fast ?? 12, macdP.slow ?? 26, macdP.signal ?? 9),
       swings: _swings,
       sr: computeSupportResistance(_swings, closes[closes.length-1]),
       insideBars: detectInsideBars(highs, lows),
@@ -6391,14 +6502,18 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       hyDays: detectHYDays(volumes),
       htDays: detectHTDays(volumes),
       ibvDays: detectIBVDays(highs, lows, closes, volumes),
-      bullSnortDays: detectBullSnortDays(highs, lows, closes, volumes, opens),
+      bullSnortDays: detectBullSnortDays(highs, lows, closes, volumes, opens, snortP),
       nearEma9Days: detectNearEMA9Days(closes),
       vcp: detectVCPContractions(_swings),
       cup: detectCupAndHandle(closes, highs, lows),
       buyDays: buySell.buy,
       sellDays: buySell.sell,
+      superCycle,
+      candleBarColors: candleBar.colors,
+      candleBarTags: candleBar.tags,
     }
-  }, [seriesData, barInterval, intervalMeta, isIndex, showBuySell, niftyCloses])
+  }, [seriesData, barInterval, intervalMeta, isIndex, showBuySell, showSuperCycle, niftyCloses,
+    maP, rsiP, macdP, scP, buyP, barP, snortP])
 
   useEffect(() => {
     let cancelled = false
@@ -6417,7 +6532,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
 
   // Nifty closes for Lakshmi Mata Buy RS gate (aligned from end to stock series).
   useEffect(() => {
-    if (isIndex || !showBuySell) { setNiftyCloses(null); return }
+    if (isIndex || !(showBuySell || showSuperCycle)) { setNiftyCloses(null); return }
     let cancelled = false
     fetchIndexPriceHistory('Nifty 50')
       .then(res => {
@@ -6427,7 +6542,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       })
       .catch(() => { if (!cancelled) setNiftyCloses(null) })
     return () => { cancelled = true }
-  }, [isIndex, showBuySell])
+  }, [isIndex, showBuySell, showSuperCycle])
 
   useEffect(()=>{
     // Switching candle size resets zoom to the current range preset in that unit.
@@ -6517,7 +6632,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
 
   const { ma20, ma50, ma200, ema9, ema50, guppyShort, guppyLong, guppyCross, rsi, macd,
     swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, bullSnortDays, nearEma9Days, vcp, cup,
-    buyDays, sellDays } = analysis
+    buyDays, sellDays, superCycle, candleBarColors, candleBarTags } = analysis
 
   let dates = seriesData.dates
   let closes = seriesData.closes
@@ -6551,19 +6666,24 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const W = chartBox.w
   const H = chartBox.h
   const padL = 8, padR = Math.max(44, Math.round(W*0.06)), padT = 8, gapH = 4, axisPad = 18
-  const panelGaps = gapH + (showRSI ? gapH : 0) + (showMACD ? gapH : 0)
+  const panelGaps = gapH + (showRSI ? gapH : 0) + (showMACD ? gapH : 0) + (showSuperCycle ? gapH : 0)
   const usable = Math.max(160, H - padT - panelGaps - axisPad)
-  // When RSI/MACD panes are on, shrink price/volume so everything fits.
-  const extraPanes = (showRSI ? 1 : 0) + (showMACD ? 1 : 0)
+  // When RSI/MACD/Super Cycle panes are on, shrink price/volume so everything fits.
+  const extraPanes = (showRSI ? 1 : 0) + (showMACD ? 1 : 0) + (showSuperCycle ? 1 : 0)
   const priceShare = extraPanes === 0 ? (chartExpanded ? 0.52 : 0.58)
-    : extraPanes === 1 ? 0.46 : 0.40
+    : extraPanes === 1 ? 0.46
+    : extraPanes === 2 ? 0.38
+    : 0.34
   const volShare = extraPanes === 0 ? (1 - priceShare)
-    : extraPanes === 1 ? 0.22 : 0.18
+    : extraPanes === 1 ? 0.22
+    : extraPanes === 2 ? 0.16
+    : 0.14
   const indShare = extraPanes === 0 ? 0 : (1 - priceShare - volShare) / extraPanes
   const priceH = Math.max(90, Math.round(usable * priceShare))
   const volH = Math.max(48, Math.round(usable * volShare))
   const rsiH = showRSI ? Math.max(44, Math.round(usable * indShare)) : 0
   const macdH = showMACD ? Math.max(48, Math.round(usable * indShare)) : 0
+  const scH = showSuperCycle ? Math.max(48, Math.round(usable * indShare)) : 0
   const chartW = Math.max(120, W - padL - padR)
 
   // barsToShow/start now driven by zoomBars/panOffset (mouse wheel /
@@ -6577,62 +6697,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const start = Math.max(0, n - barsToShow - clampedPanOffset)
 
   // ── Zoom (wheel / pinch) and pan (drag) handlers ──
-  // RAF-throttled: wheel/mousemove/touchmove can fire dozens of times
-  // per second, but only one state update (and therefore one render) is
-  // needed per animation frame — this alone cuts most of the redundant
-  // work even beyond the useMemo above.
+  // Defined later (after price/date geometry) so draw tools can map clicks → date/price.
+  // Placeholder until then; React reassigns before the SVG mounts in this same render.
+  let handleWheel = (e) => { e.preventDefault() }
+  let handleMouseDown = () => {}
+  let handleMouseMove = () => {}
+  let handleMouseUp = () => {}
+  let handleTouchStart = () => {}
+  let handleTouchMove = () => {}
+  let handleTouchEnd = () => {}
   const throttle = (fn) => {
     if (rafRef.current) return
     rafRef.current = requestAnimationFrame(() => { rafRef.current = null; fn() })
   }
-  const handleWheel = (e) => {
-    e.preventDefault()
-    const factor = e.deltaY > 0 ? 1.15 : 0.87
-    throttle(() => setZoomBars(z => Math.max(wheelMinZoom, Math.min(n, Math.round(z * factor)))))
-  }
-  const pxToBars = (pxDelta) => {
-    const rect = svgRef.current?.getBoundingClientRect()
-    if (!rect) return 0
-    const svgDelta = pxDelta * (W / rect.width)
-    return Math.round(svgDelta * (barsToShow / chartW))
-  }
-  const handleMouseDown = (e) => {
-    dragRef.current = { startX: e.clientX, startPanOffset: clampedPanOffset }
-  }
-  const handleMouseMove = (e) => {
-    if (!dragRef.current) return
-    const deltaBars = pxToBars(e.clientX - dragRef.current.startX)
-    const capturedStartPanOffset = dragRef.current.startPanOffset
-    // Dragging right reveals older data -> increase panOffset
-    throttle(() => setPanOffset(Math.max(0, Math.min(maxPanOffset, capturedStartPanOffset - deltaBars))))
-  }
-  const handleMouseUp = () => { dragRef.current = null }
-  const touchDist = (touches) => {
-    const [a, b] = touches
-    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
-  }
-  const handleTouchStart = (e) => {
-    if (e.touches.length === 2) {
-      dragRef.current = { pinchDist: touchDist(e.touches), pinchZoomBars: zoomBars }
-    } else if (e.touches.length === 1) {
-      dragRef.current = { startX: e.touches[0].clientX, startPanOffset: clampedPanOffset }
-    }
-  }
-  const handleTouchMove = (e) => {
-    if (!dragRef.current) return
-    if (e.touches.length === 2 && dragRef.current.pinchDist != null) {
-      e.preventDefault()
-      const newDist = touchDist(e.touches)
-      const ratio = dragRef.current.pinchDist / Math.max(1, newDist) // fingers apart = zoom in
-      const capturedPinchZoomBars = dragRef.current.pinchZoomBars
-      throttle(() => setZoomBars(Math.max(wheelMinZoom, Math.min(n, Math.round(capturedPinchZoomBars * ratio)))))
-    } else if (e.touches.length === 1 && dragRef.current.startX != null) {
-      const deltaBars = pxToBars(e.touches[0].clientX - dragRef.current.startX)
-      const capturedStartPanOffset = dragRef.current.startPanOffset
-      throttle(() => setPanOffset(Math.max(0, Math.min(maxPanOffset, capturedStartPanOffset - deltaBars))))
-    }
-  }
-  const handleTouchEnd = () => { dragRef.current = null }
 
   const vDates  = dates.slice(start)
   const vOpens  = o.slice(start)
@@ -6663,10 +6740,22 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const vNearEma9 = nearEma9Days.slice(start)
   const vBuy = (buyDays||[]).slice(start)
   const vSell = (sellDays||[]).slice(start)
+  const vScCycle = (superCycle?.cycle||[]).slice(start)
+  const vScCycleUp = (superCycle?.cycleUp||[]).slice(start)
+  const vScRs = (superCycle?.rsScaled||[]).slice(start)
+  const vScMom = (superCycle?.momScaled||[]).slice(start)
+  const vScMa = (superCycle?.maScaled||[]).slice(start)
+  const vScSqOn = (superCycle?.squeezeOn||[]).slice(start)
+  const vScSqRel = (superCycle?.squeezeRelease||[]).slice(start)
+  const vScRating = (superCycle?.rsRating||[]).slice(start)
+  const vBarColor = (candleBarColors||[]).slice(start)
+  const vBarTag = (candleBarTags||[]).slice(start)
 
   // ── Layout ──
   const volTop = padT + priceH + gapH
-  const rsiTop = volTop + volH + (showRSI ? gapH : 0)
+  // Super Cycle sits directly under volume; RSI/MACD follow below it.
+  const scTop = volTop + volH + (showSuperCycle ? gapH : 0)
+  const rsiTop = scTop + scH + (showRSI ? gapH : 0)
   const macdTop = rsiTop + rsiH + (showMACD ? gapH : 0)
   const panesBottom = macdTop + macdH
   const axisY  = panesBottom + 16
@@ -6687,7 +6776,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   // Forecast (simple linear regression trend projection, NOT a real
   // prediction model) reserves some room on the right by treating the
   // effective bar count as larger than what's actually plotted.
-  const forecastDays = showForecast ? Math.max(5, Math.round(barsToShow * 0.15)) : 0
+  const forecastDays = showForecast ? Math.max(5, Math.round(barsToShow * (fcP.projPct ?? 0.15))) : 0
   const totalCols = barsToShow + forecastDays
   const idxToX   = i => padL + (i + 0.5) / totalCols * chartW
   const candleW  = Math.max(1.5, (chartW / totalCols) * 0.62)
@@ -6697,7 +6786,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   // — a straight-line trend continuation, not a real forecasting model.
   let forecastPoints = null
   if (showForecast && forecastDays > 0) {
-    const sampleN = Math.min(30, vCloses.length)
+    const sampleN = Math.min(fcP.sampleBars ?? 30, vCloses.length)
     const sample = vCloses.slice(-sampleN).map((v,idx)=>({x:idx, y:v})).filter(p=>p.y!=null)
     if (sample.length >= 5) {
       const meanX = sample.reduce((a,p)=>a+p.x,0)/sample.length
@@ -6730,6 +6819,203 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
     ...[...vMacd, ...vMacdSig, ...vMacdHist].filter(v=>v!=null).map(v=>Math.abs(v)),
   )
   const macdToY = v => macdTop + macdH / 2 - (v / macdAbs) * (macdH * 0.42)
+  const scVals = showSuperCycle
+    ? [...vScCycle, ...vScRs, ...vScMom, ...vScMa].filter(v => v != null)
+    : []
+  const scAbs = Math.max(0.0001, ...scVals.map(v => Math.abs(v)))
+  const scToY = v => scTop + scH / 2 - (v / scAbs) * (scH * 0.42)
+
+  // ── Drawing geometry (date+price so zoom/pan/resize keep lines anchored) ──
+  const dateIndex = (date) => {
+    if (!date) return -1
+    const exact = dates.indexOf(date)
+    if (exact >= 0) return exact
+    // nearest earlier date (weekly/monthly aggregation / missing bars)
+    let best = -1
+    for (let i = 0; i < dates.length; i++) {
+      if (dates[i] <= date) best = i
+      else break
+    }
+    return best
+  }
+  const pointToXY = (pt) => {
+    if (!pt?.date || pt.price == null) return null
+    const abs = dateIndex(pt.date)
+    if (abs < 0) return null
+    return { x: idxToX(abs - start), y: priceToY(pt.price) }
+  }
+  const clientToPoint = (clientX, clientY) => {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect || rect.width < 1 || rect.height < 1) return null
+    const sx = (clientX - rect.left) * (W / rect.width)
+    const sy = (clientY - rect.top) * (H / rect.height)
+    if (sy < padT - 2 || sy > padT + priceH + 2) return null
+    const barF = ((sx - padL) / Math.max(1, chartW)) * totalCols - 0.5
+    const visIdx = Math.max(0, Math.min(barsToShow - 1, Math.round(barF)))
+    const absIdx = start + visIdx
+    const date = dates[absIdx]
+    const price = maxP - ((sy - padT) / Math.max(1, priceH)) * (maxP - minP)
+    if (!date || !Number.isFinite(price)) return null
+    return { date, price }
+  }
+  const distToSegment = (px, py, ax, ay, bx, by) => {
+    const dx = bx - ax, dy = by - ay
+    const len2 = dx * dx + dy * dy
+    if (len2 < 1e-6) return Math.hypot(px - ax, py - ay)
+    let t = ((px - ax) * dx + (py - ay) * dy) / len2
+    t = Math.max(0, Math.min(1, t))
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+  }
+  const hitTestDrawing = (clientX, clientY) => {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect) return null
+    const px = (clientX - rect.left) * (W / rect.width)
+    const py = (clientY - rect.top) * (H / rect.height)
+    const thresh = 7
+    let best = null, bestD = thresh
+    for (const d of drawings) {
+      const a = pointToXY(d.p1)
+      const b = pointToXY(d.p2 || d.p1)
+      if (!a) continue
+      let dist = Infinity
+      if (d.type === 'hline') {
+        dist = Math.abs(py - a.y)
+        if (px < padL || px > padL + chartW) dist = Infinity
+      } else if (d.type === 'vline') {
+        dist = Math.abs(px - a.x)
+        if (py < padT || py > padT + priceH) dist = Infinity
+      } else if (d.type === 'rect' && b) {
+        const left = Math.min(a.x, b.x), right = Math.max(a.x, b.x)
+        const top = Math.min(a.y, b.y), bot = Math.max(a.y, b.y)
+        const inside = px >= left && px <= right && py >= top && py <= bot
+        const edge = Math.min(
+          Math.abs(px - left), Math.abs(px - right),
+          Math.abs(py - top), Math.abs(py - bot),
+        )
+        dist = inside ? Math.min(edge, 4) : edge
+      } else if (d.type === 'ray' && b) {
+        const dx = b.x - a.x, dy = b.y - a.y
+        if (Math.abs(dx) < 0.5) dist = Math.abs(px - a.x)
+        else {
+          const x2 = padL + chartW
+          const t = (x2 - a.x) / dx
+          const y2 = a.y + dy * t
+          dist = distToSegment(px, py, a.x, a.y, x2, y2)
+        }
+      } else if (b) {
+        dist = distToSegment(px, py, a.x, a.y, b.x, b.y)
+      }
+      if (dist < bestD) { bestD = dist; best = d.id }
+    }
+    return best
+  }
+  const commitDrawing = (type, p1, p2) => {
+    const color = nextDrawColor(drawings.length)
+    const item = { id: newDrawingId(), type, p1, p2: p2 || null, color, createdAt: Date.now() }
+    setDrawings(ds => [...ds, item])
+    setSelectedDrawId(item.id)
+    setDrawDraft(null)
+  }
+
+  const pxToBars = (pxDelta) => {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect) return 0
+    const svgDelta = pxDelta * (W / rect.width)
+    return Math.round(svgDelta * (barsToShow / chartW))
+  }
+  handleWheel = (e) => {
+    e.preventDefault()
+    const factor = e.deltaY > 0 ? 1.15 : 0.87
+    throttle(() => setZoomBars(z => Math.max(wheelMinZoom, Math.min(n, Math.round(z * factor)))))
+  }
+  handleMouseDown = (e) => {
+    if (drawTool !== 'pan') {
+      e.preventDefault()
+      const pt = clientToPoint(e.clientX, e.clientY)
+      if (!pt) return
+      if (drawTool === 'hline' || drawTool === 'vline') {
+        commitDrawing(drawTool, pt, null)
+        return
+      }
+      if (drawTool === 'trend' || drawTool === 'ray' || drawTool === 'rect') {
+        if (!drawDraft?.p1) {
+          setDrawDraft({ type: drawTool, p1: pt, p2: pt })
+        } else {
+          commitDrawing(drawDraft.type || drawTool, drawDraft.p1, pt)
+        }
+        return
+      }
+      // select mode via pan+click near object when holding Alt? Use dedicated: if click hits, select
+      const hit = hitTestDrawing(e.clientX, e.clientY)
+      if (hit) setSelectedDrawId(hit)
+      else setSelectedDrawId(null)
+      return
+    }
+    // Select drawings with click while panning (no drag yet)
+    const hit = hitTestDrawing(e.clientX, e.clientY)
+    if (hit && !e.shiftKey) {
+      setSelectedDrawId(hit)
+      dragRef.current = { startX: e.clientX, startPanOffset: clampedPanOffset, maybeSelect: hit, moved: false }
+      return
+    }
+    setSelectedDrawId(null)
+    dragRef.current = { startX: e.clientX, startPanOffset: clampedPanOffset, moved: false }
+  }
+  handleMouseMove = (e) => {
+    if (drawTool !== 'pan' && drawDraft?.p1) {
+      const pt = clientToPoint(e.clientX, e.clientY)
+      if (pt) setDrawDraft(d => d ? { ...d, p2: pt } : d)
+      return
+    }
+    if (!dragRef.current || dragRef.current.pinchDist != null) return
+    const deltaBars = pxToBars(e.clientX - dragRef.current.startX)
+    if (Math.abs(e.clientX - dragRef.current.startX) > 4) dragRef.current.moved = true
+    const capturedStartPanOffset = dragRef.current.startPanOffset
+    throttle(() => setPanOffset(Math.max(0, Math.min(maxPanOffset, capturedStartPanOffset - deltaBars))))
+  }
+  handleMouseUp = (e) => {
+    if (dragRef.current && !dragRef.current.moved && dragRef.current.maybeSelect) {
+      setSelectedDrawId(dragRef.current.maybeSelect)
+    }
+    dragRef.current = null
+  }
+  const touchDist = (touches) => {
+    const [a, b] = touches
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+  }
+  handleTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      dragRef.current = { pinchDist: touchDist(e.touches), pinchZoomBars: zoomBars }
+    } else if (e.touches.length === 1) {
+      if (drawTool !== 'pan') {
+        handleMouseDown({ preventDefault(){}, clientX: e.touches[0].clientX, clientY: e.touches[0].clientY, shiftKey: false })
+        return
+      }
+      dragRef.current = { startX: e.touches[0].clientX, startPanOffset: clampedPanOffset, moved: false }
+    }
+  }
+  handleTouchMove = (e) => {
+    if (!dragRef.current) {
+      if (drawTool !== 'pan' && drawDraft?.p1 && e.touches[0]) {
+        const pt = clientToPoint(e.touches[0].clientX, e.touches[0].clientY)
+        if (pt) setDrawDraft(d => d ? { ...d, p2: pt } : d)
+      }
+      return
+    }
+    if (e.touches.length === 2 && dragRef.current.pinchDist != null) {
+      e.preventDefault()
+      const newDist = touchDist(e.touches)
+      const ratio = dragRef.current.pinchDist / Math.max(1, newDist)
+      const capturedPinchZoomBars = dragRef.current.pinchZoomBars
+      throttle(() => setZoomBars(Math.max(wheelMinZoom, Math.min(n, Math.round(capturedPinchZoomBars * ratio)))))
+    } else if (e.touches.length === 1 && dragRef.current.startX != null) {
+      const deltaBars = pxToBars(e.touches[0].clientX - dragRef.current.startX)
+      if (Math.abs(e.touches[0].clientX - dragRef.current.startX) > 4) dragRef.current.moved = true
+      const capturedStartPanOffset = dragRef.current.startPanOffset
+      throttle(() => setPanOffset(Math.max(0, Math.min(maxPanOffset, capturedStartPanOffset - deltaBars))))
+    }
+  }
+  handleTouchEnd = () => { dragRef.current = null }
 
   // X-axis labels, TradingView style: show the month abbreviation at
   // month boundaries, just the day number otherwise.
@@ -6755,6 +7041,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
     rsi: vRSI[hi],
     macd: vMacd[hi], macdSig: vMacdSig[hi], macdHist: vMacdHist[hi],
     guppyCross: vGuppyCross[hi],
+    scCycle: vScCycle[hi],
+    scRating: vScRating[hi],
+    scSqueeze: vScSqOn[hi],
+    barTag: vBarTag[hi],
   } : null
 
   // YTD's bar count is dynamic (depends on today's date vs the data),
@@ -6771,15 +7061,17 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
 
   // TradingView-style indicator catalog (overlays / oscillators / signals)
   const chartIndicators = [
-    { id:'ma', group:'Overlays', label:'Moving Average', short:'MA', desc:'EMA9 · MA20 · MA50 · MA200', on:showMA, set:setShowMA },
+    { id:'ma', group:'Overlays', label:'Moving Average', short:'MA', desc:`EMA${maP.ema9 ?? 9} · MA${maP.ma20 ?? 20} · MA${maP.ma50 ?? 50} · MA${maP.ma200 ?? 200}`, on:showMA, set:setShowMA },
     { id:'guppy', group:'Overlays', label:'Guppy MMA', short:'Guppy', desc:'Short/long ribbons + EMA9×50 cross', on:showGuppy, set:setShowGuppy },
     { id:'sr', group:'Overlays', label:'Support & Resistance', short:'S/R', desc:'R1 R2 · S1 S2 levels', on:showSR, set:setShowSR },
-    { id:'rsi', group:'Oscillators', label:'Relative Strength Index', short:'RSI', desc:'RSI (14) with 70 / 30 bands', on:showRSI, set:setShowRSI },
-    { id:'macd', group:'Oscillators', label:'MACD', short:'MACD', desc:'MACD (12, 26, 9) + histogram', on:showMACD, set:setShowMACD },
+    { id:'rsi', group:'Oscillators', label:'Relative Strength Index', short:'RSI', desc:`RSI (${rsiP.length ?? 14}) with ${rsiP.overbought ?? 70} / ${rsiP.oversold ?? 30} bands`, on:showRSI, set:setShowRSI },
+    { id:'macd', group:'Oscillators', label:'MACD', short:'MACD', desc:`MACD (${macdP.fast ?? 12}, ${macdP.slow ?? 26}, ${macdP.signal ?? 9}) + histogram`, on:showMACD, set:setShowMACD },
+    ...(!isIndex ? [{ id:'supercycle', group:'Oscillators', label:'Lakshmi Super Cycle', short:'Super Cycle', desc:`Cycle ${scP.length ?? 21} · RS MA ${scP.rsMALength ?? 9} · Mom ${scP.momLength ?? 21}`, on:showSuperCycle, set:setShowSuperCycle }] : []),
     { id:'patterns', group:'Signals', label:'Patterns', short:'Patterns', desc:'Inside bar · Acc/Dist · HT/HY/IBV/PP · VCP · Cup', on:showPatterns, set:setShowPatterns },
-    { id:'bullsnort', group:'Signals', label:'Bull Snort', short:'Bull Snort', desc:'Bullish volume climax bars', on:showBullSnort, set:setShowBullSnort },
-    { id:'buysell', group:'Signals', label:'Lakshmi Buy/Sell', short:'Buy/Sell', desc:'SuperTrend + EMA50/200 + EMA9>50 + RS gate (from Pine)', on:showBuySell, set:setShowBuySell },
-    { id:'forecast', group:'Signals', label:'Forecast', short:'Forecast', desc:'Simple trend projection', on:showForecast, set:setShowForecast },
+    { id:'barcolor', group:'Signals', label:'Volume Candle Colors', short:'Bar Color', desc:`IBV/HT/HY/PPV (lookback ${barP.lookbackIV ?? 10}/${barP.lookbackPP ?? 10})`, on:showCandleColors, set:setShowCandleColors },
+    { id:'bullsnort', group:'Signals', label:'Bull Snort', short:'Bull Snort', desc:`Vol ≥ ${snortP.volMult ?? 2}× MA${snortP.volMa ?? 20}`, on:showBullSnort, set:setShowBullSnort },
+    { id:'buysell', group:'Signals', label:'Lakshmi Buy/Sell', short:'Buy/Sell', desc:'', on:showBuySell, set:setShowBuySell },
+    { id:'forecast', group:'Signals', label:'Forecast', short:'Forecast', desc:`Trend projection (${fcP.sampleBars ?? 30} bars)`, on:showForecast, set:setShowForecast },
   ]
   const indQ = indSearch.trim().toLowerCase()
   const filteredIndicators = indQ
@@ -6862,6 +7154,44 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           </button>
         </div>
         <div style={{width:1,height:18,background:C.border,margin:'0 6px'}}/>
+        {/* Drawing tools — TradingView-style; saved per symbol in localStorage */}
+        <div style={{display:'flex',alignItems:'center',gap:1,flexWrap:'wrap'}}>
+          {DRAW_TOOLS.map(t=>(
+            <button key={t.id} type="button" title={t.title}
+              onClick={()=>{ setDrawTool(t.id); setDrawDraft(null); if(t.id==='pan') setSelectedDrawId(null) }}
+              style={{
+                padding:'3px 7px', border:'none', borderRadius:3, cursor:'pointer', fontFamily:'inherit',
+                background: drawTool===t.id ? TV_TOOLBAR_BLUE+'22' : 'transparent',
+                color: drawTool===t.id ? TV_TOOLBAR_BLUE : C.muted,
+                fontSize:10, fontWeight: drawTool===t.id ? 700 : 600, lineHeight:1.2,
+              }}>{t.label}</button>
+          ))}
+          {selectedDrawId && (
+            <button type="button" title="Delete selected drawing (Del)"
+              onClick={()=>{
+                setDrawings(ds=>ds.filter(d=>d.id!==selectedDrawId))
+                setSelectedDrawId(null)
+              }}
+              style={{
+                padding:'3px 7px', border:'none', borderRadius:3, cursor:'pointer', fontFamily:'inherit',
+                background:C.red+'18', color:C.red, fontSize:10, fontWeight:700,
+              }}>Delete</button>
+          )}
+          {drawings.length>0 && (
+            <button type="button" title="Clear all drawings for this symbol"
+              onClick={()=>{
+                if(!window.confirm(`Clear ${drawings.length} drawing(s) on ${sym}?`)) return
+                setDrawings([])
+                setSelectedDrawId(null)
+                setDrawDraft(null)
+              }}
+              style={{
+                padding:'3px 7px', border:'none', borderRadius:3, cursor:'pointer', fontFamily:'inherit',
+                color:C.muted, fontSize:10, fontWeight:600,
+              }}>Clear</button>
+          )}
+        </div>
+        <div style={{width:1,height:18,background:C.border,margin:'0 6px'}}/>
         {/* TradingView-style Indicators (fx) button + dropdown */}
         <div ref={indMenuRef} style={{position:'relative'}}>
           <button type="button" title="Indicators"
@@ -6921,27 +7251,76 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
                       letterSpacing:'0.06em', textTransform:'uppercase',
                     }}>{group}</div>
                     {items.map(ind=>(
-                      <button key={ind.id} type="button"
-                        onClick={()=>ind.set(v=>!v)}
-                        style={{
-                          width:'100%', display:'flex', alignItems:'flex-start', gap:10,
-                          padding:'8px 14px', border:'none', background: ind.on ? TV_TOOLBAR_BLUE+'14' : 'transparent',
-                          cursor:'pointer', textAlign:'left', fontFamily:'inherit',
+                      <div key={ind.id} style={{borderBottom: indSettingsId===ind.id ? `1px solid ${C.border}` : 'none'}}>
+                        <div style={{
+                          display:'flex', alignItems:'flex-start', gap:6,
+                          padding:'6px 10px 6px 14px',
+                          background: ind.on ? TV_TOOLBAR_BLUE+'14' : 'transparent',
                         }}>
-                        <span style={{
-                          marginTop:2, width:16, height:16, borderRadius:3, flexShrink:0,
-                          border:`1.5px solid ${ind.on ? TV_TOOLBAR_BLUE : C.border}`,
-                          background: ind.on ? TV_TOOLBAR_BLUE : 'transparent',
-                          color:'#fff', fontSize:11, fontWeight:800,
-                          display:'inline-flex', alignItems:'center', justifyContent:'center',
-                        }}>{ind.on ? '✓' : ''}</span>
-                        <span style={{display:'flex', flexDirection:'column', gap:2, minWidth:0}}>
-                          <span style={{fontSize:12.5, fontWeight:700, color: ind.on ? TV_TOOLBAR_BLUE : C.text}}>
-                            {ind.label}
-                          </span>
-                          <span style={{fontSize:10.5, color:C.muted, lineHeight:1.35}}>{ind.desc}</span>
-                        </span>
-                      </button>
+                          <button type="button"
+                            onClick={()=>ind.set(v=>!v)}
+                            style={{
+                              flex:1, display:'flex', alignItems:'flex-start', gap:10,
+                              padding:'2px 0', border:'none', background:'transparent',
+                              cursor:'pointer', textAlign:'left', fontFamily:'inherit',
+                            }}>
+                            <span style={{
+                              marginTop:2, width:16, height:16, borderRadius:3, flexShrink:0,
+                              border:`1.5px solid ${ind.on ? TV_TOOLBAR_BLUE : C.border}`,
+                              background: ind.on ? TV_TOOLBAR_BLUE : 'transparent',
+                              color:'#fff', fontSize:11, fontWeight:800,
+                              display:'inline-flex', alignItems:'center', justifyContent:'center',
+                            }}>{ind.on ? '✓' : ''}</span>
+                            <span style={{display:'flex', flexDirection:'column', gap:2, minWidth:0}}>
+                              <span style={{fontSize:12.5, fontWeight:700, color: ind.on ? TV_TOOLBAR_BLUE : C.text}}>
+                                {ind.label}
+                              </span>
+                              {ind.desc ? (
+                                <span style={{fontSize:10.5, color:C.muted, lineHeight:1.35}}>{ind.desc}</span>
+                              ) : null}
+                            </span>
+                          </button>
+                          {INDICATOR_PARAM_FIELDS[ind.id]?.length > 0 && (
+                            <button type="button" title="Settings"
+                              onClick={(e)=>{ e.stopPropagation(); setIndSettingsId(s => s===ind.id ? null : ind.id) }}
+                              style={{
+                                marginTop:1, width:26, height:26, border:'none', borderRadius:4, cursor:'pointer',
+                                background: indSettingsId===ind.id ? TV_TOOLBAR_BLUE+'22' : 'transparent',
+                                color: indSettingsId===ind.id ? TV_TOOLBAR_BLUE : C.muted,
+                                fontSize:14, fontFamily:'inherit', flexShrink:0,
+                              }}>⚙</button>
+                          )}
+                        </div>
+                        {indSettingsId===ind.id && INDICATOR_PARAM_FIELDS[ind.id] && (
+                          <div style={{padding:'6px 14px 10px 40px', background:C.bg||'#0e1117'}}>
+                            <div style={{fontSize:9, color:C.muted, marginBottom:6, fontWeight:700}}>
+                              Parameters · saved for {userId ? 'your account' : 'this browser'}
+                            </div>
+                            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
+                              {INDICATOR_PARAM_FIELDS[ind.id].map(f=>(
+                                <label key={f.key} style={{display:'flex', flexDirection:'column', gap:2, fontSize:10, color:C.muted}}>
+                                  {f.label}
+                                  <input type="number" min={f.min} max={f.max} step={f.step}
+                                    value={indParams(indPrefs, ind.id)[f.key] ?? ''}
+                                    onChange={e=>setIndPrefs(p => setIndicatorParam(p, ind.id, f.key, e.target.value))}
+                                    style={{
+                                      width:'100%', boxSizing:'border-box',
+                                      padding:'5px 7px', borderRadius:4, border:`1px solid ${C.border}`,
+                                      background:C.card, color:C.text, fontSize:12, fontFamily:'inherit',
+                                    }}/>
+                                </label>
+                              ))}
+                            </div>
+                            <button type="button"
+                              onClick={()=>setIndPrefs(p => resetIndicatorParams(p, ind.id))}
+                              style={{
+                                marginTop:8, padding:'3px 8px', border:`1px solid ${C.border}`, borderRadius:3,
+                                background:'transparent', color:C.muted, fontSize:10, fontWeight:600,
+                                cursor:'pointer', fontFamily:'inherit',
+                              }}>Reset defaults</button>
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 ))}
@@ -7003,11 +7382,22 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
               <span>{'  '}Vol MA <span style={{color:TV_VOL_MA}}>{fmtVol(hover.volEma)}</span></span>
             )}
             {showRSI && hover.rsi!=null && (
-              <span>{'  '}RSI <span style={{color:hover.rsi>=70?C.red:hover.rsi<=30?C.green:C.text}}>{hover.rsi.toFixed(1)}</span></span>
+              <span>{'  '}RSI <span style={{color:hover.rsi>=(rsiP.overbought ?? 70)?C.red:hover.rsi<=(rsiP.oversold ?? 30)?C.green:C.text}}>{hover.rsi.toFixed(1)}</span></span>
             )}
             {showMACD && hover.macd!=null && (
               <span>{'  '}MACD <span style={{color:C.blue}}>{hover.macd.toFixed(2)}</span>
                 {hover.macdSig!=null && <> / <span style={{color:C.orange}}>{hover.macdSig.toFixed(2)}</span></>}
+              </span>
+            )}
+            {showSuperCycle && hover.scCycle!=null && (
+              <span>{'  '}Cycle <span style={{color:hover.scCycle>=0?C.green:C.red}}>{hover.scCycle.toFixed(2)}</span>
+                {hover.scRating!=null && <> · RS <span style={{color:C.text}}>{hover.scRating}</span></>}
+                {hover.scSqueeze && <span style={{color:C.yellow}}> · Sq</span>}
+              </span>
+            )}
+            {showCandleColors && hover.barTag && (
+              <span style={{color:LAKSHMI_BAR_COLORS[hover.barTag]||C.text,fontWeight:700}}>
+                {'  '}{hover.barTag}
               </span>
             )}
             {showGuppy && hover.guppyCross && (
@@ -7016,7 +7406,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
               </span>
             )}
           </span>
-        ) : `${sym} · ${barsToShow} ${intervalMeta.unit} · tap a candle to pin`}
+        ) : drawTool!=='pan'
+          ? `${sym} · draw ${drawTool} · ${drawDraft?.p1 ? 'click 2nd point (Esc cancel)' : 'click on chart'} · saved on this device`
+          : `${sym} · ${barsToShow} ${intervalMeta.unit} · tap a candle to pin`}
       </div>
 
       <div ref={plotRef} style={{flex:1,minHeight:0,position:'relative',width:'100%'}}>
@@ -7026,9 +7418,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           height:'100%',
           display:'block',
           touchAction:'none',
-          cursor:dragRef.current?'grabbing':'grab',
+          cursor: drawTool!=='pan' ? 'crosshair' : (dragRef.current?'grabbing':'grab'),
         }}
-        onMouseLeave={()=>{setHoverIdx(null);dragRef.current=null}}
+        onMouseLeave={()=>{setHoverIdx(null); if(drawTool==='pan') dragRef.current=null}}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -7202,16 +7594,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           const op = vOpens[i], hi = vHighs[i], lo = vLows[i]
           if(c==null||op==null||hi==null||lo==null) return null
           const up = c >= op
-          const color = up ? C.green : C.red
+          const color = (showCandleColors && vBarColor[i]) || (up ? C.green : C.red)
           const x = idxToX(i)
           const yOpen = priceToY(op), yClose = priceToY(c)
           const bodyTop = Math.min(yOpen,yClose), bodyH = Math.max(1, Math.abs(yClose-yOpen))
           const accY = Math.min(padT + priceH - 2, priceToY(lo) + 10)
           return (
             <g key={i}
-              onMouseEnter={()=>setHoverIdx(i)}
-              onClick={(e)=>{e.stopPropagation();setPinnedIdx(p=>p===i?null:i)}}
-              style={{cursor:'crosshair'}}>
+              onMouseEnter={()=> drawTool==='pan' && setHoverIdx(i)}
+              onClick={(e)=>{
+                if (drawTool!=='pan') return
+                e.stopPropagation();setPinnedIdx(p=>p===i?null:i)
+              }}
+              style={{cursor: drawTool==='pan' ? 'crosshair' : 'inherit'}}>
               <rect x={x-candleW/2-1} y={padT} width={candleW+2} height={priceH} fill="transparent"/>
               {chartStyle==='candle' && <>
                 <line x1={x} y1={priceToY(hi)} x2={x} y2={priceToY(lo)} stroke={color} strokeWidth={1}/>
@@ -7256,6 +7651,86 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           )
         })}
 
+        {/* User drawings — anchored by date+price; remembered in localStorage */}
+        <defs>
+          <clipPath id={`priceClip-${sym}`}>
+            <rect x={padL} y={padT} width={chartW} height={priceH}/>
+          </clipPath>
+        </defs>
+        <g clipPath={`url(#priceClip-${sym})`}>
+          {[...drawings, ...(drawDraft?.p1 ? [{ id:'_draft', type: drawDraft.type, p1: drawDraft.p1, p2: drawDraft.p2, color: TV_TOOLBAR_BLUE, draft: true }] : [])].map(d=>{
+            const a = pointToXY(d.p1)
+            if (!a) return null
+            const b = pointToXY(d.p2 || d.p1)
+            const sel = d.id === selectedDrawId
+            const stroke = d.color || TV_TOOLBAR_BLUE
+            const sw = sel ? 2.2 : (d.draft ? 1.4 : 1.6)
+            const dash = d.draft ? '4,3' : undefined
+            const common = { stroke, strokeWidth: sw, strokeDasharray: dash, fill: 'none', opacity: d.draft ? 0.85 : 1 }
+            if (d.type === 'hline') {
+              return (
+                <g key={d.id}>
+                  <line x1={padL} y1={a.y} x2={padL+chartW} y2={a.y} {...common}/>
+                  {sel && <circle cx={padL+8} cy={a.y} r={3.5} fill={stroke}/>}
+                </g>
+              )
+            }
+            if (d.type === 'vline') {
+              return (
+                <g key={d.id}>
+                  <line x1={a.x} y1={padT} x2={a.x} y2={padT+priceH} {...common}/>
+                  {sel && <circle cx={a.x} cy={padT+8} r={3.5} fill={stroke}/>}
+                </g>
+              )
+            }
+            if (d.type === 'rect' && b) {
+              const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y)
+              const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y)
+              return (
+                <g key={d.id}>
+                  <rect x={x} y={y} width={Math.max(1,w)} height={Math.max(1,h)}
+                    {...common} fill={stroke} fillOpacity={0.08}/>
+                  {sel && <>
+                    <circle cx={a.x} cy={a.y} r={3.5} fill={stroke}/>
+                    <circle cx={b.x} cy={b.y} r={3.5} fill={stroke}/>
+                  </>}
+                </g>
+              )
+            }
+            if (d.type === 'ray' && b) {
+              const dx = b.x - a.x, dy = b.y - a.y
+              let x2 = padL + chartW, y2 = b.y
+              if (Math.abs(dx) > 0.5) {
+                const t = (x2 - a.x) / dx
+                y2 = a.y + dy * t
+              } else {
+                x2 = a.x
+                y2 = padT + (dy >= 0 ? priceH : 0)
+              }
+              return (
+                <g key={d.id}>
+                  <line x1={a.x} y1={a.y} x2={x2} y2={y2} {...common}/>
+                  {sel && <>
+                    <circle cx={a.x} cy={a.y} r={3.5} fill={stroke}/>
+                    <circle cx={b.x} cy={b.y} r={3.5} fill={stroke}/>
+                  </>}
+                </g>
+              )
+            }
+            // trend (default)
+            if (!b) return null
+            return (
+              <g key={d.id}>
+                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} {...common}/>
+                {sel && <>
+                  <circle cx={a.x} cy={a.y} r={3.5} fill={stroke}/>
+                  <circle cx={b.x} cy={b.y} r={3.5} fill={stroke}/>
+                </>}
+              </g>
+            )
+          })}
+        </g>
+
         {/* Volume bars — TradingView-style: teal up / red down; Bull Snort / Patterns tint */}
         <g>
           {vCloses.map((c,i)=>{
@@ -7290,17 +7765,17 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           <g>
             <rect x={padL} y={rsiTop} width={chartW} height={rsiH} fill={C.card} opacity={0.4}/>
             <line x1={padL} y1={rsiTop} x2={padL+chartW} y2={rsiTop} stroke={C.border} strokeWidth={1} opacity={0.8}/>
-            <rect x={padL} y={rsiToY(70)} width={chartW} height={Math.max(0, rsiToY(30)-rsiToY(70))}
+            <rect x={padL} y={rsiToY(rsiP.overbought ?? 70)} width={chartW} height={Math.max(0, rsiToY(rsiP.oversold ?? 30)-rsiToY(rsiP.overbought ?? 70))}
               fill={C.muted} opacity={0.08}/>
-            {[70,50,30].map(lvl=>(
+            {[rsiP.overbought ?? 70, 50, rsiP.oversold ?? 30].map(lvl=>(
               <g key={`rsi-${lvl}`}>
                 <line x1={padL} y1={rsiToY(lvl)} x2={padL+chartW} y2={rsiToY(lvl)}
-                  stroke={lvl===50?C.border:lvl===70?C.red:C.green}
+                  stroke={lvl===50?C.border:lvl===(rsiP.overbought ?? 70)?C.red:C.green}
                   strokeWidth={0.6} strokeDasharray={lvl===50?'2,2':'3,3'} opacity={0.7}/>
                 <text x={padL+chartW+4} y={rsiToY(lvl)+3} fontSize={8} fill={C.muted}>{lvl}</text>
               </g>
             ))}
-            <text x={padL+4} y={rsiTop+11} fontSize={8} fontWeight={700} fill={C.muted}>RSI 14</text>
+            <text x={padL+4} y={rsiTop+11} fontSize={8} fontWeight={700} fill={C.muted}>RSI {rsiP.length ?? 14}</text>
             {(() => {
               const pts = vRSI.map((v,i)=> v!=null ? `${idxToX(i)},${rsiToY(v)}` : null).filter(Boolean)
               return pts.length>1 ? (
@@ -7317,7 +7792,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
             <line x1={padL} y1={macdTop} x2={padL+chartW} y2={macdTop} stroke={C.border} strokeWidth={1} opacity={0.8}/>
             <line x1={padL} y1={macdToY(0)} x2={padL+chartW} y2={macdToY(0)}
               stroke={C.border} strokeWidth={0.7} opacity={0.8}/>
-            <text x={padL+4} y={macdTop+11} fontSize={8} fontWeight={700} fill={C.muted}>MACD 12,26,9</text>
+            <text x={padL+4} y={macdTop+11} fontSize={8} fontWeight={700} fill={C.muted}>MACD {macdP.fast ?? 12},{macdP.slow ?? 26},{macdP.signal ?? 9}</text>
             {vMacdHist.map((h,i)=>{
               if (h==null) return null
               const x = idxToX(i)
@@ -7341,6 +7816,53 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
               )
             })()}
             <text x={padL+chartW+4} y={macdToY(0)+3} fontSize={8} fill={C.muted}>0</text>
+          </g>
+        )}
+
+        {/* Lakshmi Super Cycle pane */}
+        {showSuperCycle && (
+          <g>
+            <rect x={padL} y={scTop} width={chartW} height={scH} fill={C.card} opacity={0.4}/>
+            <line x1={padL} y1={scTop} x2={padL+chartW} y2={scTop} stroke={C.border} strokeWidth={1} opacity={0.8}/>
+            <line x1={padL} y1={scToY(0)} x2={padL+chartW} y2={scToY(0)}
+              stroke={C.border} strokeWidth={0.7} opacity={0.8}/>
+            <text x={padL+4} y={scTop+11} fontSize={8} fontWeight={700} fill={C.muted}>Super Cycle</text>
+            {vScCycle.map((c,i)=>{
+              if (c==null) return null
+              const x = idxToX(i)
+              const y0 = scToY(0)
+              const y1 = scToY(c)
+              const top = Math.min(y0, y1)
+              const height = Math.max(1, Math.abs(y1 - y0))
+              const up = vScCycleUp[i]
+              return (
+                <rect key={`sc-${i}`} x={x-volBarW/2} y={top} width={volBarW} height={height}
+                  fill={up ? C.green : C.red} opacity={0.55}/>
+              )
+            })}
+            {(() => {
+              const rsPts = vScRs.map((v,i)=> v!=null ? `${idxToX(i)},${scToY(v)}` : null).filter(Boolean)
+              const momPts = vScMom.map((v,i)=> v!=null ? `${idxToX(i)},${scToY(v)}` : null).filter(Boolean)
+              const maPts = vScMa.map((v,i)=> v!=null ? `${idxToX(i)},${scToY(v)}` : null).filter(Boolean)
+              return (
+                <>
+                  {rsPts.length>1 && <polyline points={rsPts.join(' ')} fill="none" stroke="#60a5fa" strokeWidth={1.2}/>}
+                  {momPts.length>1 && <polyline points={momPts.join(' ')} fill="none" stroke="#f472b6" strokeWidth={1.1} opacity={0.9}/>}
+                  {maPts.length>1 && <polyline points={maPts.join(' ')} fill="none" stroke="#fbbf24" strokeWidth={1.1} opacity={0.9}/>}
+                </>
+              )
+            })()}
+            {vScSqOn.map((on,i)=>{
+              if (!on && !vScSqRel[i]) return null
+              const x = idxToX(i)
+              const y = scTop + scH - 5
+              return (
+                <circle key={`sq-${i}`} cx={x} cy={y} r={2.2}
+                  fill={vScSqRel[i] ? C.orange : '#111827'}
+                  stroke={vScSqRel[i] ? C.orange : C.muted} strokeWidth={0.6}/>
+              )
+            })}
+            <text x={padL+chartW+4} y={scToY(0)+3} fontSize={8} fill={C.muted}>0</text>
           </g>
         )}
 
@@ -7400,11 +7922,25 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           <span><span style={{color:'#f472b6'}}>—</span> Guppy long</span>
           <span><span style={{color:C.green}}>▲</span>/<span style={{color:C.red}}>▼</span> EMA9×50 cross</span>
         </>}
-        {showRSI && <span><span style={{color:'#a78bfa'}}>—</span> RSI 14</span>}
+        {showRSI && <span><span style={{color:'#a78bfa'}}>—</span> RSI {rsiP.length ?? 14}</span>}
         {showMACD && <>
           <span><span style={{color:C.blue}}>—</span> MACD</span>
           <span><span style={{color:C.orange}}>—</span> Signal</span>
           <span><span style={{color:C.green}}>■</span> Hist</span>
+        </>}
+        {showSuperCycle && <>
+          <span><span style={{color:C.green}}>■</span> Cycle↑</span>
+          <span><span style={{color:C.red}}>■</span> Cycle↓</span>
+          <span><span style={{color:'#60a5fa'}}>—</span> RS</span>
+          <span><span style={{color:'#f472b6'}}>—</span> Mom</span>
+          <span><span style={{color:'#fbbf24'}}>—</span> RS MA</span>
+          <span><span style={{color:'#111827'}}>●</span> Squeeze</span>
+        </>}
+        {showCandleColors && <>
+          <span><span style={{color:LAKSHMI_BAR_COLORS.IBV}}>■</span> IBV</span>
+          <span><span style={{color:LAKSHMI_BAR_COLORS.HT}}>■</span> HT</span>
+          <span><span style={{color:LAKSHMI_BAR_COLORS.HY}}>■</span> HY</span>
+          <span><span style={{color:LAKSHMI_BAR_COLORS.PPV}}>■</span> PPV</span>
         </>}
         {showBullSnort && <span><span style={{color:BULL_SNORT_COLOR}}>■</span> Bull Snort</span>}
         {showBuySell && <>
@@ -7423,10 +7959,11 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           {cup && <span><span style={{color:C.purple}}>┊</span> Cup{cup.hasHandle?' & Handle':''}</span>}
         </>}
       </div>
-      {(showPatterns||showForecast||showBuySell)&&(
+      {(showPatterns||showForecast||showBuySell||showSuperCycle)&&(
       <div style={{fontSize:7,color:C.muted,marginTop:2,flexShrink:0}}>
         {showPatterns&&'Patterns are heuristic — visual aid only. '}
-        {showBuySell&&'Buy/Sell from Lakshmi Mata Pine (SuperTrend + EMAs + RS) — educational, not advice. '}
+        {showBuySell&&'Buy/Sell signals — educational, not advice. '}
+        {showSuperCycle&&'Super Cycle from Lakshmi Mata Pine (cycle + RS vs Nifty + squeeze) — educational, not advice. '}
         {showForecast&&'Forecast is a simple trend line — not a prediction.'}
       </div>
       )}
@@ -18173,6 +18710,7 @@ export default function App(){
         sym={chartSym}
         isIndex={chartIsIndex || indexData.some(idx=>idx.name===chartSym)}
         wide={chartWide}
+        userId={session?.user?.id || null}
         customPct={dockStack||dockColumns||dockSoloChart?null:chartPanelPct}
         onToggleWide={()=>{
           setChartPanelPct(null)

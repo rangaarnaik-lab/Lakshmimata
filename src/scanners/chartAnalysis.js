@@ -81,23 +81,108 @@ export function detectIBVDays(highs, lows, closes, volumes) {
  * upper 30% of the bar's range. Works on daily or weekly bars.
  * `opens` optional; falls back to prior close.
  */
-export function detectBullSnortDays(highs, lows, closes, volumes, opens) {
+export function detectBullSnortDays(highs, lows, closes, volumes, opens, opts = {}) {
   const n = closes.length
   const flags = new Array(n).fill(false)
-  const volMa = calcSMASeries(volumes, 20)
-  for (let i = 20; i < n; i++) {
+  const volMaLen = opts.volMa ?? 20
+  const volMult = opts.volMult ?? 2
+  const closePct = opts.closePct ?? 0.7
+  const volMa = calcSMASeries(volumes, volMaLen)
+  for (let i = volMaLen; i < n; i++) {
     const hi = highs[i], lo = lows[i], cl = closes[i], vol = volumes[i]
     if (hi == null || lo == null || cl == null || vol == null) continue
     const op = (opens && opens[i] != null) ? opens[i] : (i > 0 ? closes[i - 1] : cl)
     if (cl < op) continue
     const range = hi - lo
     if (range <= 0) continue
-    if ((cl - lo) / range < 0.7) continue
+    if ((cl - lo) / range < closePct) continue
     const avg = volMa[i]
     if (avg == null || avg <= 0) continue
-    flags[i] = vol >= avg * 2
+    flags[i] = vol >= avg * volMult
   }
   return flags
+}
+
+/**
+ * Lakshmi Mata candlestick barcolor — from Lakshmi_Mata.pine.
+ * Priority: IBV > HT (all-time high vol) > HY (year high vol) > PPV.
+ * Returns hex color or null (use default up/down green/red).
+ */
+export const LAKSHMI_BAR_COLORS = {
+  IBV: '#3b82f6', // blue
+  HT: '#a855f7',  // purple
+  HY: '#f97316',  // orange
+  PPV: '#84cc16', // lime
+}
+
+export function calcLakshmiCandleBarColors(opens, highs, lows, closes, volumes, opts = {}) {
+  const lookbackIV = opts.lookbackIV ?? 10
+  const lookbackPP = opts.lookbackPP ?? 10
+  const n = closes.length
+  const colors = new Array(n).fill(null)
+  const tags = new Array(n).fill(null)
+  if (n < lookbackIV + 2) return { colors, tags }
+
+  const volEma = emaSeries(volumes, lookbackIV)
+  const highestPriorVol = (i, length) => {
+    let hi = -Infinity
+    const start = Math.max(0, i - length)
+    for (let j = start; j < i; j++) {
+      if (volumes[j] != null && volumes[j] > hi) hi = volumes[j]
+    }
+    return Number.isFinite(hi) ? hi : null
+  }
+
+  for (let i = 1; i < n; i++) {
+    const o = opens?.[i] ?? closes[i - 1]
+    const h = highs[i], l = lows[i], c = closes[i], v = volumes[i]
+    if (h == null || l == null || c == null || v == null || o == null) continue
+
+    const greenDay = c > o
+    const upday = c > closes[i - 1]
+    const range = h - l
+    const dailyClosingRange = range !== 0 ? ((c - l) / range) * 100 > 50 : false
+
+    const maxVolPriorIV = highestPriorVol(i, lookbackIV)
+    const ivDay = maxVolPriorIV != null
+      && v >= 2 * maxVolPriorIV
+      && greenDay
+      && upday
+      && dailyClosingRange
+
+    let maxDownVol = 0
+    const ppStart = Math.max(0, i - lookbackPP)
+    for (let j = ppStart; j < i; j++) {
+      if (j > 0 && closes[j] < closes[j - 1] && volumes[j] != null) {
+        maxDownVol = Math.max(maxDownVol, volumes[j])
+      }
+    }
+    const pivotPocket = greenDay
+      && v >= maxDownVol
+      && volEma[i] != null
+      && v > volEma[i]
+      && !ivDay
+
+    const maxVol1000 = highestPriorVol(i, 1000)
+    const maxVol365 = highestPriorVol(i, 365)
+    const isHT = maxVol1000 != null && v >= maxVol1000
+    const isHY = maxVol365 != null && v >= maxVol365
+
+    if (ivDay) {
+      colors[i] = LAKSHMI_BAR_COLORS.IBV
+      tags[i] = 'IBV'
+    } else if (isHT) {
+      colors[i] = LAKSHMI_BAR_COLORS.HT
+      tags[i] = 'HT'
+    } else if (isHY) {
+      colors[i] = LAKSHMI_BAR_COLORS.HY
+      tags[i] = 'HY'
+    } else if (pivotPocket) {
+      colors[i] = LAKSHMI_BAR_COLORS.PPV
+      tags[i] = 'PPV'
+    }
+  }
+  return { colors, tags }
 }
 
 /** Aggregate daily OHLCV into coarser bars using a period key (UTC). */
@@ -443,19 +528,25 @@ export function detectCupAndHandle(prices, highs, lows, lookback = 130) {
  *   if missing/short, RS filter is skipped (EMA + SuperTrend still apply).
  * @returns {{ buy: boolean[], sell: boolean[], trend: number[] }}
  */
-export function detectLakshmiBuySellSignals(highs, lows, closes, niftyClosesAligned = null) {
+export function detectLakshmiBuySellSignals(highs, lows, closes, niftyClosesAligned = null, opts = {}) {
   const n = closes.length
   const buy = new Array(n).fill(false)
   const sell = new Array(n).fill(false)
   const trendOut = new Array(n).fill(1)
   if (n < 60) return { buy, sell, trend: trendOut }
 
-  const atrPeriod = 10
-  const multiplier = 2.0
-  const ema9 = emaSeries(closes, 9)
-  const ema21 = emaSeries(closes, 21)
-  const ema50 = emaSeries(closes, 50)
-  const ema200 = emaSeries(closes, 200)
+  const atrPeriod = opts.atrPeriod ?? 10
+  const multiplier = opts.multiplier ?? 2.0
+  const emaFastLen = opts.emaFast ?? 9
+  const emaMidLen = opts.emaMid ?? 21
+  const emaSlowLen = opts.emaSlow ?? 50
+  const emaLongLen = opts.emaLong ?? 200
+  const rsMin = opts.rsMin ?? 50
+  const rsRise = opts.rsRise ?? 10
+  const ema9 = emaSeries(closes, emaFastLen)
+  const ema21 = emaSeries(closes, emaMidLen)
+  const ema50 = emaSeries(closes, emaSlowLen)
+  const ema200 = emaSeries(closes, emaLongLen)
 
   // True range + Wilder ATR (matches Pine ta.atr)
   const tr = new Array(n).fill(0)
@@ -553,9 +644,9 @@ export function detectLakshmiBuySellSignals(highs, lows, closes, niftyClosesAlig
     let rsOk = true
     if (niftyOk && rsRating[i] != null) {
       const rising = i >= 21 && rsRating[i - 21] != null
-        ? (rsRating[i] - rsRating[i - 21]) >= 10
+        ? (rsRating[i] - rsRating[i - 21]) >= rsRise
         : false
-      rsOk = rsRating[i] > 50 || rising
+      rsOk = rsRating[i] > rsMin || rising
     }
     const emaConditionMet = above50 && above200 && maOk && rsOk
     const buySignal = pendingUptrendBuy && emaConditionMet
@@ -589,4 +680,157 @@ export function alignSeriesFromEnd(stockLen, benchCloses) {
     if (bi >= 0 && bi < m) out[i] = benchCloses[bi]
   }
   return out
+}
+
+/** Pine-style linreg at bar i (offset 0 = fitted value on the current bar). */
+function linRegAt(src, i, length) {
+  if (i < length - 1) return null
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0
+  for (let k = 0; k < length; k++) {
+    const y = src[i - length + 1 + k]
+    if (y == null || Number.isNaN(y)) return null
+    sumX += k
+    sumY += y
+    sumXY += k * y
+    sumX2 += k * k
+  }
+  const den = length * sumX2 - sumX * sumX
+  if (den === 0) return null
+  const b = (length * sumXY - sumX * sumY) / den
+  const a = (sumY - b * sumX) / length
+  return a + b * (length - 1)
+}
+
+function rollingHighest(arr, i, length) {
+  let hi = -Infinity
+  const start = Math.max(0, i - length + 1)
+  for (let j = start; j <= i; j++) {
+    if (arr[j] != null && arr[j] > hi) hi = arr[j]
+  }
+  return Number.isFinite(hi) ? hi : null
+}
+function rollingLowest(arr, i, length) {
+  let lo = Infinity
+  const start = Math.max(0, i - length + 1)
+  for (let j = start; j <= i; j++) {
+    if (arr[j] != null && arr[j] < lo) lo = arr[j]
+  }
+  return Number.isFinite(lo) ? lo : null
+}
+
+/**
+ * Lakshmi Mata Super Cycle pane — from Lakshmi_Mata_Super_Cycle_merged.pine.
+ * Cycle histogram (linreg), BB/KC squeeze, RS line vs Nifty scaled onto cycle axis.
+ */
+export function calcLakshmiSuperCycle(highs, lows, closes, niftyClosesAligned = null, opts = {}) {
+  const length = opts.length ?? 21
+  const rsMALength = opts.rsMALength ?? 9
+  const momLength = opts.momLength ?? 21
+  const bbMult = opts.bbMult ?? 2.0
+  const kcMult = opts.kcMult ?? 1.5
+  const n = closes.length
+  const empty = {
+    cycle: new Array(n).fill(null),
+    cycleUp: new Array(n).fill(false),
+    rsScaled: new Array(n).fill(null),
+    momScaled: new Array(n).fill(null),
+    maScaled: new Array(n).fill(null),
+    squeezeOn: new Array(n).fill(false),
+    squeezeRelease: new Array(n).fill(false),
+    rsRating: new Array(n).fill(null),
+    rsLine: new Array(n).fill(null),
+  }
+  if (n < length + 5) return empty
+
+  const cycle = new Array(n).fill(null)
+  const cycleSrc = new Array(n).fill(null)
+  for (let i = 0; i < n; i++) {
+    const hh = rollingHighest(highs, i, length)
+    const ll = rollingLowest(lows, i, length)
+    if (hh == null || ll == null || closes[i] == null) continue
+    cycleSrc[i] = closes[i] - (hh + ll) / 2
+  }
+  for (let i = length - 1; i < n; i++) {
+    cycle[i] = linRegAt(cycleSrc, i, length)
+  }
+  const cycleUp = new Array(n).fill(false)
+  for (let i = 1; i < n; i++) {
+    cycleUp[i] = cycle[i] != null && cycle[i - 1] != null && cycle[i] > cycle[i - 1]
+  }
+
+  // Squeeze: BB inside KC
+  const basis = calcSMASeries(closes, length)
+  const squeezeOn = new Array(n).fill(false)
+  const squeezeRelease = new Array(n).fill(false)
+  const tr = new Array(n).fill(0)
+  for (let i = 0; i < n; i++) {
+    if (i === 0) { tr[i] = (highs[i] ?? closes[i]) - (lows[i] ?? closes[i]); continue }
+    const h = highs[i] ?? closes[i], l = lows[i] ?? closes[i], pc = closes[i - 1]
+    tr[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc))
+  }
+  const rangeKC = emaSeries(tr, length)
+  for (let i = length - 1; i < n; i++) {
+    if (basis[i] == null || rangeKC[i] == null) continue
+    // stdev of closes over length
+    let sum = 0, sum2 = 0
+    for (let j = i - length + 1; j <= i; j++) { sum += closes[j]; sum2 += closes[j] * closes[j] }
+    const mean = sum / length
+    const stdev = Math.sqrt(Math.max(0, sum2 / length - mean * mean))
+    const upperBB = basis[i] + bbMult * stdev
+    const lowerBB = basis[i] - bbMult * stdev
+    const upperKC = basis[i] + kcMult * rangeKC[i]
+    const lowerKC = basis[i] - kcMult * rangeKC[i]
+    squeezeOn[i] = lowerBB > lowerKC && upperBB < upperKC
+    squeezeRelease[i] = !squeezeOn[i] && i > 0 && squeezeOn[i - 1]
+  }
+
+  const rsLine = new Array(n).fill(null)
+  const rsRating = new Array(n).fill(null)
+  const niftyOk = Array.isArray(niftyClosesAligned) && niftyClosesAligned.length === n
+  if (niftyOk) {
+    for (let i = 0; i < n; i++) {
+      const b = niftyClosesAligned[i]
+      if (b && b !== 0 && closes[i] != null) rsLine[i] = (closes[i] / b) * 100
+    }
+    const perf = (arr, i, len) => {
+      if (i < len || arr[i] == null || arr[i - len] == null || arr[i - len] === 0) return null
+      return ((arr[i] - arr[i - len]) / Math.abs(arr[i - len])) * 100
+    }
+    const rawRS = new Array(n).fill(null)
+    for (let i = 0; i < n; i++) {
+      const a = perf(closes, i, 63), b = perf(closes, i, 126)
+      const c = perf(closes, i, 189), d = perf(closes, i, 252)
+      const na = perf(niftyClosesAligned, i, 63), nb = perf(niftyClosesAligned, i, 126)
+      const nc = perf(niftyClosesAligned, i, 189), nd = perf(niftyClosesAligned, i, 252)
+      if ([a, b, c, d, na, nb, nc, nd].some(v => v == null)) continue
+      rawRS[i] = (a - na) * 0.4 + (b - nb) * 0.2 + (c - nc) * 0.2 + (d - nd) * 0.2
+    }
+    for (let i = 0; i < n; i++) {
+      if (rawRS[i] == null) continue
+      const hi = rollingHighest(rawRS, i, 252)
+      const lo = rollingLowest(rawRS, i, 252)
+      if (hi == null || lo == null || hi === lo) rsRating[i] = 50
+      else rsRating[i] = Math.round(((rawRS[i] - lo) / (hi - lo)) * 98 + 1)
+    }
+  }
+
+  const rsLineMA = emaSeries(rsLine.map(v => v ?? 0), rsMALength).map((v, i) => rsLine[i] == null ? null : v)
+  const momLine = emaSeries(rsLine.map(v => v ?? 0), momLength).map((v, i) => rsLine[i] == null ? null : v)
+
+  const rsScaled = new Array(n).fill(null)
+  const momScaled = new Array(n).fill(null)
+  const maScaled = new Array(n).fill(null)
+  for (let i = 0; i < n; i++) {
+    const cHi = rollingHighest(cycle, i, 252)
+    const cLo = rollingLowest(cycle, i, 252)
+    const rHi = rollingHighest(rsLine, i, 252)
+    const rLo = rollingLowest(rsLine, i, 252)
+    if (cHi == null || cLo == null || rHi == null || rLo == null || rHi === rLo) continue
+    const norm = (v) => (v - rLo) / (rHi - rLo)
+    if (rsLine[i] != null) rsScaled[i] = cLo + norm(rsLine[i]) * (cHi - cLo)
+    if (momLine[i] != null) momScaled[i] = cLo + norm(momLine[i]) * (cHi - cLo)
+    if (rsLineMA[i] != null) maScaled[i] = cLo + norm(rsLineMA[i]) * (cHi - cLo)
+  }
+
+  return { cycle, cycleUp, rsScaled, momScaled, maScaled, squeezeOn, squeezeRelease, rsRating, rsLine }
 }
