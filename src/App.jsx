@@ -26,6 +26,7 @@ import {
   detectPPDays, detectHYDays, detectHTDays, detectIBVDays, detectNearEMA9Days,
   detectBullSnortDays, aggregateToWeekly, aggregateToMonthly, aggregateToYearly,
   calcRSISeries, calcMACDSeries, detectEmaCrossoverDays,
+  detectLakshmiBuySellSignals, alignSeriesFromEnd,
   GUPPY_SHORT_PERIODS, GUPPY_LONG_PERIODS,
 } from './scanners/chartAnalysis'
 
@@ -6279,6 +6280,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const [showRSI, setShowRSI] = useState(false)
   const [showMACD, setShowMACD] = useState(false)
   const [showForecast, setShowForecast] = useState(false)
+  const [showBuySell, setShowBuySell] = useState(true)
+  const [niftyCloses, setNiftyCloses] = useState(null)
   const [showIndMenu, setShowIndMenu] = useState(false)
   const [indSearch, setIndSearch] = useState('')
   const [hoverIdx, setHoverIdx] = useState(null)
@@ -6363,6 +6366,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
     const _swings = findSwingPoints(highs, lows, intervalMeta.swing)
     const ema9 = emaArr(closes, 9)
     const ema50 = emaArr(closes, 50)
+    const niftyAligned = (!isIndex && showBuySell)
+      ? alignSeriesFromEnd(closes.length, niftyCloses)
+      : null
+    const buySell = (!isIndex && showBuySell)
+      ? detectLakshmiBuySellSignals(highs, lows, closes, niftyAligned)
+      : { buy: [], sell: [], trend: [] }
     return {
       ma20: calcSMASeries(closes, 20),
       ma50: calcSMASeries(closes, 50),
@@ -6386,8 +6395,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       nearEma9Days: detectNearEMA9Days(closes),
       vcp: detectVCPContractions(_swings),
       cup: detectCupAndHandle(closes, highs, lows),
+      buyDays: buySell.buy,
+      sellDays: buySell.sell,
     }
-  }, [seriesData, barInterval, intervalMeta, isIndex])
+  }, [seriesData, barInterval, intervalMeta, isIndex, showBuySell, niftyCloses])
 
   useEffect(() => {
     let cancelled = false
@@ -6403,6 +6414,20 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
       .finally(() => { if(!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [sym, isIndex])
+
+  // Nifty closes for Lakshmi Mata Buy RS gate (aligned from end to stock series).
+  useEffect(() => {
+    if (isIndex || !showBuySell) { setNiftyCloses(null); return }
+    let cancelled = false
+    fetchIndexPriceHistory('Nifty 50')
+      .then(res => {
+        if (cancelled) return
+        const px = res?.prices
+        setNiftyCloses(Array.isArray(px) ? px : null)
+      })
+      .catch(() => { if (!cancelled) setNiftyCloses(null) })
+    return () => { cancelled = true }
+  }, [isIndex, showBuySell])
 
   useEffect(()=>{
     // Switching candle size resets zoom to the current range preset in that unit.
@@ -6491,7 +6516,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   }
 
   const { ma20, ma50, ma200, ema9, ema50, guppyShort, guppyLong, guppyCross, rsi, macd,
-    swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, bullSnortDays, nearEma9Days, vcp, cup } = analysis
+    swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, bullSnortDays, nearEma9Days, vcp, cup,
+    buyDays, sellDays } = analysis
 
   let dates = seriesData.dates
   let closes = seriesData.closes
@@ -6635,6 +6661,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
   const vIBV = ibvDays.slice(start)
   const vSnort = (bullSnortDays||[]).slice(start)
   const vNearEma9 = nearEma9Days.slice(start)
+  const vBuy = (buyDays||[]).slice(start)
+  const vSell = (sellDays||[]).slice(start)
 
   // ── Layout ──
   const volTop = padT + priceH + gapH
@@ -6750,6 +6778,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
     { id:'macd', group:'Oscillators', label:'MACD', short:'MACD', desc:'MACD (12, 26, 9) + histogram', on:showMACD, set:setShowMACD },
     { id:'patterns', group:'Signals', label:'Patterns', short:'Patterns', desc:'Inside bar · Acc/Dist · HT/HY/IBV/PP · VCP · Cup', on:showPatterns, set:setShowPatterns },
     { id:'bullsnort', group:'Signals', label:'Bull Snort', short:'Bull Snort', desc:'Bullish volume climax bars', on:showBullSnort, set:setShowBullSnort },
+    { id:'buysell', group:'Signals', label:'Lakshmi Buy/Sell', short:'Buy/Sell', desc:'SuperTrend + EMA50/200 + EMA9>50 + RS gate (from Pine)', on:showBuySell, set:setShowBuySell },
     { id:'forecast', group:'Signals', label:'Forecast', short:'Forecast', desc:'Simple trend projection', on:showForecast, set:setShowForecast },
   ]
   const indQ = indSearch.trim().toLowerCase()
@@ -7198,6 +7227,18 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
               {showPatterns && vAccDist[i]==='dist' && (
                 <text x={x} y={accY} fontSize={7} fill={C.red} textAnchor="middle">▼</text>
               )}
+              {showBuySell && vBuy[i] && (
+                <g>
+                  <rect x={x-14} y={priceToY(lo)+4} width={28} height={12} rx={2} fill={C.green}/>
+                  <text x={x} y={priceToY(lo)+13} fontSize={8} fontWeight={800} fill="#fff" textAnchor="middle">Buy</text>
+                </g>
+              )}
+              {showBuySell && vSell[i] && (
+                <g>
+                  <rect x={x-14} y={priceToY(hi)-16} width={28} height={12} rx={2} fill={C.red}/>
+                  <text x={x} y={priceToY(hi)-7} fontSize={8} fontWeight={800} fill="#fff" textAnchor="middle">Sell</text>
+                </g>
+              )}
               {(hoverIdx===i || pinnedIdx===i) && (
                 <>
                   <line x1={x} y1={padT} x2={x} y2={panesBottom} stroke={pinnedIdx===i?C.accent:C.muted}
@@ -7366,6 +7407,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           <span><span style={{color:C.green}}>■</span> Hist</span>
         </>}
         {showBullSnort && <span><span style={{color:BULL_SNORT_COLOR}}>■</span> Bull Snort</span>}
+        {showBuySell && <>
+          <span><span style={{color:C.green}}>■</span> Buy</span>
+          <span><span style={{color:C.red}}>■</span> Sell</span>
+        </>}
         {showPatterns && <>
           <span><span style={{color:C.teal}}>●</span> Inside Bar</span>
           <span><span style={{color:C.green}}>▲</span> Accumulation</span>
@@ -7378,10 +7423,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded}){
           {cup && <span><span style={{color:C.purple}}>┊</span> Cup{cup.hasHandle?' & Handle':''}</span>}
         </>}
       </div>
-      {(showPatterns||showForecast)&&(
+      {(showPatterns||showForecast||showBuySell)&&(
       <div style={{fontSize:7,color:C.muted,marginTop:2,flexShrink:0}}>
-        {showPatterns&&'Patterns are heuristic — visual aid only.'}
-        {showPatterns&&showForecast&&' '}
+        {showPatterns&&'Patterns are heuristic — visual aid only. '}
+        {showBuySell&&'Buy/Sell from Lakshmi Mata Pine (SuperTrend + EMAs + RS) — educational, not advice. '}
         {showForecast&&'Forecast is a simple trend line — not a prediction.'}
       </div>
       )}

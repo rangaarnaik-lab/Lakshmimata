@@ -430,3 +430,163 @@ export function detectCupAndHandle(prices, highs, lows, lookback = 130) {
     handleDepthPct: Math.round(handleDepthPct),
   }
 }
+
+/**
+ * Lakshmi Mata Pine Buy/Sell — ported from Lakshmi_Mata.pine.
+ *
+ * Buy: SuperTrend flips bullish (or pending after flip) AND close > EMA50
+ * AND close > EMA200 AND EMA9 > EMA50 AND (RS>50 OR RS rising ≥10 over 21 bars).
+ * Sell: (SuperTrend flips bearish AND EMA9 < EMA21) OR EMA9 cross under EMA21,
+ * but only if a filtered Buy occurred earlier (matching-buy gate).
+ *
+ * @param {number[]} niftyClosesAligned optional same-length Nifty closes for RS gate;
+ *   if missing/short, RS filter is skipped (EMA + SuperTrend still apply).
+ * @returns {{ buy: boolean[], sell: boolean[], trend: number[] }}
+ */
+export function detectLakshmiBuySellSignals(highs, lows, closes, niftyClosesAligned = null) {
+  const n = closes.length
+  const buy = new Array(n).fill(false)
+  const sell = new Array(n).fill(false)
+  const trendOut = new Array(n).fill(1)
+  if (n < 60) return { buy, sell, trend: trendOut }
+
+  const atrPeriod = 10
+  const multiplier = 2.0
+  const ema9 = emaSeries(closes, 9)
+  const ema21 = emaSeries(closes, 21)
+  const ema50 = emaSeries(closes, 50)
+  const ema200 = emaSeries(closes, 200)
+
+  // True range + Wilder ATR (matches Pine ta.atr)
+  const tr = new Array(n).fill(0)
+  for (let i = 0; i < n; i++) {
+    if (i === 0) {
+      tr[i] = (highs[i] ?? closes[i]) - (lows[i] ?? closes[i])
+      continue
+    }
+    const h = highs[i] ?? closes[i]
+    const l = lows[i] ?? closes[i]
+    const pc = closes[i - 1]
+    tr[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc))
+  }
+  const atr = new Array(n).fill(null)
+  if (n >= atrPeriod) {
+    let sum = 0
+    for (let i = 0; i < atrPeriod; i++) sum += tr[i]
+    atr[atrPeriod - 1] = sum / atrPeriod
+    for (let i = atrPeriod; i < n; i++) {
+      atr[i] = (atr[i - 1] * (atrPeriod - 1) + tr[i]) / atrPeriod
+    }
+  }
+
+  // SuperTrend (Pine up/dn + trend)
+  const up = new Array(n).fill(null)
+  const dn = new Array(n).fill(null)
+  const trend = new Array(n).fill(1)
+  for (let i = 0; i < n; i++) {
+    if (atr[i] == null) {
+      trend[i] = i > 0 ? trend[i - 1] : 1
+      trendOut[i] = trend[i]
+      continue
+    }
+    const src = closes[i]
+    let upRaw = src - multiplier * atr[i]
+    let dnRaw = src + multiplier * atr[i]
+    const up1 = i > 0 && up[i - 1] != null ? up[i - 1] : upRaw
+    const dn1 = i > 0 && dn[i - 1] != null ? dn[i - 1] : dnRaw
+    if (i > 0 && closes[i - 1] > up1) upRaw = Math.max(upRaw, up1)
+    if (i > 0 && closes[i - 1] < dn1) dnRaw = Math.min(dnRaw, dn1)
+    up[i] = upRaw
+    dn[i] = dnRaw
+    let t = i > 0 ? trend[i - 1] : 1
+    if (t === -1 && closes[i] > dn1) t = 1
+    else if (t === 1 && closes[i] < up1) t = -1
+    trend[i] = t
+    trendOut[i] = t
+  }
+
+  // RS Rating 1–99 vs Nifty (same weights as Pine), optional
+  const rsRating = new Array(n).fill(null)
+  const niftyOk = Array.isArray(niftyClosesAligned) && niftyClosesAligned.length === n
+  if (niftyOk) {
+    const perf = (arr, i, len) => {
+      if (i < len || arr[i] == null || arr[i - len] == null || arr[i - len] === 0) return null
+      return ((arr[i] - arr[i - len]) / arr[i - len]) * 100
+    }
+    const rawRS = new Array(n).fill(null)
+    for (let i = 0; i < n; i++) {
+      const a = perf(closes, i, 63), b = perf(closes, i, 126)
+      const c = perf(closes, i, 189), d = perf(closes, i, 252)
+      const na = perf(niftyClosesAligned, i, 63), nb = perf(niftyClosesAligned, i, 126)
+      const nc = perf(niftyClosesAligned, i, 189), nd = perf(niftyClosesAligned, i, 252)
+      if ([a, b, c, d, na, nb, nc, nd].some(v => v == null)) continue
+      rawRS[i] = (a - na) * 0.4 + (b - nb) * 0.2 + (c - nc) * 0.2 + (d - nd) * 0.2
+    }
+    for (let i = 0; i < n; i++) {
+      if (rawRS[i] == null) continue
+      const start = Math.max(0, i - 251)
+      let hi = -Infinity, lo = Infinity
+      for (let j = start; j <= i; j++) {
+        if (rawRS[j] == null) continue
+        hi = Math.max(hi, rawRS[j])
+        lo = Math.min(lo, rawRS[j])
+      }
+      if (!Number.isFinite(hi) || !Number.isFinite(lo) || hi === lo) {
+        rsRating[i] = 50
+      } else {
+        rsRating[i] = Math.round(((rawRS[i] - lo) / (hi - lo)) * 98 + 1)
+      }
+    }
+  }
+
+  let pendingUptrendBuy = false
+  let inLongPosition = false
+  for (let i = 1; i < n; i++) {
+    const rawUptrendFlip = trend[i] === 1 && trend[i - 1] === -1
+    if (rawUptrendFlip) pendingUptrendBuy = true
+    if (trend[i] === -1) pendingUptrendBuy = false
+
+    const e9 = ema9[i], e21 = ema21[i], e50 = ema50[i], e200 = ema200[i]
+    const maOk = e9 != null && e50 != null && e9 > e50
+    const above50 = e50 != null && closes[i] > e50
+    const above200 = e200 != null && closes[i] > e200
+    let rsOk = true
+    if (niftyOk && rsRating[i] != null) {
+      const rising = i >= 21 && rsRating[i - 21] != null
+        ? (rsRating[i] - rsRating[i - 21]) >= 10
+        : false
+      rsOk = rsRating[i] > 50 || rising
+    }
+    const emaConditionMet = above50 && above200 && maOk && rsOk
+    const buySignal = pendingUptrendBuy && emaConditionMet
+    if (buySignal) {
+      buy[i] = true
+      pendingUptrendBuy = false
+      inLongPosition = true
+    }
+
+    const supertrendSellRaw = trend[i] === -1 && trend[i - 1] === 1
+    const sellEMACrossConfirmed = e9 != null && e21 != null && e9 < e21
+    const emaCrossUnderSell = e9 != null && e21 != null && ema9[i - 1] != null && ema21[i - 1] != null
+      && ema9[i - 1] >= ema21[i - 1] && e9 < e21
+    const sellSignal = (supertrendSellRaw && sellEMACrossConfirmed) || emaCrossUnderSell
+    if (sellSignal) {
+      if (inLongPosition) sell[i] = true
+      inLongPosition = false
+    }
+  }
+
+  return { buy, sell, trend: trendOut }
+}
+
+/** Align a benchmark close series to stock length by matching from the end (both ≈ end today). */
+export function alignSeriesFromEnd(stockLen, benchCloses) {
+  const out = new Array(stockLen).fill(null)
+  if (!benchCloses?.length) return out
+  const m = benchCloses.length
+  for (let i = 0; i < stockLen; i++) {
+    const bi = m - (stockLen - i)
+    if (bi >= 0 && bi < m) out[i] = benchCloses[bi]
+  }
+  return out
+}
