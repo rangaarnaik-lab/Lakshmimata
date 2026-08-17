@@ -60,7 +60,7 @@ let OWNER_TOKEN = import.meta.env.VITE_OWNER_UPSTOX_TOKEN || ''
 const THEMES = {
   dark: {
     bg:'#0a0d12',card:'#0e1117',border:'#1c2333',
-    accent:'#4f8ef7',text:'#e2e8f0',muted:'#4a5568',
+    accent:'#4f8ef7',text:'#e2e8f0',muted:'#94a3b8',
     green:'#22c55e',red:'#ef4444',yellow:'#eab308',
     purple:'#a855f7',orange:'#f97316',blue:'#3b82f6',
     pink:'#ec4899',lime:'#84cc16',teal:'#14b8a6',
@@ -78,7 +78,7 @@ const THEMES = {
   },
   midnight: {
     bg:'#0b1220',card:'#0f1830',border:'#1e2a4a',
-    accent:'#60a5fa',text:'#e8edf7',muted:'#5b6a8c',
+    accent:'#60a5fa',text:'#e8edf7',muted:'#9aa8c7',
     green:'#34d399',red:'#f87171',yellow:'#fbbf24',
     purple:'#c084fc',orange:'#fb923c',blue:'#60a5fa',
     pink:'#f472b6',lime:'#a3e635',teal:'#2dd4bf',
@@ -3052,7 +3052,7 @@ function BreadthChart({data,isMobile,breadthRange,setBreadthRange}){
         {[0,0.5,1].map(f=>(
           <g key={f}>
             <line x1={padL} y1={padT+chartH*f} x2={W-padR} y2={padT+chartH*f} stroke={C.divider} strokeWidth={1}/>
-            <text x={padL-6} y={padT+chartH*f+3} fontSize={8} fill={C.muted} textAnchor="end">
+            <text x={padL-6} y={padT+chartH*f+3} fontSize={10} fill={C.muted} textAnchor="end">
               {Math.round(maxVal*(1-f))}
             </text>
           </g>
@@ -3060,7 +3060,7 @@ function BreadthChart({data,isMobile,breadthRange,setBreadthRange}){
         <path d={advPath} fill="none" stroke={C.green} strokeWidth={1.5}/>
         <path d={decPath} fill="none" stroke={C.red} strokeWidth={1.5}/>
         {data.map((d,i)=> i%labelStep===0 ? (
-          <text key={i} x={xAt(i)} y={H-8} fontSize={8} fill={C.muted} textAnchor="middle">
+          <text key={i} x={xAt(i)} y={H-8} fontSize={10} fill={C.muted} textAnchor="middle">
             {d.date?.slice(5)}
           </text>
         ) : null)}
@@ -3489,25 +3489,25 @@ function EmaBreadthTable({data,isMobile,dragProps,rangeLabel}){
             <tr style={{borderBottom:`1px solid ${C.border}`,position:'sticky',top:0,background:C.card}}>
               {['Date','Above EMA9','Above EMA21','Above EMA50','Stage 2'].map(h=>(
                 <th key={h} style={{textAlign:h==='Date'?'left':'right',padding:'6px 10px',
-                  fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.04em'}}>{h}</th>
+                  fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.04em'}}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {[...data].reverse().map(d=>(
               <tr key={d.date} style={{borderBottom:`1px solid ${C.divider}`}}>
-                <td style={{padding:'7px 10px',fontSize:11.5,fontWeight:600}}>{d.date}</td>
+                <td style={{padding:'7px 10px',fontSize:11.5,fontWeight:600,color:C.text}}>{d.date}</td>
                 <td style={{padding:'7px 10px',fontSize:11.5,textAlign:'right',color:pct(d.above_ema9,d.total)>=50?C.green:C.red}}>
-                  {pct(d.above_ema9,d.total)}% <span style={{color:C.muted,fontSize:9.5}}>({d.above_ema9})</span>
+                  {pct(d.above_ema9,d.total)}% <span style={{color:C.muted,fontSize:10}}>({d.above_ema9})</span>
                 </td>
                 <td style={{padding:'7px 10px',fontSize:11.5,textAlign:'right',color:pct(d.above_ema21,d.total)>=50?C.green:C.red}}>
-                  {pct(d.above_ema21,d.total)}% <span style={{color:C.muted,fontSize:9.5}}>({d.above_ema21})</span>
+                  {pct(d.above_ema21,d.total)}% <span style={{color:C.muted,fontSize:10}}>({d.above_ema21})</span>
                 </td>
                 <td style={{padding:'7px 10px',fontSize:11.5,textAlign:'right',color:pct(d.above_ema50,d.total)>=50?C.green:C.red}}>
-                  {pct(d.above_ema50,d.total)}% <span style={{color:C.muted,fontSize:9.5}}>({d.above_ema50})</span>
+                  {pct(d.above_ema50,d.total)}% <span style={{color:C.muted,fontSize:10}}>({d.above_ema50})</span>
                 </td>
                 <td style={{padding:'7px 10px',fontSize:11.5,textAlign:'right',color:C.text}}>
-                  {d.stage2_count!=null ? <>{pct(d.stage2_count,d.total)}% <span style={{color:C.muted,fontSize:9.5}}>({d.stage2_count})</span></> : '—'}
+                  {d.stage2_count!=null ? <>{pct(d.stage2_count,d.total)}% <span style={{color:C.muted,fontSize:10}}>({d.stage2_count})</span></> : '—'}
                 </td>
               </tr>
             ))}
@@ -4573,8 +4573,10 @@ function fmtMarketCapCr(mcap){
   return `₹${mcap.toFixed(0)} Cr`
 }
 
-function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, detailTab, setDetailTab, navigateTo, isMobile, readingMode, tableMode, fillParent=false}){
+function ChartBelowContent({sym, stocks, sectionOrder, sectionHidden=[], onSectionOrderChange, onSectionHiddenChange, detailTab, setDetailTab, navigateTo, isMobile, readingMode, tableMode, fillParent=false}){
   const [customizeOpen, setCustomizeOpen]=useState(false)
+  const hiddenSet=new Set(sectionHidden||[])
+  const visibleSections=(sectionOrder||[]).filter(id=>!hiddenSet.has(id))
   const mcapStock=stocks?.find(s=>s.sym===sym)
   const fundQ=ensureFundamentalQuality(mcapStock)
   const [resultRating,setResultRating]=useState(null)
@@ -4679,19 +4681,47 @@ function ChartBelowContent({sym, stocks, sectionOrder, onSectionOrderChange, det
             style={{padding:'4px 10px',borderRadius:6,border:`1px solid ${customizeOpen?C.accent:C.border}`,
               background:customizeOpen?C.accent+'18':'transparent',color:customizeOpen?C.accent:C.muted,
               fontSize:10,fontWeight:700,cursor:'pointer'}}>
-            {customizeOpen?'Done':'Reorder blocks'}
+            {customizeOpen?'Done':'Show / hide blocks'}
           </button>
         </div>
         {customizeOpen&&(
           <div style={{marginBottom:12,padding:'10px 12px',borderRadius:10,
             border:`1px solid ${C.border}`,background:C.card}}>
+            <div style={{fontSize:10,color:C.muted,marginBottom:8}}>
+              Hide blocks you don&apos;t want (saved with your layout). Drag to reorder visible ones.
+            </div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
+              {CHART_SECTION_ORDER_DEFAULT.map(key=>{
+                const on=!hiddenSet.has(key)
+                return (
+                  <button key={key} type="button"
+                    onClick={()=>{
+                      const next=on
+                        ? [...new Set([...(sectionHidden||[]), key])]
+                        : (sectionHidden||[]).filter(k=>k!==key)
+                      onSectionHiddenChange?.(normalizeChartSectionHidden(next))
+                    }}
+                    style={{padding:'5px 10px',borderRadius:999,fontSize:10,fontWeight:700,cursor:'pointer',
+                      border:`1px solid ${on?C.accent:C.border}`,
+                      background:on?C.accent+'18':'transparent',
+                      color:on?C.accent:C.muted}}>
+                    {on?'✓':'○'} {CHART_SECTION_LABELS[key]||key}
+                  </button>
+                )
+              })}
+            </div>
             <ReorderableList items={sectionOrder} onReorder={onSectionOrderChange}
               hint="Change the order of content below the chart."
-              renderItem={(key)=><span style={{fontSize:12,fontWeight:700,color:C.text}}>{CHART_SECTION_LABELS[key]||key}</span>}/>
+              renderItem={(key)=>(
+                <div style={{display:'flex',alignItems:'center',gap:8,flex:1,minWidth:0}}>
+                  <span style={{fontSize:12,fontWeight:700,color:C.text}}>{CHART_SECTION_LABELS[key]||key}</span>
+                  <span style={{fontSize:10,color:C.muted}}>{hiddenSet.has(key)?'Hidden':'Visible'}</span>
+                </div>
+              )}/>
           </div>
         )}
       </div>
-      {sectionOrder.map(sectionId=>{
+      {visibleSections.map(sectionId=>{
         if(sectionId==='details'){
           return (
             <div key="details" style={{paddingBottom:32}}>
@@ -4765,13 +4795,17 @@ function TradingViewDailyChart({symbol, exchange, onReady}){
   )
 }
 
-function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, onChartSectionOrderChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, detailFirst=false, onMoveTile, stackLayout=false, columnsLayout=false, chartColPct=36, detailColPct=32, sideSoloChart=false, chartCellStyle=null, detailCellStyle=null, chartStackOrder=2, detailStackOrder=4, userId=null}){
+function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, chartSectionHidden=[], onChartSectionOrderChange, onChartSectionHiddenChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, detailFirst=false, onMoveTile, stackLayout=false, columnsLayout=false, chartColPct=36, detailColPct=32, sideSoloChart=false, chartCellStyle=null, detailCellStyle=null, chartStackOrder=2, detailStackOrder=4, userId=null}){
   const [loaded, setLoaded] = useState(false)
   // Stocks open on TradingView (1D); indices only have Our Chart.
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart first (Super Cycle, drawings, …)
   const sectionOrder=normalizeChartSectionOrder(chartSectionOrder)
+  const sectionHidden=normalizeChartSectionHidden(chartSectionHidden)
   const persistSectionOrder=(order)=>{
     onChartSectionOrderChange?.(normalizeChartSectionOrder(order))
+  }
+  const persistSectionHidden=(hidden)=>{
+    onChartSectionHiddenChange?.(normalizeChartSectionHidden(hidden))
   }
   // Peer ranking pills open Results; catch-up / history can open PPT/Concall/Results Summary.
   const [detailTab, setDetailTab] = useState('about')
@@ -4987,7 +5021,10 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
 
   const detailBody=!isIndex?(
     <ChartBelowContent sym={sym} stocks={stocks} sectionOrder={sectionOrder}
-      onSectionOrderChange={persistSectionOrder} detailTab={detailTab} setDetailTab={setDetailTab}
+      sectionHidden={sectionHidden}
+      onSectionOrderChange={persistSectionOrder}
+      onSectionHiddenChange={persistSectionHidden}
+      detailTab={detailTab} setDetailTab={setDetailTab}
       navigateTo={navigateTo} isMobile={isMobile} readingMode={readingMode} tableMode={tableMode}
       fillParent={!isMobile}/>
   ):null
@@ -8834,11 +8871,12 @@ const CHART_SECTION_LABELS = {
 }
 
 function normalizeChartSectionOrder(order){
+  // Keep user order of known keys. Re-append any NEW default keys (app upgrades)
+  // at their default relative position — but never revive keys the user hid via
+  // chartSectionHidden (that's a separate list).
   const base=Array.isArray(order)?order.filter(k=>CHART_SECTION_ORDER_DEFAULT.includes(k)):[]
   for(const k of CHART_SECTION_ORDER_DEFAULT){
     if(base.includes(k)) continue
-    // Insert new sections (e.g. peers) at their default position, not always at the end —
-    // otherwise saved layouts bury "Peer Result Ranking" under Details.
     const defIdx = CHART_SECTION_ORDER_DEFAULT.indexOf(k)
     let insertAt = base.length
     for(let i = defIdx + 1; i < CHART_SECTION_ORDER_DEFAULT.length; i++){
@@ -8848,7 +8886,48 @@ function normalizeChartSectionOrder(order){
     }
     base.splice(insertAt, 0, k)
   }
-  return base
+  return base.length ? base : [...CHART_SECTION_ORDER_DEFAULT]
+}
+
+function normalizeChartSectionHidden(hidden){
+  if(!Array.isArray(hidden)) return []
+  return hidden.filter(k=>CHART_SECTION_ORDER_DEFAULT.includes(k))
+}
+
+/** chart_sections column: legacy array OR { order, hidden, dock, detailOpen }. */
+function parseLayoutChartSections(raw){
+  if(Array.isArray(raw)){
+    return {
+      order: normalizeChartSectionOrder(raw),
+      hidden: [],
+      dock: null,
+      detailOpen: null,
+    }
+  }
+  if(raw && typeof raw==='object'){
+    return {
+      order: normalizeChartSectionOrder(raw.order || raw.chartSections),
+      hidden: normalizeChartSectionHidden(raw.hidden || raw.chartSectionHidden),
+      dock: raw.dock || raw.dockLayout || null,
+      detailOpen: typeof raw.detailOpen==='boolean' ? raw.detailOpen
+        : (typeof raw.detail_open==='boolean' ? raw.detail_open : null),
+    }
+  }
+  return {
+    order: [...CHART_SECTION_ORDER_DEFAULT],
+    hidden: [],
+    dock: null,
+    detailOpen: null,
+  }
+}
+
+function buildLayoutChartSectionsPayload({ order, hidden, dock, detailOpen }){
+  return {
+    order: normalizeChartSectionOrder(order),
+    hidden: normalizeChartSectionHidden(hidden),
+    dock: dock ? normalizeDockLayout(dock) : null,
+    detailOpen: typeof detailOpen==='boolean' ? detailOpen : true,
+  }
 }
 
 /** Main workspace tiles: RS table (screener), Chart, Overview/Details. */
@@ -9146,6 +9225,9 @@ function LayoutTopBarMenu({
           <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
             letterSpacing:'0.06em',marginBottom:8}}>
             Saved layouts ({MAX_USER_LAYOUTS} max)
+          </div>
+          <div style={{fontSize:10,color:C.muted,marginBottom:8,lineHeight:1.35}}>
+            Active layout auto-updates when you change columns, chart blocks, or close Fundamentals.
           </div>
           {!session?.user?.id&&(
             <div style={{fontSize:10,color:C.muted,marginBottom:8}}>Sign in to sync across devices</div>
@@ -12488,13 +12570,34 @@ export default function App(){
   const [chartDetailTabHint,setChartDetailTabHint]=useState(null) // resultsSummary|ppt|concall|…
   // Window chrome for the 3 main panels (screener / chart / details):
   // drag title bar to float, minimize to taskbar, close to hide (restore from taskbar).
-  const defaultPanelWin=()=>({open:true,minimized:false,float:null})
-  const [panelWins,setPanelWins]=useState({
-    screener:defaultPanelWin(),
-    chart:defaultPanelWin(),
-    detail:defaultPanelWin(),
-  })
+  const DETAIL_PANEL_PREF_KEY='lakshmimata-detail-panel-open'
+  const loadDetailPanelPref=()=>{
+    try{
+      const v=localStorage.getItem(DETAIL_PANEL_PREF_KEY)
+      return v==null ? true : v==='1'
+    }catch{ return true }
+  }
+  const [detailPanelPref,setDetailPanelPref]=useState(loadDetailPanelPref)
+  const detailPanelPrefRef=useRef(detailPanelPref)
+  useEffect(()=>{ detailPanelPrefRef.current=detailPanelPref },[detailPanelPref])
+  const persistDetailPanelPref=(open)=>{
+    const next=!!open
+    setDetailPanelPref(next)
+    detailPanelPrefRef.current=next
+    try{ localStorage.setItem(DETAIL_PANEL_PREF_KEY, next?'1':'0') }catch(e){}
+  }
+  const defaultPanelWin=(open=true)=>({open:!!open,minimized:false,float:null})
+  const [panelWins,setPanelWins]=useState(()=>({
+    screener:defaultPanelWin(true),
+    chart:defaultPanelWin(true),
+    detail:defaultPanelWin(loadDetailPanelPref()),
+  }))
   const patchPanel=(id,patch)=>setPanelWins(w=>({...w,[id]:{...w[id],...patch}}))
+  /** User closes/opens Fundamentals — remember for next symbol / layout auto-save. */
+  const patchDetailPanel=(patch)=>{
+    if(Object.prototype.hasOwnProperty.call(patch,'open')) persistDetailPanelPref(!!patch.open)
+    patchPanel('detail', patch)
+  }
   const [dockLayout,setDockLayout]=useState(()=>loadDockLayout())
   const [dockLayoutMenuOpen,setDockLayoutMenuOpen]=useState(false)
   const applyDockLayout=(next)=>{
@@ -12546,28 +12649,29 @@ export default function App(){
     if(isMobile) return
     // Portfolio / settings / etc. stay full-width — remember symbol only.
     if(isFullWidthMainTab(mainTab)) return
+    const wantDetail = !asIndex && detailPanelPrefRef.current
     setPanelWins(w=>({
       ...w,
       chart:{open:true,minimized:false,float:null},
-      // Details panel is stock-only; keep it closed for indices so the
-      // chart gets the full dock slot instead of looking "empty".
-      detail: asIndex
-        ? {open:false,minimized:false,float:null}
-        : {open:true,minimized:false,float:null},
+      // Details/Fundamentals: stock-only, and only if user left it open (saved pref / layout).
+      detail: {
+        open: wantDetail,
+        minimized:false,
+        float:null,
+      },
     }))
   },[isMobile,mainTab])
   const prevChartSymRef=useRef(null)
   useEffect(()=>{
-    // First pick from null (e.g. auto-open on RS) — open panels.
-    // Later prev/next keep minimize/close. openChart() always opens.
+    // First pick from null (e.g. auto-open on RS) — open chart; Details only if pref says so.
+    // Later prev/next keep minimize/close. openChart() respects detailPanelPref.
     if(!chartSym){ prevChartSymRef.current=null; return }
     if(prevChartSymRef.current==null && !fullWidthTab){
+      const wantDetail = !chartIsIndex && detailPanelPrefRef.current
       setPanelWins(w=>({
         ...w,
         chart:{...w.chart,open:true,minimized:false},
-        detail: chartIsIndex
-          ? {...w.detail,open:false,minimized:false}
-          : {...w.detail,open:true,minimized:false},
+        detail: {...w.detail,open:wantDetail,minimized:false},
       }))
     }
     prevChartSymRef.current=chartSym
@@ -12827,7 +12931,6 @@ export default function App(){
   const chartOnLeftRef=useRef(false)
   chartOnLeftRef.current=dockLayout.order.indexOf('chart') < dockLayout.order.indexOf('screener')
   const persistChartPanelState=(wide,pct)=>{
-    setActiveLayoutSlot(null)
     persistChartPanelAutoSave(wide,pct)
   }
   useEffect(()=>{
@@ -13231,25 +13334,49 @@ export default function App(){
   const persistRsColOrder=(order)=>{
     const next=normalizeRsColOrder(order)
     setRsColOrder(next)
-    setActiveLayoutSlot(null)
     try{ localStorage.setItem('lakshmimata-rs-col-order', JSON.stringify(next)) }catch(e){}
   }
   const [chartSectionOrder,setChartSectionOrder]=useState(()=>{
     try{
-      const saved=JSON.parse(localStorage.getItem('lakshmimata-chart-sections')||'null')
-      return normalizeChartSectionOrder(saved)
+      const raw=JSON.parse(localStorage.getItem('lakshmimata-chart-sections')||'null')
+      return parseLayoutChartSections(raw).order
     }catch(e){ return [...CHART_SECTION_ORDER_DEFAULT] }
   })
+  const [chartSectionHidden,setChartSectionHidden]=useState(()=>{
+    try{
+      const raw=JSON.parse(localStorage.getItem('lakshmimata-chart-sections')||'null')
+      const parsed=parseLayoutChartSections(raw)
+      if(parsed.hidden?.length) return parsed.hidden
+      const legacy=JSON.parse(localStorage.getItem('lakshmimata-chart-sections-hidden')||'null')
+      return normalizeChartSectionHidden(legacy)
+    }catch(e){ return [] }
+  })
+  const persistChartSectionsBundle=(order, hidden, dock, detailOpen)=>{
+    const payload=buildLayoutChartSectionsPayload({
+      order: order ?? chartSectionOrder,
+      hidden: hidden ?? chartSectionHidden,
+      dock: dock ?? dockLayout,
+      detailOpen: typeof detailOpen==='boolean' ? detailOpen : detailPanelPrefRef.current,
+    })
+    try{ localStorage.setItem('lakshmimata-chart-sections', JSON.stringify(payload)) }catch(e){}
+    try{ localStorage.setItem('lakshmimata-chart-sections-hidden', JSON.stringify(payload.hidden)) }catch(e){}
+    return payload
+  }
   const persistChartSections=(order)=>{
     const next=normalizeChartSectionOrder(order)
     setChartSectionOrder(next)
-    setActiveLayoutSlot(null)
-    try{ localStorage.setItem('lakshmimata-chart-sections', JSON.stringify(next)) }catch(e){}
+    persistChartSectionsBundle(next, chartSectionHidden)
+  }
+  const persistChartSectionHidden=(hidden)=>{
+    const next=normalizeChartSectionHidden(hidden)
+    setChartSectionHidden(next)
+    persistChartSectionsBundle(chartSectionOrder, next)
   }
   const [layoutSlots,setLayoutSlots]=useState(()=>loadLocalLayoutSlots())
   const [activeLayoutSlot,setActiveLayoutSlot]=useState(null)
   const [layoutNameInput,setLayoutNameInput]=useState('')
   const [layoutMsg,setLayoutMsg]=useState('')
+  const skipLayoutAutoSaveRef=useRef(false)
   useEffect(()=>{
     let cancelled=false
     if(session?.user?.id){
@@ -13282,18 +13409,19 @@ export default function App(){
   const toggleRsCol=(key)=>{
     setVisibleRsCols(prev=>{
       const next={...prev,[key]:!prev[key]}
-      setActiveLayoutSlot(null)
       try{localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(next))}catch(e){}
       return next
     })
   }
   const applyLayout=(layout)=>{
     if(!layout) return
+    skipLayoutAutoSaveRef.current=true
     const fundOff={mcap:false,pe:false,roe:false,de:false,prom:false}
     const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,...fundOff,fundRating:true,resultRating:true,squeeze:false,wl52:false,weakrs:false}
     const cols=layout.columns&&typeof layout.columns==='object'?{...defaults,...layout.columns}:defaults
+    delete cols.__meta
     const order=normalizeRsColOrder(layout.col_order||layout.colOrder)
-    const sections=normalizeChartSectionOrder(layout.chart_sections||layout.chartSections)
+    const parsed=parseLayoutChartSections(layout.chart_sections||layout.chartSections)
     const wideRaw=layout.chart_wide??layout.chartWide
     const wideNum=Number(wideRaw)
     const wide=[0,1,2].includes(wideNum)?wideNum:0
@@ -13301,14 +13429,24 @@ export default function App(){
     const pct=pctRaw!=null&&pctRaw!==''?Math.min(80,Math.max(15,Number(pctRaw))):null
     setVisibleRsCols(cols)
     setRsColOrder(order)
-    setChartSectionOrder(sections)
+    setChartSectionOrder(parsed.order)
+    setChartSectionHidden(parsed.hidden)
     setChartWide(wide)
     setChartPanelPct(Number.isFinite(pct)?pct:null)
+    if(parsed.dock) applyDockLayout(parsed.dock)
+    if(typeof parsed.detailOpen==='boolean'){
+      persistDetailPanelPref(parsed.detailOpen)
+      patchPanel('detail',{
+        open: parsed.detailOpen && !chartIsIndex,
+        minimized:false,
+        float:null,
+      })
+    }
     setActiveLayoutSlot(layout.slot??null)
     try{
       localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(cols))
       localStorage.setItem('lakshmimata-rs-col-order',JSON.stringify(order))
-      localStorage.setItem('lakshmimata-chart-sections',JSON.stringify(sections))
+      persistChartSectionsBundle(parsed.order, parsed.hidden, parsed.dock, parsed.detailOpen)
       persistChartPanelAutoSave(wide,Number.isFinite(pct)?pct:null)
     }catch(e){}
   }
@@ -13318,10 +13456,14 @@ export default function App(){
     try{
       const saved=JSON.parse(localStorage.getItem('lakshmimata-rs-columns')||'null')
       const order=JSON.parse(localStorage.getItem('lakshmimata-rs-col-order')||'null')
-      const sections=JSON.parse(localStorage.getItem('lakshmimata-chart-sections')||'null')
+      const sectionsRaw=JSON.parse(localStorage.getItem('lakshmimata-chart-sections')||'null')
+      const parsed=parseLayoutChartSections(sectionsRaw)
       setVisibleRsCols(saved?{...defaults,...saved,...fundOff}:defaults)
       if(order) setRsColOrder(normalizeRsColOrder(order))
-      if(sections) setChartSectionOrder(normalizeChartSectionOrder(sections))
+      setChartSectionOrder(parsed.order)
+      setChartSectionHidden(parsed.hidden)
+      if(parsed.dock) applyDockLayout(parsed.dock)
+      if(typeof parsed.detailOpen==='boolean') persistDetailPanelPref(parsed.detailOpen)
     }catch(e){
       setVisibleRsCols(defaults)
     }
@@ -13331,33 +13473,58 @@ export default function App(){
     setActiveLayoutSlot(null)
     setLayoutMsg('')
   }
-  const handleSaveLayoutSlot=async(slot)=>{
+  const handleSaveLayoutSlot=async(slot, {quiet=false}={})=>{
     const s=Number(slot)
-    const name=(layoutNameInput.trim()||`Layout ${s}`).slice(0,40)
+    const existingName=layoutSlots[s-1]?.name
+    const name=(layoutNameInput.trim()||existingName||`Layout ${s}`).slice(0,40)
+    const chartSections=buildLayoutChartSectionsPayload({
+      order: chartSectionOrder,
+      hidden: chartSectionHidden,
+      dock: dockLayout,
+      detailOpen: detailPanelPrefRef.current,
+    })
     const payload={
-      slot:s,name,columns:visibleRsCols,colOrder:rsColOrder,chartSections:chartSectionOrder,
+      slot:s,name,columns:visibleRsCols,colOrder:rsColOrder,chartSections,
       chartWide,chartPanelPct,
     }
     if(session?.user?.id){
       const res=await saveUserLayout(session.user.id,payload)
-      if(res.error){ setLayoutMsg(res.error); return }
+      if(res.error){ if(!quiet) setLayoutMsg(res.error); return }
       const next=[...layoutSlots]; next[s-1]=res.data
       setLayoutSlots(next)
       setActiveLayoutSlot(s)
-      setLayoutMsg(`Saved “${name}” to slot ${s}.`)
+      if(!quiet) setLayoutMsg(`Saved “${name}” to slot ${s}.`)
     }else{
       const item={
-        ...payload,columns:visibleRsCols,col_order:rsColOrder,chart_sections:chartSectionOrder,
+        ...payload,columns:visibleRsCols,col_order:rsColOrder,chart_sections:chartSections,
         chart_wide:chartWide,chart_panel_pct:chartPanelPct,
       }
       const next=[...layoutSlots]; next[s-1]=item
       setLayoutSlots(next)
       persistLocalLayoutSlots(next)
       setActiveLayoutSlot(s)
-      setLayoutMsg(`Saved “${name}” on this device (slot ${s}). Sign in to sync across devices.`)
+      if(!quiet) setLayoutMsg(`Saved “${name}” on this device (slot ${s}). Sign in to sync across devices.`)
     }
-    setLayoutNameInput('')
+    persistChartSectionsBundle(chartSectionOrder, chartSectionHidden, dockLayout, detailPanelPrefRef.current)
+    if(!quiet) setLayoutNameInput('')
   }
+  // TradingView-style: while a named layout is active, auto-update it when you change layout settings.
+  useEffect(()=>{
+    if(!activeLayoutSlot) return
+    if(skipLayoutAutoSaveRef.current){
+      skipLayoutAutoSaveRef.current=false
+      return
+    }
+    const slot=activeLayoutSlot
+    const t=setTimeout(()=>{
+      handleSaveLayoutSlot(slot, {quiet:true})
+    }, 700)
+    return ()=>clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[
+    activeLayoutSlot, visibleRsCols, rsColOrder, chartSectionOrder, chartSectionHidden,
+    dockLayout, detailPanelPref, chartWide, chartPanelPct, session?.user?.id,
+  ])
   const handleDeleteLayoutSlot=async(slot)=>{
     const s=Number(slot)
     if(session?.user?.id){
@@ -13373,17 +13540,26 @@ export default function App(){
   const resetRsCols=()=>{
     const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true,resultRating:true,squeeze:false,wl52:false,weakrs:false}
     const order=[...RS_OPTIONAL_COL_ORDER_DEFAULT]
+    const sections=buildLayoutChartSectionsPayload({
+      order: CHART_SECTION_ORDER_DEFAULT,
+      hidden: [],
+      dock: dockLayout,
+      detailOpen: true,
+    })
     setVisibleRsCols(defaults)
     setRsColOrder(order)
     setChartSectionOrder([...CHART_SECTION_ORDER_DEFAULT])
+    setChartSectionHidden([])
     setChartWide(1)
     setChartPanelPct(null)
     setActiveLayoutSlot(null)
+    persistDetailPanelPref(true)
     try{
       localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(defaults))
       localStorage.setItem('lakshmimata-rs-col-ver','3')
       localStorage.setItem('lakshmimata-rs-col-order',JSON.stringify(order))
-      localStorage.setItem('lakshmimata-chart-sections',JSON.stringify(CHART_SECTION_ORDER_DEFAULT))
+      localStorage.setItem('lakshmimata-chart-sections',JSON.stringify(sections))
+      localStorage.setItem('lakshmimata-chart-sections-hidden',JSON.stringify([]))
       persistChartPanelAutoSave(1,null)
     }catch(e){}
   }
@@ -13709,12 +13885,11 @@ export default function App(){
         }))
       }
     } else if(mainTab==='rs' && prev!=='rs' && chartSym){
+      const wantDetail = !chartIsIndex && detailPanelPrefRef.current
       setPanelWins(w=>({
         ...w,
         chart:{...w.chart,open:true,minimized:false},
-        detail: chartIsIndex
-          ? {...w.detail,open:false,minimized:false}
-          : {...w.detail,open:true,minimized:false},
+        detail: {...w.detail,open:wantDetail,minimized:false},
       }))
     } else if(prevFullWidth && !fullWidthTab && mainTab!=='rs'){
       // Left a full-width tab for Market/Patterns/etc. — leave panels closed
@@ -14481,6 +14656,7 @@ export default function App(){
                           Swap <span style={{color:C.accent,fontWeight:700}}>RS</span> table,
                           {' '}<span style={{color:C.teal,fontWeight:700}}>C</span>hart &amp;
                           {' '}<span style={{color:C.green,fontWeight:700}}>F</span>undamentals — like TradingView layouts.
+                          Close Fundamentals with ✕ to hide it; it stays hidden until you restore it.
                         </div>
                         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
                           {DOCK_LAYOUT_PRESETS.map(p=>{
@@ -14496,7 +14672,7 @@ export default function App(){
                                   }
                                   patchPanel('screener',{open:true,minimized:false,float:null})
                                   patchPanel('chart',{open:true,minimized:false,float:null})
-                                  patchPanel('detail',{open:true,minimized:false,float:null})
+                                  patchDetailPanel({open:true,minimized:false,float:null})
                                   if(p.layout?.mode==='columns') setChartDetailTabHint('fundamentals')
                                   setDockLayoutMenuOpen(false)
                                 }}
@@ -14539,7 +14715,7 @@ export default function App(){
                             persistChartPanelAutoSave(1,null)
                             patchPanel('screener',{open:true,minimized:false,float:null})
                             patchPanel('chart',{open:true,minimized:false,float:null})
-                            patchPanel('detail',{open:true,minimized:false,float:null})
+                            patchDetailPanel({open:true,minimized:false,float:null})
                             setDockLayoutMenuOpen(false)
                           }}
                           style={{marginTop:10,width:'100%',padding:'7px 8px',borderRadius:6,
@@ -15489,14 +15665,14 @@ export default function App(){
               const Stat=({label,value,total,color,onClick})=>(
                 <div title={total!=null?`${((value/total)*100).toFixed(1)}% of ${total}`:undefined}
                   onClick={onClick}
-                  style={{background:C.card,border:`1px solid ${C.divider}`,borderRadius:7,
-                    padding:'7px 9px',minWidth:0,cursor:onClick?'pointer':'default'}}>
-                  <div style={{fontSize:9,color:C.muted,fontWeight:600,letterSpacing:'0.02em',
-                    whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginBottom:2}}>{label}</div>
+                  style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:7,
+                    padding:'8px 9px',minWidth:0,cursor:onClick?'pointer':'default'}}>
+                  <div style={{fontSize:10,color:C.muted,fontWeight:700,letterSpacing:'0.02em',
+                    whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginBottom:3}}>{label}</div>
                   <div style={{display:'flex',alignItems:'baseline',gap:5,justifyContent:'space-between'}}>
                     <span style={{fontWeight:800,fontSize:16,color:color||C.text,lineHeight:1.1}}>{value}</span>
                     {total!=null&&(
-                      <span style={{fontSize:9,color:C.muted}}>{((value/total)*100).toFixed(0)}%</span>
+                      <span style={{fontSize:10,color:C.muted,fontWeight:600}}>{((value/total)*100).toFixed(0)}%</span>
                     )}
                   </div>
                 </div>
@@ -19403,11 +19579,13 @@ export default function App(){
         }}
         stocks={stocks}
         chartSectionOrder={chartSectionOrder}
+        chartSectionHidden={chartSectionHidden}
         onChartSectionOrderChange={persistChartSections}
+        onChartSectionHiddenChange={persistChartSectionHidden}
         panelChart={panelWins.chart}
         panelDetail={panelWins.detail}
         onPanelChart={patch=>patchPanel('chart',patch)}
-        onPanelDetail={patch=>patchPanel('detail',patch)}
+        onPanelDetail={patchDetailPanel}
         expandCol={!isMobile&&!(panelWins.screener.open&&!panelWins.screener.minimized&&!panelWins.screener.float)}
         detailTabHint={chartDetailTabHint}
         onConsumeDetailTabHint={()=>setChartDetailTabHint(null)}
@@ -19446,7 +19624,7 @@ export default function App(){
               id:'detail',
               title:`${chartSym} · Details`,
               minimized:!!panelWins.detail.minimized,
-              onRestore:()=>patchPanel('detail',{open:true,minimized:false}),
+              onRestore:()=>patchDetailPanel({open:true,minimized:false}),
             }]:[]),
           ]}
         />
