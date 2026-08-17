@@ -12,6 +12,10 @@ import {
   indEnabled, indParams,
 } from './lib/chartIndicatorPrefs'
 import {
+  loadChartIntervalFavorites, persistChartIntervalFavorites, toggleIntervalFavorite,
+  availableIntervalEntries, normalizeIntervalFavorites,
+} from './lib/chartIntervalPrefs'
+import {
   TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap,
   TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal, Layers,
   ThumbsUp, ThumbsDown, MessageSquare, RotateCcw
@@ -2975,7 +2979,7 @@ function StockCard({s,i,onChart}){
 // ── Simple Stock Table — reused wherever a subset of stocks (a sector's
 // members, an index's constituents) needs to show the same rich table
 // used in the main RS tab, without duplicating that markup everywhere.
-function SimpleStockTable({stocks, isMobile, onChart}){
+function SimpleStockTable({stocks, isMobile, onChart, showOurChartHover=true, onOurChart}){
   const dragProps = useDragScroll()
   if(!stocks || stocks.length===0){
     return <div style={{padding:20,textAlign:'center',color:C.muted,fontSize:12}}>No stocks found.</div>
@@ -3008,7 +3012,7 @@ function SimpleStockTable({stocks, isMobile, onChart}){
         <span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>
         <span title="Overall fundamental quality — not the same as Excellent/Good Result (latest quarter only)." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Rating</span>
       </div>
-      {stocks.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>onChart&&onChart(s.sym)}/>)}
+      {stocks.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>onChart&&onChart(s.sym)} onOurChart={onOurChart} showOurChartHover={showOurChartHover}/>)}
     </div>
   )
 }
@@ -4795,7 +4799,7 @@ function TradingViewDailyChart({symbol, exchange, onReady}){
   )
 }
 
-function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, chartSectionHidden=[], onChartSectionOrderChange, onChartSectionHiddenChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, detailFirst=false, onMoveTile, stackLayout=false, columnsLayout=false, chartColPct=36, detailColPct=32, sideSoloChart=false, chartCellStyle=null, detailCellStyle=null, chartStackOrder=2, detailStackOrder=4, userId=null}){
+function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, chartSectionHidden=[], onChartSectionOrderChange, onChartSectionHiddenChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, chartTabHint=null, onConsumeChartTabHint, detailFirst=false, onMoveTile, stackLayout=false, columnsLayout=false, chartColPct=36, detailColPct=32, sideSoloChart=false, chartCellStyle=null, detailCellStyle=null, chartStackOrder=2, detailStackOrder=4, userId=null}){
   const [loaded, setLoaded] = useState(false)
   // Stocks open on TradingView (1D); indices only have Our Chart.
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart first (Super Cycle, drawings, …)
@@ -4812,6 +4816,13 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
   const openResultsOnNavRef = useRef(false)
   const pendingDetailTabRef = useRef(null)
   useEffect(()=>{ if(isIndex) setChartTab('own') },[isIndex])
+  useEffect(()=>{
+    if(chartTabHint==='own' || chartTabHint==='tv'){
+      if(isIndex) setChartTab('own')
+      else setChartTab(chartTabHint)
+      onConsumeChartTabHint?.()
+    }
+  },[sym, chartTabHint, isIndex]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{
     if(detailTabHint){
       setDetailTab(detailTabHint)
@@ -6420,6 +6431,13 @@ const INTRADAY_TOOLBAR = [
 const TV_TOOLBAR_BLUE = '#2962ff'
 const BULL_SNORT_COLOR = LAKSHMI_BUY_SELL_COLORS.BULL_SNORT
 
+// Icons used on the volume pane marker row, its legend and the metrics table,
+// so the same glyph always means the same signal everywhere on the chart.
+const VOL_SIGNAL_ICONS = {
+  HT: '🚀', HY: '🔥', HQ: '◆', M: '•',
+  IBV: '▲', PPV: '★', SNORT: '🐂', LOW: '·',
+}
+
 function TvCandleIcon({active, muted}) {
   const c = active ? TV_TOOLBAR_BLUE : muted
   return (
@@ -6457,6 +6475,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const [loading, setLoading] = useState(true)
   const [range, setRange] = useState('1Y')
   const [barInterval, setBarInterval] = useState('D') // 1/3/5/15 + D/W/M/Y
+  const [intervalFavorites, setIntervalFavorites] = useState(() => loadChartIntervalFavorites(userId))
+  const [showIntervalFavMenu, setShowIntervalFavMenu] = useState(false)
+  const intervalFavMenuRef = useRef(null)
+  const skipIntervalFavSaveRef = useRef(true)
   const [zoomBars, setZoomBars] = useState(RANGE_BARS_BY_INTERVAL.D['1Y'])
   const [panOffset, setPanOffset] = useState(0) // bars back from the most recent
   const [chartStyle, setChartStyle] = useState('candle') // candle | line — all intervals
@@ -6540,6 +6562,29 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   useEffect(() => {
     if (!intradayFeatureOn && INTRADAY_INTERVALS.has(barInterval)) setBarInterval('D')
   }, [intradayFeatureOn, barInterval])
+
+  // Interval favorites (TradingView-style) — localStorage only
+  useEffect(() => {
+    skipIntervalFavSaveRef.current = true
+    setIntervalFavorites(loadChartIntervalFavorites(userId))
+  }, [userId])
+  useEffect(() => {
+    if (skipIntervalFavSaveRef.current) {
+      skipIntervalFavSaveRef.current = false
+      return
+    }
+    persistChartIntervalFavorites(intervalFavorites, userId || null)
+  }, [intervalFavorites, userId])
+  useEffect(() => {
+    if (!showIntervalFavMenu) return
+    const onDoc = (e) => {
+      if (intervalFavMenuRef.current && !intervalFavMenuRef.current.contains(e.target)) {
+        setShowIntervalFavMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [showIntervalFavMenu])
 
   // Load indicator prefs per user (local → cloud); remember params across sessions
   useEffect(() => {
@@ -6752,9 +6797,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   useEffect(() => {
     let cancelled = false
     setLoading(true); setData(null); setIntradayData(null)
-    setZoomBars(RANGE_BARS_BY_INTERVAL.D['1Y']); setPanOffset(0) // reset zoom/pan for the new symbol
+    setPanOffset(0)
     setPinnedIdx(null)
-    setBarInterval('D')
+    // Keep bar interval (1m/5m/D/…) when switching stocks — only reset pan/pin.
+    // Zoom stays as-is so a maximized 1m chart does not snap back to daily 1Y.
     if (isIndex) setChartStyle('line') // no real OHLC exists for indices, only a close-price series
     const fetcher = isIndex ? fetchIndexPriceHistory(sym) : fetchStockFullHistory(sym)
     fetcher
@@ -6922,7 +6968,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         <br/><br/>
         If you already ran <code style={{fontSize:11}}>013_stock_intraday_1m.sql</code>, check Railway:
         <br/>
-        <code style={{fontSize:11}}>ENABLE_INTRADAY_1M=1</code> (or remove a <code style={{fontSize:11}}=0</code> override), then wait 1–2 live scans during market hours.
+        <code style={{fontSize:11}}>ENABLE_INTRADAY_1M=1</code> (or remove a <code style={{fontSize:11}}>ENABLE_INTRADAY_1M=0</code> override), then wait 1–2 live scans during market hours.
       </div>
     )
   }
@@ -6990,11 +7036,16 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const H = chartBox.h
   const padL = 8, padR = Math.max(44, Math.round(W*0.06)), padT = 8, gapH = 4, axisPad = 18
   // Reserve a strip above the volume pane for the Pine volume metrics table.
-  const volTableH = showLakshmiVol ? (isMobile ? 48 : 40) : 0
+  const volShowTable = showLakshmiVol && volP.showTable !== false
+  const volShowMarkers = showLakshmiVol && volP.showMarkers !== false
+  const volTableH = volShowTable ? (isMobile ? 48 : 40) : 0
+  // Marker row under the volume pane baseline: signal icons + HT/HY/HQ/M tags,
+  // kept out of the bars so tall bars never clip them.
+  const volMarkerH = volShowMarkers ? (isMobile ? 16 : 15) : 0
   // Reserve strip above Super Cycle for the TV-style RS rating history table.
   const scTableH = showSuperCycle ? (isMobile ? 122 : 112) : 0
   const panelGaps = gapH + (showRSI ? gapH : 0) + (showMACD ? gapH : 0) + (showSuperCycle ? gapH : 0)
-  const usable = Math.max(160, H - padT - panelGaps - axisPad - volTableH - scTableH)
+  const usable = Math.max(160, H - padT - panelGaps - axisPad - volTableH - volMarkerH - scTableH)
   // When RSI/MACD/Super Cycle panes are on, shrink price/volume so everything fits.
   const extraPanes = (showRSI ? 1 : 0) + (showMACD ? 1 : 0) + (showSuperCycle ? 1 : 0)
   const priceShare = extraPanes === 0 ? (chartExpanded ? 0.52 : 0.58)
@@ -7126,8 +7177,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   // Metrics table sits directly above the volume indicator (TV/Pine style).
   const volTableTop = padT + priceH + gapH
   const volTop = volTableTop + volTableH
+  const volMarkerTop = volTop + volH
   // Super Cycle RS history table sits directly above the Super Cycle pane.
-  const scTableTop = volTop + volH + (showSuperCycle ? gapH : 0)
+  const scTableTop = volMarkerTop + volMarkerH + (showSuperCycle ? gapH : 0)
   const scTop = scTableTop + scTableH
   // RSI/MACD follow below Super Cycle.
   const rsiTop = scTop + scH + (showRSI ? gapH : 0)
@@ -7491,26 +7543,90 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             <span style={{fontSize:9,fontWeight:800,color:C.red,letterSpacing:'0.04em'}}>LIVE</span>
           </div>
         )}
-        {/* Resolution favorites — flat TV text buttons */}
-        <div style={{display:'flex',alignItems:'center',gap:0,flexWrap:'wrap'}}>
-          {[
-            ...(!isIndex && intradayFeatureOn
-              ? INTRADAY_TOOLBAR.filter(([,val]) => intradayKeys.includes(val))
-              : []),
-            ['1D','D','Daily'],['1W','W','Weekly'],['1M','M','Monthly'],['12M','Y','Yearly'],
-          ].map(([label,val,title])=>(
-            <button key={val} type="button" title={`${title} · ${label}`}
-              onClick={()=>{
-                setBarInterval(val)
-                if(!isIndex) setChartStyle('candle')
-              }}
-              style={{
-                padding:'4px 9px', border:'none', borderRadius:3, background:'transparent',
-                color: barInterval===val ? TV_TOOLBAR_BLUE : C.muted,
-                fontSize:12, fontWeight: barInterval===val ? 700 : 600,
-                cursor:'pointer', fontFamily:'inherit', lineHeight:1.2,
-              }}>{label}</button>
-          ))}
+        {/* Resolution favorites — starred intervals on the bar; ★ menu to add/remove */}
+        <div ref={intervalFavMenuRef} style={{display:'flex',alignItems:'center',gap:0,flexWrap:'wrap',position:'relative'}}>
+          {(() => {
+            const catalog = availableIntervalEntries({ isIndex, intradayFeatureOn, intradayKeys })
+            const favSet = new Set(normalizeIntervalFavorites(intervalFavorites))
+            const barItems = catalog.filter(([key]) => favSet.has(key) || key === barInterval)
+            const selectInterval = (val) => {
+              setBarInterval(val)
+              if (!isIndex) setChartStyle('candle')
+              setShowIntervalFavMenu(false)
+            }
+            const starToggle = (key, e) => {
+              e.stopPropagation()
+              setIntervalFavorites(prev => toggleIntervalFavorite(prev, key))
+            }
+            return (
+              <>
+                {barItems.map(([key, label, title]) => (
+                  <button key={key} type="button" title={`${title} · ${label} — star more in ▾`}
+                    onClick={() => selectInterval(key)}
+                    style={{
+                      padding:'4px 9px', border:'none', borderRadius:3, background:'transparent',
+                      color: barInterval===key ? TV_TOOLBAR_BLUE : C.muted,
+                      fontSize:12, fontWeight: barInterval===key ? 700 : 600,
+                      cursor:'pointer', fontFamily:'inherit', lineHeight:1.2,
+                    }}>{label}</button>
+                ))}
+                <button type="button"
+                  title="Favorite intervals (like TradingView)"
+                  onClick={() => setShowIntervalFavMenu(v => !v)}
+                  style={{
+                    padding:'4px 7px', border:'none', borderRadius:3, background: showIntervalFavMenu ? TV_TOOLBAR_BLUE+'22' : 'transparent',
+                    color: showIntervalFavMenu ? TV_TOOLBAR_BLUE : C.muted,
+                    fontSize:11, fontWeight:700, cursor:'pointer', fontFamily:'inherit', lineHeight:1.2,
+                  }}>▾</button>
+                {showIntervalFavMenu && (
+                  <div role="menu"
+                    style={{
+                      position:'absolute', left:0, top:'100%', marginTop:4, zIndex:95, minWidth:220,
+                      background:C.card, border:`1px solid ${C.border}`, borderRadius:10,
+                      boxShadow:'0 12px 28px rgba(0,0,0,0.4)', padding:'6px 0', overflow:'hidden',
+                    }}>
+                    <div style={{padding:'4px 12px 8px', fontSize:10, fontWeight:700, color:C.muted,
+                      textTransform:'uppercase', letterSpacing:'0.06em'}}>
+                      Favorite intervals
+                    </div>
+                    {catalog.map(([key, label, title]) => {
+                      const starred = favSet.has(key)
+                      const active = barInterval === key
+                      return (
+                        <div key={key} role="menuitem"
+                          style={{
+                            display:'flex', alignItems:'center', gap:8, padding:'6px 10px',
+                            background: active ? TV_TOOLBAR_BLUE+'14' : 'transparent',
+                            cursor:'pointer',
+                          }}
+                          onMouseEnter={e=>{e.currentTarget.style.background=active?TV_TOOLBAR_BLUE+'22':C.rowHover}}
+                          onMouseLeave={e=>{e.currentTarget.style.background=active?TV_TOOLBAR_BLUE+'14':'transparent'}}
+                          onClick={() => selectInterval(key)}>
+                          <button type="button" title={starred ? 'Remove from favorites' : 'Add to favorites'}
+                            onClick={(e) => starToggle(key, e)}
+                            style={{
+                              border:'none', background:'transparent', cursor:'pointer', padding:0,
+                              color: starred ? '#f0b429' : C.muted, fontSize:14, lineHeight:1, width:22,
+                            }}>
+                            {starred ? '★' : '☆'}
+                          </button>
+                          <span style={{
+                            flex:1, fontSize:12, fontWeight: active ? 700 : 600,
+                            color: active ? TV_TOOLBAR_BLUE : C.text,
+                          }}>{label}</span>
+                          <span style={{fontSize:10, color:C.muted}}>{title}</span>
+                        </div>
+                      )
+                    })}
+                    <div style={{padding:'8px 12px 4px', fontSize:9.5, color:C.muted, lineHeight:1.4,
+                      borderTop:`1px solid ${C.border}`}}>
+                      ★ keeps an interval on the top bar. At least one favorite is required.
+                    </div>
+                  </div>
+                )}
+              </>
+            )
+          })()}
         </div>
         <div style={{width:1,height:18,background:C.border,margin:'0 6px'}}/>
         {/* Chart type icons */}
@@ -7679,7 +7795,18 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                               Settings
                             </div>
                             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
-                              {INDICATOR_PARAM_FIELDS[ind.id].map(f=>(
+                              {INDICATOR_PARAM_FIELDS[ind.id].map(f=> f.type === 'bool' ? (
+                                <label key={f.key} style={{
+                                  display:'flex', alignItems:'center', gap:6, fontSize:10, color:C.muted,
+                                  cursor:'pointer', gridColumn:'span 2',
+                                }}>
+                                  <input type="checkbox"
+                                    checked={indParams(indPrefs, ind.id)[f.key] !== false}
+                                    onChange={e=>setIndPrefs(p => setIndicatorParam(p, ind.id, f.key, e.target.checked))}
+                                    style={{accentColor:TV_TOOLBAR_BLUE, cursor:'pointer', margin:0}}/>
+                                  {f.label}
+                                </label>
+                              ) : (
                                 <label key={f.key} style={{display:'flex', flexDirection:'column', gap:2, fontSize:10, color:C.muted}}>
                                   {f.label}
                                   <input type="number" min={f.min} max={f.max} step={f.step}
@@ -7798,22 +7925,23 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
 
       <div ref={plotRef} style={{flex:1,minHeight:0,position:'relative',width:'100%'}}>
       {/* Pine volume metrics table — directly above the volume pane */}
-      {showLakshmiVol && volMetrics && volTableH > 0 && (() => {
+      {volShowTable && volMetrics && volTableH > 0 && (() => {
         const m = volMetrics
         const commentMap = {
-          HT: 'All-Time High Vol (HT)',
-          HY: 'Year High Vol (HY)',
-          IBV: 'Institutional Buy Volume',
-          BS: 'Bull Snort',
-          'Bull Snort': 'Bull Snort',
-          PPV: 'Pivot Pocket Volume',
-          HQ: 'Quarter High Vol (HQ)',
-          M: 'Month High Vol (M)',
+          HT: `${VOL_SIGNAL_ICONS.HT} All-Time High Vol (HT)`,
+          HY: `${VOL_SIGNAL_ICONS.HY} Year High Vol (HY)`,
+          IBV: `${VOL_SIGNAL_ICONS.IBV} Institutional Buy Volume`,
+          BS: `${VOL_SIGNAL_ICONS.SNORT} Bull Snort`,
+          'Bull Snort': `${VOL_SIGNAL_ICONS.SNORT} Bull Snort`,
+          PPV: `${VOL_SIGNAL_ICONS.PPV} Pivot Pocket Volume`,
+          HQ: `${VOL_SIGNAL_ICONS.HQ} Quarter High Vol (HQ)`,
+          M: `${VOL_SIGNAL_ICONS.M} Month High Vol (M)`,
           NA: 'NA',
         }
         const commentFull = commentMap[m.comment] || (m.comment && m.comment !== 'NA' ? m.comment : 'NA')
         const rel = m.relVolPct
-        const relBg = rel == null ? undefined : rel >= 200 ? C.green+'55' : rel >= 100 ? C.green+'33' : C.red+'44'
+        const relHigh = volP.relVolHigh ?? 200
+        const relBg = rel == null ? undefined : rel >= relHigh ? C.green+'55' : rel >= 100 ? C.green+'33' : C.red+'44'
         const ud = m.upDnRatio
         const udBg = ud == null ? undefined : ud < 1 ? C.red+'44' : ud < 3 ? C.green+'33' : C.green+'55'
         const dcr = m.dcr
@@ -7852,14 +7980,15 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             overflow:'hidden',
             pointerEvents:'none',
           }} title="Lakshmi Volume metrics (above volume pane)">
-            {cell('Volume', m.volume != null ? Number(m.volume).toLocaleString('en-IN') : '—')}
-            {cell(`${m.lookbackAvg || 50} Bar Avg.Vol`, m.avgVol != null ? fmtVol(m.avgVol) : '—')}
-            {cell(`${m.lookbackAvg || 50} Bar Rel.Vol`, rel != null ? `${Math.round(rel)}%` : '—', relBg)}
-            {cell(`${m.lookbackUD || 50} Bar Up/Down`, ud != null ? ud.toFixed(2) : '—', udBg)}
-            {cell('DCR%', dcr != null ? `${Number(dcr).toFixed(1)}%` : '—', dcrBg)}
-            {cell('Change%', chg != null ? `${Number(chg).toFixed(1)}%` : '—', chgBg)}
-            {cell(`PPV & IBV (${m.lookbackPP || 20})`, `PPV-${m.ppvCount ?? 0}  IBV-${m.ibvCount ?? 0}`)}
-            {cell('Comments', commentFull, commentFull !== 'NA' ? C.green+'33' : undefined)}
+            {cell('📊 Volume', m.volume != null ? Number(m.volume).toLocaleString('en-IN') : '—')}
+            {cell(`〰 ${m.lookbackAvg || 50} Bar Avg.Vol`, m.avgVol != null ? fmtVol(m.avgVol) : '—')}
+            {cell(`⚡ ${m.lookbackAvg || 50} Bar Rel.Vol`, rel != null ? `${Math.round(rel)}%` : '—', relBg)}
+            {cell(`⚖ ${m.lookbackUD || 50} Bar Up/Down`, ud != null ? ud.toFixed(2) : '—', udBg)}
+            {cell('🎯 DCR%', dcr != null ? `${Number(dcr).toFixed(1)}%` : '—', dcrBg)}
+            {cell(`${chg != null && chg < 0 ? '📉' : '📈'} Change%`, chg != null ? `${Number(chg).toFixed(1)}%` : '—', chgBg)}
+            {cell(`${VOL_SIGNAL_ICONS.PPV} PPV & ${VOL_SIGNAL_ICONS.IBV} IBV (${m.lookbackPP || 20})`,
+              `${VOL_SIGNAL_ICONS.PPV}-${m.ppvCount ?? 0}  ${VOL_SIGNAL_ICONS.IBV}-${m.ibvCount ?? 0}`)}
+            {cell('💬 Comments', commentFull, commentFull !== 'NA' ? C.green+'33' : undefined)}
           </div>
         )
       })()}
@@ -8026,14 +8155,32 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             </g>
           )
         })}
-        <text x={padL+4} y={volTop+11} fontSize={8} fontWeight={700} fill={C.muted}>
-          {showLakshmiVol ? 'Lakshmi Volume' : 'Volume'}
-        </text>
-        {showLakshmiVol && volMetrics && (
-          <text x={padL+90} y={volTop+11} fontSize={7} fill={C.muted}>
-            {volMetrics.comment && volMetrics.comment!=='NA' ? volMetrics.comment : ''}
-          </text>
-        )}
+        {/* Pane legend, TradingView style: title + the hovered (or latest)
+            bar's volume, average and relative volume, plus the signal tag. */}
+        {(() => {
+          const li = hi != null ? hi : vVol.length - 1
+          const vv = li >= 0 ? vVol[li] : null
+          const av = li >= 0 ? vVolEma[li] : null
+          const rel = (vv != null && av) ? (vv / av) * 100 : null
+          const maLen = showLakshmiVol ? (volMetrics?.maLength || volP.maLength || 10) : 20
+          const sig = showLakshmiVol && li >= 0
+            ? (vLvHt[li] ? { t:'HT', ic:VOL_SIGNAL_ICONS.HT, c:LAKSHMI_BAR_COLORS.HT }
+             : vLvHy[li] ? { t:'HY', ic:VOL_SIGNAL_ICONS.HY, c:LAKSHMI_BAR_COLORS.HY }
+             : vLvHq[li] ? { t:'HQ', ic:VOL_SIGNAL_ICONS.HQ, c:LAKSHMI_VOL_COLORS.IBV }
+             : vLvHm[li] ? { t:'M',  ic:VOL_SIGNAL_ICONS.M,  c:C.muted } : null)
+            : null
+          return (
+            <text x={padL+4} y={volTop+11} fontSize={isMobile?8:9} fontWeight={700}>
+              <tspan fill={C.muted}>{showLakshmiVol ? '📊 Lakshmi Volume' : '📊 Volume'}</tspan>
+              {vv != null && <tspan fill={C.text} dx={7}>{fmtVol(vv)}</tspan>}
+              {av != null && <tspan fill={TV_VOL_MA} dx={7}>{`MA${maLen} ${fmtVol(av)}`}</tspan>}
+              {rel != null && (
+                <tspan fill={rel>=100?C.green:C.red} dx={7}>{`${Math.round(rel)}%`}</tspan>
+              )}
+              {sig && <tspan fill={sig.c} dx={7}>{`${sig.ic} ${sig.t}`}</tspan>}
+            </text>
+          )
+        })()}
 
         {/* Support/Resistance lines */}
         {showSR && [['r1',sr.r1,C.red],['r2',sr.r2,C.red],['s1',sr.s1,C.green],['s2',sr.s2,C.green]].map(([k,val,color])=>
@@ -8399,52 +8546,43 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                 )}
                 <rect x={x-volBarW/2} y={barTopY} width={volBarW} height={barH}
                   fill={fill} opacity={0.85}/>
-                {/* Volume-pane icons + HT/HY/HQ/M labels */}
-                {showLakshmiVol && (() => {
-                  const volNodes = []
-                  let yi = 0
-                  const iconY = () => Math.max(volTop + 9, barTopY - 2 - (yi++) * 10)
-                  if (vLvIv[i]) {
-                    volNodes.push(<text key={`v-iv-${i}`} x={x} y={iconY()} fontSize={8} fontWeight={800}
-                      fill={LAKSHMI_VOL_COLORS.IBV_ICON} textAnchor="middle"
-                      style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>▲</text>)
-                  }
-                  if (vLvPp[i]) {
-                    volNodes.push(<text key={`v-pp-${i}`} x={x} y={iconY()} fontSize={8} fontWeight={800}
-                      fill={LAKSHMI_VOL_COLORS.PPV_ICON} textAnchor="middle"
-                      style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>★</text>)
-                  }
-                  if (vLvSnort[i]) {
-                    volNodes.push(<text key={`v-bs-${i}`} x={x} y={iconY()} fontSize={8}
-                      fill={LAKSHMI_VOL_COLORS.BULL_SNORT_ICON} textAnchor="middle">🐂</text>)
-                  }
-                  if (vLvHt[i]) {
-                    volNodes.push(<text key={`v-ht-ico-${i}`} x={x} y={iconY()} fontSize={8}
-                      fill={LAKSHMI_BAR_COLORS.HT} textAnchor="middle"
-                      style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>🚀</text>)
-                  } else if (vLvHy[i]) {
-                    volNodes.push(<text key={`v-hy-ico-${i}`} x={x} y={iconY()} fontSize={8}
-                      fill={LAKSHMI_BAR_COLORS.HY} textAnchor="middle"
-                      style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>🔥</text>)
-                  }
-                  const hiLabel = vLvHt[i] ? 'HT' : vLvHy[i] ? 'HY' : vLvHq[i] ? 'HQ' : vLvHm[i] ? 'M' : null
-                  if (hiLabel) {
-                    volNodes.push(
-                      <text key={`v-lbl-${i}`} x={x} y={Math.min(volTop + volH - 2, barTopY + 10)}
-                        fontSize={6} fill={C.text} textAnchor="middle" fontWeight={700}>
-                        {hiLabel}
-                      </text>
-                    )
-                  }
-                  return volNodes.length ? volNodes : null
-                })()}
               </g>
             )
           })}
         </g>
 
+        {/* Signal marker row under the volume axis — icons plus the
+            HT/HY/HQ/M tag for each bar, so tall bars never hide them. */}
+        {volShowMarkers && volMarkerH > 0 && (
+          <g>
+            <line x1={padL} y1={volMarkerTop} x2={padL+chartW} y2={volMarkerTop}
+              stroke={C.border} strokeWidth={0.6} opacity={0.6}/>
+            {vCloses.map((c,i)=>{
+              if (c==null) return null
+              const parts = []
+              if (vLvHt[i])         parts.push({ t:VOL_SIGNAL_ICONS.HT, c:LAKSHMI_BAR_COLORS.HT })
+              else if (vLvHy[i])    parts.push({ t:VOL_SIGNAL_ICONS.HY, c:LAKSHMI_BAR_COLORS.HY })
+              if (vLvIv[i])         parts.push({ t:VOL_SIGNAL_ICONS.IBV, c:LAKSHMI_VOL_COLORS.IBV_ICON })
+              if (vLvPp[i])         parts.push({ t:VOL_SIGNAL_ICONS.PPV, c:LAKSHMI_VOL_COLORS.PPV_ICON })
+              if (vLvSnort[i])      parts.push({ t:VOL_SIGNAL_ICONS.SNORT, c:LAKSHMI_VOL_COLORS.BULL_SNORT_ICON })
+              const tag = vLvHt[i] ? 'HT' : vLvHy[i] ? 'HY' : vLvHq[i] ? 'HQ' : vLvHm[i] ? 'M' : null
+              if (tag) parts.push({ t:tag, c:C.text })
+              if (!parts.length) return null
+              return (
+                <text key={`volmark-${i}`} x={idxToX(i)} y={volMarkerTop + volMarkerH - 4}
+                  fontSize={isMobile?7:8} fontWeight={700} textAnchor="middle"
+                  style={{paintOrder:'stroke', stroke:C.bg, strokeWidth:2}}>
+                  {parts.map((p,pi)=>(
+                    <tspan key={pi} fill={p.c} dx={pi?1:0}>{p.t}</tspan>
+                  ))}
+                </text>
+              )
+            })}
+          </g>
+        )}
+
         {/* Volume MA20 overlay */}
-        {(() => {
+        {(!showLakshmiVol || volP.showVolMA !== false) && (() => {
           const pts = vVolEma.map((v,i)=> v!=null ? `${idxToX(i)},${volToY(v)}` : null).filter(Boolean)
           return pts.length>1 ? (
             <polyline points={pts.join(' ')} fill="none" stroke={TV_VOL_MA} strokeWidth={1.4} opacity={0.95}/>
@@ -8608,7 +8746,18 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:4,fontSize:8,color:C.muted,flexShrink:0,lineHeight:1.3}}>
         <span><span style={{color:TV_VOL_UP}}>■</span> Vol up</span>
         <span><span style={{color:TV_VOL_DN}}>■</span> Vol down</span>
-        <span><span style={{color:TV_VOL_MA}}>—</span> Vol MA20</span>
+        {(!showLakshmiVol || volP.showVolMA !== false) && (
+          <span><span style={{color:TV_VOL_MA}}>—</span> Vol MA{showLakshmiVol ? (volP.maLength ?? 10) : 20}</span>
+        )}
+        {volShowMarkers && <>
+          <span title="All-time high volume"><span style={{color:LAKSHMI_BAR_COLORS.HT}}>{VOL_SIGNAL_ICONS.HT} HT</span> all-time high vol</span>
+          <span title="52-week high volume"><span style={{color:LAKSHMI_BAR_COLORS.HY}}>{VOL_SIGNAL_ICONS.HY} HY</span> year high vol</span>
+          <span title="Quarter high volume"><span style={{color:LAKSHMI_VOL_COLORS.IBV}}>{VOL_SIGNAL_ICONS.HQ} HQ</span> quarter high vol</span>
+          <span title="Month high volume"><span style={{color:C.text}}>{VOL_SIGNAL_ICONS.M} M</span> month high vol</span>
+          <span title="Institutional buy volume"><span style={{color:LAKSHMI_VOL_COLORS.IBV_ICON}}>{VOL_SIGNAL_ICONS.IBV}</span> IBV</span>
+          <span title="Pivot pocket volume"><span style={{color:LAKSHMI_VOL_COLORS.PPV_ICON}}>{VOL_SIGNAL_ICONS.PPV}</span> PPV</span>
+          <span title="Bull Snort"><span style={{color:LAKSHMI_VOL_COLORS.BULL_SNORT_ICON}}>{VOL_SIGNAL_ICONS.SNORT}</span> Bull Snort</span>
+        </>}
         {showMA && <>
           <span><span style={{color:C.teal}}>■</span> EMA9</span>
           <span><span style={{color:C.blue}}>■</span> MA20</span>
@@ -9332,7 +9481,7 @@ function sortStocksForTable(stocks,sortBy,sortDir){
  * stock list. Each instance has its own independent sort/page state, so
  * sorting the R1 Breakout table doesn't affect the Cup & Handle table.
  */
-function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=25,defaultSortBy='rs',rsColOrder}){
+function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=25,defaultSortBy='rs',rsColOrder,showOurChartHover=true,onOurChart}){
   const layout=useContext(RsLayoutContext)
   const colOrder=rsColOrder||layout.colOrder
   const [sortBy,setSortBy]=useState(defaultSortBy)
@@ -9386,7 +9535,7 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=25,de
             <RsTableHeaderRow visibleRsCols={visibleRsCols} colOrder={colOrder}
               sortBy={sortBy} sortDir={sortDir} handleSort={handleSort}/>
             </div>
-          {paged.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>onChartOpen(s.sym)} visibleRsCols={visibleRsCols} rsColOrder={colOrder}/>)}
+          {paged.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>onChartOpen(s.sym)} onOurChart={onOurChart} showOurChartHover={showOurChartHover} visibleRsCols={visibleRsCols} rsColOrder={colOrder}/>)}
         </div>
         </div>
       )}
@@ -10063,7 +10212,69 @@ function RsOptionalColCell({colKey, s, vis}){
   return null
 }
 
-function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder}){
+/** Hover menu on a stock symbol — Our Chart (optional), TradingView, Screener. */
+function SymbolHoverMenu({sym, showOurChart=true, onOurChart, onOpenChart, children}){
+  const [open,setOpen]=useState(false)
+  const hideTimer=useRef(null)
+  const show=()=>{ if(hideTimer.current) clearTimeout(hideTimer.current); setOpen(true) }
+  const scheduleHide=()=>{
+    if(hideTimer.current) clearTimeout(hideTimer.current)
+    hideTimer.current=setTimeout(()=>setOpen(false),200)
+  }
+  useEffect(()=>()=>{ if(hideTimer.current) clearTimeout(hideTimer.current) },[])
+  const itemStyle={
+    display:'block',width:'100%',textAlign:'left',padding:'8px 12px',border:'none',
+    background:'transparent',color:C.text,fontSize:12,fontWeight:600,cursor:'pointer',
+  }
+  return(
+    <span style={{position:'relative',display:'inline-flex'}}
+      onMouseEnter={show} onMouseLeave={scheduleHide}>
+      {children}
+      {open&&(
+        <div role="menu"
+          onMouseEnter={show} onMouseLeave={scheduleHide}
+          style={{
+            position:'absolute',left:0,top:'100%',marginTop:4,zIndex:90,minWidth:168,
+            background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
+            boxShadow:'0 10px 28px rgba(0,0,0,0.35)',padding:'4px 0',overflow:'hidden',
+          }}>
+          {showOurChart&&(
+            <button type="button" role="menuitem"
+              onClick={e=>{e.stopPropagation(); setOpen(false); (onOurChart||onOpenChart)?.(sym)}}
+              onMouseEnter={e=>{e.currentTarget.style.background=C.rowHover}}
+              onMouseLeave={e=>{e.currentTarget.style.background='transparent'}}
+              style={{...itemStyle,color:C.accent}}>
+              Our Chart
+            </button>
+          )}
+          <a href={`https://www.tradingview.com/chart/?symbol=NSE:${encodeURIComponent(sym)}`}
+            target="_blank" rel="noopener noreferrer" role="menuitem"
+            onClick={e=>e.stopPropagation()}
+            onMouseEnter={e=>{e.currentTarget.style.background=C.rowHover}}
+            onMouseLeave={e=>{e.currentTarget.style.background='transparent'}}
+            style={{...itemStyle,textDecoration:'none'}}>
+            TradingView ↗
+          </a>
+          <a href={`https://www.screener.in/company/${encodeURIComponent(sym)}/consolidated/`}
+            target="_blank" rel="noopener noreferrer" role="menuitem"
+            onClick={e=>e.stopPropagation()}
+            onMouseEnter={e=>{e.currentTarget.style.background=C.rowHover}}
+            onMouseLeave={e=>{e.currentTarget.style.background='transparent'}}
+            style={{...itemStyle,textDecoration:'none'}}>
+            Screener.in ↗
+          </a>
+          {!showOurChart&&(
+            <div style={{padding:'6px 12px',fontSize:10,color:C.muted,lineHeight:1.4}}>
+              Our Chart hidden — enable in 🎨 Quick Settings
+            </div>
+          )}
+        </div>
+      )}
+    </span>
+  )
+}
+
+function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder,showOurChartHover=true,onOurChart}){
   const layout=useContext(RsLayoutContext)
   const [open,setOpen]=useState(false)
   const vis=visibleRsCols||layout.visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true,resultRating:true}
@@ -10086,11 +10297,17 @@ function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder}){
         {/* Symbol — WealthLab style: bold sym + muted sector on same line */}
         <div style={{minWidth:0,overflow:'hidden'}}>
           <div style={{display:'flex',alignItems:'center',gap:4}}>
-            <span onClick={e=>{e.stopPropagation();onChart&&onChart(s.sym)}}
-              style={{fontWeight:600,fontSize:12,color:C.accent,
-                letterSpacing:'0.01em',cursor:'pointer',textDecoration:'underline',
-                textDecorationColor:C.accent+'55',textUnderlineOffset:'2px'}}
-              title={`Open ${s.sym} chart`}>{s.sym}</span>
+            <SymbolHoverMenu
+              sym={s.sym}
+              showOurChart={showOurChartHover}
+              onOurChart={onOurChart}
+              onOpenChart={onChart}>
+              <span onClick={e=>{e.stopPropagation();onChart&&onChart(s.sym)}}
+                style={{fontWeight:600,fontSize:12,color:C.accent,
+                  letterSpacing:'0.01em',cursor:'pointer',textDecoration:'underline',
+                  textDecorationColor:C.accent+'55',textUnderlineOffset:'2px'}}
+                title={`Hover for chart options · click to open`}>{s.sym}</span>
+            </SymbolHoverMenu>
             {s.pp.isPP&&<span style={{fontSize:9,color:C.orange,fontWeight:700}}>PP</span>}
             {s.hy.isHY&&<span style={{fontSize:9,color:C.blue,fontWeight:700}}>HY</span>}
             {s.ht.isHT&&<span style={{fontSize:9,color:C.purple,fontWeight:700}}>HT</span>}
@@ -10166,7 +10383,7 @@ function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder}){
 }
 
 // ── Sector Panel ──────────────────────────────────────────────────────
-function SectorPanel({sectorData,allStocks,isMobile,onChart,onViewInRS}){
+function SectorPanel({sectorData,allStocks,isMobile,onChart,onViewInRS,showOurChartHover=true,onOurChart}){
   const [expanded,setExpanded]=useState(null)
   const {copy,copied}=useCopy()
   if(!sectorData||sectorData.length===0)return(
@@ -10240,7 +10457,7 @@ function SectorPanel({sectorData,allStocks,isMobile,onChart,onViewInRS}){
                           </button>
                         )}
                       </div>
-                      <SimpleStockTable stocks={sectorStocks} isMobile={isMobile} onChart={onChart}/>
+                      <SimpleStockTable stocks={sectorStocks} isMobile={isMobile} onChart={onChart} showOurChartHover={showOurChartHover} onOurChart={onOurChart}/>
                     </>
                   )
                 })()}
@@ -12568,16 +12785,25 @@ export default function App(){
   // PP filters per tab
   const [chartSym,setChartSym]=useState(null)
   const [chartDetailTabHint,setChartDetailTabHint]=useState(null) // resultsSummary|ppt|concall|…
+  const [chartTabHint,setChartTabHint]=useState(null) // 'own' | 'tv' — from symbol hover menu
   // Window chrome for the 3 main panels (screener / chart / details):
   // drag title bar to float, minimize to taskbar, close to hide (restore from taskbar).
   const DETAIL_PANEL_PREF_KEY='lakshmimata-detail-panel-open'
+  const HOVER_OUR_CHART_PREF_KEY='lakshmimata-hover-our-chart'
   const loadDetailPanelPref=()=>{
     try{
       const v=localStorage.getItem(DETAIL_PANEL_PREF_KEY)
       return v==null ? true : v==='1'
     }catch{ return true }
   }
+  const loadHoverOurChartPref=()=>{
+    try{
+      const v=localStorage.getItem(HOVER_OUR_CHART_PREF_KEY)
+      return v==null ? true : v==='1'
+    }catch{ return true }
+  }
   const [detailPanelPref,setDetailPanelPref]=useState(loadDetailPanelPref)
+  const [hoverOurChartEnabled,setHoverOurChartEnabled]=useState(loadHoverOurChartPref)
   const detailPanelPrefRef=useRef(detailPanelPref)
   useEffect(()=>{ detailPanelPrefRef.current=detailPanelPref },[detailPanelPref])
   const persistDetailPanelPref=(open)=>{
@@ -12585,6 +12811,11 @@ export default function App(){
     setDetailPanelPref(next)
     detailPanelPrefRef.current=next
     try{ localStorage.setItem(DETAIL_PANEL_PREF_KEY, next?'1':'0') }catch(e){}
+  }
+  const persistHoverOurChartPref=(on)=>{
+    const next=!!on
+    setHoverOurChartEnabled(next)
+    try{ localStorage.setItem(HOVER_OUR_CHART_PREF_KEY, next?'1':'0') }catch(e){}
   }
   const defaultPanelWin=(open=true)=>({open:!!open,minimized:false,float:null})
   const [panelWins,setPanelWins]=useState(()=>({
@@ -12637,8 +12868,8 @@ export default function App(){
   const indexNamesRef=useRef(new Set())
   // User (or alert) picked a symbol — show Chart; Details/About only for
   // stocks (ChartPanel already hides Details for indices).
-  // Always dock Chart (clear float) so a prior float/minimize can't make
-  // the click look like a no-op — especially from Market Index Tape.
+  // Keep maximize across symbol changes. Only clear a non-maximized float
+  // (off-screen / half-dragged) so tape clicks still bring Chart into view.
   const openChart=useCallback((sym, opts={})=>{
     if(!sym) return
     const asIndex = opts.isIndex != null
@@ -12646,21 +12877,31 @@ export default function App(){
       : indexNamesRef.current.has(sym)
     setChartIsIndex(asIndex)
     setChartSym(sym)
+    if(opts.chartTab==='own' || opts.chartTab==='tv'){
+      setChartTabHint(asIndex ? 'own' : opts.chartTab)
+    }
     if(isMobile) return
     // Portfolio / settings / etc. stay full-width — remember symbol only.
     if(isFullWidthMainTab(mainTab)) return
     const wantDetail = !asIndex && detailPanelPrefRef.current
-    setPanelWins(w=>({
-      ...w,
-      chart:{open:true,minimized:false,float:null},
-      // Details/Fundamentals: stock-only, and only if user left it open (saved pref / layout).
-      detail: {
-        open: wantDetail,
-        minimized:false,
-        float:null,
-      },
-    }))
+    setPanelWins(w=>{
+      const prevChart = w.chart || {open:true,minimized:false,float:null}
+      const prevDetail = w.detail || {open:false,minimized:false,float:null}
+      const keepChartFloat = prevChart.float?.maximized ? prevChart.float : null
+      const keepDetailFloat = prevDetail.float?.maximized ? prevDetail.float : null
+      return {
+        ...w,
+        chart:{open:true,minimized:false,float:keepChartFloat},
+        // Details/Fundamentals: stock-only, and only if user left it open (saved pref / layout).
+        detail: {
+          open: wantDetail,
+          minimized:false,
+          float:keepDetailFloat,
+        },
+      }
+    })
   },[isMobile,mainTab])
+  const openOurChart=useCallback((sym)=>openChart(sym,{chartTab:'own'}),[openChart])
   const prevChartSymRef=useRef(null)
   useEffect(()=>{
     // First pick from null (e.g. auto-open on RS) — open chart; Details only if pref says so.
@@ -15503,7 +15744,7 @@ export default function App(){
                     <RsTableHeaderRow visibleRsCols={visibleRsCols} colOrder={rsColOrder}
                       sortBy={sortBy} sortDir={sortDir} handleSort={handleSort}/>
                     </div>
-                  {pagedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>openChart(s.sym)} visibleRsCols={visibleRsCols} rsColOrder={rsColOrder}/>)}
+                  {pagedRS.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>openChart(s.sym)} onOurChart={openOurChart} showOurChartHover={hoverOurChartEnabled} visibleRsCols={visibleRsCols} rsColOrder={rsColOrder}/>)}
                 </div>
                 </>
               )
@@ -16112,7 +16353,7 @@ export default function App(){
                                   <TVCopyPanel stocks={filteredConstituents} label={`${idx.name} Constituents`}/>
                                   <BreakoutTable key={`${idx.name}-${activeIndustry}-${activeRsMin}`}
                                     stocks={filteredConstituents} isMobile={isMobile}
-                                    visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
+                                    visibleRsCols={visibleRsCols} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
                                 </>
                               )}
                             </div>
@@ -16342,7 +16583,7 @@ export default function App(){
                                     <TVCopyPanel stocks={filteredSecStocks} label={`${sec.sector} Stocks`}/>
                                     <BreakoutTable key={`${sec.sector}-${secActiveIndustry}-${secActiveRsMin}`}
                                       stocks={filteredSecStocks} isMobile={isMobile}
-                                      visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
+                                      visibleRsCols={visibleRsCols} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
                                     </>
                                     )}
                                   </div>
@@ -16481,7 +16722,7 @@ export default function App(){
                                     <TVCopyPanel stocks={filteredIndMembers} label={`${ind.name} Stocks`}/>
                                     <BreakoutTable key={`${ind.name}-${indActiveRsMin}`}
                                       stocks={filteredIndMembers} isMobile={isMobile}
-                                      visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
+                                      visibleRsCols={visibleRsCols} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
                                     </>
                                     )}
                                   </div>
@@ -16595,7 +16836,7 @@ export default function App(){
                   </div>
                   <TVCopyPanel stocks={gapUps} label="Gap Up"/>
                   <BreakoutTable stocks={gapUps}
-                    isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
+                    isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
                 </div>
               )}
               {gapDowns.length>0&&(
@@ -16605,7 +16846,7 @@ export default function App(){
                   </div>
                   <TVCopyPanel stocks={gapDowns} label="Gap Down"/>
                   <BreakoutTable stocks={gapDowns}
-                    isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
+                    isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
                 </div>
               )}
                 </>
@@ -16761,7 +17002,7 @@ export default function App(){
                   ):(<>
                     <TVCopyPanel stocks={matches} label={active.label}/>
                     <BreakoutTable stocks={matches}
-                      isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
+                      isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
                   </>)}
                 </div>
               )}
@@ -16899,7 +17140,7 @@ export default function App(){
                         )}
                         <TVCopyPanel stocks={matches} label={label}/>
                         <BreakoutTable stocks={matches}
-                          isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
+                          isMobile={isMobile} visibleRsCols={visibleRsCols} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
                       </div>
                     )
                   })}
@@ -17944,7 +18185,7 @@ export default function App(){
                   <>
                     <TVCopyPanel stocks={inSqueeze} label="In Squeeze"/>
                     <BreakoutTable stocks={inSqueeze} isMobile={isMobile}
-                      visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={openChart}/>
+                      visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
                   </>
                 )
               })()}
@@ -17968,7 +18209,7 @@ export default function App(){
                   <>
                     <TVCopyPanel stocks={fired} label="Squeeze Fired"/>
                     <BreakoutTable stocks={fired} isMobile={isMobile}
-                      visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={openChart}/>
+                      visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
                   </>
                 )
               })()}
@@ -18041,7 +18282,7 @@ export default function App(){
                 body="Try turning off Full Signal Only, clear search, or widen the index filter."/>
             ):(
               <BreakoutTable stocks={displayed52WL} isMobile={isMobile}
-                visibleRsCols={{...visibleRsCols,wl52:true}} onChartOpen={openChart}/>
+                visibleRsCols={{...visibleRsCols,wl52:true}} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
             )}
             </>)}
           </div>
@@ -18101,7 +18342,7 @@ export default function App(){
                 body="Try a lower threshold, clear PP filters, or check again after a volatile session."/>
             ):(
               <BreakoutTable stocks={displayedWeak} isMobile={isMobile}
-                visibleRsCols={{...visibleRsCols,weakrs:true}} onChartOpen={openChart}/>
+                visibleRsCols={{...visibleRsCols,weakrs:true}} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
             )}
             </>)}
           </div>
@@ -18546,7 +18787,7 @@ export default function App(){
                                   <TVCopyPanel stocks={filteredRotConstituents} label={`${s.label} Constituents`}/>
                                   <BreakoutTable key={`${s.id}-${rotActiveIndustry}-${rotActiveRsMin}`}
                                     stocks={filteredRotConstituents} isMobile={isMobile}
-                                    visibleRsCols={visibleRsCols} onChartOpen={openChart}/>
+                                    visibleRsCols={visibleRsCols} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
                                 </>
                               )}
                             </div>
@@ -19491,6 +19732,18 @@ export default function App(){
                 Will start on your next tap anywhere (browsers block silent autoplay).
               </div>
             )}
+            <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',
+              letterSpacing:'0.06em',margin:'14px 0 8px'}}>Symbol Hover</div>
+            <button type="button" onClick={()=>persistHoverOurChartPref(!hoverOurChartEnabled)}
+              style={{width:'100%',padding:'8px 0',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
+                border:`1px solid ${hoverOurChartEnabled?C.accent:C.border}`,
+                background:hoverOurChartEnabled?C.accent+'18':C.bg,
+                color:hoverOurChartEnabled?C.accent:C.muted}}>
+              {hoverOurChartEnabled?'Our Chart · Enabled':'Our Chart · Disabled'}
+            </button>
+            <div style={{fontSize:9.5,color:C.muted,marginTop:6,lineHeight:1.45}}>
+              When enabled, hovering a stock name shows Our Chart in the popup (with TradingView &amp; Screener).
+            </div>
             <BreathingExercise ambient={ambient}/>
           </div>
         )}
@@ -19569,7 +19822,7 @@ export default function App(){
             return next
           })
         }}
-        onClose={()=>{setChartSym(null);setChartIsIndex(false);setChartPanelPct(null);setChartDetailTabHint(null)}}
+        onClose={()=>{setChartSym(null);setChartIsIndex(false);setChartPanelPct(null);setChartDetailTabHint(null);setChartTabHint(null)}}
         isMobile={isMobile}
         symList={chartIsIndex ? [] : displayedRS.map(s=>s.sym)}
         onNavigate={(next)=>{
@@ -19589,6 +19842,8 @@ export default function App(){
         expandCol={!isMobile&&!(panelWins.screener.open&&!panelWins.screener.minimized&&!panelWins.screener.float)}
         detailTabHint={chartDetailTabHint}
         onConsumeDetailTabHint={()=>setChartDetailTabHint(null)}
+        chartTabHint={chartTabHint}
+        onConsumeChartTabHint={()=>setChartTabHint(null)}
         detailFirst={detailFirst}
         onMoveTile={!isMobile?moveTile:null}
         stackLayout={!isMobile&&dockStack}
