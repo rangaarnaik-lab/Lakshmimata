@@ -6730,9 +6730,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   }
   if(isIntraday && intradayData?.error){
     return fillShell(
-      <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted,textAlign:'center',padding:20}}>
+      <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted,textAlign:'center',padding:20,lineHeight:1.5}}>
         {intradayData.error}
-        <br/>Run <code style={{fontSize:11}}>013_stock_intraday_1m.sql</code> in Supabase, then wait for market scans to fill 1m bars.
+        <br/><br/>
+        If you already ran <code style={{fontSize:11}}>013_stock_intraday_1m.sql</code>, check Railway:
+        <br/>
+        <code style={{fontSize:11}}>ENABLE_INTRADAY_1M=1</code> (or remove a <code style={{fontSize:11}}=0</code> override), then wait 1–2 live scans during market hours.
       </div>
     )
   }
