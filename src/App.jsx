@@ -30,7 +30,7 @@ import { INDEX_CONSTITUENT_SYMS } from './data/index-constituents'
 import { resolveIndustry, resolveSector, getPeerGroup, isJunkIndustry, getCompanyName, stockMatchesQuery, rankStockSuggestions } from './data/industries'
 import {
   calcSMASeries, findSwingPoints, computeSupportResistance,
-  detectInsideBars, detectAccDistDays, detectVCPContractions, detectCupAndHandle,
+  detectInsideBars, detectVCPContractions, detectCupAndHandle,
   detectPPDays, detectHYDays, detectHTDays, detectIBVDays, detectNearEMA9Days,
   detectBullSnortDays, aggregateToWeekly, aggregateToMonthly, aggregateToYearly,
   calcRSISeries, calcMACDSeries, detectEmaCrossoverDays,
@@ -6223,7 +6223,7 @@ function ThemesRadarPanel({onOpenSymbol}){
 }
 
 // ── Native Candlestick Chart — candlesticks, MA20/50/200, Support/
-// Resistance, Inside Bar, Accumulation/Distribution, VCP contractions,
+// Resistance, Inside Bar, VCP contractions,
 // and a Cup & Handle heuristic, all computed client-side from the same
 // OHLCV data already fetched for the simple price history chart. Sits
 // alongside the TradingView embed as a second tab, not a replacement —
@@ -6505,7 +6505,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       swings: _swings,
       sr: computeSupportResistance(_swings, closes[closes.length-1]),
       insideBars: detectInsideBars(highs, lows),
-      accDist: detectAccDistDays(highs, lows, closes, volumes),
       ppDays: detectPPDays(closes, volumes),
       hyDays: detectHYDays(volumes),
       htDays: detectHTDays(volumes),
@@ -6640,7 +6639,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   }
 
   const { ma20, ma50, ma200, ema9, ema50, guppyShort, guppyLong, guppyCross, rsi, macd,
-    swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, bullSnortDays, nearEma9Days, vcp, cup,
+    swings, sr, insideBars, ppDays, hyDays, htDays, ibvDays, bullSnortDays, nearEma9Days, vcp, cup,
     buyDays, sellDays, superCycle, candleBarColors, candleBarTags, lakshmiVol } = analysis
 
   let dates = seriesData.dates
@@ -6742,7 +6741,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const vMacdSig = (macd?.signal||[]).slice(start)
   const vMacdHist = (macd?.hist||[]).slice(start)
   const vInsideBars = insideBars.slice(start)
-  const vAccDist = accDist.slice(start)
   const vPP  = ppDays.slice(start)
   const vHY  = hyDays.slice(start)
   const vHT  = htDays.slice(start)
@@ -7632,7 +7630,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           const x = idxToX(i)
           const yOpen = priceToY(op), yClose = priceToY(c)
           const bodyTop = Math.min(yOpen,yClose), bodyH = Math.max(1, Math.abs(yClose-yOpen))
-          const accY = Math.min(padT + priceH - 2, priceToY(lo) + 10)
           return (
             <g key={i}
               onMouseEnter={()=> drawTool==='pan' && setHoverIdx(i)}
@@ -7649,12 +7646,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               {/* Pattern markers */}
               {showPatterns && vInsideBars[i] && (
                 <circle cx={x} cy={priceToY(hi)-6} r={2} fill={C.teal}/>
-              )}
-              {showPatterns && vAccDist[i]==='acc' && (
-                <text x={x} y={accY} fontSize={7} fill={C.green} textAnchor="middle">▲</text>
-              )}
-              {showPatterns && vAccDist[i]==='dist' && (
-                <text x={x} y={accY} fontSize={7} fill={C.red} textAnchor="middle">▼</text>
               )}
               {showBuySell && vBuy[i] && (
                 <g>
@@ -8069,8 +8060,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         </>}
         {showPatterns && <>
           <span><span style={{color:C.teal}}>●</span> Inside Bar</span>
-          <span><span style={{color:C.green}}>▲</span> Accumulation</span>
-          <span><span style={{color:C.red}}>▼</span> Distribution</span>
           <span><span style={{color:LAKSHMI_BAR_COLORS.HT}}>■</span> HT</span>
           <span><span style={{color:LAKSHMI_BAR_COLORS.HY}}>■</span> HY</span>
           <span><span style={{color:LAKSHMI_BAR_COLORS.IBV}}>■</span> IBV</span>
