@@ -6666,41 +6666,47 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const [liveOverlay, setLiveOverlay] = useState(null) // {price, volume, open, high, low} | null
   const [isLiveUpdating, setIsLiveUpdating] = useState(false)
   useEffect(() => {
-    setLiveOverlay(null); setIsLiveUpdating(false) // reset for the new symbol
-    if (isIndex) return // no live per-index price feed exists — stocks-only
+    setLiveOverlay(null); setIsLiveUpdating(false)
+    if (isIndex) return
     if (!isMarketOpen()) return
     let cancelled = false
+    const n = (v) => {
+      const x = Number(v)
+      return Number.isFinite(x) && x > 0 ? x : null
+    }
     const poll = () => {
       fetchLiveStockPrice(sym).then(live => {
         if (cancelled || !live || live.price == null) return
-        const px = Number(live.price)
-        if (!Number.isFinite(px) || px <= 0) return
-        const exOpen = Number(live.open)
-        const exHigh = Number(live.high)
-        const exLow = Number(live.low)
+        const px = n(live.price)
+        if (px == null) return
+        const exOpen = n(live.open)
+        const exHigh = n(live.high)
+        const exLow = n(live.low)
+        const prevClose = n(live.prevClose)
         setLiveOverlay(prev => {
-          // Prefer exchange day OHLC from stocks table; fall back to running
-          // client extremes only when open/high/low columns are missing.
-          const open = Number.isFinite(exOpen) && exOpen > 0
-            ? exOpen
-            : (prev?.open ?? px)
-          const high = Math.max(
-            Number.isFinite(exHigh) && exHigh > 0 ? exHigh : px,
-            px,
-            prev?.high ?? px,
-          )
-          const low = Math.min(
-            Number.isFinite(exLow) && exLow > 0 ? exLow : px,
-            px,
-            prev?.low ?? px,
-          )
-          return {
-            price: px,
-            volume: live.volume,
-            open,
-            high: Math.max(high, open, px),
-            low: Math.min(low, open, px),
+          // Prefer full exchange day OHLC. Do NOT blend with a stale
+          // stock_full_history "today" bar (Yahoo mid-session junk).
+          let open = exOpen ?? prevClose ?? prev?.open ?? px
+          let high = exHigh
+          let low = exLow
+          const hasExRange = high != null && low != null
+          if (hasExRange) {
+            if (high < low) { const t = high; high = low; low = t }
+            // Guard absurd values (wrong column / bad quote) — >25% from LTP
+            if (high > px * 1.25 || low < px * 0.75) {
+              high = null
+              low = null
+            }
           }
+          if (high == null || low == null) {
+            // No reliable day range — track from open + prints only
+            high = Math.max(open, px, prev?.high ?? px)
+            low = Math.min(open, px, prev?.low ?? px)
+          } else {
+            high = Math.max(high, open, px)
+            low = Math.min(low, open, px)
+          }
+          return { price: px, volume: live.volume, open, high, low }
         })
         setIsLiveUpdating(true)
       }).catch(()=>{})
@@ -6762,33 +6768,30 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   let lows = seriesData.lows
   let volumes = seriesData.volumes
   let o = seriesData.opens
-  // Merge live exchange OHLC into DAILY copies only.
-  // Never mutate `data` (analysis stays memoized on seriesData).
+  // Forming daily candle: drop any incomplete "today" row from history
+  // (Yahoo/EOD often leaves a junk mid-session bar), then append a clean
+  // candle from stocks day OHLC + last_price.
   if (liveOverlay && barInterval === 'D') {
     const todayStr = new Date(Date.now() + ((330 + new Date().getTimezoneOffset())*60000))
       .toISOString().split('T')[0]
-    const lastIdx = dates.length - 1
     const lo = liveOverlay
-    if (dates[lastIdx] === todayStr) {
-      // Replace today's forming bar with exchange open + session H/L/C.
-      o = [...o]
-      o[lastIdx] = lo.open ?? o[lastIdx]
-      highs = [...highs]
-      highs[lastIdx] = Math.max(lo.high ?? lo.price, lo.price, o[lastIdx] ?? lo.price)
-      lows = [...lows]
-      lows[lastIdx] = Math.min(lo.low ?? lo.price, lo.price, o[lastIdx] ?? lo.price)
-      closes = [...closes]
-      closes[lastIdx] = lo.price
-      if (lo.volume != null) { volumes = [...volumes]; volumes[lastIdx] = lo.volume }
-    } else {
-      // History ends yesterday — append a proper forming today candle.
-      dates = [...dates, todayStr]
-      o = [...o, lo.open ?? lo.price]
-      highs = [...highs, Math.max(lo.high ?? lo.price, lo.price, lo.open ?? lo.price)]
-      lows = [...lows, Math.min(lo.low ?? lo.price, lo.price, lo.open ?? lo.price)]
-      closes = [...closes, lo.price]
-      volumes = [...volumes, lo.volume ?? (volumes[volumes.length-1]||0)]
+    if (dates.length && dates[dates.length - 1] === todayStr) {
+      dates = dates.slice(0, -1)
+      o = o.slice(0, -1)
+      highs = highs.slice(0, -1)
+      lows = lows.slice(0, -1)
+      closes = closes.slice(0, -1)
+      volumes = volumes.slice(0, -1)
     }
+    const open = lo.open ?? lo.price
+    const high = Math.max(lo.high ?? lo.price, lo.price, open)
+    const low = Math.min(lo.low ?? lo.price, lo.price, open)
+    dates = [...dates, todayStr]
+    o = [...o, open]
+    highs = [...highs, high]
+    lows = [...lows, low]
+    closes = [...closes, lo.price]
+    volumes = [...volumes, lo.volume ?? (volumes[volumes.length - 1] || 0)]
   }
   const n = closes.length
 

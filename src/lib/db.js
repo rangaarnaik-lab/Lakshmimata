@@ -1009,30 +1009,43 @@ export async function fetchIndexDashboard() {
 }
 
 /**
- * Lightweight single-row fetch of a stock's current live price + volume
- * from the `stocks` table (updated ~every minute during market hours by
- * the backend scan). Used to make "Our Chart"'s TODAY candle live-update
- * instead of only refreshing once at EOD — not a full intraday feed
- * (no separate O/H/L tracked server-side beyond last_price), so the
- * running high/low for today's synthetic candle is tracked client-side
- * across polls instead.
+ * Live quote for Our Chart's forming daily candle.
+ * Uses stocks day OHLC from Upstox (written each scan). Falls back if
+ * open/high/low columns are missing from the schema cache.
  */
 export async function fetchLiveStockPrice(sym) {
-  // Prefer stocks.open/high/low (Upstox day OHLC from live_scan) so Our Chart's
-  // forming candle matches the exchange — not a synthetic range from chart-open time.
-  const { data, error } = await supabase
-    .from('stocks')
-    .select('last_price,volume,open,high,low')
-    .ilike('sym', (sym||'').trim())
-    .maybeSingle()
-  if (error || !data) return null
-  return {
-    price: data.last_price,
-    volume: data.volume,
-    open: data.open,
-    high: data.high,
-    low: data.low,
+  const clean = (sym || '').trim()
+  if (!clean) return null
+
+  const pick = (row) => {
+    if (!row || row.last_price == null) return null
+    return {
+      price: row.last_price,
+      volume: row.volume,
+      open: row.open,
+      high: row.high,
+      low: row.low,
+      prevClose: row.prev_close,
+    }
   }
+
+  let { data, error } = await supabase
+    .from('stocks')
+    .select('last_price,volume,open,high,low,prev_close')
+    .ilike('sym', clean)
+    .maybeSingle()
+
+  if (error) {
+    // Schema without day OHLC columns — still update close/volume.
+    const retry = await supabase
+      .from('stocks')
+      .select('last_price,volume,prev_close')
+      .ilike('sym', clean)
+      .maybeSingle()
+    if (retry.error || !retry.data) return null
+    return pick(retry.data)
+  }
+  return pick(data)
 }
 
 /** Local YYYY-MM-DD (avoid UTC day-shift from toISOString in IST). */
