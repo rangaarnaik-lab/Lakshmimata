@@ -7879,7 +7879,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           )
         })}
 
-        {/* Lakshmi Volume icons on candles (symbols only — no HT/HY/HQ/M text labels). */}
+        {/* Lakshmi Volume icons + HT/HY/HQ/M labels on candles (Pine force_overlay). */}
         {showLakshmiVol && (
           <g style={{pointerEvents:'none'}}>
             {vCloses.map((c,i)=>{
@@ -7905,16 +7905,31 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                   fill={LAKSHMI_VOL_COLORS.BULL_SNORT_ICON} textAnchor="middle">🐂</text>)
               }
               if (vLvHt[i]) {
-                nodes.push(<text key={`ht-${i}`} x={x} y={yAbove0 - (a++) * 12} fontSize={9}
+                nodes.push(<text key={`ht-ico-${i}`} x={x} y={yAbove0 - (a++) * 12} fontSize={9}
                   fill={LAKSHMI_BAR_COLORS.HT} textAnchor="middle"
                   style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>🚀</text>)
+                nodes.push(<text key={`ht-lbl-${i}`} x={x} y={yAbove0 - (a++) * 10} fontSize={7} fontWeight={800}
+                  fill={LAKSHMI_BAR_COLORS.HT} textAnchor="middle"
+                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>HT</text>)
               }
               if (vLvHy[i]) {
-                nodes.push(<text key={`hy-${i}`} x={x} y={yAbove0 - (a++) * 12} fontSize={9}
+                nodes.push(<text key={`hy-ico-${i}`} x={x} y={yAbove0 - (a++) * 12} fontSize={9}
                   fill={LAKSHMI_BAR_COLORS.HY} textAnchor="middle"
                   style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>🔥</text>)
+                nodes.push(<text key={`hy-lbl-${i}`} x={x} y={yAbove0 - (a++) * 10} fontSize={7} fontWeight={800}
+                  fill={LAKSHMI_BAR_COLORS.HY} textAnchor="middle"
+                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>HY</text>)
               }
-              // HQ / M text labels intentionally omitted (shown in volume table Comments instead)
+              if (vLvHq[i] && !vLvHt[i] && !vLvHy[i]) {
+                nodes.push(<text key={`hq-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={8} fontWeight={700}
+                  fill="#E0E0E0" textAnchor="middle"
+                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>HQ</text>)
+              }
+              if (vLvHm[i] && !vLvHt[i] && !vLvHy[i] && !vLvHq[i]) {
+                nodes.push(<text key={`hm-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={8} fontWeight={700}
+                  fill="#E0E0E0" textAnchor="middle"
+                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>M</text>)
+              }
               if (!nodes.length) return null
               return <g key={`vol-ico-${i}`}>{nodes}</g>
             })}
@@ -8037,6 +8052,45 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                 )}
                 <rect x={x-volBarW/2} y={barTopY} width={volBarW} height={barH}
                   fill={fill} opacity={0.85}/>
+                {/* Volume-pane icons + HT/HY/HQ/M labels */}
+                {showLakshmiVol && (() => {
+                  const volNodes = []
+                  let yi = 0
+                  const iconY = () => Math.max(volTop + 9, barTopY - 2 - (yi++) * 10)
+                  if (vLvIv[i]) {
+                    volNodes.push(<text key={`v-iv-${i}`} x={x} y={iconY()} fontSize={8} fontWeight={800}
+                      fill={LAKSHMI_VOL_COLORS.IBV_ICON} textAnchor="middle"
+                      style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>▲</text>)
+                  }
+                  if (vLvPp[i]) {
+                    volNodes.push(<text key={`v-pp-${i}`} x={x} y={iconY()} fontSize={8} fontWeight={800}
+                      fill={LAKSHMI_VOL_COLORS.PPV_ICON} textAnchor="middle"
+                      style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>★</text>)
+                  }
+                  if (vLvSnort[i]) {
+                    volNodes.push(<text key={`v-bs-${i}`} x={x} y={iconY()} fontSize={8}
+                      fill={LAKSHMI_VOL_COLORS.BULL_SNORT_ICON} textAnchor="middle">🐂</text>)
+                  }
+                  if (vLvHt[i]) {
+                    volNodes.push(<text key={`v-ht-ico-${i}`} x={x} y={iconY()} fontSize={8}
+                      fill={LAKSHMI_BAR_COLORS.HT} textAnchor="middle"
+                      style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>🚀</text>)
+                  } else if (vLvHy[i]) {
+                    volNodes.push(<text key={`v-hy-ico-${i}`} x={x} y={iconY()} fontSize={8}
+                      fill={LAKSHMI_BAR_COLORS.HY} textAnchor="middle"
+                      style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>🔥</text>)
+                  }
+                  const hiLabel = vLvHt[i] ? 'HT' : vLvHy[i] ? 'HY' : vLvHq[i] ? 'HQ' : vLvHm[i] ? 'M' : null
+                  if (hiLabel) {
+                    volNodes.push(
+                      <text key={`v-lbl-${i}`} x={x} y={Math.min(volTop + volH - 2, barTopY + 10)}
+                        fontSize={6} fill={C.text} textAnchor="middle" fontWeight={700}>
+                        {hiLabel}
+                      </text>
+                    )
+                  }
+                  return volNodes.length ? volNodes : null
+                })()}
               </g>
             )
           })}
@@ -8235,9 +8289,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           <span><span style={{color:LAKSHMI_BAR_COLORS.PPV}}>■</span> PPV</span>
         </>}
         {showLakshmiVol && <>
-          <span><span style={{color:LAKSHMI_VOL_COLORS.IBV}}>■</span> IBV</span>
-          <span><span style={{color:LAKSHMI_VOL_COLORS.PPV}}>■</span> PPV</span>
+          <span><span style={{color:LAKSHMI_VOL_COLORS.IBV}}>■</span> IBV ▲</span>
+          <span><span style={{color:LAKSHMI_VOL_COLORS.PPV}}>■</span> PPV ★</span>
           <span><span style={{color:LAKSHMI_VOL_COLORS.DOWN}}>■</span> Down</span>
+          <span><span style={{color:LAKSHMI_BAR_COLORS.HT}}>🚀</span> HT</span>
+          <span><span style={{color:LAKSHMI_BAR_COLORS.HY}}>🔥</span> HY</span>
+          <span>HQ · M</span>
         </>}
         {showBullSnort && !showLakshmiVol && <span><span style={{color:BULL_SNORT_COLOR}}>■</span> Bull Snort</span>}
         {showBuySell && <>
