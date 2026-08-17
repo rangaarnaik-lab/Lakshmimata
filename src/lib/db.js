@@ -882,6 +882,63 @@ export async function fetchStockFullHistory(sym) {
 }
 
 /**
+ * 1-minute OHLCV bars from stock_intraday_1m (written by live_scan).
+ * Used by Our Chart for 1/3/5/15 intervals (client rolls up from 1m).
+ * Returns same shape as fetchStockFullHistory (dates/prices/… arrays).
+ */
+export async function fetchStockIntradayHistory(sym, { days = 30, limit = 12000 } = {}) {
+  const cleanSym = (sym || '').trim()
+  if (!cleanSym) return { error: 'No symbol' }
+
+  const since = new Date()
+  since.setUTCDate(since.getUTCDate() - Math.max(1, days))
+  const sinceIso = since.toISOString()
+
+  // PostgREST default max-rows is often 1000 — page until filled or exhausted.
+  const pageSize = 1000
+  const rows = []
+  let from = 0
+  while (rows.length < limit) {
+    const to = from + pageSize - 1
+    const { data, error } = await supabase
+      .from('stock_intraday_1m')
+      .select('ts,open,high,low,close,volume')
+      .ilike('sym', cleanSym)
+      .gte('ts', sinceIso)
+      .order('ts', { ascending: true })
+      .range(from, to)
+
+    if (error) {
+      console.error(`fetchStockIntradayHistory(${sym}) error:`, error.message || error)
+      return { error: error.message || String(error) }
+    }
+    if (!data?.length) break
+    rows.push(...data)
+    if (data.length < pageSize) break
+    from += pageSize
+  }
+
+  if (!rows.length) {
+    return {
+      error: `No 1-minute history yet for ${sym} — available after market scans fill stock_intraday_1m.`,
+    }
+  }
+
+  return {
+    sym: cleanSym,
+    dates:   rows.map(r => r.ts),
+    prices:  rows.map(r => Number(r.close)),
+    opens:   rows.map(r => Number(r.open)),
+    highs:   rows.map(r => Number(r.high)),
+    lows:    rows.map(r => Number(r.low)),
+    volumes: rows.map(r => Number(r.volume) || 0),
+    daysCount: rows.length,
+    updatedAt: rows[rows.length - 1]?.ts || null,
+    interval: '1m',
+  }
+}
+
+/**
  * Fetch scan metadata (last update time, next scan time)
  */
 export async function fetchScanMeta() {
@@ -961,13 +1018,21 @@ export async function fetchIndexDashboard() {
  * across polls instead.
  */
 export async function fetchLiveStockPrice(sym) {
+  // Prefer stocks.open/high/low (Upstox day OHLC from live_scan) so Our Chart's
+  // forming candle matches the exchange — not a synthetic range from chart-open time.
   const { data, error } = await supabase
     .from('stocks')
-    .select('last_price,volume')
+    .select('last_price,volume,open,high,low')
     .ilike('sym', (sym||'').trim())
     .maybeSingle()
   if (error || !data) return null
-  return { price: data.last_price, volume: data.volume }
+  return {
+    price: data.last_price,
+    volume: data.volume,
+    open: data.open,
+    high: data.high,
+    low: data.low,
+  }
 }
 
 /** Local YYYY-MM-DD (avoid UTC day-shift from toISOString in IST). */

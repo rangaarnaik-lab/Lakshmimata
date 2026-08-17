@@ -171,6 +171,31 @@ export function aggregateToYearly(dates, opens, highs, lows, closes, volumes) {
   return aggregateByKey(dates, opens, highs, lows, closes, volumes, (d) => String(d).slice(0, 4))
 }
 
+/**
+ * Roll 1-minute bars up to N-minute bars (3/5/15…).
+ * Buckets by Asia/Kolkata wall-clock minutes so NSE session aligns with TV.
+ */
+export function aggregateIntradayMinutes(dates, opens, highs, lows, closes, volumes, intervalMin) {
+  const n = Number(intervalMin) || 1
+  if (n <= 1) {
+    return { dates, opens, highs, lows, closes, volumes }
+  }
+  const keyFn = (d) => {
+    const dt = new Date(d)
+    if (Number.isNaN(dt.getTime())) return String(d)
+    // IST = UTC+5:30
+    const istMs = dt.getTime() + (5 * 60 + 30) * 60 * 1000
+    const ist = new Date(istMs)
+    const y = ist.getUTCFullYear()
+    const m = String(ist.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(ist.getUTCDate()).padStart(2, '0')
+    const totalMins = ist.getUTCHours() * 60 + ist.getUTCMinutes()
+    const bucket = Math.floor(totalMins / n) * n
+    return `${y}-${m}-${day}|${bucket}`
+  }
+  return aggregateByKey(dates, opens, highs, lows, closes, volumes, keyFn)
+}
+
 /** EMA series (exponential moving average) — null until enough data. */
 function emaSeries(values, period) {
   const out = new Array(values.length).fill(null)

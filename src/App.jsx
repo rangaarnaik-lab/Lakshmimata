@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchMissedAiFilings } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -33,6 +33,7 @@ import {
   detectInsideBars, detectVCPContractions, detectCupAndHandle,
   detectPPDays, detectHYDays, detectHTDays, detectIBVDays, detectNearEMA9Days,
   detectBullSnortDays, aggregateToWeekly, aggregateToMonthly, aggregateToYearly,
+  aggregateIntradayMinutes,
   calcRSISeries, calcMACDSeries, detectEmaCrossoverDays,
   detectLakshmiBuySellSignals, alignSeriesFromEnd, calcLakshmiSuperCycle,
   calcLakshmiCandleBarColors, LAKSHMI_BAR_COLORS,
@@ -40,6 +41,7 @@ import {
   LAKSHMI_BUY_SELL_COLORS, LAKSHMI_CYCLE_COLORS, lakshmiCycleBarColor,
   GUPPY_SHORT_PERIODS, GUPPY_LONG_PERIODS,
 } from './scanners/chartAnalysis'
+import { resolveIntradayChartEnabled, resolveIntradayIntervals } from './lib/intradayChart'
 
 // ─────────────────────────────────────────────────────────────────────
 // 🔑 YOUR UPSTOX TOKEN — set this so users don't need to enter anything
@@ -6229,19 +6231,40 @@ function ThemesRadarPanel({onOpenSymbol}){
 // alongside the TradingView embed as a second tab, not a replacement —
 // useful for stocks TradingView's free embed can't resolve, and for
 // seeing our own scanner's signals drawn directly on the chart.
-// History length presets (how much to show). Candle size is separate: 1D / 1W / 1M / 12M (TradingView names).
+// History length presets. Candle size: 1/3/5/15/30/60m + D/W/M/Y.
 const RANGE_BARS_BY_INTERVAL = {
+  '1':  {'1D':375,'5D':1875,'1M':7500,'3M':100000,'6M':100000,'YTD':null,'1Y':100000,'5Y':100000,'All':100000},
+  '3':  {'1D':125,'5D':625,'1M':2500,'3M':100000,'6M':100000,'YTD':null,'1Y':100000,'5Y':100000,'All':100000},
+  '5':  {'1D':75,'5D':375,'1M':1500,'3M':100000,'6M':100000,'YTD':null,'1Y':100000,'5Y':100000,'All':100000},
+  '15': {'1D':25,'5D':125,'1M':500,'3M':1500,'6M':100000,'YTD':null,'1Y':100000,'5Y':100000,'All':100000},
+  '30': {'1D':13,'5D':65,'1M':250,'3M':750,'6M':1500,'YTD':null,'1Y':100000,'5Y':100000,'All':100000},
+  '60': {'1D':7,'5D':35,'1M':125,'3M':375,'6M':750,'YTD':null,'1Y':1500,'5Y':100000,'All':100000},
   D: {'1D':1,'5D':5,'1M':21,'3M':63,'6M':126,'YTD':null,'1Y':252,'5Y':1260,'All':100000},
   W: {'1D':1,'5D':1,'1M':4,'3M':13,'6M':26,'YTD':null,'1Y':52,'5Y':260,'All':100000},
   M: {'1D':1,'5D':1,'1M':1,'3M':3,'6M':6,'YTD':null,'1Y':12,'5Y':60,'All':100000},
   Y: {'1D':1,'5D':1,'1M':1,'3M':1,'6M':1,'YTD':null,'1Y':1,'5Y':5,'All':100000},
 }
 const BAR_INTERVAL_META = {
+  '1':  { label:'1m',  unit:'mins',   minBars:20, minZoom:15, swing:5, intraday:true, rollup:1 },
+  '3':  { label:'3m',  unit:'bars',   minBars:20, minZoom:12, swing:4, intraday:true, rollup:3 },
+  '5':  { label:'5m',  unit:'bars',   minBars:20, minZoom:12, swing:3, intraday:true, rollup:5 },
+  '15': { label:'15m', unit:'bars',   minBars:15, minZoom:10, swing:2, intraday:true, rollup:15 },
+  '30': { label:'30m', unit:'bars',   minBars:12, minZoom:8,  swing:2, intraday:true, rollup:30 },
+  '60': { label:'1H',  unit:'hours',  minBars:10, minZoom:6,  swing:2, intraday:true, rollup:60 },
   D: { label:'1D', unit:'days',   minBars:30, minZoom:10, swing:5 },
   W: { label:'1W', unit:'weeks',  minBars:8,  minZoom:4,  swing:3 },
   M: { label:'1M', unit:'months', minBars:6,  minZoom:3,  swing:2 },
   Y: { label:'12M', unit:'years', minBars:3,  minZoom:2,  swing:1 },
 }
+const INTRADAY_INTERVALS = new Set(['1','3','5','15','30','60'])
+const INTRADAY_TOOLBAR = [
+  ['1','1','1 minute'],
+  ['3','3','3 minutes'],
+  ['5','5','5 minutes'],
+  ['15','15','15 minutes'],
+  ['30','30','30 minutes'],
+  ['1H','60','1 hour'],
+]
 const TV_TOOLBAR_BLUE = '#2962ff'
 const BULL_SNORT_COLOR = LAKSHMI_BUY_SELL_COLORS.BULL_SNORT
 
@@ -6277,9 +6300,11 @@ function TvFxIcon({active, muted}) {
 
 function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const [data, setData] = useState(null)
+  const [intradayData, setIntradayData] = useState(null)
+  const [intradayLoading, setIntradayLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [range, setRange] = useState('1Y')
-  const [barInterval, setBarInterval] = useState('D') // D/W/M/Y candle size
+  const [barInterval, setBarInterval] = useState('D') // 1/3/5/15 + D/W/M/Y
   const [zoomBars, setZoomBars] = useState(RANGE_BARS_BY_INTERVAL.D['1Y'])
   const [panOffset, setPanOffset] = useState(0) // bars back from the most recent
   const [chartStyle, setChartStyle] = useState('candle') // candle | line — all intervals
@@ -6339,7 +6364,28 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const rafRef = useRef(null)
   const rangeBars = RANGE_BARS_BY_INTERVAL[barInterval] || RANGE_BARS_BY_INTERVAL.D
   const intervalMeta = BAR_INTERVAL_META[barInterval] || BAR_INTERVAL_META.D
+  const [intradayFeatureOn, setIntradayFeatureOn] = useState(true)
+  const [intradayKeys, setIntradayKeys] = useState(() => ['1','3','5','15','30','60'])
+  const isIntraday = intradayFeatureOn && INTRADAY_INTERVALS.has(barInterval)
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
+
+  // Master kill: follow scan_meta.features.intraday_1m (+ VITE override).
+  useEffect(() => {
+    let cancelled = false
+    const tick = async () => {
+      const on = await resolveIntradayChartEnabled()
+      const keys = await resolveIntradayIntervals()
+      if (cancelled) return
+      setIntradayFeatureOn(!!on)
+      setIntradayKeys(keys?.length ? keys : ['1','3','5','15','30','60'])
+    }
+    tick()
+    const t = setInterval(tick, 45000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [])
+  useEffect(() => {
+    if (!intradayFeatureOn && INTRADAY_INTERVALS.has(barInterval)) setBarInterval('D')
+  }, [intradayFeatureOn, barInterval])
 
   // Load indicator prefs per user (local → cloud); remember params across sessions
   useEffect(() => {
@@ -6439,8 +6485,23 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     return ()=>ro.disconnect()
   },[loading, sym, chartExpanded, barInterval])
 
-  // Daily series (+ optional weekly/monthly/yearly aggregate). Analysis runs on this.
+  // Daily series (+ optional weekly/monthly/yearly aggregate).
+  // Intraday intervals use stock_intraday_1m (+ client rollup to 3/5/15/30/60).
   const seriesData = useMemo(() => {
+    if (isIntraday) {
+      if (!intradayData || intradayData.error || !intradayData.prices || intradayData.prices.length < 5) return null
+      let dates = intradayData.dates
+      let closes = intradayData.prices
+      let highs = intradayData.highs
+      let lows = intradayData.lows
+      let volumes = intradayData.volumes
+      let opens = (intradayData.opens && intradayData.opens.length === closes.length)
+        ? intradayData.opens
+        : closes.map((c,i)=> i>0 ? closes[i-1] : c)
+      const rollup = intervalMeta.rollup || 1
+      if (rollup > 1) return aggregateIntradayMinutes(dates, opens, highs, lows, closes, volumes, rollup)
+      return { dates, opens, highs, lows, closes, volumes }
+    }
     if (!data || data.error || !data.prices || data.prices.length < 5) return null
     let dates = data.dates
     let closes = data.prices
@@ -6454,7 +6515,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     if (barInterval === 'M') return aggregateToMonthly(dates, opens, highs, lows, closes, volumes)
     if (barInterval === 'Y') return aggregateToYearly(dates, opens, highs, lows, closes, volumes)
     return { dates, opens, highs, lows, closes, volumes }
-  }, [data, barInterval])
+  }, [data, intradayData, barInterval, isIntraday, intervalMeta.rollup])
 
   // Analysis runs on the FULL series (so early visible bars still have
   // correct MA/pattern context from data before the visible window),
@@ -6525,7 +6586,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true); setData(null)
+    setLoading(true); setData(null); setIntradayData(null)
     setZoomBars(RANGE_BARS_BY_INTERVAL.D['1Y']); setPanOffset(0) // reset zoom/pan for the new symbol
     setPinnedIdx(null)
     setBarInterval('D')
@@ -6537,6 +6598,22 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       .finally(() => { if(!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [sym, isIndex])
+
+  // Load / refresh 1m bars when an intraday interval is selected (stocks only).
+  useEffect(() => {
+    if (!intradayFeatureOn || !isIntraday || isIndex) return
+    let cancelled = false
+    const load = (quiet = false) => {
+      if (!quiet) setIntradayLoading(true)
+      fetchStockIntradayHistory(sym, { days: 30 })
+        .then(res => { if (!cancelled) setIntradayData(res) })
+        .catch(() => { if (!cancelled) setIntradayData({ error: 'Failed to load 1m history' }) })
+        .finally(() => { if (!cancelled) setIntradayLoading(false) })
+    }
+    load(false)
+    const t = setInterval(() => load(true), 60000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [sym, isIndex, isIntraday, intradayFeatureOn])
 
   // Nifty closes for Lakshmi Mata Buy RS gate (aligned from end to stock series).
   useEffect(() => {
@@ -6556,7 +6633,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     // Switching candle size resets zoom to the current range preset in that unit.
     // Prefer a useful default on coarse intervals (yearly 1M is only 1 bar).
     let nextRange = range
-    if (barInterval === 'Y' && ['1M','3M','6M','1Y'].includes(range)) nextRange = '5Y'
+    if (isIntraday && ['1Y','5Y','All','YTD','6M','3M'].includes(range)) nextRange = '5D'
+    else if (barInterval === 'Y' && ['1M','3M','6M','1Y'].includes(range)) nextRange = '5Y'
     else if (barInterval === 'M' && range === '1M') nextRange = '1Y'
     if (nextRange !== range) setRange(nextRange)
     const bars = nextRange==='YTD' ? null : rangeBars[nextRange]
@@ -6585,7 +6663,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   // browser hanging repeatedly). liveOverlay is a separate, cheap piece
   // of state instead; it's merged into the RENDER-time candle arrays
   // further down, never into `data` or `analysis`'s dependency.
-  const [liveOverlay, setLiveOverlay] = useState(null) // {price, volume} | null
+  const [liveOverlay, setLiveOverlay] = useState(null) // {price, volume, open, high, low} | null
   const [isLiveUpdating, setIsLiveUpdating] = useState(false)
   useEffect(() => {
     setLiveOverlay(null); setIsLiveUpdating(false) // reset for the new symbol
@@ -6595,14 +6673,35 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     const poll = () => {
       fetchLiveStockPrice(sym).then(live => {
         if (cancelled || !live || live.price == null) return
-        setLiveOverlay(prev => ({
-          price: live.price,
-          volume: live.volume,
-          // Running high/low tracked here (cheap state, not data/analysis)
-          high: prev ? Math.max(prev.high, live.price) : live.price,
-          low:  prev ? Math.min(prev.low, live.price)  : live.price,
-          open: prev ? prev.open : live.price, // fixed from the first tick seen
-        }))
+        const px = Number(live.price)
+        if (!Number.isFinite(px) || px <= 0) return
+        const exOpen = Number(live.open)
+        const exHigh = Number(live.high)
+        const exLow = Number(live.low)
+        setLiveOverlay(prev => {
+          // Prefer exchange day OHLC from stocks table; fall back to running
+          // client extremes only when open/high/low columns are missing.
+          const open = Number.isFinite(exOpen) && exOpen > 0
+            ? exOpen
+            : (prev?.open ?? px)
+          const high = Math.max(
+            Number.isFinite(exHigh) && exHigh > 0 ? exHigh : px,
+            px,
+            prev?.high ?? px,
+          )
+          const low = Math.min(
+            Number.isFinite(exLow) && exLow > 0 ? exLow : px,
+            px,
+            prev?.low ?? px,
+          )
+          return {
+            price: px,
+            volume: live.volume,
+            open,
+            high: Math.max(high, open, px),
+            low: Math.min(low, open, px),
+          }
+        })
         setIsLiveUpdating(true)
       }).catch(()=>{})
     }
@@ -6620,7 +6719,18 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   if(loading){
     return fillShell(<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted}}>Loading {sym} chart…</div>)
   }
-  if(data && data.error){
+  if(isIntraday && intradayLoading && !intradayData){
+    return fillShell(<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted}}>Loading {intervalMeta.label} bars for {sym}…</div>)
+  }
+  if(isIntraday && intradayData?.error){
+    return fillShell(
+      <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted,textAlign:'center',padding:20}}>
+        {intradayData.error}
+        <br/>Run <code style={{fontSize:11}}>013_stock_intraday_1m.sql</code> in Supabase, then wait for market scans to fill 1m bars.
+      </div>
+    )
+  }
+  if(!isIntraday && data && data.error){
     return fillShell(
       <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.red,textAlign:'center',padding:20}}>
         Couldn't load chart data for {sym}: {data.error}
@@ -6629,10 +6739,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   }
   const minBarsNeeded = isIndex ? Math.min(5, intervalMeta.minBars) : intervalMeta.minBars
   if(!seriesData || !seriesData.closes || seriesData.closes.length < minBarsNeeded || !analysis){
+    const barCount = isIntraday
+      ? (seriesData?.closes?.length || intradayData?.prices?.length || 0)
+      : (barInterval==='D' ? (data?.prices?.length||0) : (seriesData?.closes?.length||0))
     return fillShell(
       <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted,textAlign:'center',padding:20}}>
         Not enough price history yet for {sym} to draw a {intervalMeta.label} chart
-        {data?.prices ? ` (only ${barInterval==='D'?data.prices.length:(seriesData?.closes?.length||0)} bars, need ${minBarsNeeded}+).` : '.'}
+        {` (only ${barCount} bars, need ${minBarsNeeded}+).`}
+        {isIntraday ? ' 1m history builds during market hours from the live scan.' : ''}
         {isIndex ? ' Index history is stored in index_price_history — run ensure_index_price_history_public_read.sql if this persists.' : ''}
       </div>
     )
@@ -6648,24 +6762,32 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   let lows = seriesData.lows
   let volumes = seriesData.volumes
   let o = seriesData.opens
-  // Merge the live overlay into DAILY copies only, then re-aggregate if weekly.
+  // Merge live exchange OHLC into DAILY copies only.
   // Never mutate `data` (analysis stays memoized on seriesData).
   if (liveOverlay && barInterval === 'D') {
     const todayStr = new Date(Date.now() + ((330 + new Date().getTimezoneOffset())*60000))
       .toISOString().split('T')[0]
     const lastIdx = dates.length - 1
+    const lo = liveOverlay
     if (dates[lastIdx] === todayStr) {
-      highs = [...highs]; highs[lastIdx] = Math.max(highs[lastIdx], liveOverlay.high)
-      lows = [...lows]; lows[lastIdx] = Math.min(lows[lastIdx], liveOverlay.low)
-      closes = [...closes]; closes[lastIdx] = liveOverlay.price
-      if (liveOverlay.volume != null) { volumes = [...volumes]; volumes[lastIdx] = liveOverlay.volume }
+      // Replace today's forming bar with exchange open + session H/L/C.
+      o = [...o]
+      o[lastIdx] = lo.open ?? o[lastIdx]
+      highs = [...highs]
+      highs[lastIdx] = Math.max(lo.high ?? lo.price, lo.price, o[lastIdx] ?? lo.price)
+      lows = [...lows]
+      lows[lastIdx] = Math.min(lo.low ?? lo.price, lo.price, o[lastIdx] ?? lo.price)
+      closes = [...closes]
+      closes[lastIdx] = lo.price
+      if (lo.volume != null) { volumes = [...volumes]; volumes[lastIdx] = lo.volume }
     } else {
+      // History ends yesterday — append a proper forming today candle.
       dates = [...dates, todayStr]
-      o = [...o, liveOverlay.open]
-      highs = [...highs, liveOverlay.high]
-      lows = [...lows, liveOverlay.low]
-      closes = [...closes, liveOverlay.price]
-      volumes = [...volumes, liveOverlay.volume ?? (volumes[volumes.length-1]||0)]
+      o = [...o, lo.open ?? lo.price]
+      highs = [...highs, Math.max(lo.high ?? lo.price, lo.price, lo.open ?? lo.price)]
+      lows = [...lows, Math.min(lo.low ?? lo.price, lo.price, lo.open ?? lo.price)]
+      closes = [...closes, lo.price]
+      volumes = [...volumes, lo.volume ?? (volumes[volumes.length-1]||0)]
     }
   }
   const n = closes.length
@@ -7137,8 +7259,13 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           </div>
         )}
         {/* Resolution favorites — flat TV text buttons */}
-        <div style={{display:'flex',alignItems:'center',gap:0}}>
-          {[['1D','D','Daily'],['1W','W','Weekly'],['1M','M','Monthly'],['12M','Y','Yearly']].map(([label,val,title])=>(
+        <div style={{display:'flex',alignItems:'center',gap:0,flexWrap:'wrap'}}>
+          {[
+            ...(!isIndex && intradayFeatureOn
+              ? INTRADAY_TOOLBAR.filter(([,val]) => intradayKeys.includes(val))
+              : []),
+            ['1D','D','Daily'],['1W','W','Weekly'],['1M','M','Monthly'],['12M','Y','Yearly'],
+          ].map(([label,val,title])=>(
             <button key={val} type="button" title={`${title} · ${label}`}
               onClick={()=>{
                 setBarInterval(val)
@@ -7436,6 +7563,63 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           : `${sym} · ${barsToShow} ${intervalMeta.unit} · tap a candle to pin`}
       </div>
 
+      {/* Pine Lakshmi_Mata_Volume.pine ATHtable — same metric columns */}
+      {showLakshmiVol && volMetrics && (() => {
+        const m = volMetrics
+        const commentMap = {
+          HT: 'All-Time High Vol (HT)',
+          HY: 'Year High Vol (HY)',
+          IBV: 'Institutional Buy Volume',
+          BS: 'Bull Snort',
+          'Bull Snort': 'Bull Snort',
+          PPV: 'Pivot Pocket Volume',
+          HQ: 'Quarter High Vol (HQ)',
+          M: 'Month High Vol (M)',
+          NA: 'NA',
+        }
+        const commentFull = commentMap[m.comment] || (m.comment && m.comment !== 'NA' ? m.comment : 'NA')
+        const rel = m.relVolPct
+        const relBg = rel == null ? undefined : rel >= 200 ? C.green+'55' : rel >= 100 ? C.green+'33' : C.red+'44'
+        const ud = m.upDnRatio
+        const udBg = ud == null ? undefined : ud < 1 ? C.red+'44' : ud < 3 ? C.green+'33' : C.green+'55'
+        const dcr = m.dcr
+        const dcrBg = dcr == null ? undefined : dcr >= 65 ? C.green+'55' : dcr >= 50 ? C.green+'33' : C.red+'44'
+        const chg = m.changePct
+        const chgBg = chg == null ? undefined : chg >= 0 ? C.green+'44' : C.red+'44'
+        const cell = (label, value, valueBg) => (
+          <div key={label} style={{
+            minWidth: isMobile ? 72 : 88, flex: '1 1 88px',
+            border:`1px solid ${C.border}`, overflow:'hidden',
+          }}>
+            <div style={{
+              padding:'3px 6px', fontSize:8, fontWeight:700, color:C.muted,
+              background:C.card, borderBottom:`1px solid ${C.border}`,
+              whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+            }} title={label}>{label}</div>
+            <div style={{
+              padding:'4px 6px', fontSize:10, fontWeight:700, color:C.text,
+              background: valueBg || C.bg, whiteSpace:'nowrap',
+              overflow:'hidden', textOverflow:'ellipsis',
+            }} title={String(value)}>{value}</div>
+          </div>
+        )
+        return (
+          <div style={{
+            display:'flex', flexWrap:'wrap', gap:0, marginBottom:6, flexShrink:0,
+            border:`1px solid ${C.border}`,
+          }} title="Same fields as Pine Lakshmi Volume ATHtable">
+            {cell('Volume', m.volume != null ? Number(m.volume).toLocaleString('en-IN') : '—')}
+            {cell(`${m.lookbackAvg || 50} Bar Avg.Vol`, m.avgVol != null ? fmtVol(m.avgVol) : '—')}
+            {cell(`${m.lookbackAvg || 50} Bar Rel.Vol`, rel != null ? `${Math.round(rel)}%` : '—', relBg)}
+            {cell(`${m.lookbackUD || 50} Bar Up/Down`, ud != null ? ud.toFixed(2) : '—', udBg)}
+            {cell('DCR%', dcr != null ? `${Number(dcr).toFixed(1)}%` : '—', dcrBg)}
+            {cell('Change%', chg != null ? `${Number(chg).toFixed(1)}%` : '—', chgBg)}
+            {cell(`PPV & IBV (${m.lookbackPP || 20})`, `PPV-${m.ppvCount ?? 0}  IBV-${m.ibvCount ?? 0}`)}
+            {cell('Comments', commentFull, commentFull !== 'NA' ? C.green+'33' : undefined)}
+          </div>
+        )
+      })()}
+
       <div ref={plotRef} style={{flex:1,minHeight:0,position:'relative',width:'100%'}}>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
         style={{
@@ -7676,8 +7860,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           )
         })}
 
-        {/* Lakshmi Volume icons — Pine force_overlay below/above candles.
-            Drawn AFTER candles so they aren't covered; multiple can fire same bar. */}
+        {/* Lakshmi Volume icons on candles (symbols only — no HT/HY/HQ/M text labels). */}
         {showLakshmiVol && (
           <g style={{pointerEvents:'none'}}>
             {vCloses.map((c,i)=>{
@@ -7712,16 +7895,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                   fill={LAKSHMI_BAR_COLORS.HY} textAnchor="middle"
                   style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>🔥</text>)
               }
-              if (vLvHq[i] && !vLvHt[i] && !vLvHy[i]) {
-                nodes.push(<text key={`hq-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={8} fontWeight={700}
-                  fill="#E0E0E0" textAnchor="middle"
-                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>HQ</text>)
-              }
-              if (vLvHm[i] && !vLvHt[i] && !vLvHy[i] && !vLvHq[i]) {
-                nodes.push(<text key={`hm-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={8} fontWeight={700}
-                  fill="#E0E0E0" textAnchor="middle"
-                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>M</text>)
-              }
+              // HQ / M text labels intentionally omitted (shown in volume table Comments instead)
               if (!nodes.length) return null
               return <g key={`vol-ico-${i}`}>{nodes}</g>
             })}
@@ -7844,12 +8018,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                 )}
                 <rect x={x-volBarW/2} y={barTopY} width={volBarW} height={barH}
                   fill={fill} opacity={0.85}/>
-                {showLakshmiVol && (vLvHt[i]||vLvHy[i]||vLvHq[i]||vLvHm[i]) && (
-                  <text x={x} y={Math.min(volTop+volH-2, barTopY+10)} fontSize={6} fill={C.text}
-                    textAnchor="middle" fontWeight={700}>
-                    {vLvHt[i]?'HT':vLvHy[i]?'HY':vLvHq[i]?'HQ':'M'}
-                  </text>
-                )}
               </g>
             )
           })}
@@ -8051,7 +8219,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           <span><span style={{color:LAKSHMI_VOL_COLORS.IBV}}>■</span> IBV</span>
           <span><span style={{color:LAKSHMI_VOL_COLORS.PPV}}>■</span> PPV</span>
           <span><span style={{color:LAKSHMI_VOL_COLORS.DOWN}}>■</span> Down</span>
-          <span>HT · HY · HQ · M</span>
         </>}
         {showBullSnort && !showLakshmiVol && <span><span style={{color:BULL_SNORT_COLOR}}>■</span> Bull Snort</span>}
         {showBuySell && <>
