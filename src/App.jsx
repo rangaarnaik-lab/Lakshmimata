@@ -324,27 +324,50 @@ function calcVolClimaxNearSupport(s, lookback=10){
   }
 }
 
-// ── HY → low-vol sell → EMA9 bounce (CHENNPETRO-style) ────────────────
-// Recent HY (usually before today), price sold/pulled back on quiet volume,
-// then reverses today while holding the 9-day EMA.
+// ── HY/HT/IBV → low-vol sell → EMA5/9/21 bounce ───────────────────────
+// Recent volume climax (HY / HT / IBV), quiet pullback, then reverses today
+// while holding the 5-, 9-, or 21-day EMA (CHENNPETRO-style, broadened).
 function calcHyLowVolEma9Bounce(s, lookback=10){
   const hyHist = s.hy?.history || []
-  const slice = hyHist.slice(-lookback)
-  const hyBeforeToday = slice.length > 1 && slice.slice(0, -1).some(Boolean)
-  const hyToday = !!(s.hy?.isHY) || !!(slice.length && slice[slice.length - 1])
-  const hadHY = hyBeforeToday || hyToday
+  const htHist = s.ht?.history || []
+  const ibvHist = s.ibvHistory || []
+
+  const histBefore = (hist) => hist.length > 1 && hist.slice(-lookback, -1).some(Boolean)
+  const histToday = (hist) => !!(hist.length && hist.slice(-lookback).slice(-1)[0])
+
+  const hyBefore = histBefore(hyHist)
+  const htBefore = histBefore(htHist)
+  const ibvBefore = histBefore(ibvHist)
+  const hyToday = !!(s.hy?.isHY) || histToday(hyHist)
+  const htToday = !!(s.ht?.isHT) || histToday(htHist)
+  const ibvToday = !!calcIBV(s).isIBV || histToday(ibvHist)
+
+  const recentHY = hyBefore || hyToday
+  const recentHT = htBefore || htToday
+  const recentIBV = ibvBefore || ibvToday
+  const hadClimax = recentHY || recentHT || recentIBV
+  const climaxBeforeToday = hyBefore || htBefore || ibvBefore
 
   const last = s.last
-  const ema9 = s.nearEMA9?.ema9
-  let pctFromEMA9 = s.nearEMA9?.pctFromEMA9
-  let nearEma9 = false
-  // No RS-90 gate — this pattern is about the HY→EMA9 structure, not elite RS only.
-  if(ema9 && last){
-    pctFromEMA9 = +((last - ema9) / ema9 * 100).toFixed(2)
-    nearEma9 = Math.abs(pctFromEMA9) <= 3
-  } else {
-    nearEma9 = !!s.nearEMA9?.isNearEMA9
+  const nearPct = (ema, storedPct, storedNear) => {
+    if(ema && last){
+      const pct = +((last - ema) / ema * 100).toFixed(2)
+      return { near: Math.abs(pct) <= 3, pct }
+    }
+    return { near: !!storedNear, pct: storedPct ?? null }
   }
+  // No RS-90 gate — structure pattern, not elite-RS-only.
+  const e5 = nearPct(s.nearEMA5?.ema5, s.nearEMA5?.pctFromEMA5, s.nearEMA5?.isNearEMA5)
+  const e9 = nearPct(s.nearEMA9?.ema9, s.nearEMA9?.pctFromEMA9, s.nearEMA9?.isNearEMA9)
+  const e21 = nearPct(s.nearEMA21?.ema21, s.nearEMA21?.pctFromEMA21, s.nearEMA21?.isNearEMA21)
+  const nearEma5 = e5.near
+  const nearEma9 = e9.near
+  const nearEma21 = e21.near
+  const nearEma = nearEma5 || nearEma9 || nearEma21
+  const nearTags = []
+  if(nearEma5) nearTags.push('EMA5')
+  if(nearEma9) nearTags.push('EMA9')
+  if(nearEma21) nearTags.push('EMA21')
 
   const bounce = (s.chg ?? 0) >= 0
   const rvol = s.rvol
@@ -352,25 +375,30 @@ function calcHyLowVolEma9Bounce(s, lookback=10){
   const lowVol = (rvol != null && rvol < 0.85)
     || volSignal === 'dry'
     || volSignal === 'avg'
-    || (rvol == null && volSignal == null) // allow when RVOL missing; still need HY+EMA9+bounce
+    || (rvol == null && volSignal == null)
 
-  // Prefer true "sold after HY" — HY earlier in window, not a fresh HY climax today.
-  const soldAfterHy = hyBeforeToday || ((s.chgW ?? 0) < 0 && hadHY)
+  const soldAfterClimax = climaxBeforeToday || ((s.chgW ?? 0) < 0 && hadClimax)
 
-  // Optional tighter check when full OHLCV is present (client recompute path).
+  // When full OHLCV exists, require quiet down-days after the last climax bar.
   let quietSellConfirmed = null
   const prices = s.prices
   const volumes = s.volumes
   if(Array.isArray(prices) && Array.isArray(volumes) && prices.length >= 25 && volumes.length === prices.length){
-    let lastHy = -1
-    const start = Math.max(0, prices.length - lookback)
-    for(let i = prices.length - 1; i >= start; i--){
-      const hi = hyHist[hyHist.length - (prices.length - i)]
-      if(hi || (i === prices.length - 1 && s.hy?.isHY)){ lastHy = i; break }
+    const n = prices.length
+    const start = Math.max(0, n - lookback)
+    let lastClimax = -1
+    for(let i = n - 1; i >= start; i--){
+      const off = hyHist.length - (n - i)
+      const hy = (off >= 0 && hyHist[off]) || (i === n - 1 && s.hy?.isHY)
+      const htOff = htHist.length - (n - i)
+      const ht = (htOff >= 0 && htHist[htOff]) || (i === n - 1 && s.ht?.isHT)
+      const ibvOff = ibvHist.length - (n - i)
+      const ibv = (ibvOff >= 0 && ibvHist[ibvOff]) || (i === n - 1 && calcIBV(s).isIBV)
+      if(hy || ht || ibv){ lastClimax = i; break }
     }
-    if(lastHy >= 0 && lastHy < prices.length - 1){
+    if(lastClimax >= 0 && lastClimax < n - 1){
       let downQuiet = 0, downDays = 0
-      for(let i = lastHy + 1; i < prices.length - 1; i++){
+      for(let i = lastClimax + 1; i < n - 1; i++){
         if(prices[i] == null || prices[i - 1] == null) continue
         if(prices[i] >= prices[i - 1]) continue
         downDays++
@@ -383,17 +411,26 @@ function calcHyLowVolEma9Bounce(s, lookback=10){
   }
 
   const quietOk = quietSellConfirmed == null ? lowVol : quietSellConfirmed
-  const isMatch = hadHY && soldAfterHy && nearEma9 && bounce && quietOk
+  const climaxTags = []
+  if(recentHY) climaxTags.push('HY')
+  if(recentHT) climaxTags.push('HT')
+  if(recentIBV) climaxTags.push('IBV')
+
+  const isMatch = hadClimax && soldAfterClimax && nearEma && bounce && quietOk
 
   return {
     isMatch,
-    hadHY, hyBeforeToday, hyToday, nearEma9, bounce, quietOk,
-    pctFromEMA9,
+    hadClimax, recentHY, recentHT, recentIBV,
+    nearEma5, nearEma9, nearEma21, nearEma, bounce, quietOk,
+    pctFromEMA5: e5.pct,
+    pctFromEMA9: e9.pct,
+    pctFromEMA21: e21.pct,
+    hadHY: recentHY,
     rvol,
-    label: isMatch ? '🔥→⚡9 HY·low-vol→EMA9' : null,
+    label: isMatch ? `🔥→⚡ ${climaxTags.join('/')}·low-vol→${nearTags.join('/')}` : null,
     desc: isMatch
-      ? `Recent HY, quiet pullback, bounce at EMA9 (${pctFromEMA9 ?? '—'}%)`
-      : 'Need recent HY, low-volume sell, and a bounce holding the 9-day EMA',
+      ? `Recent ${climaxTags.join('/')} quiet pullback, bounce at ${nearTags.join(' / ')}`
+      : 'Need recent HY/HT/IBV, low-volume sell, and a bounce holding EMA5, EMA9, or EMA21',
   }
 }
 
@@ -403,7 +440,7 @@ const PRESETS = [
   {id:'s2',        label:'Stage 2',      icon:'🚀', desc:'Weinstein Stage 2 uptrend — best buys'},
   {id:'breakout',  label:'HY/HT Break',  icon:'💥', desc:'Had HY/HT in last 5 days + breaking out today'},
   {id:'volpull',   label:'Vol→EMA',      icon:'🔥', desc:'Recent HY/HT/IBV/Bull Snort, then pullback near EMA5, EMA9, EMA21, or EMA50 — bounce entry'},
-  {id:'hyema9',    label:'HY→EMA9',      icon:'🔥', desc:'Recent HY, sold on low volume, bounce from 9-day EMA support'},
+  {id:'hyema9',    label:'HY/HT/IBV→EMA', icon:'🔥', desc:'Recent HY/HT/IBV, sold on low volume, bounce from EMA5, EMA9, or EMA21'},
   {id:'ibv',       label:'IBV',          icon:'🏛️', desc:'Institutional-style buying activity detected'},
   {id:'pp',        label:'PP Today',     icon:'🔥', desc:'Pocket Pivot today'},
   {id:'bullsnort', label:'Bull Snort',   icon:'🐂', desc:'Bullish volume climax — up close, 2× vol vs 20d avg, close in upper 30% of range'},
@@ -520,7 +557,7 @@ const SIGNAL_TOOLTIPS = {
   guppy: 'EMA9 just crossed above EMA50 — a fresh golden-cross-style momentum shift.',
   hyht: 'Had HY/HT (or PP proxy) in the last 5 days and price is breaking out today with RS ≥ 60.',
   volpull: 'After HY, HT, IBV, or Bull Snort in the last ~10 days, price has pulled back to within ~3% of EMA5, EMA9, EMA21, or EMA50 — watch for the next push up.',
-  hyema9: 'CHENNPETRO-style: recent HY volume climax, then a quiet (low-volume) sell/pullback, and today a bounce while holding the 9-day EMA (within ~3%).',
+  hyema9: 'CHENNPETRO-style: recent HY, HT, or IBV climax, then a quiet (low-volume) sell/pullback, and today a bounce while holding EMA5, EMA9, or EMA21 (within ~3%). No RS-90 gate.',
   canslim: 'William O\'Neil CANSLIM growth checklist — passes 5+ of 7 criteria (earnings, new highs, volume, RS leader, institutional buying, Stage 2).',
   pead: 'Post-Earnings Announcement Drift — reported within the last 3–60 days, EPS grew, and price/RS still drifting up.',
 }
@@ -564,7 +601,7 @@ const SIGNAL_GLOSSARY = [
   ['⭐ Power', 'A Pocket Pivot day combined with a Relative Strength rating of 80 or higher — strong momentum plus fresh buying pressure together.'],
   ['💥 HY/HT Break', 'Had a high-volume day (HY/HT) recently and price is breaking out today with RS ≥ 60.'],
   ['🔥→⚡ Vol→EMA', 'After HY, HT, IBV, or Bull Snort recently, price has pulled back near the 5-, 9-, 21-, or 50-day EMA — setup to catch the next bounce higher.'],
-  ['🔥→⚡9 HY→EMA9', 'Recent HY, then sold/pulled back on low volume, and today reverses while taking support at the 9-day EMA.'],
+  ['🔥→⚡9 HY/HT/IBV→EMA', 'Recent HY, HT, or IBV, then sold/pulled back on low volume, and today reverses while taking support at EMA5, EMA9, or EMA21.'],
   ['🎯 R1 Breakout', 'Price just crossed above a significant resistance level it had been held under for a while — a fresh breakout, not one that happened days ago.'],
   ['☕ Cup Breakout', 'Price just broke out above a cup-and-handle chart pattern. Algorithmic pattern-matching — treat as a visual aid, not a precise signal.'],
   ['🐠 Guppy Crossover', 'The 9-day EMA just crossed above the 50-day EMA — a fresh golden-cross-style signal, short-term momentum shifting ahead of the broader trend.'],
@@ -2876,7 +2913,7 @@ function StockCard({s,i,onChart}){
                 })()}
                 {s.isBullSnort&&<Badge color="#f59e0b" title={SIGNAL_TOOLTIPS.bullsnort}>🐂Snort</Badge>}
                 {calcVolClimaxNearSupport(s).isMatch&&<Badge color={C.accent} title={SIGNAL_TOOLTIPS.volpull}>🔥→⚡</Badge>}
-                {calcHyLowVolEma9Bounce(s).isMatch&&<Badge color={C.pink} title={SIGNAL_TOOLTIPS.hyema9}>🔥→⚡9</Badge>}
+                {calcHyLowVolEma9Bounce(s).isMatch&&<Badge color={C.pink} title={SIGNAL_TOOLTIPS.hyema9}>🔥→⚡EMA</Badge>}
                 {s.nearEMA5?.isNearEMA5&&<Badge color={C.green} title="Price near its 5-day average, top-10%-RS stock.">⚡EMA5</Badge>}
                 {s.nearEMA9.isNearEMA9&&<Badge color={C.green} glow title={SIGNAL_TOOLTIPS.ema9}>⚡EMA9</Badge>}
                 {s.nearEMA21?.isNearEMA21&&<Badge color={C.green} title="Price near its 21-day average, top-10%-RS stock.">⚡EMA21</Badge>}
@@ -14796,7 +14833,7 @@ export default function App(){
                   {label:'🔥PP',val:scopedStocks.filter(s=>topVolumeSignal(s)==='pp').length,color:C.green,f:'pp',tip:SIGNAL_TOOLTIPS.pp},
                   {label:'🐂Snort',val:scopedStocks.filter(s=>s.isBullSnort).length,color:'#f59e0b',f:'bullsnort',tip:SIGNAL_TOOLTIPS.bullsnort},
                   {label:'🔥→⚡',val:scopedStocks.filter(s=>calcVolClimaxNearSupport(s).isMatch).length,color:C.accent,f:'volpull',tip:SIGNAL_TOOLTIPS.volpull},
-                  {label:'🔥→⚡9',val:scopedStocks.filter(s=>calcHyLowVolEma9Bounce(s).isMatch).length,color:C.pink,f:'hyema9',tip:SIGNAL_TOOLTIPS.hyema9},
+                  {label:'🔥→⚡EMA',val:scopedStocks.filter(s=>calcHyLowVolEma9Bounce(s).isMatch).length,color:C.pink,f:'hyema9',tip:SIGNAL_TOOLTIPS.hyema9},
                   {label:'⚡EMA5',val:scopedStocks.filter(s=>s.nearEMA5?.isNearEMA5).length,color:C.teal,f:'ema5',tip:SIGNAL_TOOLTIPS.ema5},
                   {label:'⚡EMA9',val:scopedStocks.filter(s=>s.nearEMA9.isNearEMA9).length,color:C.teal,f:'ema9',tip:SIGNAL_TOOLTIPS.ema9},
                   {label:'🎯R1',val:scopedStocks.filter(s=>s.isResistanceBreakout).length,color:C.red,f:'r1breakout',tip:SIGNAL_TOOLTIPS.r1},
@@ -15099,7 +15136,7 @@ export default function App(){
                           style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilters.length===0?C.muted:C.border}`,
                             cursor:'pointer',fontSize:12,fontWeight:600,
                             background:sigFilters.length===0?C.muted+'22':'transparent',color:sigFilters.length===0?C.text:C.muted}}>All</button>
-                        {[['ht','🚀HT',C.orange],['hy','📊HY',C.pink],['ibv','🏛️IBV',C.blue],['pp','🔥PP',C.green],['bullsnort','🐂Bull Snort','#f59e0b'],['volpull','🔥→⚡ HY/HT/IBV/Snort → EMA5/9/21/50',C.accent],['hyema9','🔥→⚡9 HY → low-vol → EMA9 bounce',C.pink],['ppconsec2','🔥PP 2x Consecutive',C.green],['ppgt2','🔥PP >2 in 10d',C.green],['ema5','⚡EMA5',C.teal],['ema9','⚡EMA9',C.teal],['ema21','⚡EMA21',C.teal],['ema50','⚡EMA50',C.teal],['power','⭐Power',C.accent],['hyht','💥HY/HT Break',C.accent],['r1breakout','🎯R1 Breakout',C.red],['52wh','🏆52W High',C.yellow],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.purple],['s2new','🚀Stage 2 New',C.green],['vcp2t','🌀VCP 2T',C.purple],['vcp3t','🌀VCP 3T',C.purple],['vcp4t','🌀VCP 4T',C.purple]].map(([v,label,color])=>{
+                        {[['ht','🚀HT',C.orange],['hy','📊HY',C.pink],['ibv','🏛️IBV',C.blue],['pp','🔥PP',C.green],['bullsnort','🐂Bull Snort','#f59e0b'],['volpull','🔥→⚡ HY/HT/IBV/Snort → EMA5/9/21/50',C.accent],['hyema9','🔥→⚡EMA HY/HT/IBV → low-vol → EMA5/9/21',C.pink],['ppconsec2','🔥PP 2x Consecutive',C.green],['ppgt2','🔥PP >2 in 10d',C.green],['ema5','⚡EMA5',C.teal],['ema9','⚡EMA9',C.teal],['ema21','⚡EMA21',C.teal],['ema50','⚡EMA50',C.teal],['power','⭐Power',C.accent],['hyht','💥HY/HT Break',C.accent],['r1breakout','🎯R1 Breakout',C.red],['52wh','🏆52W High',C.yellow],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.purple],['s2new','🚀Stage 2 New',C.green],['vcp2t','🌀VCP 2T',C.purple],['vcp3t','🌀VCP 3T',C.purple],['vcp4t','🌀VCP 4T',C.purple]].map(([v,label,color])=>{
                           const active = sigFilters.includes(v)
                           return (
                             <button key={v} onClick={()=>setSigFilters(prev=>active?prev.filter(x=>x!==v):[...prev,v])}
@@ -15222,7 +15259,7 @@ export default function App(){
                           ['all','All',C.muted],
                           ['hyht','💥 HY/HT',C.accent],
                           ['volpull','🔥→⚡ HY/HT/IBV/Snort → EMA5/9/21/50',C.accent],
-                          ['hyema9','🔥→⚡9 HY → low-vol → EMA9',C.pink],
+                          ['hyema9','🔥→⚡EMA HY/HT/IBV → EMA5/9/21',C.pink],
                           ['ema5','⚡EMA5',C.teal],
                           ['r1','🎯 R1',C.red],
                           ['52wh','🏆 52W High',C.yellow],
@@ -16613,7 +16650,7 @@ export default function App(){
                 {id:'breakouts', group:'📈 Breakouts', items:[
                   {key:'hyht',     label:'HY/HT Breakout', color:C.accent, filter:s=>calcHYHTBreakout(s).isBreakout},
                   {key:'volpull',  label:'HY/HT/IBV/Snort → EMA5/9/21/50', color:'#f59e0b', filter:s=>calcVolClimaxNearSupport(s).isMatch},
-                  {key:'hyema9',   label:'HY → low-vol → EMA9 bounce', color:C.pink, filter:s=>calcHyLowVolEma9Bounce(s).isMatch},
+                  {key:'hyema9',   label:'HY/HT/IBV → low-vol → EMA5/9/21 bounce', color:C.pink, filter:s=>calcHyLowVolEma9Bounce(s).isMatch},
                   {key:'resBreak', label:'Resistance Breakout', color:C.green, filter:s=>s.isResistanceBreakout},
                   {key:'h52',      label:'52-Week High Breakout', color:C.green, filter:s=>s.is52whBreakout},
                   {key:'cupBreak', label:'Cup & Handle Breakout', color:C.green, filter:s=>s.isCupHandleBreakout},
