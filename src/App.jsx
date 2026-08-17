@@ -6802,8 +6802,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const W = chartBox.w
   const H = chartBox.h
   const padL = 8, padR = Math.max(44, Math.round(W*0.06)), padT = 8, gapH = 4, axisPad = 18
+  // Reserve a strip above the volume pane for the Pine volume metrics table.
+  const volTableH = showLakshmiVol ? (isMobile ? 48 : 40) : 0
   const panelGaps = gapH + (showRSI ? gapH : 0) + (showMACD ? gapH : 0) + (showSuperCycle ? gapH : 0)
-  const usable = Math.max(160, H - padT - panelGaps - axisPad)
+  const usable = Math.max(160, H - padT - panelGaps - axisPad - volTableH)
   // When RSI/MACD/Super Cycle panes are on, shrink price/volume so everything fits.
   const extraPanes = (showRSI ? 1 : 0) + (showMACD ? 1 : 0) + (showSuperCycle ? 1 : 0)
   const priceShare = extraPanes === 0 ? (chartExpanded ? 0.52 : 0.58)
@@ -6900,7 +6902,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const volMetrics = lakshmiVol?.metrics || null
 
   // ── Layout ──
-  const volTop = padT + priceH + gapH
+  // Metrics table sits directly above the volume indicator (TV/Pine style).
+  const volTableTop = padT + priceH + gapH
+  const volTop = volTableTop + volTableH
   // Super Cycle sits directly under volume; RSI/MACD follow below it.
   const scTop = volTop + volH + (showSuperCycle ? gapH : 0)
   const rsiTop = scTop + scH + (showRSI ? gapH : 0)
@@ -7569,8 +7573,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           : `${sym} · ${barsToShow} ${intervalMeta.unit} · tap a candle to pin`}
       </div>
 
-      {/* Pine Lakshmi_Mata_Volume.pine ATHtable — same metric columns */}
-      {showLakshmiVol && volMetrics && (() => {
+      <div ref={plotRef} style={{flex:1,minHeight:0,position:'relative',width:'100%'}}>
+      {/* Pine volume metrics table — directly above the volume pane */}
+      {showLakshmiVol && volMetrics && volTableH > 0 && (() => {
         const m = volMetrics
         const commentMap = {
           HT: 'All-Time High Vol (HT)',
@@ -7594,16 +7599,16 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         const chgBg = chg == null ? undefined : chg >= 0 ? C.green+'44' : C.red+'44'
         const cell = (label, value, valueBg) => (
           <div key={label} style={{
-            minWidth: isMobile ? 72 : 88, flex: '1 1 88px',
+            minWidth: isMobile ? 64 : 80, flex: '1 1 72px',
             border:`1px solid ${C.border}`, overflow:'hidden',
           }}>
             <div style={{
-              padding:'3px 6px', fontSize:8, fontWeight:700, color:C.muted,
+              padding:'2px 5px', fontSize:7, fontWeight:700, color:C.muted,
               background:C.card, borderBottom:`1px solid ${C.border}`,
               whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
             }} title={label}>{label}</div>
             <div style={{
-              padding:'4px 6px', fontSize:10, fontWeight:700, color:C.text,
+              padding:'3px 5px', fontSize:9, fontWeight:700, color:C.text,
               background: valueBg || C.bg, whiteSpace:'nowrap',
               overflow:'hidden', textOverflow:'ellipsis',
             }} title={String(value)}>{value}</div>
@@ -7611,9 +7616,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         )
         return (
           <div style={{
-            display:'flex', flexWrap:'wrap', gap:0, marginBottom:6, flexShrink:0,
+            position:'absolute',
+            left: padL,
+            width: chartW,
+            top: (volTableTop / H) * 100 + '%',
+            height: (volTableH / H) * 100 + '%',
+            zIndex: 3,
+            display:'flex', flexWrap:'nowrap', gap:0, alignItems:'stretch',
+            boxSizing:'border-box',
             border:`1px solid ${C.border}`,
-          }} title="Same fields as Pine Lakshmi Volume ATHtable">
+            background: C.bg,
+            overflow:'hidden',
+            pointerEvents:'none',
+          }} title="Lakshmi Volume metrics (above volume pane)">
             {cell('Volume', m.volume != null ? Number(m.volume).toLocaleString('en-IN') : '—')}
             {cell(`${m.lookbackAvg || 50} Bar Avg.Vol`, m.avgVol != null ? fmtVol(m.avgVol) : '—')}
             {cell(`${m.lookbackAvg || 50} Bar Rel.Vol`, rel != null ? `${Math.round(rel)}%` : '—', relBg)}
@@ -7625,8 +7640,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           </div>
         )
       })()}
-
-      <div ref={plotRef} style={{flex:1,minHeight:0,position:'relative',width:'100%'}}>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
         style={{
           width:'100%',
