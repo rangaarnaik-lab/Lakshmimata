@@ -21,34 +21,43 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'signal', label: 'Signal', min: 2, max: 50, step: 1 },
   ],
   supercycle: [
-    { key: 'length', label: 'Cycle length', min: 5, max: 100, step: 1 },
-    { key: 'rsMALength', label: 'RS MA', min: 2, max: 50, step: 1 },
-    { key: 'momLength', label: 'Momentum', min: 5, max: 100, step: 1 },
-    { key: 'bbMult', label: 'BB mult', min: 0.5, max: 5, step: 0.1 },
-    { key: 'kcMult', label: 'KC mult', min: 0.5, max: 5, step: 0.1 },
+    { key: 'length', label: 'Length', min: 5, max: 100, step: 1 },
+    { key: 'rsMALength', label: 'Smooth A', min: 2, max: 50, step: 1 },
+    { key: 'momLength', label: 'Smooth B', min: 5, max: 100, step: 1 },
+    { key: 'bbMult', label: 'Band A', min: 0.5, max: 5, step: 0.1 },
+    { key: 'kcMult', label: 'Band B', min: 0.5, max: 5, step: 0.1 },
   ],
   buysell: [
-    { key: 'atrPeriod', label: 'ATR period', min: 5, max: 50, step: 1 },
-    { key: 'multiplier', label: 'ATR mult', min: 0.5, max: 10, step: 0.1 },
-    { key: 'emaFast', label: 'EMA fast', min: 3, max: 30, step: 1 },
-    { key: 'emaMid', label: 'EMA mid', min: 5, max: 50, step: 1 },
-    { key: 'emaSlow', label: 'EMA slow', min: 10, max: 100, step: 1 },
-    { key: 'emaLong', label: 'EMA long', min: 50, max: 300, step: 1 },
-    { key: 'rsMin', label: 'RS min', min: 1, max: 99, step: 1 },
-    { key: 'rsRise', label: 'RS rise (21)', min: 1, max: 40, step: 1 },
+    { key: 'atrPeriod', label: 'Period A', min: 5, max: 50, step: 1 },
+    { key: 'multiplier', label: 'Mult', min: 0.5, max: 10, step: 0.1 },
+    { key: 'emaFast', label: 'Fast', min: 3, max: 30, step: 1 },
+    { key: 'emaMid', label: 'Mid', min: 5, max: 50, step: 1 },
+    { key: 'emaSlow', label: 'Slow', min: 10, max: 100, step: 1 },
+    { key: 'emaLong', label: 'Long', min: 50, max: 300, step: 1 },
+    { key: 'rsMin', label: 'Gate A', min: 1, max: 99, step: 1 },
+    { key: 'rsRise', label: 'Gate B', min: 1, max: 40, step: 1 },
   ],
   barcolor: [
-    { key: 'lookbackIV', label: 'IBV lookback', min: 5, max: 50, step: 1 },
-    { key: 'lookbackPP', label: 'PPV lookback', min: 5, max: 50, step: 1 },
+    { key: 'lookbackIV', label: 'Period A', min: 5, max: 50, step: 1 },
+    { key: 'lookbackPP', label: 'Period B', min: 5, max: 50, step: 1 },
+  ],
+  lakshmivol: [
+    { key: 'lookbackIV', label: 'Period A', min: 5, max: 100, step: 1 },
+    { key: 'lookbackPP', label: 'Period B', min: 5, max: 100, step: 1 },
+    { key: 'maLength', label: 'MA', min: 5, max: 100, step: 1 },
+    { key: 'lookbackAvg', label: 'Avg bars', min: 10, max: 200, step: 1 },
+    { key: 'lookbackUD', label: 'Ratio bars', min: 10, max: 200, step: 1 },
+    { key: 'bullSnortMult', label: 'Snort mult', min: 2, max: 8, step: 0.5 },
+    { key: 'bullSnortDcr', label: 'Snort floor', min: 50, max: 90, step: 1 },
   ],
   bullsnort: [
-    { key: 'volMa', label: 'Vol MA', min: 5, max: 50, step: 1 },
-    { key: 'volMult', label: 'Vol ×', min: 1, max: 5, step: 0.1 },
-    { key: 'closePct', label: 'Close % of range', min: 0.4, max: 0.95, step: 0.05 },
+    { key: 'volMa', label: 'MA', min: 5, max: 50, step: 1 },
+    { key: 'volMult', label: 'Mult', min: 1, max: 5, step: 0.1 },
+    { key: 'closePct', label: 'Floor', min: 0.4, max: 0.95, step: 0.05 },
   ],
   forecast: [
-    { key: 'sampleBars', label: 'Sample bars', min: 10, max: 60, step: 1 },
-    { key: 'projPct', label: 'Project % of view', min: 0.05, max: 0.4, step: 0.01 },
+    { key: 'sampleBars', label: 'Bars', min: 10, max: 60, step: 1 },
+    { key: 'projPct', label: 'Reach', min: 0.05, max: 0.4, step: 0.01 },
   ],
 }
 
@@ -60,6 +69,7 @@ const DEFAULT_ENABLED = {
   macd: false,
   supercycle: true, // Super Cycle oscillator under volume — on by default
   patterns: true,
+  lakshmivol: true, // Lakshmi Mata Volume pane (IBV/PPV/HT/HY/…)
   barcolor: true,
   bullsnort: true,
   buysell: true,
@@ -74,6 +84,11 @@ const DEFAULT_PARAMS = {
   macd: { fast: 12, slow: 26, signal: 9 },
   supercycle: { length: 21, rsMALength: 9, momLength: 21, bbMult: 2.0, kcMult: 1.5 },
   patterns: {},
+  lakshmivol: {
+    lookbackIV: 10, lookbackPP: 10, maLength: 10,
+    lookbackAvg: 50, lookbackUD: 50,
+    bullSnortMult: 3, bullSnortDcr: 65,
+  },
   barcolor: { lookbackIV: 10, lookbackPP: 10 },
   bullsnort: { volMa: 20, volMult: 2, closePct: 0.7 },
   buysell: {
@@ -92,7 +107,7 @@ export function defaultChartIndicatorPrefs() {
       params: { ...(DEFAULT_PARAMS[id] || {}) },
     }
   }
-  return { version: 2, indicators }
+  return { version: 3, indicators }
 }
 
 function clampNum(v, min, max, fallback) {
@@ -118,13 +133,16 @@ export function normalizeChartIndicatorPrefs(raw) {
       )
     }
   }
-  // v2: ensure Super Cycle + RSI oscillators are on for older saved prefs
+  // v2: Super Cycle + RSI; v3: Lakshmi Volume on
   const prevVer = Number(raw.version) || 1
   if (prevVer < 2) {
     base.indicators.supercycle.enabled = true
     base.indicators.rsi.enabled = true
   }
-  base.version = 2
+  if (prevVer < 3) {
+    base.indicators.lakshmivol.enabled = true
+  }
+  base.version = 3
   return base
 }
 

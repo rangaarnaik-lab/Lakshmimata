@@ -36,6 +36,8 @@ import {
   calcRSISeries, calcMACDSeries, detectEmaCrossoverDays,
   detectLakshmiBuySellSignals, alignSeriesFromEnd, calcLakshmiSuperCycle,
   calcLakshmiCandleBarColors, LAKSHMI_BAR_COLORS,
+  calcLakshmiVolumeIndicator, LAKSHMI_VOL_COLORS,
+  LAKSHMI_BUY_SELL_COLORS, LAKSHMI_CYCLE_COLORS, lakshmiCycleBarColor,
   GUPPY_SHORT_PERIODS, GUPPY_LONG_PERIODS,
 } from './scanners/chartAnalysis'
 
@@ -6241,7 +6243,7 @@ const BAR_INTERVAL_META = {
   Y: { label:'12M', unit:'years', minBars:3,  minZoom:2,  swing:1 },
 }
 const TV_TOOLBAR_BLUE = '#2962ff'
-const BULL_SNORT_COLOR = '#f59e0b'
+const BULL_SNORT_COLOR = LAKSHMI_BUY_SELL_COLORS.BULL_SNORT
 
 function TvCandleIcon({active, muted}) {
   const c = active ? TV_TOOLBAR_BLUE : muted
@@ -6297,12 +6299,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const showBuySell = prefsN.indicators.buysell.enabled
   const showSuperCycle = prefsN.indicators.supercycle.enabled
   const showCandleColors = prefsN.indicators.barcolor.enabled
+  const showLakshmiVol = prefsN.indicators.lakshmivol?.enabled !== false
   const maP = prefsN.indicators.ma.params
   const rsiP = prefsN.indicators.rsi.params
   const macdP = prefsN.indicators.macd.params
   const scP = prefsN.indicators.supercycle.params
   const buyP = prefsN.indicators.buysell.params
   const barP = prefsN.indicators.barcolor.params
+  const volP = prefsN.indicators.lakshmivol?.params || {}
   const snortP = prefsN.indicators.bullsnort.params
   const fcP = prefsN.indicators.forecast.params
   const setShowMA = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'ma', typeof v === 'function' ? v(showMA) : v))
@@ -6316,6 +6320,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const setShowBuySell = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'buysell', typeof v === 'function' ? v(showBuySell) : v))
   const setShowSuperCycle = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'supercycle', typeof v === 'function' ? v(showSuperCycle) : v))
   const setShowCandleColors = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'barcolor', typeof v === 'function' ? v(showCandleColors) : v))
+  const setShowLakshmiVol = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'lakshmivol', typeof v === 'function' ? v(showLakshmiVol) : v))
   const [niftyCloses, setNiftyCloses] = useState(null)
   const [showIndMenu, setShowIndMenu] = useState(false)
   const [indSearch, setIndSearch] = useState('')
@@ -6483,6 +6488,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       ? calcLakshmiSuperCycle(highs, lows, closes, niftyAligned, scP)
       : null
     const candleBar = calcLakshmiCandleBarColors(opens, highs, lows, closes, volumes, barP)
+    const lakshmiVol = calcLakshmiVolumeIndicator(
+      seriesData.dates, opens, highs, lows, closes, volumes, volP,
+    )
     return {
       ma20: calcSMASeries(closes, maP.ma20 ?? 20),
       ma50: calcSMASeries(closes, maP.ma50 ?? 50),
@@ -6511,9 +6519,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       superCycle,
       candleBarColors: candleBar.colors,
       candleBarTags: candleBar.tags,
+      lakshmiVol,
     }
   }, [seriesData, barInterval, intervalMeta, isIndex, showBuySell, showSuperCycle, niftyCloses,
-    maP, rsiP, macdP, scP, buyP, barP, snortP])
+    maP, rsiP, macdP, scP, buyP, barP, snortP, volP])
 
   useEffect(() => {
     let cancelled = false
@@ -6632,7 +6641,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
 
   const { ma20, ma50, ma200, ema9, ema50, guppyShort, guppyLong, guppyCross, rsi, macd,
     swings, sr, insideBars, accDist, ppDays, hyDays, htDays, ibvDays, bullSnortDays, nearEma9Days, vcp, cup,
-    buyDays, sellDays, superCycle, candleBarColors, candleBarTags } = analysis
+    buyDays, sellDays, superCycle, candleBarColors, candleBarTags, lakshmiVol } = analysis
 
   let dates = seriesData.dates
   let closes = seriesData.closes
@@ -6717,7 +6726,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const vLows   = lows.slice(start)
   const vCloses = closes.slice(start)
   const vVol    = volumes.slice(start)
-  const vVolEma = emaArr(volumes, 20).slice(start)
+  const vVolEma = (showLakshmiVol && lakshmiVol?.volMA
+    ? lakshmiVol.volMA
+    : emaArr(volumes, 20)).slice(start)
   const vMA20   = ma20.slice(start)
   const vMA50   = ma50.slice(start)
   const vMA200  = ma200.slice(start)
@@ -6750,6 +6761,17 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const vScRating = (superCycle?.rsRating||[]).slice(start)
   const vBarColor = (candleBarColors||[]).slice(start)
   const vBarTag = (candleBarTags||[]).slice(start)
+  const vLvIv = (lakshmiVol?.ivDay||[]).slice(start)
+  const vLvPp = (lakshmiVol?.ppDay||[]).slice(start)
+  const vLvSnort = (lakshmiVol?.bullSnort||[]).slice(start)
+  const vLvHt = (lakshmiVol?.isHT||[]).slice(start)
+  const vLvHy = (lakshmiVol?.isHY||[]).slice(start)
+  const vLvHq = (lakshmiVol?.isHQ||[]).slice(start)
+  const vLvHm = (lakshmiVol?.isHM||[]).slice(start)
+  const vLvLow = (lakshmiVol?.lowVol||[]).slice(start)
+  const vLvColor = (lakshmiVol?.barColor||[]).slice(start)
+  const vLvComment = (lakshmiVol?.comment||[]).slice(start)
+  const volMetrics = lakshmiVol?.metrics || null
 
   // ── Layout ──
   const volTop = padT + priceH + gapH
@@ -6812,7 +6834,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const volBarW = Math.max(1.5, candleW * 0.82)
   const TV_VOL_UP = '#26a69a'
   const TV_VOL_DN = '#ef5350'
-  const TV_VOL_MA = '#5d8cff'
+  const TV_VOL_MA = showLakshmiVol ? '#A0A0A0' : '#5d8cff' // pine uses near-black (#141414); lightened for dark chart
   const rsiToY = v => rsiTop + (100 - v) / 100 * rsiH
   const macdAbs = Math.max(
     0.0001,
@@ -7045,6 +7067,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     scRating: vScRating[hi],
     scSqueeze: vScSqOn[hi],
     barTag: vBarTag[hi],
+    volComment: vLvComment[hi],
   } : null
 
   // YTD's bar count is dynamic (depends on today's date vs the data),
@@ -7061,17 +7084,18 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
 
   // TradingView-style indicator catalog (overlays / oscillators / signals)
   const chartIndicators = [
-    { id:'ma', group:'Overlays', label:'Moving Average', short:'MA', desc:`EMA${maP.ema9 ?? 9} · MA${maP.ma20 ?? 20} · MA${maP.ma50 ?? 50} · MA${maP.ma200 ?? 200}`, on:showMA, set:setShowMA },
-    { id:'guppy', group:'Overlays', label:'Guppy MMA', short:'Guppy', desc:'Short/long ribbons + EMA9×50 cross', on:showGuppy, set:setShowGuppy },
-    { id:'sr', group:'Overlays', label:'Support & Resistance', short:'S/R', desc:'R1 R2 · S1 S2 levels', on:showSR, set:setShowSR },
-    { id:'rsi', group:'Oscillators', label:'Relative Strength Index', short:'RSI', desc:`RSI (${rsiP.length ?? 14}) with ${rsiP.overbought ?? 70} / ${rsiP.oversold ?? 30} bands`, on:showRSI, set:setShowRSI },
-    { id:'macd', group:'Oscillators', label:'MACD', short:'MACD', desc:`MACD (${macdP.fast ?? 12}, ${macdP.slow ?? 26}, ${macdP.signal ?? 9}) + histogram`, on:showMACD, set:setShowMACD },
-    ...(!isIndex ? [{ id:'supercycle', group:'Oscillators', label:'Lakshmi Super Cycle', short:'Super Cycle', desc:`Cycle ${scP.length ?? 21} · RS MA ${scP.rsMALength ?? 9} · Mom ${scP.momLength ?? 21}`, on:showSuperCycle, set:setShowSuperCycle }] : []),
-    { id:'patterns', group:'Signals', label:'Patterns', short:'Patterns', desc:'Inside bar · Acc/Dist · HT/HY/IBV/PP · VCP · Cup', on:showPatterns, set:setShowPatterns },
-    { id:'barcolor', group:'Signals', label:'Volume Candle Colors', short:'Bar Color', desc:`IBV/HT/HY/PPV (lookback ${barP.lookbackIV ?? 10}/${barP.lookbackPP ?? 10})`, on:showCandleColors, set:setShowCandleColors },
-    { id:'bullsnort', group:'Signals', label:'Bull Snort', short:'Bull Snort', desc:`Vol ≥ ${snortP.volMult ?? 2}× MA${snortP.volMa ?? 20}`, on:showBullSnort, set:setShowBullSnort },
+    { id:'ma', group:'Overlays', label:'Moving Average', short:'MA', desc:'', on:showMA, set:setShowMA },
+    { id:'guppy', group:'Overlays', label:'Guppy MMA', short:'Guppy', desc:'', on:showGuppy, set:setShowGuppy },
+    { id:'sr', group:'Overlays', label:'Support & Resistance', short:'S/R', desc:'', on:showSR, set:setShowSR },
+    { id:'rsi', group:'Oscillators', label:'Relative Strength Index', short:'RSI', desc:'', on:showRSI, set:setShowRSI },
+    { id:'macd', group:'Oscillators', label:'MACD', short:'MACD', desc:'', on:showMACD, set:setShowMACD },
+    ...(!isIndex ? [{ id:'supercycle', group:'Oscillators', label:'Lakshmi Super Cycle', short:'Super Cycle', desc:'', on:showSuperCycle, set:setShowSuperCycle }] : []),
+    { id:'patterns', group:'Signals', label:'Patterns', short:'Patterns', desc:'', on:showPatterns, set:setShowPatterns },
+    { id:'lakshmivol', group:'Signals', label:'Lakshmi Volume', short:'Volume', desc:'', on:showLakshmiVol, set:setShowLakshmiVol },
+    { id:'barcolor', group:'Signals', label:'Volume Candle Colors', short:'Bar Color', desc:'', on:showCandleColors, set:setShowCandleColors },
+    { id:'bullsnort', group:'Signals', label:'Bull Snort', short:'Bull Snort', desc:'', on:showBullSnort, set:setShowBullSnort },
     { id:'buysell', group:'Signals', label:'Lakshmi Buy/Sell', short:'Buy/Sell', desc:'', on:showBuySell, set:setShowBuySell },
-    { id:'forecast', group:'Signals', label:'Forecast', short:'Forecast', desc:`Trend projection (${fcP.sampleBars ?? 30} bars)`, on:showForecast, set:setShowForecast },
+    { id:'forecast', group:'Signals', label:'Forecast', short:'Forecast', desc:'', on:showForecast, set:setShowForecast },
   ]
   const indQ = indSearch.trim().toLowerCase()
   const filteredIndicators = indQ
@@ -7294,7 +7318,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                         {indSettingsId===ind.id && INDICATOR_PARAM_FIELDS[ind.id] && (
                           <div style={{padding:'6px 14px 10px 40px', background:C.bg||'#0e1117'}}>
                             <div style={{fontSize:9, color:C.muted, marginBottom:6, fontWeight:700}}>
-                              Parameters · saved for {userId ? 'your account' : 'this browser'}
+                              Settings
                             </div>
                             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
                               {INDICATOR_PARAM_FIELDS[ind.id].map(f=>(
@@ -7400,6 +7424,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                 {'  '}{hover.barTag}
               </span>
             )}
+            {showLakshmiVol && hover.volComment && hover.volComment !== 'NA' && (
+              <span style={{color:C.accent,fontWeight:700}}>{'  '}Vol {hover.volComment}</span>
+            )}
             {showGuppy && hover.guppyCross && (
               <span style={{color:hover.guppyCross==='bull'?C.green:C.red,fontWeight:700}}>
                 {'  '}Guppy {hover.guppyCross==='bull'?'▲ bull':'▼ bear'} cross
@@ -7453,7 +7480,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             </g>
           )
         })}
-        <text x={padL+4} y={volTop+11} fontSize={8} fontWeight={700} fill={C.muted}>Volume</text>
+        <text x={padL+4} y={volTop+11} fontSize={8} fontWeight={700} fill={C.muted}>
+          {showLakshmiVol ? 'Lakshmi Volume' : 'Volume'}
+        </text>
+        {showLakshmiVol && volMetrics && (
+          <text x={padL+90} y={volTop+11} fontSize={7} fill={C.muted}>
+            {volMetrics.comment && volMetrics.comment!=='NA' ? volMetrics.comment : ''}
+          </text>
+        )}
 
         {/* Support/Resistance lines */}
         {showSR && [['r1',sr.r1,C.red],['r2',sr.r2,C.red],['s1',sr.s1,C.green],['s2',sr.s2,C.green]].map(([k,val,color])=>
@@ -7624,13 +7658,13 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               )}
               {showBuySell && vBuy[i] && (
                 <g>
-                  <rect x={x-14} y={priceToY(lo)+4} width={28} height={12} rx={2} fill={C.green}/>
+                  <rect x={x-14} y={priceToY(lo)+4} width={28} height={12} rx={2} fill={LAKSHMI_BUY_SELL_COLORS.BUY}/>
                   <text x={x} y={priceToY(lo)+13} fontSize={8} fontWeight={800} fill="#fff" textAnchor="middle">Buy</text>
                 </g>
               )}
               {showBuySell && vSell[i] && (
                 <g>
-                  <rect x={x-14} y={priceToY(hi)-16} width={28} height={12} rx={2} fill={C.red}/>
+                  <rect x={x-14} y={priceToY(hi)-16} width={28} height={12} rx={2} fill={LAKSHMI_BUY_SELL_COLORS.SELL}/>
                   <text x={x} y={priceToY(hi)-7} fontSize={8} fontWeight={800} fill="#fff" textAnchor="middle">Sell</text>
                 </g>
               )}
@@ -7650,6 +7684,58 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             </g>
           )
         })}
+
+        {/* Lakshmi Volume icons — Pine force_overlay below/above candles.
+            Drawn AFTER candles so they aren't covered; multiple can fire same bar. */}
+        {showLakshmiVol && (
+          <g style={{pointerEvents:'none'}}>
+            {vCloses.map((c,i)=>{
+              const hi = vHighs[i], lo = vLows[i]
+              if (c==null || hi==null || lo==null) return null
+              const x = idxToX(i)
+              const yBelow0 = Math.min(padT + priceH - 4, priceToY(lo) + 11)
+              const yAbove0 = Math.max(padT + 11, priceToY(hi) - 9)
+              const nodes = []
+              let b = 0, a = 0
+              if (vLvIv[i]) {
+                nodes.push(<text key={`iv-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={10} fontWeight={800}
+                  fill={LAKSHMI_VOL_COLORS.IBV_ICON} textAnchor="middle"
+                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2.5}}>▲</text>)
+              }
+              if (vLvPp[i]) {
+                nodes.push(<text key={`pp-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={10} fontWeight={800}
+                  fill={LAKSHMI_VOL_COLORS.PPV_ICON} textAnchor="middle"
+                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2.5}}>★</text>)
+              }
+              if (vLvSnort[i] || (showBullSnort && vSnort[i])) {
+                nodes.push(<text key={`bs-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={10}
+                  fill={LAKSHMI_VOL_COLORS.BULL_SNORT_ICON} textAnchor="middle">🐂</text>)
+              }
+              if (vLvHt[i]) {
+                nodes.push(<text key={`ht-${i}`} x={x} y={yAbove0 - (a++) * 12} fontSize={9}
+                  fill={LAKSHMI_BAR_COLORS.HT} textAnchor="middle"
+                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>🚀</text>)
+              }
+              if (vLvHy[i]) {
+                nodes.push(<text key={`hy-${i}`} x={x} y={yAbove0 - (a++) * 12} fontSize={9}
+                  fill={LAKSHMI_BAR_COLORS.HY} textAnchor="middle"
+                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>🔥</text>)
+              }
+              if (vLvHq[i] && !vLvHt[i] && !vLvHy[i]) {
+                nodes.push(<text key={`hq-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={8} fontWeight={700}
+                  fill="#E0E0E0" textAnchor="middle"
+                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>HQ</text>)
+              }
+              if (vLvHm[i] && !vLvHt[i] && !vLvHy[i] && !vLvHq[i]) {
+                nodes.push(<text key={`hm-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={8} fontWeight={700}
+                  fill="#E0E0E0" textAnchor="middle"
+                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>M</text>)
+              }
+              if (!nodes.length) return null
+              return <g key={`vol-ico-${i}`}>{nodes}</g>
+            })}
+          </g>
+        )}
 
         {/* User drawings — anchored by date+price; remembered in localStorage */}
         <defs>
@@ -7731,23 +7817,49 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           })}
         </g>
 
-        {/* Volume bars — TradingView-style: teal up / red down; Bull Snort / Patterns tint */}
+        {/* Volume bars — Lakshmi Volume colors when enabled; else TV teal/red */}
         <g>
           {vCloses.map((c,i)=>{
             if(vVol[i]==null||c==null) return null
             const op=vOpens[i]
             const up=c>=(op??c)
             const x=idxToX(i)
-            const snort=showBullSnort&&vSnort[i]
-            const signal=!snort&&showPatterns&&(vHT[i]?'HT':vHY[i]?'HY':vIBV[i]?'IBV':vPP[i]?'PP':null)
-            const signalColor={HT:C.orange,HY:C.pink,IBV:C.blue,PP:C.green}[signal]
-            const fill=snort?BULL_SNORT_COLOR:(signal?signalColor:(up?TV_VOL_UP:TV_VOL_DN))
+            let fill
+            if (showLakshmiVol && vLvColor[i]) {
+              fill = vLvColor[i]
+            } else {
+              const signal=showPatterns&&(vHT[i]?'HT':vHY[i]?'HY':vIBV[i]?'IBV':vPP[i]?'PP':null)
+              const signalColor={
+                HT:LAKSHMI_BAR_COLORS.HT,
+                HY:LAKSHMI_BAR_COLORS.HY,
+                IBV:LAKSHMI_BAR_COLORS.IBV,
+                PP:LAKSHMI_BAR_COLORS.PPV,
+              }[signal]
+              // Volume.pine does not recolor columns for Bull Snort (BG only)
+              fill=signal?signalColor:(up?TV_VOL_UP:TV_VOL_DN)
+            }
             const barTopY=volToY(vVol[i])
             const barH=volTop+volH-barTopY
             if(barH<0.5) return null
             return (
-              <rect key={`vol-${i}`} x={x-volBarW/2} y={barTopY} width={volBarW} height={barH}
-                fill={fill} opacity={snort||signal?0.92:0.75}/>
+              <g key={`vol-${i}`}>
+                {showLakshmiVol && vLvLow[i] && (
+                  <rect x={x-volBarW/2-0.5} y={volTop} width={volBarW+1} height={volH}
+                    fill={LAKSHMI_VOL_COLORS.LOW_VOL_BG} opacity={0.35}/>
+                )}
+                {showLakshmiVol && vLvSnort[i] && (
+                  <rect x={x-volBarW/2-0.5} y={volTop} width={volBarW+1} height={volH}
+                    fill={LAKSHMI_VOL_COLORS.BULL_SNORT_BG} opacity={0.28}/>
+                )}
+                <rect x={x-volBarW/2} y={barTopY} width={volBarW} height={barH}
+                  fill={fill} opacity={0.85}/>
+                {showLakshmiVol && (vLvHt[i]||vLvHy[i]||vLvHq[i]||vLvHm[i]) && (
+                  <text x={x} y={Math.min(volTop+volH-2, barTopY+10)} fontSize={6} fill={C.text}
+                    textAnchor="middle" fontWeight={700}>
+                    {vLvHt[i]?'HT':vLvHy[i]?'HY':vLvHq[i]?'HQ':'M'}
+                  </text>
+                )}
+              </g>
             )
           })}
         </g>
@@ -7825,7 +7937,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             <rect x={padL} y={scTop} width={chartW} height={scH} fill={C.card} opacity={0.4}/>
             <line x1={padL} y1={scTop} x2={padL+chartW} y2={scTop} stroke={C.border} strokeWidth={1} opacity={0.8}/>
             <line x1={padL} y1={scToY(0)} x2={padL+chartW} y2={scToY(0)}
-              stroke={C.border} strokeWidth={0.7} opacity={0.8}/>
+              stroke={LAKSHMI_CYCLE_COLORS.ZERO} strokeWidth={0.7}/>
             <text x={padL+4} y={scTop+11} fontSize={8} fontWeight={700} fill={C.muted}>Super Cycle</text>
             {vScCycle.map((c,i)=>{
               if (c==null) return null
@@ -7834,10 +7946,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               const y1 = scToY(c)
               const top = Math.min(y0, y1)
               const height = Math.max(1, Math.abs(y1 - y0))
-              const up = vScCycleUp[i]
+              const prev = i > 0 ? vScCycle[i - 1] : null
               return (
                 <rect key={`sc-${i}`} x={x-volBarW/2} y={top} width={volBarW} height={height}
-                  fill={up ? C.green : C.red} opacity={0.55}/>
+                  fill={lakshmiCycleBarColor(c, prev)} opacity={0.92}/>
               )
             })}
             {(() => {
@@ -7846,9 +7958,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               const maPts = vScMa.map((v,i)=> v!=null ? `${idxToX(i)},${scToY(v)}` : null).filter(Boolean)
               return (
                 <>
-                  {rsPts.length>1 && <polyline points={rsPts.join(' ')} fill="none" stroke="#60a5fa" strokeWidth={1.2}/>}
-                  {momPts.length>1 && <polyline points={momPts.join(' ')} fill="none" stroke="#f472b6" strokeWidth={1.1} opacity={0.9}/>}
-                  {maPts.length>1 && <polyline points={maPts.join(' ')} fill="none" stroke="#fbbf24" strokeWidth={1.1} opacity={0.9}/>}
+                  {rsPts.length>1 && <polyline points={rsPts.join(' ')} fill="none" stroke={LAKSHMI_CYCLE_COLORS.RS} strokeWidth={1.5} opacity={0.85}/>}
+                  {momPts.length>1 && <polyline points={momPts.join(' ')} fill="none" stroke={LAKSHMI_CYCLE_COLORS.MOM} strokeWidth={1.3} opacity={0.9}/>}
+                  {maPts.length>1 && <polyline points={maPts.join(' ')} fill="none" stroke={LAKSHMI_CYCLE_COLORS.RS_MA} strokeWidth={1.1} opacity={0.85}/>}
                 </>
               )
             })()}
@@ -7858,8 +7970,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               const y = scTop + scH - 5
               return (
                 <circle key={`sq-${i}`} cx={x} cy={y} r={2.2}
-                  fill={vScSqRel[i] ? C.orange : '#111827'}
-                  stroke={vScSqRel[i] ? C.orange : C.muted} strokeWidth={0.6}/>
+                  fill={vScSqRel[i] ? LAKSHMI_CYCLE_COLORS.SQUEEZE_RELEASE : LAKSHMI_CYCLE_COLORS.SQUEEZE_ON}/>
               )
             })}
             <text x={padL+chartW+4} y={scToY(0)+3} fontSize={8} fill={C.muted}>0</text>
@@ -7929,12 +8040,15 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           <span><span style={{color:C.green}}>■</span> Hist</span>
         </>}
         {showSuperCycle && <>
-          <span><span style={{color:C.green}}>■</span> Cycle↑</span>
-          <span><span style={{color:C.red}}>■</span> Cycle↓</span>
-          <span><span style={{color:'#60a5fa'}}>—</span> RS</span>
-          <span><span style={{color:'#f472b6'}}>—</span> Mom</span>
-          <span><span style={{color:'#fbbf24'}}>—</span> RS MA</span>
-          <span><span style={{color:'#111827'}}>●</span> Squeeze</span>
+          <span><span style={{color:LAKSHMI_CYCLE_COLORS.POS_UP}}>■</span> Cycle +↑</span>
+          <span><span style={{color:LAKSHMI_CYCLE_COLORS.POS_DOWN}}>■</span> Cycle +↓</span>
+          <span><span style={{color:LAKSHMI_CYCLE_COLORS.NEG_DOWN}}>■</span> Cycle −↓</span>
+          <span><span style={{color:LAKSHMI_CYCLE_COLORS.NEG_UP}}>■</span> Cycle −↑</span>
+          <span><span style={{color:LAKSHMI_CYCLE_COLORS.RS}}>—</span> RS</span>
+          <span><span style={{color:LAKSHMI_CYCLE_COLORS.MOM}}>—</span> Mom</span>
+          <span><span style={{color:LAKSHMI_CYCLE_COLORS.RS_MA}}>—</span> RS MA</span>
+          <span><span style={{color:LAKSHMI_CYCLE_COLORS.SQUEEZE_ON}}>●</span> Squeeze</span>
+          <span><span style={{color:LAKSHMI_CYCLE_COLORS.SQUEEZE_RELEASE}}>●</span> Release</span>
         </>}
         {showCandleColors && <>
           <span><span style={{color:LAKSHMI_BAR_COLORS.IBV}}>■</span> IBV</span>
@@ -7942,29 +8056,32 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           <span><span style={{color:LAKSHMI_BAR_COLORS.HY}}>■</span> HY</span>
           <span><span style={{color:LAKSHMI_BAR_COLORS.PPV}}>■</span> PPV</span>
         </>}
-        {showBullSnort && <span><span style={{color:BULL_SNORT_COLOR}}>■</span> Bull Snort</span>}
+        {showLakshmiVol && <>
+          <span><span style={{color:LAKSHMI_VOL_COLORS.IBV}}>■</span> IBV</span>
+          <span><span style={{color:LAKSHMI_VOL_COLORS.PPV}}>■</span> PPV</span>
+          <span><span style={{color:LAKSHMI_VOL_COLORS.DOWN}}>■</span> Down</span>
+          <span>HT · HY · HQ · M</span>
+        </>}
+        {showBullSnort && !showLakshmiVol && <span><span style={{color:BULL_SNORT_COLOR}}>■</span> Bull Snort</span>}
         {showBuySell && <>
-          <span><span style={{color:C.green}}>■</span> Buy</span>
-          <span><span style={{color:C.red}}>■</span> Sell</span>
+          <span><span style={{color:LAKSHMI_BUY_SELL_COLORS.BUY}}>■</span> Buy</span>
+          <span><span style={{color:LAKSHMI_BUY_SELL_COLORS.SELL}}>■</span> Sell</span>
         </>}
         {showPatterns && <>
           <span><span style={{color:C.teal}}>●</span> Inside Bar</span>
           <span><span style={{color:C.green}}>▲</span> Accumulation</span>
           <span><span style={{color:C.red}}>▼</span> Distribution</span>
-          <span><span style={{color:C.orange}}>■</span> HT</span>
-          <span><span style={{color:C.pink}}>■</span> HY</span>
-          <span><span style={{color:C.blue}}>■</span> IBV</span>
-          <span><span style={{color:C.green}}>■</span> PP</span>
+          <span><span style={{color:LAKSHMI_BAR_COLORS.HT}}>■</span> HT</span>
+          <span><span style={{color:LAKSHMI_BAR_COLORS.HY}}>■</span> HY</span>
+          <span><span style={{color:LAKSHMI_BAR_COLORS.IBV}}>■</span> IBV</span>
+          <span><span style={{color:LAKSHMI_BAR_COLORS.PPV}}>■</span> PP</span>
           {vcp.isContracting && <span><span style={{color:C.orange}}>—</span> VCP contraction</span>}
           {cup && <span><span style={{color:C.purple}}>┊</span> Cup{cup.hasHandle?' & Handle':''}</span>}
         </>}
       </div>
-      {(showPatterns||showForecast||showBuySell||showSuperCycle)&&(
+      {(showPatterns||showForecast||showBuySell||showSuperCycle||showLakshmiVol)&&(
       <div style={{fontSize:7,color:C.muted,marginTop:2,flexShrink:0}}>
-        {showPatterns&&'Patterns are heuristic — visual aid only. '}
-        {showBuySell&&'Buy/Sell signals — educational, not advice. '}
-        {showSuperCycle&&'Super Cycle from Lakshmi Mata Pine (cycle + RS vs Nifty + squeeze) — educational, not advice. '}
-        {showForecast&&'Forecast is a simple trend line — not a prediction.'}
+        Chart signals are for education only — not financial advice.
       </div>
       )}
     </div>
