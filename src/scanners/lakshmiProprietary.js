@@ -115,6 +115,10 @@ export function calcLakshmiVolumeIndicator(dates, opens, highs, lows, closes, vo
   const lookbackUD = opts.lookbackUD ?? 50
   const bullSnortMult = opts.bullSnortMult ?? 3
   const bullSnortDcr = opts.bullSnortDcr ?? 65
+  const snortAvgLen = opts.snortAvgLen ?? 50
+  const ivMult = opts.ivMult ?? 2
+  const ivDcr = opts.ivDcr ?? 50
+  const lowVolMult = opts.lowVolMult ?? 0.5
   const n = closes.length
   const empty = () => ({
     volMA: new Array(n).fill(null),
@@ -133,7 +137,7 @@ export function calcLakshmiVolumeIndicator(dates, opens, highs, lows, closes, vo
   if (n < 5) return empty()
 
   const volMA = calcSMASeries(volumes, maLength)
-  const avgVol50 = calcSMASeries(volumes, 50)
+  const avgVolSnort = calcSMASeries(volumes, snortAvgLen)
   const avgVolLookback = calcSMASeries(volumes, lookbackAvg)
 
   const ivDay = new Array(n).fill(false)
@@ -163,13 +167,13 @@ export function calcLakshmiVolumeIndicator(dates, opens, highs, lows, closes, vo
     const barRange = (h ?? c) - (l ?? c)
     const dcr = barRange > 0 ? ((c - (l ?? c)) / barRange) * 100 : null
     dcrArr[i] = dcr
-    const dailyClosingRange = dcr != null && dcr > 50
+    const dailyClosingRange = dcr != null && dcr > ivDcr
 
     let maxPriorVol = 0
     for (let j = Math.max(0, i - lookbackIV); j < i; j++) {
       if (volumes[j] != null) maxPriorVol = Math.max(maxPriorVol, volumes[j])
     }
-    const iv = maxPriorVol > 0 && v >= 2 * maxPriorVol && greenDay && upday && dailyClosingRange
+    const iv = maxPriorVol > 0 && v >= ivMult * maxPriorVol && greenDay && upday && dailyClosingRange
     ivDay[i] = iv
 
     let highestDownVol = 0
@@ -183,14 +187,14 @@ export function calcLakshmiVolumeIndicator(dates, opens, highs, lows, closes, vo
     const pp = greenDay && v > highestDownVol && volMA[i] != null && v > volMA[i] && !iv
     ppDay[i] = pp
 
-    const rel50 = avgVol50[i] > 0 ? v / avgVol50[i] : null
-    bullSnort[i] = rel50 != null
-      && rel50 >= bullSnortMult
+    const relSnort = avgVolSnort[i] > 0 ? v / avgVolSnort[i] : null
+    bullSnort[i] = relSnort != null
+      && relSnort >= bullSnortMult
       && i > 0 && c > closes[i - 1]
       && dcr != null
       && dcr >= bullSnortDcr
 
-    lowVol[i] = volMA[i] != null && v < volMA[i] * 0.5
+    lowVol[i] = volMA[i] != null && v < volMA[i] * lowVolMult
 
     highestVolSinceIPO = Math.max(highestVolSinceIPO, v)
     const hvtIpo = v === highestVolSinceIPO && highestVolSinceIPO > 0
@@ -281,6 +285,7 @@ export function calcLakshmiVolumeIndicator(dates, opens, highs, lows, closes, vo
     lookbackAvg,
     lookbackUD,
     lookbackPP,
+    maLength,
   }
 
   return { volMA, ivDay, ppDay, bullSnort, isHT, isHY, isHQ, isHM, lowVol, barColor, comment, metrics }

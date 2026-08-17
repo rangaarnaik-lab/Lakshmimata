@@ -47,8 +47,16 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'maLength', label: 'MA', min: 5, max: 100, step: 1 },
     { key: 'lookbackAvg', label: 'Avg bars', min: 10, max: 200, step: 1 },
     { key: 'lookbackUD', label: 'Ratio bars', min: 10, max: 200, step: 1 },
+    { key: 'ivMult', label: 'Mult A', min: 1.2, max: 6, step: 0.1 },
+    { key: 'ivDcr', label: 'Floor A', min: 30, max: 90, step: 1 },
+    { key: 'lowVolMult', label: 'Quiet mult', min: 0.1, max: 1, step: 0.05 },
     { key: 'bullSnortMult', label: 'Snort mult', min: 2, max: 8, step: 0.5 },
     { key: 'bullSnortDcr', label: 'Snort floor', min: 50, max: 90, step: 1 },
+    { key: 'snortAvgLen', label: 'Snort avg bars', min: 10, max: 200, step: 1 },
+    { key: 'relVolHigh', label: 'Rel.Vol high %', min: 100, max: 500, step: 10 },
+    { key: 'showTable', label: 'Metrics table', type: 'bool' },
+    { key: 'showMarkers', label: 'Signal icons', type: 'bool' },
+    { key: 'showVolMA', label: 'Volume MA line', type: 'bool' },
   ],
   bullsnort: [
     { key: 'volMa', label: 'MA', min: 5, max: 50, step: 1 },
@@ -87,7 +95,10 @@ const DEFAULT_PARAMS = {
   lakshmivol: {
     lookbackIV: 10, lookbackPP: 10, maLength: 10,
     lookbackAvg: 50, lookbackUD: 50,
-    bullSnortMult: 3, bullSnortDcr: 65,
+    ivMult: 2, ivDcr: 50, lowVolMult: 0.5,
+    bullSnortMult: 3, bullSnortDcr: 65, snortAvgLen: 50,
+    relVolHigh: 200,
+    showTable: true, showMarkers: true, showVolMA: true,
   },
   barcolor: { lookbackIV: 10, lookbackPP: 10 },
   bullsnort: { volMa: 20, volMult: 2, closePct: 0.7 },
@@ -128,9 +139,9 @@ export function normalizeChartIndicatorPrefs(raw) {
     const fields = INDICATOR_PARAM_FIELDS[id] || []
     for (const f of fields) {
       if (params[f.key] == null) continue
-      base.indicators[id].params[f.key] = clampNum(
-        params[f.key], f.min, f.max, base.indicators[id].params[f.key],
-      )
+      base.indicators[id].params[f.key] = f.type === 'bool'
+        ? !!params[f.key]
+        : clampNum(params[f.key], f.min, f.max, base.indicators[id].params[f.key])
     }
   }
   // v2: Super Cycle + RSI; v3: Lakshmi Volume on
@@ -180,9 +191,11 @@ export function setIndicatorParam(prefs, id, key, value) {
   const fields = INDICATOR_PARAM_FIELDS[id] || []
   const f = fields.find(x => x.key === key)
   const fallback = next.indicators[id].params[key]
-  const clamped = f
-    ? clampNum(value, f.min, f.max, fallback)
-    : (Number.isFinite(Number(value)) ? Number(value) : fallback)
+  const clamped = f?.type === 'bool'
+    ? !!value
+    : f
+      ? clampNum(value, f.min, f.max, fallback)
+      : (Number.isFinite(Number(value)) ? Number(value) : fallback)
   next.indicators[id] = {
     ...next.indicators[id],
     params: { ...next.indicators[id].params, [key]: clamped },
