@@ -6347,6 +6347,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const setShowCandleColors = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'barcolor', typeof v === 'function' ? v(showCandleColors) : v))
   const setShowLakshmiVol = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'lakshmivol', typeof v === 'function' ? v(showLakshmiVol) : v))
   const [niftyCloses, setNiftyCloses] = useState(null)
+  const [midcapCloses, setMidcapCloses] = useState(null)
+  const [smallcapCloses, setSmallcapCloses] = useState(null)
   const [showIndMenu, setShowIndMenu] = useState(false)
   const [indSearch, setIndSearch] = useState('')
   const [drawTool, setDrawTool] = useState('pan') // pan | trend | ray | hline | vline | rect
@@ -6542,11 +6544,21 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     const niftyAligned = (!isIndex && (showBuySell || showSuperCycle))
       ? alignSeriesFromEnd(closes.length, niftyCloses)
       : null
+    const midcapAligned = (!isIndex && showSuperCycle)
+      ? alignSeriesFromEnd(closes.length, midcapCloses)
+      : null
+    const smallcapAligned = (!isIndex && showSuperCycle)
+      ? alignSeriesFromEnd(closes.length, smallcapCloses)
+      : null
     const buySell = (!isIndex && showBuySell)
       ? detectLakshmiBuySellSignals(highs, lows, closes, niftyAligned, buyP)
       : { buy: [], sell: [], trend: [] }
     const superCycle = (!isIndex && showSuperCycle)
-      ? calcLakshmiSuperCycle(highs, lows, closes, niftyAligned, scP)
+      ? calcLakshmiSuperCycle(highs, lows, closes, niftyAligned, {
+          ...scP,
+          midcapCloses: midcapAligned,
+          smallcapCloses: smallcapAligned,
+        })
       : null
     const candleBar = calcLakshmiCandleBarColors(opens, highs, lows, closes, volumes, barP)
     const lakshmiVol = calcLakshmiVolumeIndicator(
@@ -6582,6 +6594,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       lakshmiVol,
     }
   }, [seriesData, barInterval, intervalMeta, isIndex, showBuySell, showSuperCycle, niftyCloses,
+    midcapCloses, smallcapCloses,
     maP, rsiP, macdP, scP, buyP, barP, snortP, volP])
 
   useEffect(() => {
@@ -6615,9 +6628,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     return () => { cancelled = true; clearInterval(t) }
   }, [sym, isIndex, isIntraday, intradayFeatureOn])
 
-  // Nifty closes for Lakshmi Mata Buy RS gate (aligned from end to stock series).
+  // Index closes for Lakshmi Buy RS gate + Super Cycle multi-index RS table.
   useEffect(() => {
-    if (isIndex || !(showBuySell || showSuperCycle)) { setNiftyCloses(null); return }
+    if (isIndex || !(showBuySell || showSuperCycle)) {
+      setNiftyCloses(null)
+      setMidcapCloses(null)
+      setSmallcapCloses(null)
+      return
+    }
     let cancelled = false
     fetchIndexPriceHistory('Nifty 50')
       .then(res => {
@@ -6626,6 +6644,23 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         setNiftyCloses(Array.isArray(px) ? px : null)
       })
       .catch(() => { if (!cancelled) setNiftyCloses(null) })
+    if (showSuperCycle) {
+      fetchIndexPriceHistory('Midcap 150')
+        .then(res => {
+          if (cancelled) return
+          setMidcapCloses(Array.isArray(res?.prices) ? res.prices : null)
+        })
+        .catch(() => { if (!cancelled) setMidcapCloses(null) })
+      fetchIndexPriceHistory('Smallcap 250')
+        .then(res => {
+          if (cancelled) return
+          setSmallcapCloses(Array.isArray(res?.prices) ? res.prices : null)
+        })
+        .catch(() => { if (!cancelled) setSmallcapCloses(null) })
+    } else {
+      setMidcapCloses(null)
+      setSmallcapCloses(null)
+    }
     return () => { cancelled = true }
   }, [isIndex, showBuySell, showSuperCycle])
 
@@ -6804,8 +6839,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const padL = 8, padR = Math.max(44, Math.round(W*0.06)), padT = 8, gapH = 4, axisPad = 18
   // Reserve a strip above the volume pane for the Pine volume metrics table.
   const volTableH = showLakshmiVol ? (isMobile ? 48 : 40) : 0
+  // Reserve strip above Super Cycle for the TV-style RS rating history table.
+  const scTableH = showSuperCycle ? (isMobile ? 122 : 112) : 0
   const panelGaps = gapH + (showRSI ? gapH : 0) + (showMACD ? gapH : 0) + (showSuperCycle ? gapH : 0)
-  const usable = Math.max(160, H - padT - panelGaps - axisPad - volTableH)
+  const usable = Math.max(160, H - padT - panelGaps - axisPad - volTableH - scTableH)
   // When RSI/MACD/Super Cycle panes are on, shrink price/volume so everything fits.
   const extraPanes = (showRSI ? 1 : 0) + (showMACD ? 1 : 0) + (showSuperCycle ? 1 : 0)
   const priceShare = extraPanes === 0 ? (chartExpanded ? 0.52 : 0.58)
@@ -6887,6 +6924,38 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const vScSqOn = (superCycle?.squeezeOn||[]).slice(start)
   const vScSqRel = (superCycle?.squeezeRelease||[]).slice(start)
   const vScRating = (superCycle?.rsRating||[]).slice(start)
+  // Pine RS history table uses the last N bars of the full series (not the zoom window).
+  const scRsTable = (() => {
+    if (!showSuperCycle || !superCycle) return null
+    const lookback = 10
+    const len = (superCycle.rsRatingNifty || superCycle.rsRating || []).length
+    if (len < 1) return null
+    const last = len - 1
+    const days = []
+    for (let d = lookback - 1; d >= 0; d--) {
+      const i = last - d
+      if (i < 0) continue
+      const nifty = superCycle.rsRatingNifty?.[i] ?? superCycle.rsRating?.[i]
+      const mid = superCycle.rsRatingMidcap?.[i]
+      const sml = superCycle.rsRatingSmallcap?.[i]
+      const prevN = i > 0 ? (superCycle.rsRatingNifty?.[i - 1] ?? superCycle.rsRating?.[i - 1]) : null
+      const prevM = i > 0 ? superCycle.rsRatingMidcap?.[i - 1] : null
+      const prevS = i > 0 ? superCycle.rsRatingSmallcap?.[i - 1] : null
+      const cycleUp = !!superCycle.cycleUp?.[i]
+      const aboveMA = !!superCycle.rsAboveMA?.[i]
+      const sqOn = !!superCycle.squeezeOn?.[i]
+      const sqRel = !!superCycle.squeezeRelease?.[i]
+      const cond = (cycleUp ? 1 : 0) + (nifty != null && nifty >= 70 ? 1 : 0)
+        + (aboveMA ? 1 : 0) + (sqRel ? 1 : 0)
+      days.push({
+        hdr: d === 0 ? 'Today' : `${d}D`,
+        nifty, mid, sml, prevN, prevM, prevS,
+        cycleUp, aboveMA, sqOn, sqRel, cond,
+      })
+    }
+    return days.length ? days : null
+  })()
+  const scRsLatest = scRsTable?.length ? (scRsTable[scRsTable.length - 1].nifty) : null
   const vBarColor = (candleBarColors||[]).slice(start)
   const vBarTag = (candleBarTags||[]).slice(start)
   const vLvIv = (lakshmiVol?.ivDay||[]).slice(start)
@@ -6905,8 +6974,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   // Metrics table sits directly above the volume indicator (TV/Pine style).
   const volTableTop = padT + priceH + gapH
   const volTop = volTableTop + volTableH
-  // Super Cycle sits directly under volume; RSI/MACD follow below it.
-  const scTop = volTop + volH + (showSuperCycle ? gapH : 0)
+  // Super Cycle RS history table sits directly above the Super Cycle pane.
+  const scTableTop = volTop + volH + (showSuperCycle ? gapH : 0)
+  const scTop = scTableTop + scTableH
+  // RSI/MACD follow below Super Cycle.
   const rsiTop = scTop + scH + (showRSI ? gapH : 0)
   const macdTop = rsiTop + rsiH + (showMACD ? gapH : 0)
   const panesBottom = macdTop + macdH
@@ -7640,6 +7711,128 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           </div>
         )
       })()}
+      {/* Pine Super Cycle RS history table (TradingView-style) */}
+      {showSuperCycle && scRsTable && (() => {
+        const COL = {
+          hdr: '#1E1E2E', label: '#12121A', cell: '#1A1A28',
+          lime: '#00E676', red: '#FF1744', orange: '#FF9100', gray: '#78909C', white: '#E0E0E0',
+        }
+        const ratingColor = (r) => r == null ? COL.gray : r >= 70 ? COL.lime : r < 40 ? COL.red : COL.orange
+        const ratingCell = (curr, prev) => {
+          const icon = prev == null ? '⚪' : curr > prev ? '🟢' : curr < prev ? '🔴' : '⚪'
+          return `${icon} ${curr ?? '—'}`
+        }
+        const th = (txt) => (
+          <div key={txt} style={{
+            padding: isMobile ? '2px 3px' : '3px 5px', fontSize: isMobile ? 7 : 8, fontWeight: 700,
+            color: '#fff', background: COL.hdr, textAlign: 'center', whiteSpace: 'nowrap',
+            borderRight: '1px solid #2A2A3E',
+          }}>{txt}</div>
+        )
+        const lab = (txt) => (
+          <div style={{
+            padding: isMobile ? '2px 4px' : '3px 6px', fontSize: isMobile ? 7 : 8, fontWeight: 700,
+            color: '#fff', background: COL.label, whiteSpace: 'nowrap',
+            borderRight: '1px solid #2A2A3E', borderTop: '1px solid #2A2A3E',
+          }}>{txt}</div>
+        )
+        const td = (txt, color) => (
+          <div style={{
+            padding: isMobile ? '2px 3px' : '3px 4px', fontSize: isMobile ? 7 : 8, fontWeight: 700,
+            color: color || COL.white, background: COL.cell, textAlign: 'center', whiteSpace: 'nowrap',
+            borderRight: '1px solid #2A2A3E', borderTop: '1px solid #2A2A3E',
+          }}>{txt}</div>
+        )
+        const rows = [
+          {
+            label: 'NIFTY',
+            cells: scRsTable.map(d => ({ text: ratingCell(d.nifty, d.prevN), color: ratingColor(d.nifty) })),
+          },
+          {
+            label: 'MIDCAP',
+            cells: scRsTable.map(d => ({ text: ratingCell(d.mid, d.prevM), color: ratingColor(d.mid) })),
+          },
+          {
+            label: 'SMALLCAP',
+            cells: scRsTable.map(d => ({ text: ratingCell(d.sml, d.prevS), color: ratingColor(d.sml) })),
+          },
+          {
+            label: 'CYCLE',
+            cells: scRsTable.map(d => ({
+              text: d.cycleUp ? '🟢 ▲' : '🔴 ▼',
+              color: d.cycleUp ? COL.lime : COL.red,
+            })),
+          },
+          {
+            label: 'RS vs MA',
+            cells: scRsTable.map(d => ({
+              text: d.aboveMA ? '🟢 Y' : '🔴 N',
+              color: d.aboveMA ? COL.lime : COL.red,
+            })),
+          },
+          {
+            label: 'SQUEEZE',
+            cells: scRsTable.map(d => ({
+              text: d.sqRel ? '🟢 REL' : d.sqOn ? '🟠 ON' : '⚪ OFF',
+              color: d.sqRel ? COL.lime : d.sqOn ? COL.orange : COL.gray,
+            })),
+          },
+          {
+            label: 'CONDITIONS',
+            cells: scRsTable.map(d => ({
+              text: `${d.cond} / 4`,
+              color: d.cond >= 3 ? COL.lime : d.cond >= 2 ? COL.orange : COL.red,
+            })),
+          },
+        ]
+        return (
+          <div style={{
+            position: 'absolute',
+            left: padL,
+            width: chartW,
+            top: (scTableTop / H) * 100 + '%',
+            height: (scTableH / H) * 100 + '%',
+            zIndex: 4,
+            overflow: 'auto',
+            border: '1px solid #3A3A5C',
+            background: '#0D0D14',
+            boxSizing: 'border-box',
+            pointerEvents: 'auto',
+          }} title="Super Cycle RS Rating history (TradingView-style)">
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `minmax(58px,auto) repeat(${scRsTable.length}, minmax(32px,1fr))`,
+              width: '100%',
+              minWidth: isMobile ? 420 : undefined,
+            }}>
+              {th('INDEX')}
+              {scRsTable.map(d => th(d.hdr))}
+              {rows.map(row => (
+                <React.Fragment key={row.label}>
+                  {lab(row.label)}
+                  {row.cells.map((c, i) => (
+                    <React.Fragment key={`${row.label}-${i}`}>{td(c.text, c.color)}</React.Fragment>
+                  ))}
+                </React.Fragment>
+              ))}
+            </div>
+            <div style={{
+              display: 'flex', gap: 8, padding: '2px 6px', fontSize: 7, color: COL.white,
+              borderTop: '1px solid #2A2A3E', background: COL.label, flexWrap: 'wrap',
+              position: 'sticky', bottom: 0,
+            }}>
+              <span><span style={{color:COL.red}}>■</span> &lt;50 Weak</span>
+              <span><span style={{color:'#FFD600'}}>■</span> 50–70 Avg</span>
+              <span><span style={{color:COL.lime}}>■</span> &gt;70 Strong</span>
+              {scRsLatest != null && (
+                <span style={{marginLeft:'auto', fontWeight:800, color: ratingColor(scRsLatest)}}>
+                  Today RS {scRsLatest}
+                </span>
+              )}
+            </div>
+          </div>
+        )
+      })()}
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
         style={{
           width:'100%',
@@ -7905,18 +8098,20 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                   fill={LAKSHMI_VOL_COLORS.BULL_SNORT_ICON} textAnchor="middle">🐂</text>)
               }
               if (vLvHt[i]) {
-                nodes.push(<text key={`ht-ico-${i}`} x={x} y={yAbove0 - (a++) * 12} fontSize={9}
+                const yHt = yAbove0 - (a++) * 12
+                nodes.push(<text key={`ht-ico-${i}`} x={x} y={yHt} fontSize={9}
                   fill={LAKSHMI_BAR_COLORS.HT} textAnchor="middle"
                   style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>🚀</text>)
-                nodes.push(<text key={`ht-lbl-${i}`} x={x} y={yAbove0 - (a++) * 10} fontSize={7} fontWeight={800}
+                nodes.push(<text key={`ht-lbl-${i}`} x={x} y={yHt + 9} fontSize={7} fontWeight={800}
                   fill={LAKSHMI_BAR_COLORS.HT} textAnchor="middle"
                   style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>HT</text>)
               }
               if (vLvHy[i]) {
-                nodes.push(<text key={`hy-ico-${i}`} x={x} y={yAbove0 - (a++) * 12} fontSize={9}
+                const yHy = yAbove0 - (a++) * 12
+                nodes.push(<text key={`hy-ico-${i}`} x={x} y={yHy} fontSize={9}
                   fill={LAKSHMI_BAR_COLORS.HY} textAnchor="middle"
                   style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>🔥</text>)
-                nodes.push(<text key={`hy-lbl-${i}`} x={x} y={yAbove0 - (a++) * 10} fontSize={7} fontWeight={800}
+                nodes.push(<text key={`hy-lbl-${i}`} x={x} y={yHy + 9} fontSize={7} fontWeight={800}
                   fill={LAKSHMI_BAR_COLORS.HY} textAnchor="middle"
                   style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>HY</text>)
               }
@@ -8167,10 +8362,18 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         {showSuperCycle && (
           <g>
             <rect x={padL} y={scTop} width={chartW} height={scH} fill={C.card} opacity={0.4}/>
+            {/* Pine RS rating background bands */}
+            {scRsLatest != null && (
+              <rect x={padL} y={scTop} width={chartW} height={scH}
+                fill={scRsLatest > 70 ? '#00E676' : scRsLatest >= 50 ? '#FFD600' : '#FF1744'}
+                opacity={0.08}/>
+            )}
             <line x1={padL} y1={scTop} x2={padL+chartW} y2={scTop} stroke={C.border} strokeWidth={1} opacity={0.8}/>
             <line x1={padL} y1={scToY(0)} x2={padL+chartW} y2={scToY(0)}
               stroke={LAKSHMI_CYCLE_COLORS.ZERO} strokeWidth={0.7}/>
-            <text x={padL+4} y={scTop+11} fontSize={8} fontWeight={700} fill={C.muted}>Super Cycle</text>
+            <text x={padL+4} y={scTop+11} fontSize={8} fontWeight={700} fill={C.muted}>
+              Super Cycle{scRsLatest != null ? ` · RS ${scRsLatest}` : ''}
+            </text>
             {vScCycle.map((c,i)=>{
               if (c==null) return null
               const x = idxToX(i)

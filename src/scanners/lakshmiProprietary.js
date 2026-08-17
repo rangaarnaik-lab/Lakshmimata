@@ -545,22 +545,57 @@ function rollingLowest(arr, i, length) {
   return Number.isFinite(lo) ? lo : null
 }
 
+/** IBD-style RS rating vs a benchmark close series (aligned length). */
+function calcRSRatingVsBench(closes, benchAligned) {
+  const n = closes.length
+  const out = new Array(n).fill(null)
+  if (!Array.isArray(benchAligned) || benchAligned.length !== n) return out
+  const perf = (arr, i, len) => {
+    if (i < len || arr[i] == null || arr[i - len] == null || arr[i - len] === 0) return null
+    return ((arr[i] - arr[i - len]) / arr[i - len]) * 100
+  }
+  const rawRS = new Array(n).fill(null)
+  for (let i = 0; i < n; i++) {
+    const a = perf(closes, i, 63), b = perf(closes, i, 126)
+    const c = perf(closes, i, 189), d = perf(closes, i, 252)
+    const na = perf(benchAligned, i, 63), nb = perf(benchAligned, i, 126)
+    const nc = perf(benchAligned, i, 189), nd = perf(benchAligned, i, 252)
+    if ([a, b, c, d, na, nb, nc, nd].some(v => v == null)) continue
+    rawRS[i] = (a - na) * 0.4 + (b - nb) * 0.2 + (c - nc) * 0.2 + (d - nd) * 0.2
+  }
+  for (let i = 0; i < n; i++) {
+    if (rawRS[i] == null) continue
+    const hi = rollingHighest(rawRS, i, 252)
+    const lo = rollingLowest(rawRS, i, 252)
+    if (hi == null || lo == null || hi === lo) out[i] = 50
+    else out[i] = Math.round(((rawRS[i] - lo) / (hi - lo)) * 98 + 1)
+  }
+  return out
+}
+
 export function calcLakshmiSuperCycle(highs, lows, closes, niftyClosesAligned = null, opts = {}) {
   const length = opts.length ?? 21
   const rsMALength = opts.rsMALength ?? 9
   const momLength = opts.momLength ?? 21
   const bbMult = opts.bbMult ?? 2.0
   const kcMult = opts.kcMult ?? 1.5
+  const midcapAligned = opts.midcapCloses ?? null
+  const smallcapAligned = opts.smallcapCloses ?? null
   const n = closes.length
   const empty = {
     cycle: new Array(n).fill(null),
     cycleUp: new Array(n).fill(false),
+    cycleDown: new Array(n).fill(false),
     rsScaled: new Array(n).fill(null),
     momScaled: new Array(n).fill(null),
     maScaled: new Array(n).fill(null),
     squeezeOn: new Array(n).fill(false),
     squeezeRelease: new Array(n).fill(false),
     rsRating: new Array(n).fill(null),
+    rsRatingNifty: new Array(n).fill(null),
+    rsRatingMidcap: new Array(n).fill(null),
+    rsRatingSmallcap: new Array(n).fill(null),
+    rsAboveMA: new Array(n).fill(false),
     rsLine: new Array(n).fill(null),
   }
   if (n < length + 5) return empty
@@ -617,39 +652,27 @@ export function calcLakshmiSuperCycle(highs, lows, closes, niftyClosesAligned = 
   }
 
   const rsLine = new Array(n).fill(null)
-  const rsRating = new Array(n).fill(null)
   const niftyOk = Array.isArray(niftyClosesAligned) && niftyClosesAligned.length === n
   if (niftyOk) {
     for (let i = 0; i < n; i++) {
       const b = niftyClosesAligned[i]
       if (b && b !== 0 && closes[i] != null) rsLine[i] = (closes[i] / b) * 100
     }
-    // Pine: perf(src, len) => (src - src[len]) / src[len] * 100  (no abs)
-    const perf = (arr, i, len) => {
-      if (i < len || arr[i] == null || arr[i - len] == null || arr[i - len] === 0) return null
-      return ((arr[i] - arr[i - len]) / arr[i - len]) * 100
-    }
-    const rawRS = new Array(n).fill(null)
-    for (let i = 0; i < n; i++) {
-      const a = perf(closes, i, 63), b = perf(closes, i, 126)
-      const c = perf(closes, i, 189), d = perf(closes, i, 252)
-      const na = perf(niftyClosesAligned, i, 63), nb = perf(niftyClosesAligned, i, 126)
-      const nc = perf(niftyClosesAligned, i, 189), nd = perf(niftyClosesAligned, i, 252)
-      if ([a, b, c, d, na, nb, nc, nd].some(v => v == null)) continue
-      rawRS[i] = (a - na) * 0.4 + (b - nb) * 0.2 + (c - nc) * 0.2 + (d - nd) * 0.2
-    }
-    for (let i = 0; i < n; i++) {
-      if (rawRS[i] == null) continue
-      const hi = rollingHighest(rawRS, i, 252)
-      const lo = rollingLowest(rawRS, i, 252)
-      if (hi == null || lo == null || hi === lo) rsRating[i] = 50
-      else rsRating[i] = Math.round(((rawRS[i] - lo) / (hi - lo)) * 98 + 1)
-    }
   }
+
+  const rsRatingNifty = calcRSRatingVsBench(closes, niftyClosesAligned)
+  const rsRatingMidcap = calcRSRatingVsBench(closes, midcapAligned)
+  const rsRatingSmallcap = calcRSRatingVsBench(closes, smallcapAligned)
+  // Main / bgcolor source — Pine default "Main" uses Nifty benchmark rating
+  const rsRating = rsRatingNifty
 
   // Do NOT zero-fill na into EMA — that dragged RS/Mom far from Pine
   const rsLineMA = emaSeriesSkipNull(rsLine, rsMALength)
   const momLine = emaSeriesSkipNull(rsLine, momLength)
+  const rsAboveMA = new Array(n).fill(false)
+  for (let i = 0; i < n; i++) {
+    rsAboveMA[i] = rsLine[i] != null && rsLineMA[i] != null && rsLine[i] > rsLineMA[i]
+  }
 
   const rsScaled = new Array(n).fill(null)
   const momScaled = new Array(n).fill(null)
@@ -666,5 +689,9 @@ export function calcLakshmiSuperCycle(highs, lows, closes, niftyClosesAligned = 
     if (rsLineMA[i] != null) maScaled[i] = cLo + norm(rsLineMA[i]) * (cHi - cLo)
   }
 
-  return { cycle, cycleUp, cycleDown, rsScaled, momScaled, maScaled, squeezeOn, squeezeRelease, rsRating, rsLine }
+  return {
+    cycle, cycleUp, cycleDown, rsScaled, momScaled, maScaled,
+    squeezeOn, squeezeRelease, rsRating, rsRatingNifty, rsRatingMidcap, rsRatingSmallcap,
+    rsAboveMA, rsLine,
+  }
 }
