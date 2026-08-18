@@ -179,7 +179,7 @@ export const INDICATOR_PARAM_FIELDS = {
 
 const DEFAULT_ENABLED = {
   ma: true,
-  guppy: false,
+  guppy: true, // part of the Lakshmi Mata overlay — cloud on by default
   sr: true,
   rsi: true, // oscillator pane on by default
   macd: false,
@@ -258,7 +258,7 @@ export function defaultChartIndicatorPrefs() {
       params: { ...(DEFAULT_PARAMS[id] || {}) },
     }
   }
-  return { version: 3, indicators }
+  return { version: 4, indicators }
 }
 
 function clampNum(v, min, max, fallback) {
@@ -300,7 +300,8 @@ export function normalizeChartIndicatorPrefs(raw) {
         cleanParam(f, params[f.key], base.indicators[id].params[f.key])
     }
   }
-  // v2: Super Cycle + RSI; v3: Lakshmi Volume on
+  // v2: Super Cycle + RSI; v3: Lakshmi Volume on;
+  // v4: Guppy joins the Lakshmi Mata price overlay, so its cloud comes on once.
   const prevVer = Number(raw.version) || 1
   if (prevVer < 2) {
     base.indicators.supercycle.enabled = true
@@ -309,7 +310,10 @@ export function normalizeChartIndicatorPrefs(raw) {
   if (prevVer < 3) {
     base.indicators.lakshmivol.enabled = true
   }
-  base.version = 3
+  if (prevVer < 4) {
+    base.indicators.guppy.enabled = true
+  }
+  base.version = 4
   return base
 }
 

@@ -3074,7 +3074,9 @@ function StockDetail({s}){
   )
 }
 
-function StockCard({s,i,onChart}){
+function StockCard({s,i,onChart,onCompanyPage}){
+  const layout=useContext(RsLayoutContext)
+  const companyPage=onCompanyPage||layout.openCompanyPage
   const [open,setOpen]=useState(false)
   return(
     <div style={{background:C.card,border:`1px solid ${open?C.accent+'55':C.border}`,
@@ -3086,7 +3088,10 @@ function StockCard({s,i,onChart}){
               border:`1px solid ${rsColor(s.rs)}55`,display:'flex',alignItems:'center',
               justifyContent:'center',fontSize:11,fontWeight:800,color:C.muted}}>{i+1}</div>
             <div>
-              <div style={{fontWeight:800,fontSize:16}}>{s.sym}</div>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <span style={{fontWeight:800,fontSize:16}}>{s.sym}</span>
+                <CompanyLinkIcon sym={s.sym} onOpen={companyPage} size={13}/>
+              </div>
               <div style={{fontSize:10,color:C.muted}}>{s.sector}</div>
               <div style={{display:'flex',gap:4,marginTop:3,flexWrap:'wrap'}}>
                 {(()=>{
@@ -6643,6 +6648,29 @@ const INTRADAY_TOOLBAR = [
   ['1H','60','1 hour'],
 ]
 const TV_TOOLBAR_BLUE = '#2962ff'
+
+/**
+ * "Lakshmi Mata" is the main price overlay, matching the Pine study: EMA
+ * lines plus the Guppy cloud. They stay separate plots internally so either
+ * can be switched off, but the list shows one parent with both inside.
+ */
+const INDICATOR_BUNDLES = {
+  lakshmimata: [
+    { id: 'ma', label: 'EMA / MA lines' },
+    { id: 'guppy', label: 'Guppy cloud (GMMA)' },
+  ],
+}
+const BUNDLED_CHILD_IDS = new Set(
+  Object.values(INDICATOR_BUNDLES).flat().map(b => b.id)
+)
+
+/** Own fields plus every bundled child's — decides the gear and the tab set. */
+function indSettingsFields(id) {
+  const own = INDICATOR_PARAM_FIELDS[id] || []
+  const kids = (INDICATOR_BUNDLES[id] || [])
+    .flatMap(b => INDICATOR_PARAM_FIELDS[b.id] || [])
+  return own.concat(kids)
+}
 const BULL_SNORT_COLOR = LAKSHMI_BUY_SELL_COLORS.BULL_SNORT
 
 /** Nice round price-axis ticks (TradingView-style), not raw min/max fractions. */
@@ -7495,7 +7523,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   // ── Layout: SVG viewBox matches the measured panel so the chart fills the device ──
   const W = chartBox.w
   const H = chartBox.h
-  const padL = 8, padT = 8, gapH = 4, axisPad = 18
+  // axisPad must clear the date row *and* the crosshair date pill that sits
+  // on it (rect spans axisY-9 → axisY+5, with axisY = panesBottom + 16).
+  const padL = 8, padT = 8, gapH = 4, axisPad = 24
   // Price scale width: auto by default, or the width the user dragged it to.
   const padR = chartLayout.axisW != null
     ? Math.min(AXIS_W_MAX, Math.max(AXIS_W_MIN, chartLayout.axisW))
@@ -7527,7 +7557,11 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const scTableH = scShowTable && !scTableOverlay && !scTableBelow ? scTableBoxH : 0
   const scTableFootH = scShowTable && scTableBelow ? scTableBoxH : 0
   const panelGaps = gapH + (showRSI ? gapH : 0) + (showMACD ? gapH : 0) + (showSuperCycle ? gapH : 0)
-  const usable = Math.max(160, H - padT - panelGaps - axisPad - volTableH - volMarkerH - scTableH)
+  // Every fixed strip has to come out of the height before the panes divide
+  // what's left — including tables parked *below* their pane, or the stack
+  // runs off the bottom of the SVG and takes the date axis with it.
+  const fixedStrips = volTableH + volTableFootH + volMarkerH + scTableH + scTableFootH
+  const usable = Math.max(160, H - padT - panelGaps - axisPad - fixedStrips)
   // When RSI/MACD/Super Cycle panes are on, shrink price/volume so everything fits.
   const extraPanes = (showRSI ? 1 : 0) + (showMACD ? 1 : 0) + (showSuperCycle ? 1 : 0)
   const basePriceShare = extraPanes === 0 ? (chartExpanded ? 0.52 : 0.58)
@@ -8293,7 +8327,16 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const applyRangePreset = (r) => { setZoomBars(zoomBarsForRange(r)); setPanOffset(0) }
 
   // TradingView-style indicator catalog (overlays / oscillators / signals)
-  const chartIndicators = [
+  const chartIndicatorsAll = [
+    // Main price overlay — the parent row for the EMA lines and Guppy cloud.
+    { id:'lakshmimata', group:'Overlays', label:'Lakshmi Mata', short:'Lakshmi',
+      desc:'EMA / moving average lines + Guppy cloud (GMMA) on price',
+      on: showMA || showGuppy,
+      set: (v)=>{
+        const next = typeof v === 'function' ? v(showMA || showGuppy) : v
+        setShowMA(next)
+        setShowGuppy(next)
+      } },
     { id:'ma', group:'Overlays', label:'Moving Average', short:'MA', desc:'', on:showMA, set:setShowMA },
     { id:'guppy', group:'Overlays', label:'Guppy MMA', short:'Guppy', desc:'', on:showGuppy, set:setShowGuppy },
     { id:'sr', group:'Overlays', label:'Support & Resistance', short:'S/R', desc:'', on:showSR, set:setShowSR },
@@ -8312,6 +8355,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     { id:'forecast', group:'Signals', label:'Forecast', short:'Forecast', desc:'', on:showForecast, set:setShowForecast },
     { id:'circuit', group:'Overlays', label:'Circuit Band (UC / LC)', short:'UC/LC', desc:'', on:showCircuit, set:setShowCircuit },
   ]
+  // Children of a bundle are configured inside their parent, not as their own rows.
+  const chartIndicators = chartIndicatorsAll.filter(i => !BUNDLED_CHILD_IDS.has(i.id))
   const indQ = indSearch.trim().toLowerCase()
   const filteredIndicators = indQ
     ? chartIndicators.filter(i =>
@@ -8663,13 +8708,13 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                               ) : null}
                             </span>
                           </button>
-                          {INDICATOR_PARAM_FIELDS[ind.id]?.length > 0 && (
+                          {indSettingsFields(ind.id).length > 0 && (
                             <button type="button" title="Settings"
                               onClick={(e)=>{
                                 e.stopPropagation()
                                 setIndSettingsId(s => s===ind.id ? null : ind.id)
                                 setIndSettingsTab(
-                                  (INDICATOR_PARAM_FIELDS[ind.id] || []).some(f => (f.tab||'inputs')==='inputs')
+                                  indSettingsFields(ind.id).some(f => (f.tab||'inputs')==='inputs')
                                     ? 'inputs' : 'style'
                                 )
                               }}
@@ -8681,38 +8726,27 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                               }}>⚙</button>
                           )}
                         </div>
-                        {indSettingsId===ind.id && INDICATOR_PARAM_FIELDS[ind.id] && (() => {
-                          const all = INDICATOR_PARAM_FIELDS[ind.id]
+                        {indSettingsId===ind.id && indSettingsFields(ind.id).length > 0 && (() => {
+                          const own = INDICATOR_PARAM_FIELDS[ind.id] || []
+                          const all = indSettingsFields(ind.id)
                           const tabs = [
                             { id:'inputs', label:'Inputs' },
                             { id:'style',  label:'Style' },
                           ].filter(t => all.some(f => (f.tab||'inputs')===t.id))
                           const tab = tabs.some(t => t.id===indSettingsTab) ? indSettingsTab : tabs[0]?.id
-                          const fields = all.filter(f => (f.tab||'inputs')===tab)
-                          const vals = indParams(indPrefs, ind.id)
-                          const setVal = (key, value) =>
-                            setIndPrefs(p => setIndicatorParam(p, ind.id, key, value))
+                          const fields = own.filter(f => (f.tab||'inputs')===tab)
                           const inputBox = {
                             width:'100%', boxSizing:'border-box',
                             padding:'5px 7px', borderRadius:4, border:`1px solid ${C.border}`,
                             background:C.card, color:C.text, fontSize:12, fontFamily:'inherit',
                           }
-                          return (
-                            <div style={{padding:'6px 14px 10px 40px', background:C.bg||'#0e1117'}}>
-                              <div style={{display:'flex', gap:2, marginBottom:8}}>
-                                {tabs.map(t=>(
-                                  <button key={t.id} type="button"
-                                    onClick={()=>setIndSettingsTab(t.id)}
-                                    style={{
-                                      padding:'3px 9px', border:'none', borderRadius:3, cursor:'pointer',
-                                      fontFamily:'inherit', fontSize:10, fontWeight:700,
-                                      background: tab===t.id ? TV_TOOLBAR_BLUE+'22' : 'transparent',
-                                      color: tab===t.id ? TV_TOOLBAR_BLUE : C.muted,
-                                    }}>{t.label}</button>
-                                ))}
-                              </div>
+                          const fieldGrid = (ownerId, list) => {
+                            const vals = indParams(indPrefs, ownerId)
+                            const setVal = (key, value) =>
+                              setIndPrefs(p => setIndicatorParam(p, ownerId, key, value))
+                            return (
                               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
-                                {fields.map(f=>{
+                                {list.map(f=>{
                                   if (f.type === 'bool') return (
                                     <label key={f.key} style={{
                                       display:'flex', alignItems:'center', gap:6, fontSize:10, color:C.muted,
@@ -8760,8 +8794,64 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                                   )
                                 })}
                               </div>
+                            )
+                          }
+                          const bundles = (INDICATOR_BUNDLES[ind.id] || [])
+                            .map(b => ({
+                              ...b,
+                              entry: chartIndicatorsAll.find(x => x.id === b.id),
+                              fields: (INDICATOR_PARAM_FIELDS[b.id] || [])
+                                .filter(f => (f.tab||'inputs')===tab),
+                            }))
+                            .filter(b => b.entry)
+                          return (
+                            <div style={{padding:'6px 14px 10px 40px', background:C.bg||'#0e1117'}}>
+                              <div style={{display:'flex', gap:2, marginBottom:8}}>
+                                {tabs.map(t=>(
+                                  <button key={t.id} type="button"
+                                    onClick={()=>setIndSettingsTab(t.id)}
+                                    style={{
+                                      padding:'3px 9px', border:'none', borderRadius:3, cursor:'pointer',
+                                      fontFamily:'inherit', fontSize:10, fontWeight:700,
+                                      background: tab===t.id ? TV_TOOLBAR_BLUE+'22' : 'transparent',
+                                      color: tab===t.id ? TV_TOOLBAR_BLUE : C.muted,
+                                    }}>{t.label}</button>
+                                ))}
+                              </div>
+                              {fieldGrid(ind.id, fields)}
+                              {bundles.map(b=>(
+                                <div key={b.id} style={{marginTop:10, paddingTop:8, borderTop:`1px solid ${C.border}`}}>
+                                  <label style={{
+                                    display:'flex', alignItems:'center', gap:6, marginBottom:6,
+                                    cursor: b.entry.blocked ? 'default' : 'pointer',
+                                  }}>
+                                    <input type="checkbox"
+                                      checked={!!b.entry.on}
+                                      disabled={b.entry.blocked}
+                                      onChange={()=>b.entry.set(v=>!v)}
+                                      style={{accentColor:TV_TOOLBAR_BLUE, cursor:'inherit', margin:0}}/>
+                                    <span style={{fontSize:10.5, fontWeight:800,
+                                      color: b.entry.on ? TV_TOOLBAR_BLUE : C.muted}}>
+                                      {b.label}
+                                    </span>
+                                    {!b.entry.on && (
+                                      <span style={{fontSize:9, color:C.muted}}>· off — tick to plot</span>
+                                    )}
+                                  </label>
+                                  {b.fields.length>0 && (
+                                    <div style={{opacity: b.entry.on ? 1 : 0.45,
+                                      pointerEvents: b.entry.on ? 'auto' : 'none'}}>
+                                      {fieldGrid(b.id, b.fields)}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
                               <button type="button"
-                                onClick={()=>setIndPrefs(p => resetIndicatorParams(p, ind.id))}
+                                onClick={()=>setIndPrefs(p => {
+                                  let next = resetIndicatorParams(p, ind.id)
+                                  for (const b of bundles) next = resetIndicatorParams(next, b.id)
+                                  return next
+                                })}
                                 style={{
                                   marginTop:8, padding:'3px 8px', border:`1px solid ${C.border}`, borderRadius:3,
                                   background:'transparent', color:C.muted, fontSize:10, fontWeight:600,
@@ -10740,6 +10830,9 @@ const RsLayoutContext = React.createContext({
   colOrder: ['trend','signals','stage','squeeze','wl52','weakrs','mcap','pe','roe','de','prom','fundRating','resultRating'],
   visibleRsCols: {},
   resultRatingsMap: {},
+  // Every stock row in the app can open a company page, so it rides the
+  // context instead of being threaded through a dozen table components.
+  openCompanyPage: null,
 })
 
 const RS_OPTIONAL_COL_ORDER_DEFAULT = ['trend','signals','stage','squeeze','wl52','weakrs','mcap','pe','roe','de','prom','fundRating','resultRating']
@@ -12162,8 +12255,36 @@ function fmtMarketCap(cr){
   return `₹${Math.round(v)} Cr`
 }
 
+/**
+ * Small ↗ beside a symbol — opens that company's detail page (About /
+ * Fundamentals / Results / Concall) instead of just the chart.
+ */
+function CompanyLinkIcon({sym, onOpen, size=11}){
+  const [hover,setHover]=useState(false)
+  if(!onOpen) return null
+  const go=(e)=>{ e.stopPropagation(); onOpen(sym) }
+  return(
+    <span role="button" tabIndex={0}
+      title={`Open ${sym} company page — about, fundamentals, results`}
+      onClick={go}
+      onKeyDown={e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(e) } }}
+      onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+      style={{display:'inline-flex',alignItems:'center',lineHeight:0,flexShrink:0,
+        cursor:'pointer',padding:1,borderRadius:3,
+        color:hover?C.accent:C.muted,opacity:hover?1:0.7,
+        background:hover?C.accent+'1a':'transparent',transition:'color .12s,opacity .12s'}}>
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M14 4h6v6"/>
+        <path d="M20 4 11 13"/>
+        <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>
+      </svg>
+    </span>
+  )
+}
+
 /** Hover menu on a stock symbol — company snapshot, then chart links. */
-function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpenChart, children}){
+function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpenChart, onCompanyPage, children}){
   const [open,setOpen]=useState(false)
   const hideTimer=useRef(null)
   const layout=useContext(RsLayoutContext)
@@ -12238,6 +12359,18 @@ function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpen
               </div>
             )
           })()}
+          {onCompanyPage&&(
+            <button type="button" role="menuitem"
+              onClick={e=>{e.stopPropagation(); setOpen(false); onCompanyPage(sym)}}
+              onMouseEnter={e=>{e.currentTarget.style.background=C.rowHover}}
+              onMouseLeave={e=>{e.currentTarget.style.background='transparent'}}
+              style={itemStyle}>
+              Company page ↗
+              <div style={{fontSize:9,fontWeight:500,color:C.muted,marginTop:1}}>
+                About · fundamentals · results
+              </div>
+            </button>
+          )}
           {showOurChart&&(
             <button type="button" role="menuitem"
               onClick={e=>{e.stopPropagation(); setOpen(false); (onOurChart||onOpenChart)?.(sym)}}
@@ -12274,9 +12407,10 @@ function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpen
   )
 }
 
-function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder,showOurChartHover=true,onOurChart}){
+function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder,showOurChartHover=true,onOurChart,onCompanyPage}){
   const layout=useContext(RsLayoutContext)
   const [open,setOpen]=useState(false)
+  const companyPage=onCompanyPage||layout.openCompanyPage
   const vis=visibleRsCols||layout.visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true,resultRating:true}
   const order=normalizeRsColOrder(rsColOrder||layout.colOrder)
   const COLS=computeRsGridCols(vis, order)
@@ -12302,13 +12436,15 @@ function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder,showOurChartHover=true
               stock={s}
               showOurChart={showOurChartHover}
               onOurChart={onOurChart}
-              onOpenChart={onChart}>
+              onOpenChart={onChart}
+              onCompanyPage={companyPage}>
               <span onClick={e=>{e.stopPropagation();onChart&&onChart(s.sym)}}
                 style={{fontWeight:600,fontSize:12,color:C.accent,
                   letterSpacing:'0.01em',cursor:'pointer',textDecoration:'underline',
                   textDecorationColor:C.accent+'55',textUnderlineOffset:'2px'}}
                 title={`Hover for company snapshot · click to open`}>{s.sym}</span>
             </SymbolHoverMenu>
+            <CompanyLinkIcon sym={s.sym} onOpen={companyPage}/>
             {s.pp.isPP&&<span style={{fontSize:9,color:C.orange,fontWeight:700}}>PP</span>}
             {s.hy.isHY&&<span style={{fontSize:9,color:C.blue,fontWeight:700}}>HY</span>}
             {s.ht.isHT&&<span style={{fontSize:9,color:C.purple,fontWeight:700}}>HT</span>}
@@ -14967,6 +15103,22 @@ export default function App(){
     })
   },[isMobile,mainTab])
   const openOurChart=useCallback((sym)=>openChart(sym,{chartTab:'own'}),[openChart])
+  /**
+   * ↗ beside a symbol — the company page. Same Details panel the chart uses,
+   * but forced open on About even when the user normally keeps it closed.
+   */
+  const openCompanyPage=useCallback((sym)=>{
+    if(!sym) return
+    setChartDetailTabHint('about')
+    openChart(sym,{isIndex:false})
+    if(isMobile||isFullWidthMainTab(mainTab)) return
+    // Deliberately not persisted — opening one company page shouldn't change
+    // whether Details follows every future symbol click.
+    setPanelWins(w=>({
+      ...w,
+      detail:{...(w.detail||{}),open:true,minimized:false},
+    }))
+  },[openChart,isMobile,mainTab])
   const prevChartSymRef=useRef(null)
   useEffect(()=>{
     // First pick from null (e.g. auto-open on RS) — open chart; Details only if pref says so.
@@ -16857,7 +17009,7 @@ export default function App(){
   const scanLabel=activeWlObj?`📋 ${activeWlObj.name} (${activeWlObj.stocks.length})`:({all:'All',nifty50:'Nifty 50',midcap:'Midcap',smallcap:'Smallcap'}[indexFilter])
 
   return (
-    <RsLayoutContext.Provider value={{colOrder:rsColOrder, visibleRsCols, resultRatingsMap}}>
+    <RsLayoutContext.Provider value={{colOrder:rsColOrder, visibleRsCols, resultRatingsMap, openCompanyPage}}>
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:"'Inter','SF Pro Display',sans-serif",
       color:C.text,fontSize:13,display:'flex',flexDirection:'row',zoom:zoomLevel}}>
 
@@ -18071,7 +18223,7 @@ export default function App(){
               </div>
             )}
             {displayedRS.length>0&&(
-              isMobile?pagedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={openChart}/>):(
+              isMobile?pagedRS.map((s,i)=><StockCard key={s.sym} s={s} i={i} onChart={openChart} onCompanyPage={openCompanyPage}/>):(
                 <>
                 <div style={{fontSize:10,color:C.muted,marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
                   ↔ Drag the table left/right (or use the scrollbar) to see all columns
