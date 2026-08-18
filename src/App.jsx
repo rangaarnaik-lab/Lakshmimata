@@ -7,6 +7,11 @@ import {
   loadChartDrawings, saveChartDrawings, newDrawingId, nextDrawColor, DRAW_TOOLS,
 } from './lib/chartDrawings'
 import {
+  loadChartAlerts, chartAlertsFor, upsertChartAlert, removeChartAlert, removeChartAlertsFor,
+  evaluateChartAlerts, newChartAlertId, describeChartAlert, conditionLabel,
+  ALERT_CONDITIONS, ALERT_TRIGGERS,
+} from './lib/chartAlerts'
+import {
   loadChartIndicatorPrefs, persistChartIndicatorPrefsLocal, normalizeChartIndicatorPrefs,
   setIndicatorEnabled, setIndicatorParam, resetIndicatorParams, INDICATOR_PARAM_FIELDS,
   indEnabled, indParams, defaultChartIndicatorPrefs,
@@ -1738,6 +1743,10 @@ const DEFAULT_ALERT_PREFS={
   soundVolume:0.7,
   annResults:true, annPpt:true, annConcall:true, annTranscript:true,
   annOrders:true, annBoard:true, annDiv:true, annOther:true,
+  // Saved-scanner alerts: fire when a stock newly enters a saved scanner's
+  // result set. scannerAlertIds holds the ids the user opted in to.
+  scannerAlerts:true,
+  scannerAlertIds:[],
 }
 const ALERT_PREF_OPTIONS=[
   {key:'watchlistOnly', label:'Watchlist only', icon:'📋'},
@@ -1788,7 +1797,23 @@ function normalizeAlertPrefs(raw){
   const vol=Number(next.soundVolume)
   next.soundVolume=Number.isFinite(vol)?Math.min(1,Math.max(0,vol)):DEFAULT_ALERT_PREFS.soundVolume
   next.soundEnabled=next.soundEnabled!==false
+  next.scannerAlerts=next.scannerAlerts!==false
+  next.scannerAlertIds=Array.isArray(next.scannerAlertIds)
+    ? [...new Set(next.scannerAlertIds.map(String))]
+    : []
   return next
+}
+
+/** Symbols currently matching a saved scanner, remembered between reloads. */
+const SCANNER_ALERT_SEEN_KEY='lakshmimata-scanner-alert-seen'
+function loadScannerAlertSeen(){
+  try{
+    const raw=JSON.parse(localStorage.getItem(SCANNER_ALERT_SEEN_KEY)||'null')
+    return raw&&typeof raw==='object'?raw:{}
+  }catch{ return {} }
+}
+function persistScannerAlertSeen(map){
+  try{ localStorage.setItem(SCANNER_ALERT_SEEN_KEY, JSON.stringify(map||{})) }catch{/* ignore */}
 }
 /** Map squeeze_alerts.fire_type → which pref keys it matches. */
 function alertPrefKeysForFireType(fireType){
@@ -1848,12 +1873,13 @@ function pushNotifHistory(entry){
     const item={
       id: entry.id || `${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
       at: entry.at || new Date().toISOString(),
-      kind: entry.kind || 'signal', // 'signal' | 'announcement'
+      kind: entry.kind || 'signal', // 'signal' | 'announcement' | 'scanner' | 'price'
       sym: entry.sym || '',
       title: entry.title || '',
       body: entry.body || '',
       category: entry.category || null,
       fireType: entry.fireType || null,
+      scannerId: entry.scannerId || null,
     }
     const next=[item, ...loadNotifHistory().filter(h=>h.id!==item.id)].slice(0, NOTIF_HISTORY_MAX)
     localStorage.setItem(NOTIF_HISTORY_KEY, JSON.stringify(next))
@@ -1904,7 +1930,7 @@ function NotifHistoryList({items, colors:C, onClear, emptyText='No notifications
               }}>
               <div style={{display:'flex',justifyContent:'space-between',gap:8,alignItems:'baseline'}}>
                 <span style={{fontSize:11,fontWeight:700,color:C.text}}>
-                  {h.kind==='announcement'?'📢':'🔔'} {h.sym||'—'}
+                  {h.kind==='announcement'?'📢':h.kind==='scanner'?'🔎':h.kind==='price'?'🎯':'🔔'} {h.sym||'—'}
                   {h.category?` · ${h.category}`:''}
                   {h.fireType&&h.kind==='signal'?` · ${h.fireType}`:''}
                 </span>
@@ -1936,9 +1962,68 @@ function alertNotificationTitle(alert){
   return `🔔 ${alert.sym} — ${t||'Alert'}`
 }
 
-function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestPermission, colors:C, cloudSynced, notifHistory=[], onClearHistory, onHistoryClick}){
+/**
+ * Symbols an open chart is polling tick-by-tick. The app-wide alert check
+ * skips them: mixing a live LTP with the scan's slightly older close on the
+ * same alert can fake a crossing back and forth across the level.
+ */
+const LIVE_POLLED_SYMS = new Set()
+
+/**
+ * Notify for price alerts drawn on the chart. Shared by the chart's live
+ * poll and the app-wide scan refresh, so the same alert never announces
+ * itself twice in two different styles.
+ */
+function fireChartAlertNotifications(fired, prefs, onOpenSymbol){
+  if(!fired?.length) return
+  playAlertSoundFromPrefs(prefs)
+  fired.forEach(a=>{
+    const px=Number(a.firedPrice)
+    const level=Number(a.price)
+    const title=`🔔 ${a.sym} — ${conditionLabel(a.condition)} ${level>=1000?level.toFixed(0):level.toFixed(2)}`
+    const body=[
+      `Last ${px>=1000?px.toFixed(0):px.toFixed(2)}`,
+      a.note?`· ${a.note}`:'',
+      a.trigger==='once'?'· alert stopped':'',
+    ].filter(Boolean).join(' ')
+    pushNotifHistory({
+      id:`price-${a.id}-${a.lastFiredAt||Date.now()}`,
+      at:new Date(a.lastFiredAt||Date.now()).toISOString(),
+      kind:'price',
+      sym:a.sym,
+      title,
+      body,
+    })
+    if(typeof Notification!=='undefined' && Notification.permission==='granted'){
+      const n=new Notification(title,{
+        body,
+        icon:'/favicon.ico',
+        tag:`price-${a.id}`,
+        requireInteraction:false,
+        silent:prefs?.soundEnabled!==false,
+      })
+      n.onclick=()=>{ window.focus(); onOpenSymbol?.(a.sym) }
+      setTimeout(()=>n.close(), 8000)
+    }
+  })
+}
+
+function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestPermission, colors:C, cloudSynced, notifHistory=[], onClearHistory, onHistoryClick, savedScanners=[], onOpenSymbol}){
   const [open,setOpen]=useState(false)
   const [menuSection,setMenuSection]=useState('settings') // 'settings' | 'history'
+  // Price alerts drawn on the chart — listed here so they're manageable
+  // without hunting for the symbol they belong to.
+  const [priceAlerts,setPriceAlerts]=useState(()=>loadChartAlerts())
+  useEffect(()=>{
+    const refresh=()=>setPriceAlerts(loadChartAlerts())
+    refresh()
+    window.addEventListener('lm-chart-alerts', refresh)
+    window.addEventListener('storage', refresh)
+    return ()=>{
+      window.removeEventListener('lm-chart-alerts', refresh)
+      window.removeEventListener('storage', refresh)
+    }
+  },[open])
   const enabledCount=ALERT_PREF_OPTIONS.filter(o=>{
     if(o.key==='watchlistOnly') return prefs.watchlistOnly===true
     return prefs[o.key]!==false
@@ -1960,6 +2045,8 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
   const soundId=prefs.soundId||DEFAULT_ALERT_PREFS.soundId
   const soundVolume=Number.isFinite(Number(prefs.soundVolume))?Number(prefs.soundVolume):DEFAULT_ALERT_PREFS.soundVolume
   const annHistory=(notifHistory||[]).filter(h=>h.kind==='announcement')
+  const scannerAlertsOn=prefs.scannerAlerts!==false
+  const scannerAlertIds=Array.isArray(prefs.scannerAlertIds)?prefs.scannerAlertIds.map(String):[]
   if(typeof Notification==='undefined') return null
   if(notifPermission!=='granted'){
     return(
@@ -2195,6 +2282,92 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
                 All off
               </button>
             </div>
+
+            {/* Saved-scanner alerts — fire when a stock newly matches one of
+                the user's saved scanners. */}
+            <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
+              letterSpacing:'0.05em',marginTop:12,marginBottom:4,
+              borderTop:`1px solid ${C.divider}`,paddingTop:10}}>
+              Scanner alerts
+            </div>
+            <label style={{display:'flex',alignItems:'center',gap:8,padding:'4px 2px',cursor:'pointer'}}>
+              <input type="checkbox" checked={scannerAlertsOn}
+                onChange={()=>applyPrefs({...prefs, scannerAlerts: !scannerAlertsOn})}
+                style={{accentColor:C.accent,width:14,height:14,cursor:'pointer'}}/>
+              <span style={{fontSize:11,color:scannerAlertsOn?C.text:C.muted}}>
+                Alert on new saved-scanner matches
+              </span>
+            </label>
+            <div style={{opacity:scannerAlertsOn?1:0.45,pointerEvents:scannerAlertsOn?'auto':'none'}}>
+              {savedScanners.length===0?(
+                <div style={{fontSize:10,color:C.muted,padding:'4px 2px'}}>
+                  No saved scanners yet — set your filters, then use “Save scanner”.
+                </div>
+              ):savedScanners.map(sc=>{
+                const id=String(sc.id)
+                const on=scannerAlertIds.includes(id)
+                return(
+                  <label key={id}
+                    style={{display:'flex',alignItems:'center',gap:8,padding:'3px 2px',cursor:'pointer'}}>
+                    <input type="checkbox" checked={on}
+                      onChange={()=>{
+                        const next=on
+                          ? scannerAlertIds.filter(x=>x!==id)
+                          : [...scannerAlertIds, id]
+                        applyPrefs({...prefs, scannerAlertIds: next})
+                      }}
+                      style={{accentColor:C.accent,width:13,height:13,cursor:'pointer'}}/>
+                    <span style={{fontSize:11,color:on?C.text:C.muted,overflow:'hidden',
+                      textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                      🔎 {sc.name||'Untitled scanner'}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+            {savedScanners.length>0&&(
+              <div style={{fontSize:9,color:C.muted,marginTop:4,lineHeight:1.4}}>
+                Checked scanners re-run on every data refresh; you get one alert per
+                symbol the first time it enters the list.
+              </div>
+            )}
+
+            {/* Price alerts placed on Our Chart */}
+            <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
+              letterSpacing:'0.05em',marginTop:12,marginBottom:4,
+              borderTop:`1px solid ${C.divider}`,paddingTop:10}}>
+              Price alerts {priceAlerts.length?`(${priceAlerts.length})`:''}
+            </div>
+            {priceAlerts.length===0?(
+              <div style={{fontSize:10,color:C.muted,padding:'2px 2px',lineHeight:1.45}}>
+                None yet — open a chart, pick the 🔔 Alert tool (or press Alt+A) and
+                click the level you want to watch.
+              </div>
+            ):(
+              <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                {priceAlerts.map(a=>(
+                  <div key={a.id}
+                    style={{display:'flex',alignItems:'center',gap:6,padding:'4px 6px',borderRadius:5,
+                      border:`1px solid ${C.border}`,background:C.bg}}>
+                    <button type="button"
+                      onClick={()=>{ onOpenSymbol?.(a.sym); setOpen(false) }}
+                      title="Open this chart"
+                      style={{flex:1,textAlign:'left',border:'none',background:'transparent',padding:0,
+                        color:a.active?C.text:C.muted,fontSize:10,fontWeight:700,cursor:'pointer',
+                        overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                      {a.active?'🔔':'🔕'} {describeChartAlert(a)}
+                      <span style={{color:C.muted,fontWeight:600}}>
+                        {' '}· {a.trigger==='once'?'once':'repeat'}
+                        {a.note?` · ${a.note}`:''}
+                      </span>
+                    </button>
+                    <span role="button" title="Delete alert"
+                      onClick={()=>{ removeChartAlert(a.id); setPriceAlerts(loadChartAlerts()) }}
+                      style={{cursor:'pointer',color:C.muted,fontSize:11,fontWeight:700}}>×</span>
+                  </div>
+                ))}
+              </div>
+            )}
             </>)}
           </div>
         </>
@@ -6650,6 +6823,16 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const [drawings, setDrawings] = useState([])
   const [drawDraft, setDrawDraft] = useState(null) // { type, p1, p2? }
   const [measureBox, setMeasureBox] = useState(null) // ruler result: { p1, p2 }
+  // TradingView-style price alerts pinned to the price scale.
+  const [alerts, setAlerts] = useState(() => chartAlertsFor(sym))
+  const [alertDraft, setAlertDraft] = useState(null)   // {price, condition, trigger, note} while creating
+  const [alertMenuId, setAlertMenuId] = useState(null) // open alert's settings popover
+  const [alertHoverId, setAlertHoverId] = useState(null)
+  const [paneCtrlHover, setPaneCtrlHover] = useState(null) // pane whose move buttons are hovered
+  const alertDragRef = useRef(null)                    // {id, price} while dragging a level
+  // Latest rendered close, so keyboard shortcuts and the live-price poll can
+  // reach it without re-registering their listeners on every tick.
+  const lastPriceRef = useRef(null)
   const chartHoverRef = useRef(false)
   const navRef = useRef({ barsToShow: 60, maxPanOffset: 0, n: 60, minZoom: 5 })
   const [selectedDrawId, setSelectedDrawId] = useState(null)
@@ -6793,6 +6976,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         setDrawDraft(null)
         setSelectedDrawId(null)
         setMeasureBox(null)
+        setAlertDraft(null)
+        setAlertMenuId(null)
         setDrawTool('pan')
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedDrawId) {
@@ -6810,6 +6995,32 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   useEffect(() => { setMeasureBox(null) }, [sym, barInterval])
   useEffect(() => { if (drawTool !== 'measure') setMeasureBox(null) }, [drawTool])
 
+  // Alerts follow the symbol, and stay in step with edits made elsewhere
+  // (the header's alert list, or another tab of the same app).
+  useEffect(() => {
+    setAlerts(chartAlertsFor(sym))
+    setAlertDraft(null)
+    setAlertMenuId(null)
+  }, [sym])
+  useEffect(() => {
+    const refresh = () => setAlerts(chartAlertsFor(sym))
+    window.addEventListener('lm-chart-alerts', refresh)
+    window.addEventListener('storage', refresh)
+    return () => {
+      window.removeEventListener('lm-chart-alerts', refresh)
+      window.removeEventListener('storage', refresh)
+    }
+  }, [sym])
+  const saveAlert = (alert) => {
+    upsertChartAlert(alert)
+    setAlerts(chartAlertsFor(sym))
+  }
+  const deleteAlert = (id) => {
+    removeChartAlert(id)
+    setAlerts(chartAlertsFor(sym))
+    setAlertMenuId(null)
+  }
+
   // TradingView-style keyboard control. Only while the pointer is over the
   // chart, so typing in the screener/search is never hijacked.
   useEffect(() => {
@@ -6817,7 +7028,18 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       if (!chartHoverRef.current) return
       const tag = e.target?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return
-      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.metaKey || e.ctrlKey) return
+      // Alt+A — TradingView's "create alert" shortcut, seeded at the last price.
+      if (e.altKey) {
+        if (e.key.toLowerCase() === 'a') {
+          e.preventDefault()
+          const px = lastPriceRef.current
+          if (Number.isFinite(px) && px > 0) {
+            setAlertDraft({ price: Number(px.toFixed(2)), condition: 'crossing', trigger: 'once', note: '' })
+          }
+        }
+        return
+      }
       const nav = navRef.current
       const step = Math.max(1, Math.round(nav.barsToShow * (e.shiftKey ? 0.25 : 0.05)))
       if (e.key === 'ArrowLeft') {
@@ -6845,7 +7067,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         setPanOffset(0)
         return
       }
-      const tool = { t:'trend', r:'ray', h:'hline', v:'vline', b:'rect', m:'measure' }[e.key.toLowerCase()]
+      const tool = { t:'trend', r:'ray', h:'hline', v:'vline', b:'rect', m:'measure', a:'alert' }[e.key.toLowerCase()]
       if (tool) {
         e.preventDefault()
         setDrawTool(tool)
@@ -7166,10 +7388,27 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         setIsLiveUpdating(true)
       }).catch(()=>{})
     }
+    const key = String(sym || '').toUpperCase()
+    LIVE_POLLED_SYMS.add(key)
     poll()
     const t = setInterval(poll, 45000)
-    return () => { cancelled = true; clearInterval(t); setIsLiveUpdating(false) }
+    return () => {
+      cancelled = true
+      clearInterval(t)
+      LIVE_POLLED_SYMS.delete(key)
+      setIsLiveUpdating(false)
+    }
   }, [sym, isIndex])
+
+  // Price alerts on the open chart get checked at the live poll's cadence;
+  // everything else is covered by the app-wide check on each scan refresh.
+  useEffect(() => {
+    const px = Number(liveOverlay?.price)
+    if (!sym || !Number.isFinite(px) || px <= 0) return
+    const fired = evaluateChartAlerts({ [String(sym).toUpperCase()]: px })
+    setAlerts(chartAlertsFor(sym))
+    if (fired.length) fireChartAlertNotifications(fired, loadAlertPrefs(userId))
+  }, [liveOverlay?.price, sym, userId])
 
   const fillShell=(child)=>(
     <div ref={chartWrapRef} style={{
@@ -7362,6 +7601,13 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const vHighs  = highs.slice(start)
   const vLows   = lows.slice(start)
   const vCloses = closes.slice(start)
+  lastPriceRef.current = (() => {
+    for (let i = closes.length - 1; i >= 0; i--) {
+      const v = Number(closes[i])
+      if (Number.isFinite(v) && v > 0) return v
+    }
+    return null
+  })()
   const vVol    = volumes.slice(start)
   const vVolEma = (showLakshmiVol && lakshmiVol?.volMA
     ? lakshmiVol.volMA
@@ -7752,6 +7998,15 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     if (!date || !Number.isFinite(price)) return null
     return { date, price }
   }
+  // Y in the price pane → price, clamped to the pane so dragging an alert
+  // tag off the top/bottom parks it at the edge instead of going NaN.
+  const clientToPrice = (clientY) => {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect || rect.height < 1) return null
+    const sy = (clientY - rect.top) * (H / rect.height)
+    const p = yToPrice(Math.max(priceTop, Math.min(priceTop + priceH, sy)))
+    return Number.isFinite(p) && p > 0 ? p : null
+  }
   const distToSegment = (px, py, ax, ay, bx, by) => {
     const dx = bx - ax, dy = by - ay
     const len2 = dx * dx + dy * dy
@@ -7811,6 +8066,39 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     setDrawDraft(null)
   }
 
+  // Drag an alert tag up/down to re-price it, TradingView-style. A click
+  // that never moved opens the alert's settings instead.
+  const beginAlertDrag = (e, a) => {
+    e.preventDefault()
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    alertDragRef.current = { id: a.id, price: a.price, moved: false }
+    const move = (ev) => {
+      const p = clientToPrice(ev.clientY)
+      if (p == null) return
+      alertDragRef.current.moved = true
+      alertDragRef.current.price = p
+      setAlerts(list => list.map(x => (x.id === a.id ? { ...x, price: p } : x)))
+    }
+    const end = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      const d = alertDragRef.current
+      alertDragRef.current = null
+      if (!d) return
+      if (d.moved) {
+        // A moved level starts fresh — it shouldn't inherit the old crossing state.
+        saveAlert({ ...a, price: Number(d.price.toFixed(2)), lastPrice: null, active: true })
+      } else {
+        setAlertMenuId(cur => (cur === a.id ? null : a.id))
+      }
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+  }
+
   const pxToBars = (pxDelta) => {
     const rect = svgRef.current?.getBoundingClientRect()
     if (!rect) return 0
@@ -7848,6 +8136,16 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           setMeasureBox({ p1: drawDraft.p1, p2: pt })
           setDrawDraft(null)
         }
+        return
+      }
+      if (drawTool === 'alert') {
+        setAlertDraft({
+          price: Number(pt.price.toFixed(2)),
+          condition: 'crossing',
+          trigger: 'once',
+          note: '',
+        })
+        setDrawTool('pan')
         return
       }
       if (drawTool === 'hline' || drawTool === 'vline') {
@@ -8244,6 +8542,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                 padding:'3px 7px', border:'none', borderRadius:3, cursor:'pointer', fontFamily:'inherit',
                 background:C.red+'18', color:C.red, fontSize:10, fontWeight:700,
               }}>Delete</button>
+          )}
+          {alerts.length>0 && (
+            <button type="button" title={`${alerts.length} price alert(s) on ${sym} — click to remove them all`}
+              onClick={()=>{
+                if(!window.confirm(`Remove ${alerts.length} price alert(s) on ${sym}?`)) return
+                removeChartAlertsFor(sym)
+                setAlerts(chartAlertsFor(sym))
+                setAlertMenuId(null)
+              }}
+              style={{
+                padding:'3px 7px', border:'none', borderRadius:3, cursor:'pointer', fontFamily:'inherit',
+                background:TV_TOOLBAR_BLUE+'18', color:TV_TOOLBAR_BLUE, fontSize:10, fontWeight:700,
+              }}>🔔 {alerts.length}</button>
           )}
           {drawings.length>0 && (
             <button type="button" title="Clear all drawings for this symbol"
@@ -8689,7 +9000,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         ) : drawTool!=='pan' ? (
           drawTool==='measure'
             ? `${sym} · ruler · ${drawDraft?.p1 ? 'click 2nd point (Esc clears)' : 'click the first point'}`
-            : `${sym} · draw ${drawTool} · ${drawDraft?.p1 ? 'click 2nd point (Esc cancel)' : 'click on chart'} · saved on this device`
+            : drawTool==='alert'
+              ? `${sym} · alert · click the price level you want to be notified at (Esc cancel)`
+              : `${sym} · draw ${drawTool} · ${drawDraft?.p1 ? 'click 2nd point (Esc cancel)' : 'click on chart'} · saved on this device`
         ) : (() => {
           // Resting legend, TradingView style: symbol · interval · last bar OHLC + change
           const i = vCloses.length - 1
@@ -8825,6 +9138,231 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             }}/>
         )
       })()}
+      {/* Per-pane move controls — TradingView keeps pane ordering on the pane
+          itself, not buried in a menu, so Volume can be pulled back above
+          Super Cycle without hunting for the Layout dropdown. */}
+      {!isMobile && paneOrder.length > 1 && paneOrder.map((k, i) => {
+        const y = paneTop[k]
+        if (!Number.isFinite(y)) return null
+        const hot = paneCtrlHover === k
+        const btn = (dir, disabled, glyph, title) => (
+          <button type="button" disabled={disabled} title={title}
+            onClick={()=>movePaneBy(k, dir)}
+            style={{
+              width:15, height:13, padding:0, lineHeight:1,
+              border:`1px solid ${C.border}`, borderRadius:2,
+              background:C.card, color:disabled?C.border:C.muted,
+              fontSize:8, fontFamily:'inherit',
+              cursor:disabled?'default':'pointer',
+            }}>{glyph}</button>
+        )
+        return (
+          <div key={`panectl-${k}`}
+            onMouseEnter={()=>setPaneCtrlHover(k)}
+            onMouseLeave={()=>setPaneCtrlHover(h=>h===k?null:h)}
+            title={`Move the ${PANE_LABELS[k]} pane`}
+            style={{
+              position:'absolute',
+              left:`${((padL + chartW - 36) / W) * 100}%`,
+              top:`${((y + 2) / H) * 100}%`,
+              display:'flex', gap:2, zIndex:9,
+              opacity:hot?1:0.22, transition:'opacity .12s',
+            }}>
+            {btn(-1, i===0, '▲', `Move ${PANE_LABELS[k]} up`)}
+            {btn(1, i===paneOrder.length-1, '▼', `Move ${PANE_LABELS[k]} down`)}
+          </div>
+        )
+      })}
+
+      {/* Price alert tags on the right scale — drag to re-price, click to edit */}
+      {alerts.map(a => {
+        const y = priceToY(a.price)
+        if (!Number.isFinite(y) || y < priceTop - 1 || y > priceTop + priceH + 1) return null
+        const hot = alertHoverId === a.id || alertMenuId === a.id
+        const color = a.active ? TV_TOOLBAR_BLUE : C.muted
+        const label = a.price >= 1000 ? a.price.toFixed(0) : a.price.toFixed(2)
+        return (
+          <div key={`altag-${a.id}`}
+            onPointerDown={(e)=>beginAlertDrag(e, a)}
+            onMouseEnter={()=>setAlertHoverId(a.id)}
+            onMouseLeave={()=>setAlertHoverId(h=>h===a.id?null:h)}
+            title={`${describeChartAlert(a)} · ${a.trigger==='once'?'only once':'every time'}${a.active?'':' · paused'}\nDrag to move · click to edit`}
+            style={{
+              position:'absolute',
+              left:`${((padL + chartW + 1) / W) * 100}%`,
+              top:`${(y / H) * 100}%`,
+              transform:'translateY(-50%)',
+              height:16,
+              display:'flex', alignItems:'center', gap:3,
+              padding:'0 4px',
+              borderRadius:3,
+              background:color,
+              color:'#fff',
+              fontSize:9, fontWeight:800,
+              lineHeight:1,
+              cursor:'ns-resize',
+              touchAction:'none',
+              zIndex:8,
+              opacity:a.active?1:0.65,
+              boxShadow:hot?`0 0 0 1px ${C.bg}, 0 2px 8px rgba(0,0,0,0.45)`:'none',
+              fontVariantNumeric:'tabular-nums',
+            }}>
+            <span style={{fontSize:8}}>{a.active?'🔔':'🔕'}</span>
+            <span>{label}</span>
+            {hot && (
+              <span role="button" title="Delete alert"
+                onPointerDown={(e)=>{e.stopPropagation()}}
+                onClick={(e)=>{e.stopPropagation(); deleteAlert(a.id)}}
+                style={{marginLeft:1,cursor:'pointer',fontSize:9,opacity:0.9}}>×</span>
+            )}
+          </div>
+        )
+      })}
+
+      {/* Alert settings popover — condition / trigger / note, TradingView-lite */}
+      {alertMenuId && (() => {
+        const a = alerts.find(x => x.id === alertMenuId)
+        if (!a) return null
+        const y = priceToY(a.price)
+        const top = Math.max(4, Math.min(H - 190, (Number.isFinite(y) ? y : priceTop) - 10))
+        return (
+          <div style={{
+            position:'absolute',
+            left:`${((padL + chartW - 210) / W) * 100}%`,
+            top:`${(top / H) * 100}%`,
+            width:200, zIndex:12,
+            background:C.card, border:`1px solid ${C.border}`, borderRadius:6,
+            boxShadow:'0 12px 30px rgba(0,0,0,0.45)', padding:8,
+          }}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+              <span style={{fontSize:10,fontWeight:800,color:C.text}}>🔔 {sym} alert</span>
+              <span role="button" onClick={()=>setAlertMenuId(null)}
+                style={{cursor:'pointer',color:C.muted,fontSize:12,lineHeight:1}}>×</span>
+            </div>
+            <label style={{display:'block',fontSize:8.5,fontWeight:700,color:C.muted,marginBottom:2}}>Price</label>
+            <input type="number" step="0.05" value={a.price}
+              onChange={e=>{
+                const v = Number(e.target.value)
+                if (!Number.isFinite(v) || v <= 0) return
+                saveAlert({ ...a, price: v, lastPrice: null })
+              }}
+              style={{width:'100%',boxSizing:'border-box',marginBottom:6,padding:'3px 5px',borderRadius:4,
+                border:`1px solid ${C.border}`,background:C.bg,color:C.text,fontSize:11}}/>
+            <label style={{display:'block',fontSize:8.5,fontWeight:700,color:C.muted,marginBottom:2}}>Condition</label>
+            <select value={a.condition}
+              onChange={e=>saveAlert({ ...a, condition: e.target.value, lastPrice: null })}
+              style={{width:'100%',boxSizing:'border-box',marginBottom:6,padding:'3px 5px',borderRadius:4,
+                border:`1px solid ${C.border}`,background:C.bg,color:C.text,fontSize:11}}>
+              {ALERT_CONDITIONS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+            <label style={{display:'block',fontSize:8.5,fontWeight:700,color:C.muted,marginBottom:2}}>Trigger</label>
+            <select value={a.trigger}
+              onChange={e=>saveAlert({ ...a, trigger: e.target.value })}
+              style={{width:'100%',boxSizing:'border-box',marginBottom:6,padding:'3px 5px',borderRadius:4,
+                border:`1px solid ${C.border}`,background:C.bg,color:C.text,fontSize:11}}>
+              {ALERT_TRIGGERS.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}
+            </select>
+            <input type="text" placeholder="Note (optional)" value={a.note||''}
+              maxLength={140}
+              onChange={e=>saveAlert({ ...a, note: e.target.value })}
+              style={{width:'100%',boxSizing:'border-box',marginBottom:6,padding:'3px 5px',borderRadius:4,
+                border:`1px solid ${C.border}`,background:C.bg,color:C.text,fontSize:10}}/>
+            <div style={{display:'flex',gap:4}}>
+              <button type="button"
+                onClick={()=>saveAlert({ ...a, active: !a.active, lastPrice: null })}
+                style={{flex:1,padding:'4px 0',borderRadius:4,border:`1px solid ${C.border}`,
+                  background:'transparent',color:a.active?C.muted:C.green,fontSize:9.5,fontWeight:700,cursor:'pointer'}}>
+                {a.active?'Pause':'Resume'}
+              </button>
+              <button type="button" onClick={()=>deleteAlert(a.id)}
+                style={{flex:1,padding:'4px 0',borderRadius:4,border:`1px solid ${C.red}44`,
+                  background:C.red+'14',color:C.red,fontSize:9.5,fontWeight:700,cursor:'pointer'}}>
+                Delete
+              </button>
+            </div>
+            {a.lastFiredAt && (
+              <div style={{fontSize:8.5,color:C.muted,marginTop:5}}>
+                Last fired {new Date(a.lastFiredAt).toLocaleString('en-IN',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'})}
+                {a.fireCount>1?` · ${a.fireCount}×`:''}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* Create-alert card (chart click with the Alert tool, or Alt+A) */}
+      {alertDraft && (
+        <div style={{
+          position:'absolute',
+          left:`${((padL + chartW - 216) / W) * 100}%`,
+          top:`${((priceTop + 8) / H) * 100}%`,
+          width:206, zIndex:13,
+          background:C.card, border:`1px solid ${TV_TOOLBAR_BLUE}66`, borderRadius:6,
+          boxShadow:'0 14px 34px rgba(0,0,0,0.5)', padding:9,
+        }}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:7}}>
+            <span style={{fontSize:10.5,fontWeight:800,color:C.text}}>🔔 New alert · {sym}</span>
+            <span role="button" onClick={()=>setAlertDraft(null)}
+              style={{cursor:'pointer',color:C.muted,fontSize:12,lineHeight:1}}>×</span>
+          </div>
+          <label style={{display:'block',fontSize:8.5,fontWeight:700,color:C.muted,marginBottom:2}}>Condition</label>
+          <select value={alertDraft.condition}
+            onChange={e=>setAlertDraft(d=>({...d, condition:e.target.value}))}
+            style={{width:'100%',boxSizing:'border-box',marginBottom:6,padding:'4px 5px',borderRadius:4,
+              border:`1px solid ${C.border}`,background:C.bg,color:C.text,fontSize:11}}>
+            {ALERT_CONDITIONS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+          <label style={{display:'block',fontSize:8.5,fontWeight:700,color:C.muted,marginBottom:2}}>Price</label>
+          <input type="number" step="0.05" value={alertDraft.price} autoFocus
+            onChange={e=>setAlertDraft(d=>({...d, price:e.target.value}))}
+            style={{width:'100%',boxSizing:'border-box',marginBottom:6,padding:'4px 5px',borderRadius:4,
+              border:`1px solid ${C.border}`,background:C.bg,color:C.text,fontSize:11}}/>
+          <label style={{display:'block',fontSize:8.5,fontWeight:700,color:C.muted,marginBottom:2}}>Trigger</label>
+          <select value={alertDraft.trigger}
+            onChange={e=>setAlertDraft(d=>({...d, trigger:e.target.value}))}
+            style={{width:'100%',boxSizing:'border-box',marginBottom:6,padding:'4px 5px',borderRadius:4,
+              border:`1px solid ${C.border}`,background:C.bg,color:C.text,fontSize:11}}>
+            {ALERT_TRIGGERS.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+          <input type="text" placeholder="Note (optional)" value={alertDraft.note}
+            maxLength={140}
+            onChange={e=>setAlertDraft(d=>({...d, note:e.target.value}))}
+            style={{width:'100%',boxSizing:'border-box',marginBottom:7,padding:'4px 5px',borderRadius:4,
+              border:`1px solid ${C.border}`,background:C.bg,color:C.text,fontSize:10}}/>
+          <div style={{display:'flex',gap:5}}>
+            <button type="button" onClick={()=>setAlertDraft(null)}
+              style={{flex:1,padding:'5px 0',borderRadius:4,border:`1px solid ${C.border}`,
+                background:'transparent',color:C.muted,fontSize:10,fontWeight:700,cursor:'pointer'}}>
+              Cancel
+            </button>
+            <button type="button"
+              onClick={()=>{
+                const price = Number(alertDraft.price)
+                if (!Number.isFinite(price) || price <= 0) return
+                saveAlert({
+                  id: newChartAlertId(),
+                  sym: String(sym).toUpperCase(),
+                  price,
+                  condition: alertDraft.condition,
+                  trigger: alertDraft.trigger,
+                  note: alertDraft.note,
+                  active: true,
+                  createdAt: Date.now(),
+                  lastPrice: lastPriceRef.current ?? null,
+                })
+                setAlertDraft(null)
+              }}
+              style={{flex:1,padding:'5px 0',borderRadius:4,border:'none',
+                background:TV_TOOLBAR_BLUE,color:'#fff',fontSize:10,fontWeight:800,cursor:'pointer'}}>
+              Create
+            </button>
+          </div>
+          <div style={{fontSize:8,color:C.muted,marginTop:6,lineHeight:1.4}}>
+            Fires while the app is open · checked on every live price update.
+          </div>
+        </div>
+      )}
+
       {/* Price scale width — drag the axis edge, double-click for auto */}
       {!isMobile && (
         <div
@@ -9621,6 +10159,33 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           )
         })()}
 
+        {/* Price alert levels — dashed line across the price pane */}
+        {alerts.length > 0 && (
+          <g style={{pointerEvents:'none'}}>
+            {alerts.map(a => {
+              const y = priceToY(a.price)
+              if (!Number.isFinite(y) || y < priceTop - 1 || y > priceTop + priceH + 1) return null
+              const on = a.active
+              const color = on ? TV_TOOLBAR_BLUE : C.muted
+              return (
+                <line key={`al-${a.id}`} x1={padL} y1={y} x2={padL + chartW} y2={y}
+                  stroke={color} strokeWidth={alertHoverId === a.id ? 1.6 : 1}
+                  strokeDasharray="6,4" opacity={on ? 0.9 : 0.45}/>
+              )
+            })}
+          </g>
+        )}
+        {/* Alert being placed — preview line follows the draft price */}
+        {alertDraft && (() => {
+          const y = priceToY(alertDraft.price)
+          if (!Number.isFinite(y)) return null
+          return (
+            <line x1={padL} y1={y} x2={padL + chartW} y2={y}
+              stroke={TV_TOOLBAR_BLUE} strokeWidth={1.4} strokeDasharray="3,3"
+              opacity={0.85} style={{pointerEvents:'none'}}/>
+          )
+        })()}
+
         {/* Last price line + right-scale tag (TradingView live marker) */}
         {vCloses.length > 0 && (() => {
           const last = vCloses[vCloses.length - 1]
@@ -10401,24 +10966,38 @@ function buildLayoutChartSectionsPayload({ order, hidden, dock, detailOpen }){
     order: normalizeChartSectionOrder(order),
     hidden: normalizeChartSectionHidden(hidden),
     dock: dock ? normalizeDockLayout(dock) : null,
-    detailOpen: typeof detailOpen==='boolean' ? detailOpen : true,
+    detailOpen: typeof detailOpen==='boolean' ? detailOpen : DEFAULT_DETAIL_OPEN,
   }
 }
 
 /** Main workspace tiles: RS table (screener), Chart, Overview/Details. */
 const DOCK_TILE_IDS = ['screener', 'chart', 'detail']
 const DOCK_TILE_LABELS = { screener:'RS / Table', chart:'Chart', detail:'Fundamentals' }
-const DEFAULT_DOCK_LAYOUT = { mode:'side', solo:'screener', order:['screener','chart','detail'] }
+/** Product default workspace: Chart 75% on the left, RS table 25% on the
+ *  right, Fundamentals closed — two sections, nothing else competing for
+ *  width until the user asks for it. */
+const DEFAULT_DOCK_LAYOUT = { mode:'side', solo:'chart', order:['chart','screener','detail'] }
+const DEFAULT_CHART_WIDE = 2      // index into [35,50,75] — the chart column %
+const DEFAULT_DETAIL_OPEN = false // Fundamentals starts closed
 const DOCK_LAYOUT_KEY = 'lakshmimata-dock-layout'
 
 /** TradingView-style layout presets — swap RS table / Chart / Fundamentals.
- *  First preset is the product default: RS left · Chart over Overview right.
+ *  First preset is the product default: Chart 75% left · RS 25% right.
  *  `solo` (side only): which tile gets a full-height column — others stack opposite.
- *  `columns`: three full-height panes side by side (RS | Chart | Fund). */
+ *  `columns`: three full-height panes side by side (RS | Chart | Fund).
+ *  `detailOpen:false` keeps Fundamentals out of the way for 2-pane presets. */
 const DOCK_LAYOUT_PRESETS = [
   {
-    id: 'side-rs-chart',
+    id: 'side-chart-rs',
     label: 'Default',
+    hint: 'Chart 75% left · RS 25% right',
+    layout: { mode: 'side', solo: 'chart', order: ['chart', 'screener', 'detail'] },
+    chartWide: 2, // 75% chart column
+    detailOpen: false,
+  },
+  {
+    id: 'side-rs-chart',
+    label: 'RS | Chart',
     hint: 'RS left · Chart over Overview',
     layout: { mode: 'side', solo: 'screener', order: ['screener', 'chart', 'detail'] },
     chartWide: 1, // ~50% right column
@@ -10428,13 +11007,6 @@ const DOCK_LAYOUT_PRESETS = [
     label: 'RS | Chart | Fund',
     hint: 'Three columns side by side',
     layout: { mode: 'columns', order: ['screener', 'chart', 'detail'] },
-  },
-  {
-    id: 'side-chart-rs',
-    label: 'Chart | RS',
-    hint: 'Chart full left · RS + Overview right',
-    layout: { mode: 'side', solo: 'chart', order: ['chart', 'screener', 'detail'] },
-    chartWide: 1,
   },
   {
     id: 'side-rs-overview',
@@ -10553,7 +11125,7 @@ function normalizeDockLayout(raw){
   const solo = mode === 'side' && raw?.solo === 'chart' ? 'chart' : 'screener'
   return { mode, order, solo }
 }
-const DOCK_DEFAULT_VER = '2' // v2: RS left · Chart over Overview (~50% right)
+const DOCK_DEFAULT_VER = '3' // v3: Chart 75% left · RS 25% right, no Fundamentals
 function loadDockLayout(){
   try{
     const ver=localStorage.getItem('lakshmimata-dock-default-ver')
@@ -10580,31 +11152,30 @@ function moveDockTile(order, id, dir){
   return next
 }
 
-const CHART_PANEL_DEFAULT_VER = '2' // v2: ~50% right column (was 35%)
+const CHART_PANEL_DEFAULT_VER = '3' // v3: 75% chart column (was ~50%)
 function loadChartPanelAutoSave(){
   try{
-    // One-time migrate: product default is ~50% chart column (wide=1).
+    // One-time migrate: product default is a 75% chart column (wide=2).
     const ver=localStorage.getItem('lakshmimata-chart-panel-ver')
     if(ver!==CHART_PANEL_DEFAULT_VER){
       localStorage.setItem('lakshmimata-chart-panel-ver',CHART_PANEL_DEFAULT_VER)
-      // Only rewrite width if user never drag-resized (no custom pct).
-      const pctChk=localStorage.getItem('lakshmimata-chart-panel-pct')
-      if(pctChk==null||pctChk===''||pctChk==='null'){
-        localStorage.setItem('lakshmimata-chart-wide','1')
-      }
+      // The 75/25 split is the new baseline for everyone, so an older
+      // drag-resized width is retired here rather than quietly winning.
+      localStorage.removeItem('lakshmimata-chart-panel-pct')
+      localStorage.setItem('lakshmimata-chart-wide',String(DEFAULT_CHART_WIDE))
     }
     const raw=localStorage.getItem('lakshmimata-chart-wide')
-    const wide=raw==null||raw===''?1:parseInt(raw,10)
+    const wide=raw==null||raw===''?DEFAULT_CHART_WIDE:parseInt(raw,10)
     const pctRaw=localStorage.getItem('lakshmimata-chart-panel-pct')
-    const chart_wide=[0,1,2].includes(wide)?wide:1
+    const chart_wide=[0,1,2].includes(wide)?wide:DEFAULT_CHART_WIDE
     const chart_panel_pct=pctRaw==null||pctRaw===''||pctRaw==='null'
       ?null
-      :Math.min(80,Math.max(15,parseFloat(pctRaw)))
+      :Math.min(85,Math.max(15,parseFloat(pctRaw)))
     return{
       chart_wide,
       chart_panel_pct:Number.isFinite(chart_panel_pct)?chart_panel_pct:null,
     }
-  }catch(e){ return {chart_wide:1,chart_panel_pct:null} }
+  }catch(e){ return {chart_wide:DEFAULT_CHART_WIDE,chart_panel_pct:null} }
 }
 
 function persistChartPanelAutoSave(wide,pct){
@@ -11582,10 +12153,20 @@ function RsOptionalColCell({colKey, s, vis}){
   return null
 }
 
-/** Hover menu on a stock symbol — Our Chart (optional), TradingView, Screener. */
-function SymbolHoverMenu({sym, showOurChart=true, onOurChart, onOpenChart, children}){
+/** ₹ Cr → compact "1.2L Cr" / "930 Cr" for the hover card. */
+function fmtMarketCap(cr){
+  const v=Number(cr)
+  if(!Number.isFinite(v)||v<=0) return null
+  if(v>=100000) return `₹${(v/100000).toFixed(2)}L Cr`
+  if(v>=1000) return `₹${(v/1000).toFixed(2)}K Cr`
+  return `₹${Math.round(v)} Cr`
+}
+
+/** Hover menu on a stock symbol — company snapshot, then chart links. */
+function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpenChart, children}){
   const [open,setOpen]=useState(false)
   const hideTimer=useRef(null)
+  const layout=useContext(RsLayoutContext)
   const show=()=>{ if(hideTimer.current) clearTimeout(hideTimer.current); setOpen(true) }
   const scheduleHide=()=>{
     if(hideTimer.current) clearTimeout(hideTimer.current)
@@ -11604,10 +12185,59 @@ function SymbolHoverMenu({sym, showOurChart=true, onOurChart, onOpenChart, child
         <div role="menu"
           onMouseEnter={show} onMouseLeave={scheduleHide}
           style={{
-            position:'absolute',left:0,top:'100%',marginTop:4,zIndex:90,minWidth:168,
+            position:'absolute',left:0,top:'100%',marginTop:4,zIndex:90,
+            minWidth:stock?232:168,
             background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
             boxShadow:'0 10px 28px rgba(0,0,0,0.35)',padding:'4px 0',overflow:'hidden',
           }}>
+          {stock&&(()=>{
+            const rating=(layout?.resultRatingsMap||{})[String(sym||'').toUpperCase()]||null
+            const mcap=fmtMarketCap(stock.marketCap)
+            const pe=Number(stock.pe)
+            const peOk=Number.isFinite(pe)&&pe>0
+            const name=getCompanyName(sym)
+            const stat=(label,value,color)=>(
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:8.5,color:C.muted,fontWeight:700,letterSpacing:'0.04em'}}>{label}</div>
+                <div style={{fontSize:11,fontWeight:700,color:color||C.text,whiteSpace:'nowrap',
+                  overflow:'hidden',textOverflow:'ellipsis'}}>{value}</div>
+              </div>
+            )
+            const pct=(v)=>{
+              const n=Number(v)
+              if(!Number.isFinite(n)) return null
+              return {text:`${n>=0?'+':''}${n.toFixed(1)}%`, color:n>=0?C.green:C.red}
+            }
+            const epsYoy=pct(stock.epsYoy)
+            const salesYoy=pct(stock.salesYoy)
+            return (
+              <div style={{padding:'8px 12px 9px',borderBottom:`1px solid ${C.divider}`}}>
+                <div style={{fontSize:11.5,fontWeight:800,color:C.text,lineHeight:1.25,
+                  overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={name||sym}>
+                  {name||sym}
+                </div>
+                {(stock.sector||stock.industry)&&(
+                  <div style={{fontSize:9,color:C.muted,marginTop:1,lineHeight:1.3,
+                    overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                    {[stock.sector,stock.industry].filter(Boolean).join(' · ')}
+                  </div>
+                )}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px 10px',marginTop:7}}>
+                  {stat('MKT CAP', mcap||'—')}
+                  {stat('P/E', peOk?pe.toFixed(1):'—', peOk?(pe<20?C.green:pe<40?C.yellow:C.red):C.muted)}
+                  {stat('RESULT', resultRatingShort(rating)||'—',
+                    rating?resultRatingColor(rating):C.muted)}
+                  {stat('RS', stock.rsTv??stock.rs??'—')}
+                </div>
+                {(epsYoy||salesYoy)&&(
+                  <div style={{display:'flex',gap:10,marginTop:6,fontSize:9,color:C.muted}}>
+                    {epsYoy&&<span>EPS YoY <b style={{color:epsYoy.color}}>{epsYoy.text}</b></span>}
+                    {salesYoy&&<span>Sales YoY <b style={{color:salesYoy.color}}>{salesYoy.text}</b></span>}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
           {showOurChart&&(
             <button type="button" role="menuitem"
               onClick={e=>{e.stopPropagation(); setOpen(false); (onOurChart||onOpenChart)?.(sym)}}
@@ -11669,6 +12299,7 @@ function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder,showOurChartHover=true
           <div style={{display:'flex',alignItems:'center',gap:4}}>
             <SymbolHoverMenu
               sym={s.sym}
+              stock={s}
               showOurChart={showOurChartHover}
               onOurChart={onOurChart}
               onOpenChart={onChart}>
@@ -11676,7 +12307,7 @@ function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder,showOurChartHover=true
                 style={{fontWeight:600,fontSize:12,color:C.accent,
                   letterSpacing:'0.01em',cursor:'pointer',textDecoration:'underline',
                   textDecorationColor:C.accent+'55',textUnderlineOffset:'2px'}}
-                title={`Hover for chart options · click to open`}>{s.sym}</span>
+                title={`Hover for company snapshot · click to open`}>{s.sym}</span>
             </SymbolHoverMenu>
             {s.pp.isPP&&<span style={{fontSize:9,color:C.orange,fontWeight:700}}>PP</span>}
             {s.hy.isHY&&<span style={{fontSize:9,color:C.blue,fontWeight:700}}>HY</span>}
@@ -14203,11 +14834,20 @@ export default function App(){
   const DETAIL_PANEL_PREF_KEY='lakshmimata-detail-panel-open'
   const HOVER_OUR_CHART_PREF_KEY='lakshmimata-hover-our-chart'
   const TICKER_PREF_KEY='lakshmimata-top-ticker'
+  const DETAIL_PANEL_VER_KEY='lakshmimata-detail-panel-ver'
+  const DETAIL_PANEL_VER='3' // v3: two-pane default, Fundamentals closed
   const loadDetailPanelPref=()=>{
     try{
+      // The 2-pane default rolls out once; after that the user's own
+      // open/close choice wins again.
+      if(localStorage.getItem(DETAIL_PANEL_VER_KEY)!==DETAIL_PANEL_VER){
+        localStorage.setItem(DETAIL_PANEL_VER_KEY,DETAIL_PANEL_VER)
+        localStorage.setItem(DETAIL_PANEL_PREF_KEY,DEFAULT_DETAIL_OPEN?'1':'0')
+        return DEFAULT_DETAIL_OPEN
+      }
       const v=localStorage.getItem(DETAIL_PANEL_PREF_KEY)
-      return v==null ? true : v==='1'
-    }catch{ return true }
+      return v==null ? DEFAULT_DETAIL_OPEN : v==='1'
+    }catch{ return DEFAULT_DETAIL_OPEN }
   }
   const loadHoverOurChartPref=()=>{
     try{
@@ -14417,6 +15057,25 @@ export default function App(){
   },[session?.user?.id, demoMode])
   const lastAlertCheck = useRef(null)
   const lastAnnouncementCheck = useRef(null)
+  const scannerAlertSeenRef = useRef(loadScannerAlertSeen())
+  // Kept in sync below, where historyDate is declared — scanner alerts need
+  // to read it from an effect that runs earlier in the component.
+  const historyDateRef = useRef(null)
+  const scannerAlertIds=Array.isArray(alertPrefs.scannerAlertIds)?alertPrefs.scannerAlertIds.map(String):[]
+  const toggleScannerAlert=(scannerId)=>{
+    const id=String(scannerId)
+    const on=scannerAlertIds.includes(id)
+    const next=normalizeAlertPrefs({
+      ...alertPrefs,
+      scannerAlerts:true,
+      scannerAlertIds: on?scannerAlertIds.filter(x=>x!==id):[...scannerAlertIds,id],
+    })
+    // Turning an alert off should forget its baseline, so re-enabling later
+    // starts fresh instead of replaying stale matches.
+    if(on){ delete scannerAlertSeenRef.current[id]; persistScannerAlertSeen(scannerAlertSeenRef.current) }
+    setAlertPrefs(next)
+    persistUserAlertPrefs(next)
+  }
 
   // Request notification permission on mount
   useEffect(()=>{
@@ -14503,6 +15162,117 @@ export default function App(){
     const timer = setInterval(checkSqueezeAlerts, 60000)
     return ()=>clearInterval(timer)
   },[session,notifPermission])
+
+  // Chart price alerts, checked app-wide. The open chart already checks its
+  // own symbol at the live-price cadence; this covers every other symbol the
+  // user has an alert on, using the last price from each scan refresh.
+  useEffect(()=>{
+    if(!stocks.length) return
+    if(historyDateRef.current) return
+    if(!loadChartAlerts().length) return
+    const priceBySym={}
+    stocks.forEach(s=>{
+      const key=String(s.sym||'').toUpperCase()
+      if(LIVE_POLLED_SYMS.has(key)) return
+      const px=Number(s.last)
+      if(Number.isFinite(px)&&px>0) priceBySym[key]=px
+    })
+    const fired=evaluateChartAlerts(priceBySym)
+    if(fired.length) fireChartAlertNotifications(fired, alertPrefsRef.current, (s)=>{ setMainTab('rs'); openChart(s) })
+  },[stocks])
+
+  // Saved-scanner alerts. Every time the scan data refreshes we re-run the
+  // scanners the user subscribed to and fire on symbols that just entered
+  // the result set. The first pass for a scanner only records a baseline —
+  // otherwise enabling a scanner with 80 matches would fire 80 alerts.
+  useEffect(()=>{
+    const prefs=alertPrefs
+    const ids=(prefs.scannerAlertIds||[]).map(String)
+    if(prefs.scannerAlerts===false||ids.length===0) return
+    if(!stocks.length||!savedScanners.length) return
+    // Past-date browsing isn't live data — never alert off it.
+    if(historyDateRef.current) return
+
+    const seen=scannerAlertSeenRef.current
+    // The loaded universe narrows with the index / watchlist picker. Symbols
+    // outside it keep whatever state they had, so switching watchlists
+    // doesn't replay their alerts when they come back into view.
+    const universe=new Set(stocks.map(s=>String(s.sym||'').toUpperCase()))
+    let changed=false
+    let playedSound=false
+
+    ids.forEach(id=>{
+      const scanner=savedScanners.find(sc=>String(sc.id)===id)
+      if(!scanner) return
+      const filters=scanner.filters||scanner.filter_state||{}
+      const matched=stocks.filter(s=>matchesSavedScanner(s,filters)).map(s=>String(s.sym||'').toUpperCase())
+      const prev=seen[id]
+      const carried=Array.isArray(prev)?prev.filter(sym=>!universe.has(sym)):[]
+      const nextList=[...new Set([...matched,...carried])]
+      if(!Array.isArray(prev)){
+        seen[id]=nextList
+        changed=true
+        return
+      }
+      const prevSet=new Set(prev)
+      const fresh=matched.filter(sym=>sym&&!prevSet.has(sym))
+      seen[id]=nextList
+      changed=true
+      if(fresh.length===0) return
+
+      if(!playedSound){ playAlertSoundFromPrefs(prefs); playedSound=true }
+      // Cap the burst so a big scanner move doesn't bury the desktop.
+      fresh.slice(0,6).forEach(sym=>{
+        const row=stocks.find(s=>String(s.sym||'').toUpperCase()===sym)
+        const chg=Number(row?.chg||0)
+        const title=`🔎 ${sym} — ${scanner.name||'Scanner'}`
+        const body=`Entered "${scanner.name||'scanner'}" | RS: ${row?.rsTv??row?.rs??'—'} | ${chg>=0?'+':''}${chg.toFixed(2)}% | ${row?.sector||''}`
+        pushNotifHistory({
+          id:`scanner-${id}-${sym}-${Date.now()}`,
+          at:new Date().toISOString(),
+          kind:'scanner',
+          sym,
+          title,
+          body,
+          scannerId:id,
+        })
+        if(typeof Notification!=='undefined' && Notification.permission==='granted'){
+          const n=new Notification(title,{
+            body,
+            icon:'/favicon.ico',
+            tag:`scanner-${id}-${sym}`,
+            requireInteraction:false,
+            silent:prefs.soundEnabled!==false,
+          })
+          n.onclick=()=>{
+            window.focus()
+            setMainTab('rs')
+            applyFilterState(filters)
+            openChart(sym)
+          }
+          setTimeout(()=>n.close(), 8000)
+        }
+      })
+      if(fresh.length>6){
+        pushNotifHistory({
+          id:`scanner-${id}-more-${Date.now()}`,
+          at:new Date().toISOString(),
+          kind:'scanner',
+          sym:'',
+          title:`🔎 ${scanner.name||'Scanner'} — ${fresh.length} new matches`,
+          body:`${fresh.slice(6).join(', ')}`,
+          scannerId:id,
+        })
+      }
+    })
+
+    if(changed){
+      // Drop bookkeeping for scanners that no longer exist.
+      const live=new Set(savedScanners.map(sc=>String(sc.id)))
+      Object.keys(seen).forEach(k=>{ if(!live.has(k)) delete seen[k] })
+      persistScannerAlertSeen(seen)
+    }
+  },[stocks,savedScanners,alertPrefs])
 
   // Same notification pattern as squeeze/VCP alerts above, for new
   // corporate announcements instead. Checks every 60s per explicit
@@ -14695,6 +15465,78 @@ export default function App(){
     if(sig==='ppconsec2') return hasConsecutivePP(s.pp?.ppHistory, 2)
     if(sig==='ppgt2') return (s.pp?.ppCount10d||0) > 2
     return false
+  }
+  // Does one stock satisfy a *saved* scanner's stored filter object? Mirrors
+  // the rsBase predicate, but reads every criterion from `f` instead of the
+  // live filter state so alerts can evaluate scanners the user isn't
+  // currently looking at.
+  const matchesSavedScanner = (s, f) => {
+    if(!s || !f) return false
+    if(f.sectorFilter&&f.sectorFilter!=='all'&&s.sector!==f.sectorFilter) return false
+    if(f.industryFilter&&f.industryFilter!=='all'&&s.industry!==f.industryFilter) return false
+    if(f.search&&!stockMatchesQuery(s, f.search)) return false
+    const lo=f.rsMin??0, hi=f.rsMax??99
+    if(s.rs<lo||s.rs>hi) return false
+    if(f.mcapMin!==''&&f.mcapMin!=null&&(s.marketCap==null||s.marketCap<+f.mcapMin)) return false
+    if(f.mcapMax!==''&&f.mcapMax!=null&&(s.marketCap==null||s.marketCap>+f.mcapMax)) return false
+    if(f.rsImprFilter&&f.rsImprFilter!=='all'&&s.rsTrend?.trend!==f.rsImprFilter) return false
+    const sigs=Array.isArray(f.sigFilters)
+      ? f.sigFilters
+      : (f.sigFilter&&f.sigFilter!=='all'?[f.sigFilter]:[])
+    if(sigs.length>0&&!sigs.some(sig=>matchesSignal(s,sig))) return false
+    if(f.stageFilter&&f.stageFilter!=='all'&&calcWeinsteinStage(s).stage!==+f.stageFilter) return false
+    const p=f.presetFilter||'all'
+    if(p==='pp'&&!s.pp?.isPP) return false
+    if(p==='bullsnort'&&!s.isBullSnort) return false
+    if(p==='ema5'&&!s.nearEMA5?.isNearEMA5) return false
+    if(p==='ema9'&&!s.nearEMA9?.isNearEMA9) return false
+    if(p==='hy'&&!s.hy?.isHY) return false
+    if(p==='ht'&&!s.ht?.isHT) return false
+    if(p==='rs90'&&(s.rsTv??s.rs)<90) return false
+    if(p==='rs80'&&(s.rsTv??s.rs)<80) return false
+    if(p==='impr'&&s.rsTrend?.trend!=='improving') return false
+    if(p==='power'&&!(s.pp?.isPP&&s.rs>=80)) return false
+    if(p==='s2'&&calcWeinsteinStage(s).stage!==2) return false
+    if(p==='s1'&&calcWeinsteinStage(s).stage!==1) return false
+    if(p==='s3'&&calcWeinsteinStage(s).stage!==3) return false
+    if(p==='s4'&&calcWeinsteinStage(s).stage!==4) return false
+    if(p==='surge'&&(s.hy?.pctOfMax||0)<95) return false
+    if(p==='ibv'&&!calcIBV(s).isIBV) return false
+    if(p==='breakout'&&!calcHYHTBreakout(s).isBreakout) return false
+    if(p==='volpull'&&!calcVolClimaxNearSupport(s).isMatch) return false
+    if(p==='hyema9'&&!calcHyLowVolEma9Bounce(s).isMatch) return false
+    if(p==='canslim'&&!s.isCanslim) return false
+    if(p==='pead'&&!s.isPead) return false
+    const rating=resultRatingsMap[String(s.sym||'').toUpperCase()]||null
+    if(p==='resultAny'&&!rating) return false
+    if(p==='resultEx'&&rating!=='Excellent') return false
+    if(p==='resultGood'&&rating!=='Good') return false
+    if(p==='resultNeu'&&rating!=='Neutral') return false
+    if(p==='resultWeak'&&rating!=='Weak') return false
+    const rr=Array.isArray(f.resultRatingFilters)?f.resultRatingFilters:[]
+    if(rr.length>0){
+      const wantsHas=rr.includes('has')
+      const opts=rr.filter(x=>x!=='has')
+      if(!((wantsHas&&!!rating)||(opts.length>0&&opts.includes(rating)))) return false
+    }
+    const fr=Array.isArray(f.fundRatingFilters)?f.fundRatingFilters:[]
+    if(fr.length>0){
+      const label=ensureFundamentalQuality(s).label
+      if(!label||!fr.includes(label)) return false
+    }
+    const st=Array.isArray(f.strategyFilters)?f.strategyFilters:[]
+    if(st.length>0&&!st.some(x=>(x==='pead'&&s.isPead)||(x==='canslim'&&s.isCanslim))) return false
+    const bt=f.breakoutTypeFilter
+    if(bt==='hyht'&&!calcHYHTBreakout(s).isBreakout) return false
+    if(bt==='volpull'&&!calcVolClimaxNearSupport(s).isMatch) return false
+    if(bt==='hyema9'&&!calcHyLowVolEma9Bounce(s).isMatch) return false
+    if(bt==='ema5'&&!s.nearEMA5?.isNearEMA5) return false
+    if(bt==='r1'&&!s.isResistanceBreakout) return false
+    if(bt==='52wh'&&!s.is52whBreakout) return false
+    if(bt==='cup'&&!s.isCupHandleBreakout) return false
+    if(bt==='guppy'&&!s.isGuppyBullishCrossover) return false
+    if(bt==='s2'&&!s.isS2NewEntry) return false
+    return true
   }
   const [sortBy,setSortBy]=useState('rs')
   const [sortDir,setSortDir]=useState('desc')
@@ -15143,9 +15985,9 @@ export default function App(){
     }catch(e){
       setVisibleRsCols(defaults)
     }
-    setChartWide(1)
+    setChartWide(DEFAULT_CHART_WIDE)
     setChartPanelPct(null)
-    persistChartPanelAutoSave(1,null)
+    persistChartPanelAutoSave(DEFAULT_CHART_WIDE,null)
     setActiveLayoutSlot(null)
     setLayoutMsg('')
   }
@@ -15154,17 +15996,17 @@ export default function App(){
   // saved and puts every panel and block back on screen.
   const restoreWorkspace=()=>{
     applyDockLayout({...DEFAULT_DOCK_LAYOUT,order:[...DEFAULT_DOCK_LAYOUT.order]})
-    setChartWide(1)
+    setChartWide(DEFAULT_CHART_WIDE)
     setChartPanelPct(null)
-    persistChartPanelAutoSave(1,null)
+    persistChartPanelAutoSave(DEFAULT_CHART_WIDE,null)
     patchPanel('screener',{open:true,minimized:false,float:null})
     patchPanel('chart',{open:true,minimized:false,float:null})
-    patchDetailPanel({open:true,minimized:false,float:null})
-    persistDetailPanelPref(true)
+    patchDetailPanel({open:DEFAULT_DETAIL_OPEN,minimized:false,float:null})
+    persistDetailPanelPref(DEFAULT_DETAIL_OPEN)
     const order=normalizeChartSectionOrder(CHART_SECTION_ORDER_DEFAULT)
     setChartSectionOrder(order)
     setChartSectionHidden([])
-    persistChartSectionsBundle(order, [], {...DEFAULT_DOCK_LAYOUT,order:[...DEFAULT_DOCK_LAYOUT.order]}, true)
+    persistChartSectionsBundle(order, [], {...DEFAULT_DOCK_LAYOUT,order:[...DEFAULT_DOCK_LAYOUT.order]}, DEFAULT_DETAIL_OPEN)
     setActiveLayoutSlot(null)
     setLayoutMsg('')
   }
@@ -15239,23 +16081,23 @@ export default function App(){
       order: CHART_SECTION_ORDER_DEFAULT,
       hidden: [],
       dock: dockLayout,
-      detailOpen: true,
+      detailOpen: DEFAULT_DETAIL_OPEN,
     })
     setVisibleRsCols(defaults)
     setRsColOrder(order)
     setChartSectionOrder([...CHART_SECTION_ORDER_DEFAULT])
     setChartSectionHidden([])
-    setChartWide(1)
+    setChartWide(DEFAULT_CHART_WIDE)
     setChartPanelPct(null)
     setActiveLayoutSlot(null)
-    persistDetailPanelPref(true)
+    persistDetailPanelPref(DEFAULT_DETAIL_OPEN)
     try{
       localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(defaults))
       localStorage.setItem('lakshmimata-rs-col-ver','3')
       localStorage.setItem('lakshmimata-rs-col-order',JSON.stringify(order))
       localStorage.setItem('lakshmimata-chart-sections',JSON.stringify(sections))
       localStorage.setItem('lakshmimata-chart-sections-hidden',JSON.stringify([]))
-      persistChartPanelAutoSave(1,null)
+      persistChartPanelAutoSave(DEFAULT_CHART_WIDE,null)
     }catch(e){}
   }
   const [wlSearch,setWlSearch]=useState(''),[wlSigOnly,setWlSigOnly]=useState(false)
@@ -15405,6 +16247,7 @@ export default function App(){
     }catch(_){}
   },[compareSyms])
   const [historyDate,setHistoryDate]=useState(null) // null = live today, else 'YYYY-MM-DD'
+  historyDateRef.current=historyDate
   const [hoveredNavId,setHoveredNavId]=useState(null) // sidebar hover polish
   const [availableDates,setAvailableDates]=useState([])
   const refreshHistoryDates=useCallback(()=>{
@@ -16280,6 +17123,8 @@ export default function App(){
                 cloudSynced={!!(session?.user?.id && !demoMode)}
                 notifPermission={notifPermission}
                 notifHistory={notifHistory}
+                savedScanners={savedScanners}
+                onOpenSymbol={(s)=>{ if(s){ setMainTab('rs'); openChart(s) } }}
                 onClearHistory={(kind)=>clearNotifHistory(kind||null)}
                 onHistoryClick={(h)=>{
                   if(h?.kind==='announcement'){
@@ -16351,7 +17196,8 @@ export default function App(){
                           Swap <span style={{color:C.accent,fontWeight:700}}>RS</span> table,
                           {' '}<span style={{color:C.teal,fontWeight:700}}>C</span>hart &amp;
                           {' '}<span style={{color:C.green,fontWeight:700}}>F</span>undamentals — like TradingView layouts.
-                          Close Fundamentals with ✕ to hide it; it stays hidden until you restore it.
+                          Default is two panes: Chart 75% left, RS 25% right. Pick a preset with
+                          {' '}<span style={{color:C.green,fontWeight:700}}>F</span> to bring Fundamentals back.
                         </div>
                         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
                           {DOCK_LAYOUT_PRESETS.map(p=>{
@@ -16367,7 +17213,8 @@ export default function App(){
                                   }
                                   patchPanel('screener',{open:true,minimized:false,float:null})
                                   patchPanel('chart',{open:true,minimized:false,float:null})
-                                  patchDetailPanel({open:true,minimized:false,float:null})
+                                  // Two-pane presets say so explicitly; the rest bring Fundamentals back.
+                                  patchDetailPanel({open:p.detailOpen!==false,minimized:false,float:null})
                                   if(p.layout?.mode==='columns') setChartDetailTabHint('fundamentals')
                                   setDockLayoutMenuOpen(false)
                                 }}
@@ -16408,7 +17255,7 @@ export default function App(){
                           style={{marginTop:10,width:'100%',padding:'7px 8px',borderRadius:6,
                             border:`1px solid ${C.border}`,background:'transparent',color:C.muted,
                             fontSize:10,fontWeight:600,cursor:'pointer'}}>
-                          Restore everything (RS | Chart + Overview)
+                          Restore everything (Chart 75% | RS 25%)
                         </button>
                       </div>
                     </>
@@ -16624,14 +17471,30 @@ export default function App(){
                     <option key={sc.id} value={sc.id}>{sc.name}</option>
                   ))}
                 </select>
-                {selectedScannerId&&(
-                  <button type="button" title="Clear the loaded scanner selection"
-                    onClick={()=>setSelectedScannerId('')}
-                    style={{padding:'5px 9px',borderRadius:7,border:`1px solid ${C.border}`,
-                      background:'transparent',color:C.muted,fontSize:11,fontWeight:700,cursor:'pointer'}}>
-                    ✕
-                  </button>
-                )}
+                {selectedScannerId&&(()=>{
+                  const alertOn=scannerAlertIds.includes(String(selectedScannerId))
+                  return(
+                    <>
+                      <button type="button"
+                        title={alertOn
+                          ? 'Alerts on — you get notified when a new stock enters this scanner'
+                          : 'Alert me when a new stock enters this scanner'}
+                        onClick={()=>toggleScannerAlert(selectedScannerId)}
+                        style={{padding:'5px 9px',borderRadius:7,
+                          border:`1px solid ${alertOn?C.green:C.border}`,
+                          background:alertOn?C.green+'18':'transparent',
+                          color:alertOn?C.green:C.muted,fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                        {alertOn?'🔔 On':'🔕 Alert'}
+                      </button>
+                      <button type="button" title="Clear the loaded scanner selection"
+                        onClick={()=>setSelectedScannerId('')}
+                        style={{padding:'5px 9px',borderRadius:7,border:`1px solid ${C.border}`,
+                          background:'transparent',color:C.muted,fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                        ✕
+                      </button>
+                    </>
+                  )
+                })()}
               </>
             )}
             <span style={{fontSize:11,color:C.muted,marginLeft:'auto'}}>
