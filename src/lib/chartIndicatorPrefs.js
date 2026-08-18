@@ -28,6 +28,10 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'ribbonOpacity', label: 'Ribbon opacity %', min: 20, max: 100, step: 5 },
     { key: 'shortColor', label: 'Short ribbon', type: 'color', tab: 'style' },
     { key: 'longColor', label: 'Long ribbon', type: 'color', tab: 'style' },
+    { key: 'showCloud', label: 'Cloud fill', type: 'bool', tab: 'style' },
+    { key: 'cloudUpColor', label: 'Cloud up', type: 'color', tab: 'style' },
+    { key: 'cloudDnColor', label: 'Cloud down', type: 'color', tab: 'style' },
+    { key: 'cloudOpacity', label: 'Cloud opacity %', min: 5, max: 80, step: 1, tab: 'style' },
     { key: 'fastColor', label: 'EMA fast line', type: 'color', tab: 'style' },
     { key: 'slowColor', label: 'EMA slow line', type: 'color', tab: 'style' },
     { key: 'lineWidth', label: 'Ribbon width', min: 0.4, max: 3, step: 0.1, tab: 'style' },
@@ -94,6 +98,11 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'rsColor', label: 'RS line', type: 'color', tab: 'style' },
     { key: 'momColor', label: 'Momentum line', type: 'color', tab: 'style' },
     { key: 'rsMaColor', label: 'RS MA line', type: 'color', tab: 'style' },
+    { key: 'showRsBg', label: 'RS background (price pane)', type: 'bool', tab: 'style' },
+    { key: 'rsBgStrongColor', label: 'RS bg strong', type: 'color', tab: 'style' },
+    { key: 'rsBgAvgColor', label: 'RS bg average', type: 'color', tab: 'style' },
+    { key: 'rsBgWeakColor', label: 'RS bg weak', type: 'color', tab: 'style' },
+    { key: 'rsBgOpacity', label: 'RS bg opacity %', min: 2, max: 30, step: 1, tab: 'style' },
     { key: 'barOpacity', label: 'Histogram opacity %', min: 30, max: 100, step: 5, tab: 'style' },
   ],
   buysell: [
@@ -193,6 +202,7 @@ const DEFAULT_PARAMS = {
   },
   guppy: {
     ribbonOpacity: 85, shortColor: '#2dd4bf', longColor: '#f472b6',
+    showCloud: true, cloudUpColor: '#16a34a', cloudDnColor: '#ef4444', cloudOpacity: 20,
     fastColor: '#26c6da', slowColor: '#ab47bc', lineWidth: 0.9, showHighlight: true,
   },
   sr: {
@@ -211,6 +221,7 @@ const DEFAULT_PARAMS = {
   supercycle: {
     length: 21, rsMALength: 9, momLength: 21, bbMult: 2.0, kcMult: 1.5,
     showTable: true, tablePlacement: 'below', tableOpacity: 100, tableDays: 10, showStatus: true,
+    showRsBg: true, rsBgStrongColor: '#00e676', rsBgAvgColor: '#ffd600', rsBgWeakColor: '#ff1744', rsBgOpacity: 8,
     rsColor: '#29b6f6', momColor: '#26c6da', rsMaColor: '#ffd600', barOpacity: 92,
   },
   patterns: {

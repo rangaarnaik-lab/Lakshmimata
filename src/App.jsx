@@ -7731,6 +7731,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     }
     return best
   }
+  const priceClipId = `priceClip-${String(sym || 'sym').replace(/[^a-zA-Z0-9_-]/g, '_')}`
   const pointToXY = (pt) => {
     if (!pt?.date || pt.price == null) return null
     const abs = dateIndex(pt.date)
@@ -9107,6 +9108,30 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}>
+        {/* Pine-style RS backdrop on the main price pane */}
+        {showSuperCycle && scP.showRsBg !== false && (() => {
+          const n = vScRating.length
+          if (!n) return null
+          const step = n > 1 ? Math.max(1, idxToX(1) - idxToX(0)) : Math.max(2, candleW + 1)
+          const o = Math.min(0.35, Math.max(0.01, (Number(scP.rsBgOpacity) || 8) / 100))
+          const cStrong = scP.rsBgStrongColor || '#00e676'
+          const cAvg = scP.rsBgAvgColor || '#ffd600'
+          const cWeak = scP.rsBgWeakColor || '#ff1744'
+          return (
+            <g style={{ pointerEvents: 'none' }}>
+              {vScRating.map((r, i) => {
+                if (r == null || !Number.isFinite(r)) return null
+                const x0 = idxToX(i) - step / 2
+                const x1 = x0 + step + 0.75
+                const x = Math.max(padL, x0)
+                const w = Math.min(padL + chartW, x1) - x
+                if (w <= 0) return null
+                const fill = r > 70 ? cStrong : r >= 50 ? cAvg : cWeak
+                return <rect key={`rsbg-${i}`} x={x} y={priceTop} width={w} height={priceH} fill={fill} opacity={o} />
+              })}
+            </g>
+          )
+        })()}
         {/* Grid lines + nice price labels */}
         {priceTicks.map(p=>{
           const y = priceToY(p)
@@ -9256,6 +9281,47 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         {/* Guppy MMA ribbons (short teal / long rose) + EMA9×EMA50 cross markers */}
         {showGuppy && (
           <g opacity={pct01(guppyP.ribbonOpacity, 85)}>
+            {/* Pine-style Guppy cloud between short and long clusters */}
+            {guppyP.showCloud !== false && (() => {
+              const segments = []
+              let cur = null
+              const pushCur = () => {
+                if (cur && cur.s.length > 1 && cur.l.length > 1) segments.push(cur)
+                cur = null
+              }
+              for (let i = 0; i < vCloses.length; i++) {
+                const sVals = vGuppyShort.map(series => series[i]).filter(v => v != null && Number.isFinite(v))
+                const lVals = vGuppyLong.map(series => series[i]).filter(v => v != null && Number.isFinite(v))
+                if (!sVals.length || !lVals.length) {
+                  pushCur()
+                  continue
+                }
+                const sMid = sVals.reduce((a, b) => a + b, 0) / sVals.length
+                const lMid = lVals.reduce((a, b) => a + b, 0) / lVals.length
+                const bull = sMid >= lMid
+                if (!cur || cur.bull !== bull || cur.last !== i - 1) {
+                  pushCur()
+                  cur = { bull, s: [], l: [], last: i }
+                } else {
+                  cur.last = i
+                }
+                cur.s.push(`${idxToX(i)},${priceToY(sMid)}`)
+                cur.l.push(`${idxToX(i)},${priceToY(lMid)}`)
+              }
+              pushCur()
+              const cloudOpacity = Math.min(0.7, Math.max(0.05, (Number(guppyP.cloudOpacity) || 20) / 100))
+              const upColor = guppyP.cloudUpColor || '#16a34a'
+              const dnColor = guppyP.cloudDnColor || '#ef4444'
+              return segments.map((seg, i) => (
+                <path
+                  key={`gcloud-${i}`}
+                  d={`M ${seg.s.join(' L ')} L ${seg.l.slice().reverse().join(' L ')} Z`}
+                  fill={seg.bull ? upColor : dnColor}
+                  opacity={cloudOpacity}
+                  stroke="none"
+                />
+              ))
+            })()}
             {vGuppyShort.map((series,k)=>{
               const pts = series.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
               return pts.length>1 ? (
@@ -9642,13 +9708,16 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           </g>
         )}
 
-        {/* User drawings — anchored by date+price; remembered in localStorage */}
+        {/* User drawings — anchored by date+price; remembered in localStorage.
+            The clip id is sanitized because symbols like M&M or NIFTY 50
+            would otherwise produce a url(#…) reference the browser cannot
+            resolve, which silently drops every drawing. */}
         <defs>
-          <clipPath id={`priceClip-${sym}`}>
+          <clipPath id={priceClipId}>
             <rect x={padL} y={priceTop} width={chartW} height={priceH}/>
           </clipPath>
         </defs>
-        <g clipPath={`url(#priceClip-${sym})`}>
+        <g clipPath={`url(#${priceClipId})`}>
           {[...drawings, ...(drawDraft?.p1 && drawDraft.type !== 'measure' ? [{ id:'_draft', type: drawDraft.type, p1: drawDraft.p1, p2: drawDraft.p2, color: TV_TOOLBAR_BLUE, draft: true }] : [])].map(d=>{
             const a = pointToXY(d.p1)
             if (!a) return null
@@ -10588,10 +10657,21 @@ function ColumnDivider({active=false,onStart,onReset,style}){
         ...style,
       }}>
       {/* The column itself is a thin strip, so the grab zone is widened past
-          its own bounds — an 8px target is very hard to hit. */}
+          its own bounds — an 8px target is very hard to hit. Pointer capture
+          keeps the drag alive when the cursor crosses a panel that would
+          otherwise swallow the move events. */}
       <div
-        onPointerDown={onStart}
-        style={{position:'absolute',top:0,bottom:0,left:-7,right:-7,cursor:'col-resize',touchAction:'none'}}/>
+        onPointerDown={(e)=>{
+          e.preventDefault()
+          e.stopPropagation()
+          try{ e.currentTarget.setPointerCapture?.(e.pointerId) }catch{}
+          onStart?.(e)
+        }}
+        onPointerUp={(e)=>{
+          try{ e.currentTarget.releasePointerCapture?.(e.pointerId) }catch{}
+        }}
+        style={{position:'absolute',top:0,bottom:0,left:-10,right:-10,cursor:'col-resize',
+          touchAction:'none',zIndex:1}}/>
       {/* Full-height hairline so the split is always visible, plus a grip. */}
       <div style={{position:'absolute',top:0,bottom:0,left:'50%',transform:'translateX(-50%)',
         width:1,background:on?C.accent:C.border,opacity:on?0.9:0.5,
@@ -11771,7 +11851,7 @@ function shortIndexTickerName(name){
     .replace(/^NSE\s+/i,'')
     .replace('Private Bank','Pvt Bank')
 }
-function TickerBanner({stocks, indices, onSelect, onSelectIndex}){
+function TickerBanner({stocks, indices, onSelect, onSelectIndex, onHide}){
   const hasStocks = !!(stocks && stocks.length)
   const hasIndices = !!(indices && indices.length)
   if(!hasStocks && !hasIndices) return null
@@ -11837,7 +11917,7 @@ function TickerBanner({stocks, indices, onSelect, onSelectIndex}){
     </div>
   )
   return(
-    <div style={{background:C.card,borderBottom:`1px solid ${C.divider}`}}
+    <div style={{background:C.card,borderBottom:`1px solid ${C.divider}`,position:'relative'}}
       onMouseEnter={pauseTracks(true)}
       onMouseLeave={pauseTracks(false)}>
       <style>{`
@@ -11848,6 +11928,13 @@ function TickerBanner({stocks, indices, onSelect, onSelectIndex}){
       `}</style>
       {indexRow}
       {stockRow}
+      {onHide&&(
+        <button type="button" onClick={onHide}
+          title="Hide the top ticker (turn it back on in Account ▸ Top Ticker)"
+          style={{position:'absolute',top:2,right:4,zIndex:2,width:18,height:18,lineHeight:1,
+            borderRadius:4,border:`1px solid ${C.border}`,background:C.card,color:C.muted,
+            fontSize:11,fontWeight:700,cursor:'pointer',padding:0}}>×</button>
+      )}
     </div>
   )
 }
@@ -14115,6 +14202,7 @@ export default function App(){
   // drag title bar to float, minimize to taskbar, close to hide (restore from taskbar).
   const DETAIL_PANEL_PREF_KEY='lakshmimata-detail-panel-open'
   const HOVER_OUR_CHART_PREF_KEY='lakshmimata-hover-our-chart'
+  const TICKER_PREF_KEY='lakshmimata-top-ticker'
   const loadDetailPanelPref=()=>{
     try{
       const v=localStorage.getItem(DETAIL_PANEL_PREF_KEY)
@@ -14127,8 +14215,20 @@ export default function App(){
       return v==null ? true : v==='1'
     }catch{ return true }
   }
+  const loadTickerPref=()=>{
+    try{
+      const v=localStorage.getItem(TICKER_PREF_KEY)
+      return v==null ? true : v==='1'
+    }catch{ return true }
+  }
   const [detailPanelPref,setDetailPanelPref]=useState(loadDetailPanelPref)
   const [hoverOurChartEnabled,setHoverOurChartEnabled]=useState(loadHoverOurChartPref)
+  const [tickerEnabled,setTickerEnabled]=useState(loadTickerPref)
+  const persistTickerPref=(on)=>{
+    const next=!!on
+    setTickerEnabled(next)
+    try{ localStorage.setItem(TICKER_PREF_KEY, next?'1':'0') }catch(e){}
+  }
   const detailPanelPrefRef=useRef(detailPanelPref)
   useEffect(()=>{ detailPanelPrefRef.current=detailPanelPref },[detailPanelPref])
   const persistDetailPanelPref=(open)=>{
@@ -16353,10 +16453,13 @@ export default function App(){
           )}
         </div>
 
-        <div style={{flexShrink:0}}>
-          <TickerBanner stocks={topMovers} indices={indexData}
-            onSelect={openChart} onSelectIndex={name=>openChart(name,{isIndex:true})}/>
-        </div>
+        {tickerEnabled&&(
+          <div style={{flexShrink:0}}>
+            <TickerBanner stocks={topMovers} indices={indexData}
+              onSelect={openChart} onSelectIndex={name=>openChart(name,{isIndex:true})}
+              onHide={()=>persistTickerPref(false)}/>
+          </div>
+        )}
 
         {/* Below header: screener | chart | fund columns, stacked, or side layouts */}
         <div ref={innerRowRef} style={dockSoloChart?{
@@ -16498,6 +16601,38 @@ export default function App(){
                   color:C.muted,fontSize:11,fontWeight:700,cursor:'pointer'}}>
                 Clear
               </button>
+            )}
+            {/* Saved scanners live here too, not just inside the Filters
+                panel — one click to load a saved screen right after the
+                sector / industry scope. */}
+            {savedScanners.length>0&&(
+              <>
+                <span style={{width:1,height:18,background:C.border}}/>
+                <select value={selectedScannerId}
+                  title="Load one of your saved scanners"
+                  onChange={e=>{
+                    setSelectedScannerId(e.target.value)
+                    const sc=savedScanners.find(x=>String(x.id)===e.target.value)
+                    if(sc) applyFilterState(sc.filters)
+                  }}
+                  style={{padding:'6px 10px',borderRadius:7,
+                    border:`1px solid ${selectedScannerId?C.accent:C.border}`,
+                    background:C.bg,color:selectedScannerId?C.accent:C.text,fontSize:12,fontWeight:600,
+                    outline:'none',cursor:'pointer',maxWidth:isMobile?150:220}}>
+                  <option value="">💾 Saved scanners…</option>
+                  {savedScanners.map(sc=>(
+                    <option key={sc.id} value={sc.id}>{sc.name}</option>
+                  ))}
+                </select>
+                {selectedScannerId&&(
+                  <button type="button" title="Clear the loaded scanner selection"
+                    onClick={()=>setSelectedScannerId('')}
+                    style={{padding:'5px 9px',borderRadius:7,border:`1px solid ${C.border}`,
+                      background:'transparent',color:C.muted,fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                    ✕
+                  </button>
+                )}
+              </>
             )}
             <span style={{fontSize:11,color:C.muted,marginLeft:'auto'}}>
               {scopedStocks.length===stocks.length
@@ -21089,6 +21224,18 @@ export default function App(){
             </button>
             <div style={{fontSize:9.5,color:C.muted,marginTop:6,lineHeight:1.45}}>
               When enabled, hovering a stock name shows Our Chart in the popup (with TradingView &amp; Screener).
+            </div>
+            <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',
+              letterSpacing:'0.06em',margin:'14px 0 8px'}}>Top Ticker</div>
+            <button type="button" onClick={()=>persistTickerPref(!tickerEnabled)}
+              style={{width:'100%',padding:'8px 0',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
+                border:`1px solid ${tickerEnabled?C.accent:C.border}`,
+                background:tickerEnabled?C.accent+'18':C.bg,
+                color:tickerEnabled?C.accent:C.muted}}>
+              {tickerEnabled?'Scrolling Ticker · Enabled':'Scrolling Ticker · Disabled'}
+            </button>
+            <div style={{fontSize:9.5,color:C.muted,marginTop:6,lineHeight:1.45}}>
+              The rolling index &amp; stock strip above the tabs. Turn it off to free up vertical space.
             </div>
             <BreathingExercise ambient={ambient}/>
           </div>
