@@ -113,12 +113,12 @@ export function calcLakshmiVolumeIndicator(dates, opens, highs, lows, closes, vo
   const maLength = opts.maLength ?? 10
   const lookbackAvg = opts.lookbackAvg ?? 50
   const lookbackUD = opts.lookbackUD ?? 50
-  const bullSnortMult = opts.bullSnortMult ?? 3
-  const bullSnortDcr = opts.bullSnortDcr ?? 65
-  const snortAvgLen = opts.snortAvgLen ?? 50
-  const ivMult = opts.ivMult ?? 2
-  const ivDcr = opts.ivDcr ?? 50
-  const lowVolMult = opts.lowVolMult ?? 0.5
+  const bullSnortMult = Number(opts.bullSnortMult) || 3
+  const bullSnortDcr = Number(opts.bullSnortDcr) || 65
+  const snortAvgLen = Math.max(1, Math.round(Number(opts.snortAvgLen) || 50))
+  const ivMult = Number(opts.ivMult) || 2
+  const ivDcr = Number(opts.ivDcr) || 50
+  const lowVolMult = Number(opts.lowVolMult) || 0.5
   const n = closes.length
   const empty = () => ({
     volMA: new Array(n).fill(null),

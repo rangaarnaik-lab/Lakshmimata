@@ -883,47 +883,20 @@ export async function fetchStockFullHistory(sym) {
 
 /**
  * 1-minute OHLCV bars from stock_intraday_1m (written by live_scan).
- * Used by Our Chart for 1/3/5/15 intervals (client rolls up from 1m).
- * Returns same shape as fetchStockFullHistory (dates/prices/… arrays).
+ * Used by Our Chart for 1/3/5/15/30/60 intervals (client rolls up from 1m,
+ * or DB rolls via get_stock_intraday_bars when available).
+ *
+ * Prefers Postgres RPC (1 round-trip). Falls back to parallel REST pages.
+ * In-memory cache ~90s per symbol.
  */
-export async function fetchStockIntradayHistory(sym, { days = 30, limit = 12000 } = {}) {
-  const cleanSym = (sym || '').trim()
-  if (!cleanSym) return { error: 'No symbol' }
+const _intradayCache = new Map() // key -> { at, payload }
+const INTRADAY_CACHE_TTL_MS = 90_000
 
-  const since = new Date()
-  since.setUTCDate(since.getUTCDate() - Math.max(1, days))
-  const sinceIso = since.toISOString()
+function _intradayCacheKey(sym, days, limit, intervalMin = 1) {
+  return `${String(sym || '').trim().toUpperCase()}|${days}|${limit}|${intervalMin}`
+}
 
-  // PostgREST default max-rows is often 1000 — page until filled or exhausted.
-  const pageSize = 1000
-  const rows = []
-  let from = 0
-  while (rows.length < limit) {
-    const to = from + pageSize - 1
-    const { data, error } = await supabase
-      .from('stock_intraday_1m')
-      .select('ts,open,high,low,close,volume')
-      .ilike('sym', cleanSym)
-      .gte('ts', sinceIso)
-      .order('ts', { ascending: true })
-      .range(from, to)
-
-    if (error) {
-      console.error(`fetchStockIntradayHistory(${sym}) error:`, error.message || error)
-      return { error: error.message || String(error) }
-    }
-    if (!data?.length) break
-    rows.push(...data)
-    if (data.length < pageSize) break
-    from += pageSize
-  }
-
-  if (!rows.length) {
-    return {
-      error: `No 1-minute history yet for ${sym} — available after market scans fill stock_intraday_1m.`,
-    }
-  }
-
+function _rowsToIntradayPayload(cleanSym, rows) {
   return {
     sym: cleanSym,
     dates:   rows.map(r => r.ts),
@@ -936,6 +909,127 @@ export async function fetchStockIntradayHistory(sym, { days = 30, limit = 12000 
     updatedAt: rows[rows.length - 1]?.ts || null,
     interval: '1m',
   }
+}
+
+export function clearIntradayHistoryCache(sym = null) {
+  if (!sym) {
+    _intradayCache.clear()
+    return
+  }
+  const u = String(sym).trim().toUpperCase()
+  for (const k of [..._intradayCache.keys()]) {
+    if (k.startsWith(`${u}|`)) _intradayCache.delete(k)
+  }
+}
+
+async function _fetchIntradayViaRpc(cleanSym, daysN, limitN, intervalMin) {
+  const { data, error } = await supabase.rpc('get_stock_intraday_bars', {
+    p_sym: cleanSym,
+    p_days: daysN,
+    p_limit: limitN,
+    p_interval_m: intervalMin,
+  })
+  if (error) throw error
+  const rows = Array.isArray(data) ? data : []
+  return rows
+}
+
+async function _fetchIntradayViaRest(cleanSym, daysN, limitN) {
+  const since = new Date()
+  since.setUTCDate(since.getUTCDate() - daysN)
+  const sinceIso = since.toISOString()
+  const pageSize = 1000
+  const maxPages = Math.ceil(limitN / pageSize)
+
+  const fetchPage = async (pageIdx) => {
+    const from = pageIdx * pageSize
+    const to = from + pageSize - 1
+    const { data, error } = await supabase
+      .from('stock_intraday_1m')
+      .select('ts,open,high,low,close,volume')
+      .eq('sym', cleanSym.toUpperCase())
+      .gte('ts', sinceIso)
+      .order('ts', { ascending: false })
+      .range(from, to)
+    if (error) throw new Error(error.message || String(error))
+    return data || []
+  }
+
+  const first = await fetchPage(0)
+  if (!first.length) return []
+  let pages = [first]
+  if (first.length >= pageSize && maxPages > 1) {
+    const rest = await Promise.all(
+      Array.from({ length: maxPages - 1 }, (_, i) => fetchPage(i + 1))
+    )
+    pages = [first, ...rest]
+  }
+  const rows = []
+  for (const page of pages) {
+    if (!page.length) break
+    rows.push(...page)
+    if (page.length < pageSize) break
+  }
+  rows.reverse()
+  if (rows.length > limitN) rows.splice(0, rows.length - limitN)
+  return rows
+}
+
+export async function fetchStockIntradayHistory(sym, {
+  days = 10,
+  limit = 4500,
+  bypassCache = false,
+  intervalMin = 1,
+} = {}) {
+  const cleanSym = (sym || '').trim()
+  if (!cleanSym) return { error: 'No symbol' }
+
+  const daysN = Math.max(1, Math.min(30, Number(days) || 10))
+  const limitN = Math.max(500, Math.min(12000, Number(limit) || 4500))
+  const iv = Math.max(1, Number(intervalMin) || 1)
+  const cacheKey = _intradayCacheKey(cleanSym, daysN, limitN, iv)
+  if (!bypassCache) {
+    const hit = _intradayCache.get(cacheKey)
+    if (hit && (Date.now() - hit.at) < INTRADAY_CACHE_TTL_MS && hit.payload && !hit.payload.error) {
+      return hit.payload
+    }
+  }
+
+  let rows = []
+  try {
+    // Prefer single-call RPC (run 014_get_stock_intraday_bars.sql once).
+    rows = await _fetchIntradayViaRpc(cleanSym, daysN, limitN, iv === 1 ? 1 : 1)
+    // Always fetch raw 1m via RPC; client still rolls 3/5/15 (keeps one cache
+    // for all intervals). Pass iv>1 later if we want DB-side rollup.
+  } catch (rpcErr) {
+    try {
+      rows = await _fetchIntradayViaRest(cleanSym, daysN, limitN)
+    } catch (e) {
+      console.error(`fetchStockIntradayHistory(${sym}) error:`, e.message || e)
+      return { error: e.message || String(e) }
+    }
+    if (rpcErr) {
+      // Soft log once — missing RPC is expected until migration is applied
+      if (!fetchStockIntradayHistory._rpcWarned) {
+        fetchStockIntradayHistory._rpcWarned = true
+        console.info('get_stock_intraday_bars RPC unavailable — using REST pages. Run 014_get_stock_intraday_bars.sql for faster charts.')
+      }
+    }
+  }
+
+  if (!rows.length) {
+    return {
+      error: `No 1-minute history yet for ${sym} — available after market scans fill stock_intraday_1m.`,
+    }
+  }
+
+  const payload = _rowsToIntradayPayload(cleanSym, rows)
+  _intradayCache.set(cacheKey, { at: Date.now(), payload })
+  if (_intradayCache.size > 40) {
+    const oldest = [..._intradayCache.entries()].sort((a, b) => a[1].at - b[1].at)[0]
+    if (oldest) _intradayCache.delete(oldest[0])
+  }
+  return payload
 }
 
 /**

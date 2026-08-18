@@ -16,6 +16,12 @@ import {
   availableIntervalEntries, normalizeIntervalFavorites,
 } from './lib/chartIntervalPrefs'
 import {
+  loadChartLayout, persistChartLayout, defaultChartLayout, isChartLayoutDefault,
+  visiblePaneOrder, movePane, normalizeAxisW,
+  loadLayoutPresets, persistLayoutPresets, upsertPreset, removePreset,
+  PANE_MIN_PX, PANE_LABELS, PANE_KEYS, AXIS_W_MIN, AXIS_W_MAX,
+} from './lib/chartPaneSizes'
+import {
   TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap,
   TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal, Layers,
   ThumbsUp, ThumbsDown, MessageSquare, RotateCcw
@@ -6431,6 +6437,39 @@ const INTRADAY_TOOLBAR = [
 const TV_TOOLBAR_BLUE = '#2962ff'
 const BULL_SNORT_COLOR = LAKSHMI_BUY_SELL_COLORS.BULL_SNORT
 
+/** Nice round price-axis ticks (TradingView-style), not raw min/max fractions. */
+function nicePriceTicks(min, max, target = 6) {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || !(max > min)) return [min, max].filter(Number.isFinite)
+  const span = max - min
+  const rough = span / Math.max(2, target - 1)
+  const pow = Math.pow(10, Math.floor(Math.log10(Math.max(rough, 1e-12))))
+  let step = pow
+  let best = Infinity
+  for (const mult of [1, 2, 2.5, 5, 10]) {
+    for (const decade of [0.1, 1, 10]) {
+      const c = mult * pow * decade
+      const err = Math.abs(c - rough)
+      if (err < best) { best = err; step = c }
+    }
+  }
+  const start = Math.ceil(min / step) * step
+  const ticks = []
+  for (let v = start; v <= max + step * 1e-9; v += step) {
+    ticks.push(Number(v.toPrecision(12)))
+    if (ticks.length > 16) break
+  }
+  return ticks.length ? ticks : [min, max]
+}
+
+function formatAxisPrice(p) {
+  if (!Number.isFinite(p)) return ''
+  const a = Math.abs(p)
+  if (a >= 10000) return p.toFixed(0)
+  if (a >= 1000) return p.toFixed(1)
+  if (a >= 1) return p.toFixed(2)
+  return p.toFixed(4)
+}
+
 // Icons used on the volume pane marker row, its legend and the metrics table,
 // so the same glyph always means the same signal everywhere on the chart.
 const VOL_SIGNAL_ICONS = {
@@ -6530,8 +6569,36 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const [drawDraft, setDrawDraft] = useState(null) // { type, p1, p2? }
   const [selectedDrawId, setSelectedDrawId] = useState(null)
   const [hoverIdx, setHoverIdx] = useState(null)
+  const [hoverCrossY, setHoverCrossY] = useState(null)
   const [pinnedIdx, setPinnedIdx] = useState(null)
   const [chartBox, setChartBox] = useState({w:900, h: chartExpanded?520:480})
+  // TradingView-style chart layout: drag the separators between Price / Volume /
+  // Super Cycle / RSI / MACD, reorder the panes, drag the price scale width,
+  // and save the whole thing as a named preset (all per device).
+  const [chartLayout, setChartLayout] = useState(() => loadChartLayout())
+  const [layoutPresets, setLayoutPresets] = useState(() => loadLayoutPresets())
+  const [showLayoutMenu, setShowLayoutMenu] = useState(false)
+  const [presetName, setPresetName] = useState('')
+  const layoutMenuRef = useRef(null)
+  const [paneDragKey, setPaneDragKey] = useState(null) // 'price|vol' while dragging
+  const [paneHoverKey, setPaneHoverKey] = useState(null)
+  const [axisDragging, setAxisDragging] = useState(false)
+  const [axisHover, setAxisHover] = useState(false)
+  const paneDragRef = useRef(null)
+  const paneScale = chartLayout.panes
+  const setPaneScale = (next) => setChartLayout(l => ({
+    ...l,
+    panes: typeof next === 'function' ? next(l.panes) : next,
+  }))
+  useEffect(() => { persistChartLayout(chartLayout) }, [chartLayout])
+  useEffect(() => {
+    if (!showLayoutMenu) return
+    const onDown = (e) => {
+      if (layoutMenuRef.current && !layoutMenuRef.current.contains(e.target)) setShowLayoutMenu(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [showLayoutMenu])
   const dragRef = useRef(null) // {startX, startPanOffset} | {pinchDist, pinchZoomBars} | null
   const svgRef = useRef(null)
   const chartWrapRef = useRef(null)
@@ -6735,6 +6802,13 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     if (!seriesData || !seriesData.closes || seriesData.closes.length < minBars) return null
     const closes = seriesData.closes, highs = seriesData.highs, lows = seriesData.lows
     const volumes = seriesData.volumes, opens = seriesData.opens
+    const nBars = closes.length
+    // Intraday series can be thousands of bars — skip heavy detectors that
+    // are not toggled on so 1↔3↔5 switches stay responsive.
+    const heavyOk = !isIntraday || nBars <= 2500
+    const runPatterns = showPatterns && heavyOk
+    const runGuppy = showGuppy && (!isIntraday || nBars <= 4000)
+    const runHyHt = heavyOk
     const _swings = findSwingPoints(highs, lows, intervalMeta.swing)
     const ema9 = emaArr(closes, maP.ema9 ?? 9)
     const ema50 = emaArr(closes, 50)
@@ -6757,32 +6831,37 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           smallcapCloses: smallcapAligned,
         })
       : null
-    const candleBar = calcLakshmiCandleBarColors(opens, highs, lows, closes, volumes, barP)
-    const lakshmiVol = calcLakshmiVolumeIndicator(
-      seriesData.dates, opens, highs, lows, closes, volumes, volP,
-    )
+    const candleBar = showCandleColors
+      ? calcLakshmiCandleBarColors(opens, highs, lows, closes, volumes, barP)
+      : { colors: [], tags: [] }
+    const lakshmiVol = showLakshmiVol
+      ? calcLakshmiVolumeIndicator(
+        seriesData.dates, opens, highs, lows, closes, volumes, volP,
+      )
+      : null
+    const emptyFlags = () => new Array(nBars).fill(false)
     return {
-      ma20: calcSMASeries(closes, maP.ma20 ?? 20),
-      ma50: calcSMASeries(closes, maP.ma50 ?? 50),
-      ma200: calcSMASeries(closes, maP.ma200 ?? 200),
+      ma20: showMA ? calcSMASeries(closes, maP.ma20 ?? 20) : [],
+      ma50: showMA ? calcSMASeries(closes, maP.ma50 ?? 50) : [],
+      ma200: showMA ? calcSMASeries(closes, maP.ma200 ?? 200) : [],
       ema9,
       ema50,
-      guppyShort: GUPPY_SHORT_PERIODS.map(p => emaArr(closes, p)),
-      guppyLong: GUPPY_LONG_PERIODS.map(p => emaArr(closes, p)),
-      guppyCross: detectEmaCrossoverDays(emaArr(closes, 9), ema50),
-      rsi: calcRSISeries(closes, rsiP.length ?? 14),
-      macd: calcMACDSeries(closes, macdP.fast ?? 12, macdP.slow ?? 26, macdP.signal ?? 9),
+      guppyShort: runGuppy ? GUPPY_SHORT_PERIODS.map(p => emaArr(closes, p)) : [],
+      guppyLong: runGuppy ? GUPPY_LONG_PERIODS.map(p => emaArr(closes, p)) : [],
+      guppyCross: runGuppy ? detectEmaCrossoverDays(emaArr(closes, 9), ema50) : emptyFlags(),
+      rsi: showRSI ? calcRSISeries(closes, rsiP.length ?? 14) : [],
+      macd: showMACD ? calcMACDSeries(closes, macdP.fast ?? 12, macdP.slow ?? 26, macdP.signal ?? 9) : { macd: [], signal: [], hist: [] },
       swings: _swings,
-      sr: computeSupportResistance(_swings, closes[closes.length-1]),
-      insideBars: detectInsideBars(highs, lows),
-      ppDays: detectPPDays(closes, volumes),
-      hyDays: detectHYDays(volumes),
-      htDays: detectHTDays(volumes),
-      ibvDays: detectIBVDays(highs, lows, closes, volumes),
-      bullSnortDays: detectBullSnortDays(highs, lows, closes, volumes, opens, snortP),
+      sr: showSR ? computeSupportResistance(_swings, closes[closes.length-1]) : { r1:null,r2:null,s1:null,s2:null },
+      insideBars: runPatterns ? detectInsideBars(highs, lows) : emptyFlags(),
+      ppDays: runPatterns ? detectPPDays(closes, volumes) : emptyFlags(),
+      hyDays: runHyHt ? detectHYDays(volumes) : emptyFlags(),
+      htDays: runHyHt ? detectHTDays(volumes) : emptyFlags(),
+      ibvDays: runPatterns ? detectIBVDays(highs, lows, closes, volumes) : emptyFlags(),
+      bullSnortDays: showBullSnort ? detectBullSnortDays(highs, lows, closes, volumes, opens, snortP) : emptyFlags(),
       nearEma9Days: detectNearEMA9Days(closes),
-      vcp: detectVCPContractions(_swings),
-      cup: detectCupAndHandle(closes, highs, lows),
+      vcp: runPatterns ? detectVCPContractions(_swings) : null,
+      cup: runPatterns ? detectCupAndHandle(closes, highs, lows) : null,
       buyDays: buySell.buy,
       sellDays: buySell.sell,
       superCycle,
@@ -6790,13 +6869,16 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       candleBarTags: candleBar.tags,
       lakshmiVol,
     }
-  }, [seriesData, barInterval, intervalMeta, isIndex, showBuySell, showSuperCycle, niftyCloses,
+  }, [seriesData, barInterval, intervalMeta, isIndex, isIntraday, showBuySell, showSuperCycle, showMA, showGuppy, showSR, showPatterns, showBullSnort, showRSI, showMACD, showCandleColors, showLakshmiVol, niftyCloses,
     midcapCloses, smallcapCloses,
     maP, rsiP, macdP, scP, buyP, barP, snortP, volP])
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true); setData(null); setIntradayData(null)
+    setLoading(true); setData(null)
+    // Keep warm 1m bars when switching stocks only after clear — avoid wiping
+    // intraday cache when this effect re-runs for the same symbol.
+    setIntradayData(null)
     setPanOffset(0)
     setPinnedIdx(null)
     // Keep bar interval (1m/5m/D/…) when switching stocks — only reset pan/pin.
@@ -6811,12 +6893,15 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   }, [sym, isIndex])
 
   // Load / refresh 1m bars when an intraday interval is selected (stocks only).
+  // Switching 1↔3↔5↔15 does NOT refetch (isIntraday stays true). Cache in
+  // fetchStockIntradayHistory makes Daily→3m near-instant on revisit.
   useEffect(() => {
     if (!intradayFeatureOn || !isIntraday || isIndex) return
     let cancelled = false
     const load = (quiet = false) => {
-      if (!quiet) setIntradayLoading(true)
-      fetchStockIntradayHistory(sym, { days: 30 })
+      if (!quiet && !intradayData) setIntradayLoading(true)
+      // 10 days / ~4.5k bars is enough for 5D–1M zoom; parallel pages + cache.
+      fetchStockIntradayHistory(sym, { days: 10, limit: 4500, bypassCache: quiet })
         .then(res => { if (!cancelled) setIntradayData(res) })
         .catch(() => { if (!cancelled) setIntradayData({ error: 'Failed to load 1m history' }) })
         .finally(() => { if (!cancelled) setIntradayLoading(false) })
@@ -6824,6 +6909,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     load(false)
     const t = setInterval(() => load(true), 60000)
     return () => { cancelled = true; clearInterval(t) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: keep warm intradayData across quiet polls
   }, [sym, isIndex, isIntraday, intradayFeatureOn])
 
   // Index closes for Lakshmi Buy RS gate + Super Cycle multi-index RS table.
@@ -7034,7 +7120,11 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   // ── Layout: SVG viewBox matches the measured panel so the chart fills the device ──
   const W = chartBox.w
   const H = chartBox.h
-  const padL = 8, padR = Math.max(44, Math.round(W*0.06)), padT = 8, gapH = 4, axisPad = 18
+  const padL = 8, padT = 8, gapH = 4, axisPad = 18
+  // Price scale width: auto by default, or the width the user dragged it to.
+  const padR = chartLayout.axisW != null
+    ? Math.min(AXIS_W_MAX, Math.max(AXIS_W_MIN, chartLayout.axisW))
+    : Math.max(44, Math.round(W*0.06))
   // Reserve a strip above the volume pane for the Pine volume metrics table.
   const volShowTable = showLakshmiVol && volP.showTable !== false
   const volShowMarkers = showLakshmiVol && volP.showMarkers !== false
@@ -7043,25 +7133,49 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   // kept out of the bars so tall bars never clip them.
   const volMarkerH = volShowMarkers ? (isMobile ? 16 : 15) : 0
   // Reserve strip above Super Cycle for the TV-style RS rating history table.
-  const scTableH = showSuperCycle ? (isMobile ? 122 : 112) : 0
+  const scTableH = showSuperCycle ? (isMobile ? 132 : 122) : 0
   const panelGaps = gapH + (showRSI ? gapH : 0) + (showMACD ? gapH : 0) + (showSuperCycle ? gapH : 0)
   const usable = Math.max(160, H - padT - panelGaps - axisPad - volTableH - volMarkerH - scTableH)
   // When RSI/MACD/Super Cycle panes are on, shrink price/volume so everything fits.
   const extraPanes = (showRSI ? 1 : 0) + (showMACD ? 1 : 0) + (showSuperCycle ? 1 : 0)
-  const priceShare = extraPanes === 0 ? (chartExpanded ? 0.52 : 0.58)
+  const basePriceShare = extraPanes === 0 ? (chartExpanded ? 0.52 : 0.58)
     : extraPanes === 1 ? 0.46
     : extraPanes === 2 ? 0.38
     : 0.34
-  const volShare = extraPanes === 0 ? (1 - priceShare)
+  const baseVolShare = extraPanes === 0 ? (1 - basePriceShare)
     : extraPanes === 1 ? 0.22
     : extraPanes === 2 ? 0.16
     : 0.14
-  const indShare = extraPanes === 0 ? 0 : (1 - priceShare - volShare) / extraPanes
-  const priceH = Math.max(90, Math.round(usable * priceShare))
-  const volH = Math.max(48, Math.round(usable * volShare))
-  const rsiH = showRSI ? Math.max(44, Math.round(usable * indShare)) : 0
-  const macdH = showMACD ? Math.max(48, Math.round(usable * indShare)) : 0
-  const scH = showSuperCycle ? Math.max(48, Math.round(usable * indShare)) : 0
+  const baseIndShare = extraPanes === 0 ? 0 : (1 - basePriceShare - baseVolShare) / extraPanes
+  // Apply the user's dragged pane sizes on top of the responsive defaults,
+  // then renormalise so the visible panes always fill `usable`.
+  const paneBase = {
+    price: basePriceShare,
+    vol: baseVolShare,
+    sc: showSuperCycle ? baseIndShare : 0,
+    rsi: showRSI ? baseIndShare : 0,
+    macd: showMACD ? baseIndShare : 0,
+  }
+  const paneShares = (() => {
+    const raw = {}
+    let sum = 0
+    for (const k of Object.keys(paneBase)) {
+      const v = paneBase[k] > 0 ? paneBase[k] * (Number(paneScale[k]) || 1) : 0
+      raw[k] = v
+      sum += v
+    }
+    if (!(sum > 0)) return paneBase
+    const out = {}
+    for (const k of Object.keys(raw)) out[k] = raw[k] / sum
+    return out
+  })()
+  const priceShare = paneShares.price
+  const volShare = paneShares.vol
+  const priceH = Math.max(PANE_MIN_PX.price, Math.round(usable * priceShare))
+  const volH = Math.max(PANE_MIN_PX.vol, Math.round(usable * volShare))
+  const rsiH = showRSI ? Math.max(PANE_MIN_PX.rsi, Math.round(usable * paneShares.rsi)) : 0
+  const macdH = showMACD ? Math.max(PANE_MIN_PX.macd, Math.round(usable * paneShares.macd)) : 0
+  const scH = showSuperCycle ? Math.max(PANE_MIN_PX.sc, Math.round(usable * paneShares.sc)) : 0
   const chartW = Math.max(120, W - padL - padR)
 
   // barsToShow/start now driven by zoomBars/panOffset (mouse wheel /
@@ -7144,16 +7258,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       const prevN = i > 0 ? (superCycle.rsRatingNifty?.[i - 1] ?? superCycle.rsRating?.[i - 1]) : null
       const prevM = i > 0 ? superCycle.rsRatingMidcap?.[i - 1] : null
       const prevS = i > 0 ? superCycle.rsRatingSmallcap?.[i - 1] : null
-      const cycleUp = !!superCycle.cycleUp?.[i]
+      const cycle = superCycle.cycle?.[i]
+      const prevCycle = i > 0 ? superCycle.cycle?.[i - 1] : null
+      const cycleUp = prevCycle != null && cycle != null ? cycle > prevCycle : !!superCycle.cycleUp?.[i]
       const aboveMA = !!superCycle.rsAboveMA?.[i]
       const sqOn = !!superCycle.squeezeOn?.[i]
       const sqRel = !!superCycle.squeezeRelease?.[i]
-      const cond = (cycleUp ? 1 : 0) + (nifty != null && nifty >= 70 ? 1 : 0)
+      const cyclePos = cycle != null && !Number.isNaN(cycle) && cycle >= 0
+      const cond = (cyclePos ? 1 : 0) + (nifty != null && nifty >= 70 ? 1 : 0)
         + (aboveMA ? 1 : 0) + (sqRel ? 1 : 0)
       days.push({
         hdr: d === 0 ? 'Today' : `${d}D`,
         nifty, mid, sml, prevN, prevM, prevS,
-        cycleUp, aboveMA, sqOn, sqRel, cond,
+        cycle, prevCycle, cycleUp, aboveMA, sqOn, sqRel, cond,
       })
     }
     return days.length ? days : null
@@ -7174,18 +7291,131 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const volMetrics = lakshmiVol?.metrics || null
 
   // ── Layout ──
+  // Panes stack in the user's chosen order; each may carry a table strip above
+  // it (volume metrics, Super Cycle RS history) and a marker row below.
+  const paneOrder = visiblePaneOrder(chartLayout.order, {
+    sc: showSuperCycle, rsi: showRSI, macd: showMACD,
+  })
+  const paneHeights = { price: priceH, vol: volH, sc: scH, rsi: rsiH, macd: macdH }
+  const paneHeadHeights = { price: 0, vol: volTableH, sc: scTableH, rsi: 0, macd: 0 }
+  const paneFootHeights = { price: 0, vol: volMarkerH, sc: 0, rsi: 0, macd: 0 }
+  const paneLayout = (() => {
+    const headTop = {}, top = {}
+    let y = padT
+    paneOrder.forEach((k, i) => {
+      if (i > 0) y += gapH
+      headTop[k] = y
+      y += paneHeadHeights[k]
+      top[k] = y
+      y += paneHeights[k] + paneFootHeights[k]
+    })
+    return { headTop, top, bottom: y }
+  })()
+  const paneHeadTop = paneLayout.headTop
+  const paneTop = paneLayout.top
+  const panesBottom = paneLayout.bottom
+  const priceTop = paneTop.price ?? padT
   // Metrics table sits directly above the volume indicator (TV/Pine style).
-  const volTableTop = padT + priceH + gapH
-  const volTop = volTableTop + volTableH
+  const volTableTop = paneHeadTop.vol ?? padT
+  const volTop = paneTop.vol ?? padT
   const volMarkerTop = volTop + volH
   // Super Cycle RS history table sits directly above the Super Cycle pane.
-  const scTableTop = volMarkerTop + volMarkerH + (showSuperCycle ? gapH : 0)
-  const scTop = scTableTop + scTableH
-  // RSI/MACD follow below Super Cycle.
-  const rsiTop = scTop + scH + (showRSI ? gapH : 0)
-  const macdTop = rsiTop + rsiH + (showMACD ? gapH : 0)
-  const panesBottom = macdTop + macdH
+  const scTableTop = paneHeadTop.sc ?? 0
+  const scTop = paneTop.sc ?? 0
+  const rsiTop = paneTop.rsi ?? 0
+  const macdTop = paneTop.macd ?? 0
   const axisY  = panesBottom + 16
+
+  // ── Draggable pane separators: grab the line between two panes and drag ──
+  const paneBoundaryY = paneHeadTop
+  const paneDividers = paneOrder.slice(0, -1).map((above, i) => {
+    const below = paneOrder[i + 1]
+    return { key: `${above}|${below}`, above, below, y: paneBoundaryY[below] - gapH / 2 }
+  })
+
+  const beginPaneDrag = (e, div) => {
+    if (e.button != null && e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const rect = plotRef.current?.getBoundingClientRect()
+    const pxToUnit = rect && rect.height > 0 ? H / rect.height : 1
+    const total = paneShares[div.above] + paneShares[div.below]
+    const minA = Math.min(0.6 * total, PANE_MIN_PX[div.above] / Math.max(1, usable))
+    const minB = Math.min(0.6 * total, PANE_MIN_PX[div.below] / Math.max(1, usable))
+    const startY = e.clientY
+    const startA = paneShares[div.above]
+    const baseSnapshot = { ...paneBase }
+    const shareSnapshot = { ...paneShares }
+    paneDragRef.current = { key: div.key }
+    setPaneDragKey(div.key)
+
+    const move = (ev) => {
+      const dy = (ev.clientY - startY) * pxToUnit
+      const nextA = Math.min(total - minB, Math.max(minA, startA + dy / Math.max(1, usable)))
+      const next = { ...shareSnapshot, [div.above]: nextA, [div.below]: total - nextA }
+      setPaneScale(prev => {
+        const out = { ...prev }
+        for (const k of paneOrder) {
+          if (baseSnapshot[k] > 0) out[k] = next[k] / baseSnapshot[k]
+        }
+        return out
+      })
+    }
+    const end = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      paneDragRef.current = null
+      setPaneDragKey(null)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+  }
+  const resetPaneSizes = () => setPaneScale(defaultChartLayout().panes)
+  const resetChartLayout = () => { setChartLayout(defaultChartLayout()); setShowLayoutMenu(false) }
+  const movePaneBy = (key, dir) => setChartLayout(l => ({
+    ...l,
+    order: movePane(l.order, key, dir, { sc: showSuperCycle, rsi: showRSI, macd: showMACD }),
+  }))
+  const layoutDirty = !isChartLayoutDefault(chartLayout)
+  const applyLayoutPreset = (p) => {
+    setChartLayout({ panes: p.panes, order: p.order, axisW: p.axisW })
+    setShowLayoutMenu(false)
+  }
+  const saveLayoutPreset = () => {
+    const name = presetName.trim()
+    if (!name) return
+    setLayoutPresets(list => persistLayoutPresets(upsertPreset(list, name, chartLayout)))
+    setPresetName('')
+  }
+  const deleteLayoutPreset = (id) =>
+    setLayoutPresets(list => persistLayoutPresets(removePreset(list, id)))
+
+  // ── Draggable price scale: pull the axis edge to widen/narrow it ──
+  const beginAxisDrag = (e) => {
+    if (e.button != null && e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const rect = plotRef.current?.getBoundingClientRect()
+    const pxToUnit = rect && rect.width > 0 ? W / rect.width : 1
+    const startX = e.clientX
+    const startW = padR
+    setAxisDragging(true)
+    const move = (ev) => {
+      const next = normalizeAxisW(startW - (ev.clientX - startX) * pxToUnit)
+      setChartLayout(l => (l.axisW === next ? l : { ...l, axisW: next }))
+    }
+    const end = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      setAxisDragging(false)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+  }
 
   const visibleHighs = vHighs.filter(v=>v!=null)
   const visibleLows  = vLows.filter(v=>v!=null)
@@ -7199,7 +7429,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const pad = (maxP - minP) * 0.06 || 1
   maxP += pad; minP -= pad
 
-  const priceToY = p => padT + (maxP - p) / (maxP - minP) * priceH
+  const priceToY = p => priceTop + (maxP - p) / (maxP - minP) * priceH
   // Forecast (simple linear regression trend projection, NOT a real
   // prediction model) reserves some room on the right by treating the
   // effective bar count as larger than what's actually plotted.
@@ -7236,7 +7466,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
 
   const maxVol = Math.max(...vVol.filter(v=>v!=null), 1)
   const volToY = v => volTop + volH - (v / maxVol) * volH
-  const volBarW = Math.max(1.5, candleW * 0.82)
+  const volBarW = Math.max(1.5, candleW * 0.92)
   const TV_VOL_UP = '#26a69a'
   const TV_VOL_DN = '#ef5350'
   const TV_VOL_MA = showLakshmiVol ? '#A0A0A0' : '#5d8cff' // pine uses near-black (#141414); lightened for dark chart
@@ -7276,12 +7506,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     if (!rect || rect.width < 1 || rect.height < 1) return null
     const sx = (clientX - rect.left) * (W / rect.width)
     const sy = (clientY - rect.top) * (H / rect.height)
-    if (sy < padT - 2 || sy > padT + priceH + 2) return null
+    if (sy < priceTop - 2 || sy > priceTop + priceH + 2) return null
     const barF = ((sx - padL) / Math.max(1, chartW)) * totalCols - 0.5
     const visIdx = Math.max(0, Math.min(barsToShow - 1, Math.round(barF)))
     const absIdx = start + visIdx
     const date = dates[absIdx]
-    const price = maxP - ((sy - padT) / Math.max(1, priceH)) * (maxP - minP)
+    const price = maxP - ((sy - priceTop) / Math.max(1, priceH)) * (maxP - minP)
     if (!date || !Number.isFinite(price)) return null
     return { date, price }
   }
@@ -7310,7 +7540,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         if (px < padL || px > padL + chartW) dist = Infinity
       } else if (d.type === 'vline') {
         dist = Math.abs(px - a.x)
-        if (py < padT || py > padT + priceH) dist = Infinity
+        if (py < priceTop || py > priceTop + priceH) dist = Infinity
       } else if (d.type === 'rect' && b) {
         const left = Math.min(a.x, b.x), right = Math.max(a.x, b.x)
         const top = Math.min(a.y, b.y), bot = Math.max(a.y, b.y)
@@ -7352,8 +7582,21 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   }
   handleWheel = (e) => {
     e.preventDefault()
-    const factor = e.deltaY > 0 ? 1.15 : 0.87
-    throttle(() => setZoomBars(z => Math.max(wheelMinZoom, Math.min(n, Math.round(z * factor)))))
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const sx = (e.clientX - rect.left) * (W / rect.width)
+    const barF = ((sx - padL) / Math.max(1, chartW)) * totalCols - 0.5
+    const visIdx = Math.max(0, Math.min(barsToShow - 1, Math.round(barF)))
+    const absIdx = start + visIdx
+    const factor = e.deltaY > 0 ? 1.1 : 0.91
+    throttle(() => {
+      const next = Math.max(wheelMinZoom, Math.min(n, Math.round(barsToShow * factor)))
+      const frac = barsToShow > 1 ? visIdx / (barsToShow - 1) : 0
+      const newVis = Math.max(0, Math.min(next - 1, Math.round(frac * Math.max(0, next - 1))))
+      const newStart = Math.max(0, Math.min(Math.max(0, n - next), absIdx - newVis))
+      setZoomBars(next)
+      setPanOffset(Math.max(0, n - next - newStart))
+    })
   }
   handleMouseDown = (e) => {
     if (drawTool !== 'pan') {
@@ -7394,11 +7637,28 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       if (pt) setDrawDraft(d => d ? { ...d, p2: pt } : d)
       return
     }
-    if (!dragRef.current || dragRef.current.pinchDist != null) return
-    const deltaBars = pxToBars(e.clientX - dragRef.current.startX)
-    if (Math.abs(e.clientX - dragRef.current.startX) > 4) dragRef.current.moved = true
-    const capturedStartPanOffset = dragRef.current.startPanOffset
-    throttle(() => setPanOffset(Math.max(0, Math.min(maxPanOffset, capturedStartPanOffset - deltaBars))))
+    if (dragRef.current && dragRef.current.pinchDist == null) {
+      const deltaBars = pxToBars(e.clientX - dragRef.current.startX)
+      if (Math.abs(e.clientX - dragRef.current.startX) > 4) dragRef.current.moved = true
+      const capturedStartPanOffset = dragRef.current.startPanOffset
+      throttle(() => setPanOffset(Math.max(0, Math.min(maxPanOffset, capturedStartPanOffset - deltaBars))))
+      return
+    }
+    if (drawTool === 'pan') {
+      const rect = svgRef.current?.getBoundingClientRect()
+      if (!rect || rect.width < 1 || rect.height < 1) return
+      const sx = (e.clientX - rect.left) * (W / rect.width)
+      const sy = (e.clientY - rect.top) * (H / rect.height)
+      if (sx < padL || sx > padL + chartW || sy < padT - 2 || sy > panesBottom + 2) {
+        setHoverIdx(null)
+        setHoverCrossY(null)
+        return
+      }
+      const barF = ((sx - padL) / Math.max(1, chartW)) * totalCols - 0.5
+      const visIdx = Math.max(0, Math.min(barsToShow - 1, Math.round(barF)))
+      setHoverIdx(visIdx)
+      setHoverCrossY(Math.max(padT, Math.min(panesBottom, sy)))
+    }
   }
   handleMouseUp = (e) => {
     if (dragRef.current && !dragRef.current.moved && dragRef.current.maybeSelect) {
@@ -7844,6 +8104,103 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             Reset
           </button>
         )}
+        <div ref={layoutMenuRef} style={{position:'relative',display:'flex',alignItems:'center'}}>
+          <button type="button" onClick={()=>setShowLayoutMenu(v=>!v)}
+            title="Pane order, price scale width and saved layouts"
+            style={{padding:'4px 8px',border:'none',borderRadius:3,
+              background:showLayoutMenu?C.accent+'22':'transparent',
+              color:layoutDirty?C.accent:C.muted,fontSize:11,fontWeight:600,
+              cursor:'pointer',fontFamily:'inherit'}}>
+            Layout{layoutDirty?' •':''}
+          </button>
+          {showLayoutMenu && (
+            <div style={{position:'absolute',top:'100%',left:0,marginTop:4,zIndex:60,
+              minWidth:236,padding:8,borderRadius:8,
+              border:`1px solid ${C.border}`,background:C.card,
+              boxShadow:'0 10px 28px rgba(0,0,0,0.45)'}}>
+              <div style={{fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',
+                letterSpacing:'0.06em',marginBottom:5}}>Pane order</div>
+              {paneOrder.map((k,i)=>(
+                <div key={k} style={{display:'flex',alignItems:'center',gap:6,padding:'3px 0'}}>
+                  <span style={{flex:1,fontSize:11,color:C.text}}>{PANE_LABELS[k]}</span>
+                  <button type="button" disabled={i===0}
+                    onClick={()=>movePaneBy(k,-1)} title="Move up"
+                    style={{width:20,height:18,border:`1px solid ${C.border}`,borderRadius:3,
+                      background:'transparent',color:i===0?C.border:C.muted,fontSize:9,
+                      cursor:i===0?'default':'pointer',fontFamily:'inherit',lineHeight:1}}>▲</button>
+                  <button type="button" disabled={i===paneOrder.length-1}
+                    onClick={()=>movePaneBy(k,1)} title="Move down"
+                    style={{width:20,height:18,border:`1px solid ${C.border}`,borderRadius:3,
+                      background:'transparent',color:i===paneOrder.length-1?C.border:C.muted,fontSize:9,
+                      cursor:i===paneOrder.length-1?'default':'pointer',fontFamily:'inherit',lineHeight:1}}>▼</button>
+                </div>
+              ))}
+              {PANE_KEYS.filter(k=>!paneOrder.includes(k)).length>0 && (
+                <div style={{fontSize:9.5,color:C.muted,marginTop:4,opacity:0.8}}>
+                  Off: {PANE_KEYS.filter(k=>!paneOrder.includes(k)).map(k=>PANE_LABELS[k]).join(', ')}
+                </div>
+              )}
+              <div style={{height:1,background:C.border,opacity:0.6,margin:'8px 0'}}/>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <span style={{flex:1,fontSize:11,color:C.text}}>Price scale</span>
+                <span style={{fontSize:10,color:C.muted}}>
+                  {chartLayout.axisW==null?'Auto':`${padR}px`}
+                </span>
+                <button type="button" onClick={()=>setChartLayout(l=>({...l,axisW:null}))}
+                  title="Back to automatic width"
+                  style={{padding:'2px 6px',border:`1px solid ${C.border}`,borderRadius:3,
+                    background:'transparent',color:C.muted,fontSize:9.5,fontWeight:600,
+                    cursor:'pointer',fontFamily:'inherit'}}>Auto</button>
+              </div>
+              <div style={{fontSize:9.5,color:C.muted,marginTop:4,lineHeight:1.45}}>
+                Drag the separators between panes, or the price scale edge, to resize.
+                Double-click either to reset.
+              </div>
+              <div style={{height:1,background:C.border,opacity:0.6,margin:'8px 0'}}/>
+              <div style={{fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',
+                letterSpacing:'0.06em',marginBottom:5}}>Saved layouts</div>
+              {layoutPresets.length===0 && (
+                <div style={{fontSize:9.5,color:C.muted,opacity:0.8,marginBottom:5}}>
+                  None yet — arrange the panes, then save.
+                </div>
+              )}
+              {layoutPresets.map(p=>(
+                <div key={p.id} style={{display:'flex',alignItems:'center',gap:6,padding:'2px 0'}}>
+                  <button type="button" onClick={()=>applyLayoutPreset(p)}
+                    title="Load this layout"
+                    style={{flex:1,textAlign:'left',padding:'3px 6px',borderRadius:3,
+                      border:`1px solid ${C.border}`,background:'transparent',color:C.text,
+                      fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>{p.name}</button>
+                  <button type="button" onClick={()=>deleteLayoutPreset(p.id)} title="Delete"
+                    style={{width:20,height:20,border:`1px solid ${C.border}`,borderRadius:3,
+                      background:'transparent',color:C.muted,fontSize:11,cursor:'pointer',
+                      fontFamily:'inherit',lineHeight:1}}>×</button>
+                </div>
+              ))}
+              <div style={{display:'flex',gap:6,marginTop:6}}>
+                <input value={presetName} onChange={e=>setPresetName(e.target.value)}
+                  onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();saveLayoutPreset()}}}
+                  placeholder="Layout name" maxLength={40}
+                  style={{flex:1,minWidth:0,padding:'4px 6px',borderRadius:3,
+                    border:`1px solid ${C.border}`,background:C.bg,color:C.text,
+                    fontSize:11,fontFamily:'inherit'}}/>
+                <button type="button" onClick={saveLayoutPreset} disabled={!presetName.trim()}
+                  style={{padding:'4px 8px',borderRadius:3,border:'none',
+                    background:presetName.trim()?C.accent:C.border,
+                    color:presetName.trim()?'#000':C.muted,fontSize:11,fontWeight:700,
+                    cursor:presetName.trim()?'pointer':'default',fontFamily:'inherit'}}>Save</button>
+              </div>
+              {layoutDirty && (
+                <button type="button" onClick={resetChartLayout}
+                  style={{width:'100%',marginTop:8,padding:'5px 0',borderRadius:3,
+                    border:`1px solid ${C.border}`,background:'transparent',color:C.muted,
+                    fontSize:10.5,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+                  Reset to default layout
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         <span style={{fontSize:10,color:C.muted,marginLeft:'auto',opacity:0.85}}>
           {intervalMeta.label}
         </span>
@@ -7873,8 +8230,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         </div>
       )}
 
-      {/* Hover readout */}
-      <div style={{fontSize:10,color:C.muted,marginBottom:4,minHeight:14,flexShrink:0}}>
+      {/* Hover readout — denser TradingView-style OHLC strip */}
+      <div style={{fontSize:11,color:C.muted,marginBottom:4,minHeight:16,flexShrink:0,
+        fontVariantNumeric:'tabular-nums', letterSpacing:'0.01em'}}>
         {hover ? (
           <span>
             {pinnedIdx!=null && (
@@ -7882,11 +8240,23 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                 style={{color:C.accent,fontWeight:700,cursor:'pointer',marginRight:6}}>📌 (tap to unpin)</span>
             )}
             <b style={{color:C.text}}>{hover.date}</b>{'  '}
-            O <span style={{color:C.text}}>{hover.open?.toFixed(2)}</span>{'  '}
-            H <span style={{color:C.green}}>{hover.high?.toFixed(2)}</span>{'  '}
-            L <span style={{color:C.red}}>{hover.low?.toFixed(2)}</span>{'  '}
-            C <span style={{color:C.text,fontWeight:700}}>{hover.close?.toFixed(2)}</span>{'  '}
-            Vol <span style={{color:C.text}}>{hover.vol?.toLocaleString('en-IN')}</span>
+            <span style={{color:C.muted}}>O</span> <span style={{color:C.text}}>{hover.open?.toFixed(2)}</span>{'  '}
+            <span style={{color:C.muted}}>H</span> <span style={{color:TV_VOL_UP}}>{hover.high?.toFixed(2)}</span>{'  '}
+            <span style={{color:C.muted}}>L</span> <span style={{color:TV_VOL_DN}}>{hover.low?.toFixed(2)}</span>{'  '}
+            <span style={{color:C.muted}}>C</span> <span style={{
+              color: (hover.close!=null && hover.open!=null && hover.close>=hover.open) ? TV_VOL_UP : TV_VOL_DN,
+              fontWeight:800,
+            }}>{hover.close?.toFixed(2)}</span>
+            {hover.close!=null && hover.open!=null && (
+              <span style={{
+                marginLeft:6, fontWeight:700,
+                color: hover.close>=hover.open ? TV_VOL_UP : TV_VOL_DN,
+              }}>
+                {hover.close>=hover.open?'+':''}{(hover.close-hover.open).toFixed(2)}
+                {' '}({hover.open ? (((hover.close-hover.open)/hover.open)*100).toFixed(2) : '0.00'}%)
+              </span>
+            )}
+            {'  '}Vol <span style={{color:C.text}}>{hover.vol?.toLocaleString('en-IN')}</span>
             {hover.volEma!=null&&(
               <span>{'  '}Vol MA <span style={{color:TV_VOL_MA}}>{fmtVol(hover.volEma)}</span></span>
             )}
@@ -7924,6 +8294,88 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       </div>
 
       <div ref={plotRef} style={{flex:1,minHeight:0,position:'relative',width:'100%'}}>
+      {/* Drag any separator to resize the panes (TradingView style); double-click resets.
+          Desktop only — on touch the strips would swallow pan gestures. */}
+      {!isMobile && paneDividers.map(div => {
+        const active = paneDragKey === div.key || paneHoverKey === div.key
+        return (
+          <div
+            key={div.key}
+            onPointerDown={e => beginPaneDrag(e, div)}
+            onDoubleClick={resetPaneSizes}
+            onMouseEnter={() => setPaneHoverKey(div.key)}
+            onMouseLeave={() => setPaneHoverKey(k => (k === div.key ? null : k))}
+            title={`Drag to resize ${PANE_LABELS[div.above]} / ${PANE_LABELS[div.below]} · double-click to reset all panes`}
+            style={{
+              position:'absolute',
+              left:`${(padL / W) * 100}%`,
+              width:`${(chartW / W) * 100}%`,
+              top:`${((div.y - 5) / H) * 100}%`,
+              height:11,
+              cursor:'row-resize',
+              touchAction:'none',
+              zIndex:7,
+              display:'flex',
+              alignItems:'center',
+              justifyContent:'center',
+            }}>
+            <div style={{
+              width:'100%',
+              height:active?2:1,
+              background:active?C.accent:C.border,
+              opacity:active?0.85:0.3,
+              borderRadius:2,
+              transition:'opacity .12s',
+            }}/>
+            {active && (
+              <div style={{
+                position:'absolute',
+                width:36,height:7,borderRadius:4,
+                background:C.accent,opacity:0.9,
+                boxShadow:`0 0 0 1px ${C.bg}`,
+              }}/>
+            )}
+          </div>
+        )
+      })}
+      {/* Price scale width — drag the axis edge, double-click for auto */}
+      {!isMobile && (
+        <div
+          onPointerDown={beginAxisDrag}
+          onDoubleClick={()=>setChartLayout(l=>({...l,axisW:null}))}
+          onMouseEnter={()=>setAxisHover(true)}
+          onMouseLeave={()=>setAxisHover(false)}
+          title="Drag to resize the price scale · double-click for auto width"
+          style={{
+            position:'absolute',
+            left:`${((W - padR - 5) / W) * 100}%`,
+            width:11,
+            top:`${(padT / H) * 100}%`,
+            height:`${(Math.max(20, panesBottom - padT) / H) * 100}%`,
+            cursor:'col-resize',
+            touchAction:'none',
+            zIndex:7,
+            display:'flex',
+            alignItems:'center',
+            justifyContent:'center',
+          }}>
+          <div style={{
+            width:(axisDragging||axisHover)?2:1,
+            height:'100%',
+            background:(axisDragging||axisHover)?C.accent:C.border,
+            opacity:(axisDragging||axisHover)?0.85:0.3,
+            transition:'opacity .12s',
+          }}/>
+          {(axisDragging||axisHover) && (
+            <div style={{
+              position:'absolute',
+              width:7,height:36,borderRadius:4,
+              background:C.accent,opacity:0.9,
+              boxShadow:`0 0 0 1px ${C.bg}`,
+            }}/>
+          )}
+        </div>
+      )}
       {/* Pine volume metrics table — directly above the volume pane */}
       {volShowTable && volMetrics && volTableH > 0 && (() => {
         const m = volMetrics
@@ -7999,9 +8451,22 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           lime: '#00E676', red: '#FF1744', orange: '#FF9100', gray: '#78909C', white: '#E0E0E0',
         }
         const ratingColor = (r) => r == null ? COL.gray : r >= 70 ? COL.lime : r < 40 ? COL.red : COL.orange
+        // Tiny TradingView-style labels (no emoji — emoji was clipping / hiding CYCLE)
+        const cycleCell = (cycle, prev) => {
+          if (cycle == null || Number.isNaN(cycle)) return { text: '—', color: COL.gray }
+          const color = lakshmiCycleBarColor(cycle, prev)
+          const up = prev != null && cycle > prev
+          const down = prev != null && cycle < prev
+          if (cycle >= 0 && up) return { text: '+↑', color }
+          if (cycle >= 0 && down) return { text: '+↓', color }
+          if (cycle < 0 && down) return { text: '−↓', color }
+          if (cycle < 0 && up) return { text: '−↑', color }
+          return { text: cycle >= 0 ? '+' : '−', color: COL.gray }
+        }
         const ratingCell = (curr, prev) => {
-          const icon = prev == null ? '⚪' : curr > prev ? '🟢' : curr < prev ? '🔴' : '⚪'
-          return `${icon} ${curr ?? '—'}`
+          if (curr == null) return '—'
+          const arrow = prev == null ? '' : curr > prev ? '↑' : curr < prev ? '↓' : '·'
+          return `${curr}${arrow}`
         }
         const th = (txt) => (
           <div key={txt} style={{
@@ -8017,11 +8482,15 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             borderRight: '1px solid #2A2A3E', borderTop: '1px solid #2A2A3E',
           }}>{txt}</div>
         )
-        const td = (txt, color) => (
+        const td = (txt, color, opts={}) => (
           <div style={{
-            padding: isMobile ? '2px 3px' : '3px 4px', fontSize: isMobile ? 7 : 8, fontWeight: 700,
+            padding: isMobile ? '2px 3px' : '3px 4px',
+            fontSize: opts.big ? (isMobile ? 9 : 10) : (isMobile ? 7 : 8),
+            fontWeight: 800,
             color: color || COL.white, background: COL.cell, textAlign: 'center', whiteSpace: 'nowrap',
             borderRight: '1px solid #2A2A3E', borderTop: '1px solid #2A2A3E',
+            letterSpacing: opts.big ? '0.02em' : undefined,
+            fontVariantNumeric: 'tabular-nums',
           }}>{txt}</div>
         )
         const rows = [
@@ -8039,29 +8508,27 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           },
           {
             label: 'CYCLE',
-            cells: scRsTable.map(d => ({
-              text: d.cycleUp ? '🟢 ▲' : '🔴 ▼',
-              color: d.cycleUp ? COL.lime : COL.red,
-            })),
+            cells: scRsTable.map(d => ({ ...cycleCell(d.cycle, d.prevCycle), big: true })),
           },
           {
             label: 'RS vs MA',
             cells: scRsTable.map(d => ({
-              text: d.aboveMA ? '🟢 Y' : '🔴 N',
+              text: d.aboveMA ? 'Above' : 'Below',
               color: d.aboveMA ? COL.lime : COL.red,
+              big: true,
             })),
           },
           {
             label: 'SQUEEZE',
             cells: scRsTable.map(d => ({
-              text: d.sqRel ? '🟢 REL' : d.sqOn ? '🟠 ON' : '⚪ OFF',
+              text: d.sqRel ? 'REL' : d.sqOn ? 'ON' : 'OFF',
               color: d.sqRel ? COL.lime : d.sqOn ? COL.orange : COL.gray,
             })),
           },
           {
             label: 'CONDITIONS',
             cells: scRsTable.map(d => ({
-              text: `${d.cond} / 4`,
+              text: `${d.cond}/4`,
               color: d.cond >= 3 ? COL.lime : d.cond >= 2 ? COL.orange : COL.red,
             })),
           },
@@ -8082,7 +8549,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           }} title="Super Cycle RS Rating history (TradingView-style)">
             <div style={{
               display: 'grid',
-              gridTemplateColumns: `minmax(58px,auto) repeat(${scRsTable.length}, minmax(32px,1fr))`,
+              gridTemplateColumns: `minmax(64px,auto) repeat(${scRsTable.length}, minmax(36px,1fr))`,
               width: '100%',
               minWidth: isMobile ? 420 : undefined,
             }}>
@@ -8092,7 +8559,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                 <React.Fragment key={row.label}>
                   {lab(row.label)}
                   {row.cells.map((c, i) => (
-                    <React.Fragment key={`${row.label}-${i}`}>{td(c.text, c.color)}</React.Fragment>
+                    <React.Fragment key={`${row.label}-${i}`}>{td(c.text, c.color, { big: !!c.big })}</React.Fragment>
                   ))}
                 </React.Fragment>
               ))}
@@ -8105,6 +8572,11 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               <span><span style={{color:COL.red}}>■</span> &lt;50 Weak</span>
               <span><span style={{color:'#FFD600'}}>■</span> 50–70 Avg</span>
               <span><span style={{color:COL.lime}}>■</span> &gt;70 Strong</span>
+              <span style={{opacity:0.5}}>|</span>
+              <span><span style={{color:LAKSHMI_CYCLE_COLORS.POS_UP,fontWeight:800}}>+↑</span> pos↑</span>
+              <span><span style={{color:LAKSHMI_CYCLE_COLORS.POS_DOWN,fontWeight:800}}>+↓</span> pos↓</span>
+              <span><span style={{color:LAKSHMI_CYCLE_COLORS.NEG_DOWN,fontWeight:800}}>−↓</span> neg↓</span>
+              <span><span style={{color:LAKSHMI_CYCLE_COLORS.NEG_UP,fontWeight:800}}>−↑</span> neg↑</span>
               {scRsLatest != null && (
                 <span style={{marginLeft:'auto', fontWeight:800, color: ratingColor(scRsLatest)}}>
                   Today RS {scRsLatest}
@@ -8122,7 +8594,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           touchAction:'none',
           cursor: drawTool!=='pan' ? 'crosshair' : (dragRef.current?'grabbing':'grab'),
         }}
-        onMouseLeave={()=>{setHoverIdx(null); if(drawTool==='pan') dragRef.current=null}}
+        onMouseLeave={()=>{setHoverIdx(null); setHoverCrossY(null); if(drawTool==='pan') dragRef.current=null}}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -8130,28 +8602,36 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}>
-        {/* Grid lines + price labels */}
-        {[0,0.25,0.5,0.75,1].map(f=>{
-          const p = maxP - f*(maxP-minP)
-          const y = padT + f*priceH
+        {/* Grid lines + nice price labels */}
+        {nicePriceTicks(minP, maxP, Math.max(4, Math.round(priceH / 48))).map(p=>{
+          const y = priceToY(p)
+          if (y < priceTop - 1 || y > priceTop + priceH + 1) return null
           return (
-            <g key={f}>
-              <line x1={padL} y1={y} x2={padL+chartW} y2={y} stroke={C.border} strokeWidth={0.5} opacity={0.5}/>
-              <text x={padL+chartW+4} y={y+3} fontSize={9} fill={C.muted}>{p.toFixed(1)}</text>
+            <g key={`pt-${p}`}>
+              <line x1={padL} y1={y} x2={padL+chartW} y2={y} stroke={C.border} strokeWidth={0.5} opacity={0.28}/>
+              <text x={padL+chartW+4} y={y+3} fontSize={9} fill={C.muted}
+                style={{fontVariantNumeric:'tabular-nums'}}>{formatAxisPrice(p)}</text>
             </g>
           )
         })}
 
+        {/* Low-contrast symbol watermark */}
+        <text x={padL + chartW / 2} y={priceTop + priceH * 0.48}
+          textAnchor="middle" fontSize={Math.min(56, Math.max(28, priceH * 0.28))}
+          fontWeight={800} fill={C.text} opacity={0.06} style={{pointerEvents:'none', userSelect:'none'}}>
+          {sym}
+        </text>
+
         {/* Volume sub-chart — TradingView-style pane with its own grid */}
-        <rect x={padL} y={volTop} width={chartW} height={volH} fill={C.card} opacity={0.4}/>
-        <line x1={padL} y1={volTop} x2={padL+chartW} y2={volTop} stroke={C.border} strokeWidth={1} opacity={0.8}/>
+        <line x1={padL} y1={volTop} x2={padL+chartW} y2={volTop} stroke={C.border} strokeWidth={1} opacity={0.55}/>
         {[0,0.5,1].map(f=>{
           const y = volTop + f*volH
           const v = maxVol * (1-f)
           return (
             <g key={`volgrid-${f}`}>
-              <line x1={padL} y1={y} x2={padL+chartW} y2={y} stroke={C.border} strokeWidth={0.5} opacity={0.35}/>
-              <text x={padL+chartW+4} y={y+3} fontSize={8} fill={C.muted}>{fmtVol(v)}</text>
+              <line x1={padL} y1={y} x2={padL+chartW} y2={y} stroke={C.border} strokeWidth={0.5} opacity={0.22}/>
+              <text x={padL+chartW+4} y={y+3} fontSize={8} fill={C.muted}
+                style={{fontVariantNumeric:'tabular-nums'}}>{fmtVol(v)}</text>
             </g>
           )
         })}
@@ -8316,27 +8796,42 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           return pts.length>1 ? <polyline points={pts.join(' ')} fill="none" stroke={C.accent} strokeWidth={1.8}/> : null
         })()}
 
-        {/* Candlesticks */}
+        {/* Candlesticks — TradingView hollow-up / filled-down */}
         {vCloses.map((c,i)=>{
           const op = vOpens[i], hi = vHighs[i], lo = vLows[i]
           if(c==null||op==null||hi==null||lo==null) return null
           const up = c >= op
-          const color = (showCandleColors && vBarColor[i]) || (up ? C.green : C.red)
+          const custom = showCandleColors && vBarColor[i]
+          const color = custom || (up ? TV_VOL_UP : TV_VOL_DN)
           const x = idxToX(i)
           const yOpen = priceToY(op), yClose = priceToY(c)
-          const bodyTop = Math.min(yOpen,yClose), bodyH = Math.max(1, Math.abs(yClose-yOpen))
+          const bodyTop = Math.min(yOpen,yClose)
+          const rawBodyH = Math.abs(yClose-yOpen)
+          const isDoji = rawBodyH < 0.75
+          const bodyH = Math.max(isDoji ? 0 : 1, rawBodyH)
+          const wickW = Math.max(1, Math.min(2.2, candleW * 0.18))
+          const hollow = !custom && up && !isDoji
           return (
             <g key={i}
-              onMouseEnter={()=> drawTool==='pan' && setHoverIdx(i)}
               onClick={(e)=>{
                 if (drawTool!=='pan') return
                 e.stopPropagation();setPinnedIdx(p=>p===i?null:i)
               }}
               style={{cursor: drawTool==='pan' ? 'crosshair' : 'inherit'}}>
-              <rect x={x-candleW/2-1} y={padT} width={candleW+2} height={priceH} fill="transparent"/>
+              <rect x={x-candleW/2-1} y={priceTop} width={candleW+2} height={priceH} fill="transparent"/>
               {chartStyle==='candle' && <>
-                <line x1={x} y1={priceToY(hi)} x2={x} y2={priceToY(lo)} stroke={color} strokeWidth={1}/>
-                <rect x={x-candleW/2} y={bodyTop} width={candleW} height={bodyH} fill={color}/>
+                <line x1={x} y1={priceToY(hi)} x2={x} y2={priceToY(lo)}
+                  stroke={color} strokeWidth={wickW} strokeLinecap="round"/>
+                {isDoji ? (
+                  <line x1={x-candleW/2} y1={yClose} x2={x+candleW/2} y2={yClose}
+                    stroke={color} strokeWidth={1.35}/>
+                ) : hollow ? (
+                  <rect x={x-candleW/2} y={bodyTop} width={candleW} height={bodyH}
+                    fill="none" stroke={color} strokeWidth={1.25}/>
+                ) : (
+                  <rect x={x-candleW/2} y={bodyTop} width={candleW} height={bodyH}
+                    fill={color} stroke={color} strokeWidth={0.4}/>
+                )}
               </>}
               {/* Pattern markers */}
               {showPatterns && vInsideBars[i] && (
@@ -8357,12 +8852,13 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               {(hoverIdx===i || pinnedIdx===i) && (
                 <>
                   <line x1={x} y1={padT} x2={x} y2={panesBottom} stroke={pinnedIdx===i?C.accent:C.muted}
-                    strokeWidth={pinnedIdx===i?1:0.5} strokeDasharray={pinnedIdx===i?'none':'2,2'}/>
+                    strokeWidth={pinnedIdx===i?1:0.6} strokeDasharray={pinnedIdx===i?'none':'3,3'} opacity={0.9}/>
                   {/* Floating date label under the crosshair, TradingView style */}
-                  <rect x={x-24} y={axisY-9} width={48} height={13} rx={2}
+                  <rect x={x-28} y={axisY-9} width={56} height={14} rx={2}
                     fill={pinnedIdx===i?C.accent:C.card} stroke={C.border}/>
-                  <text x={x} y={axisY} fontSize={8} fontWeight={700}
-                    fill={pinnedIdx===i?'#0a0a0f':C.text} textAnchor="middle">
+                  <text x={x} y={axisY+1} fontSize={8} fontWeight={700}
+                    fill={pinnedIdx===i?'#0a0a0f':C.text} textAnchor="middle"
+                    style={{fontVariantNumeric:'tabular-nums'}}>
                     {vDates[i]?.slice(5).replace('-','/')}
                   </text>
                 </>
@@ -8371,6 +8867,55 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           )
         })}
 
+        {/* Horizontal crosshair + price tag on scale */}
+        {hoverCrossY!=null && drawTool==='pan' && hoverCrossY >= priceTop && hoverCrossY <= priceTop + priceH && (
+          <g style={{pointerEvents:'none'}}>
+            <line x1={padL} y1={hoverCrossY} x2={padL+chartW} y2={hoverCrossY}
+              stroke={C.muted} strokeWidth={0.6} strokeDasharray="3,3" opacity={0.85}/>
+            {(() => {
+              const px = maxP - ((hoverCrossY - priceTop) / Math.max(1, priceH)) * (maxP - minP)
+              const label = formatAxisPrice(px)
+              const tw = Math.max(44, label.length * 6.5 + 10)
+              return (
+                <>
+                  <rect x={padL+chartW+1} y={hoverCrossY-8} width={tw} height={16} rx={2}
+                    fill={C.card} stroke={C.border}/>
+                  <text x={padL+chartW+6} y={hoverCrossY+3} fontSize={9} fontWeight={700} fill={C.text}
+                    style={{fontVariantNumeric:'tabular-nums'}}>{label}</text>
+                </>
+              )
+            })()}
+          </g>
+        )}
+
+        {/* Last price line + right-scale tag (TradingView live marker) */}
+        {chartStyle==='candle' && vCloses.length > 0 && (() => {
+          const last = vCloses[vCloses.length - 1]
+          if (last == null || !Number.isFinite(last)) return null
+          const prev = vCloses.length > 1 ? vCloses[vCloses.length - 2] : last
+          const up = last >= (prev ?? last)
+          const color = up ? TV_VOL_UP : TV_VOL_DN
+          const y = priceToY(last)
+          if (y < priceTop || y > priceTop + priceH) return null
+          const label = formatAxisPrice(last)
+          const tw = Math.max(48, label.length * 6.5 + 12)
+          return (
+            <g style={{pointerEvents:'none'}}>
+              <line x1={padL} y1={y} x2={padL+chartW} y2={y}
+                stroke={color} strokeWidth={1} strokeDasharray="4,3" opacity={0.95}/>
+              <rect x={padL+chartW+1} y={y-9} width={tw} height={18} rx={3}
+                fill={color}/>
+              <text x={padL+chartW+6} y={y+4} fontSize={10} fontWeight={800} fill="#fff"
+                style={{fontVariantNumeric:'tabular-nums'}}>{label}</text>
+              {isLiveUpdating && (
+                <circle cx={padL+chartW+tw-8} cy={y} r={3} fill="#fff" opacity={0.9}>
+                  <animate attributeName="opacity" values="0.95;0.25;0.95" dur="1.4s" repeatCount="indefinite"/>
+                </circle>
+              )}
+            </g>
+          )
+        })()}
+
         {/* Lakshmi Volume icons + HT/HY/HQ/M labels on candles (Pine force_overlay). */}
         {showLakshmiVol && (
           <g style={{pointerEvents:'none'}}>
@@ -8378,8 +8923,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               const hi = vHighs[i], lo = vLows[i]
               if (c==null || hi==null || lo==null) return null
               const x = idxToX(i)
-              const yBelow0 = Math.min(padT + priceH - 4, priceToY(lo) + 11)
-              const yAbove0 = Math.max(padT + 11, priceToY(hi) - 9)
+              const yBelow0 = Math.min(priceTop + priceH - 4, priceToY(lo) + 11)
+              const yAbove0 = Math.max(priceTop + 11, priceToY(hi) - 9)
               const nodes = []
               let b = 0, a = 0
               if (vLvIv[i]) {
@@ -8433,7 +8978,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         {/* User drawings — anchored by date+price; remembered in localStorage */}
         <defs>
           <clipPath id={`priceClip-${sym}`}>
-            <rect x={padL} y={padT} width={chartW} height={priceH}/>
+            <rect x={padL} y={priceTop} width={chartW} height={priceH}/>
           </clipPath>
         </defs>
         <g clipPath={`url(#priceClip-${sym})`}>
@@ -8457,8 +9002,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             if (d.type === 'vline') {
               return (
                 <g key={d.id}>
-                  <line x1={a.x} y1={padT} x2={a.x} y2={padT+priceH} {...common}/>
-                  {sel && <circle cx={a.x} cy={padT+8} r={3.5} fill={stroke}/>}
+                  <line x1={a.x} y1={priceTop} x2={a.x} y2={priceTop+priceH} {...common}/>
+                  {sel && <circle cx={a.x} cy={priceTop+8} r={3.5} fill={stroke}/>}
                 </g>
               )
             }
@@ -8484,7 +9029,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                 y2 = a.y + dy * t
               } else {
                 x2 = a.x
-                y2 = padT + (dy >= 0 ? priceH : 0)
+                y2 = priceTop + (dy >= 0 ? priceH : 0)
               }
               return (
                 <g key={d.id}>
@@ -8540,12 +9085,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                   <rect x={x-volBarW/2-0.5} y={volTop} width={volBarW+1} height={volH}
                     fill={LAKSHMI_VOL_COLORS.LOW_VOL_BG} opacity={0.35}/>
                 )}
-                {showLakshmiVol && vLvSnort[i] && (
+                {showLakshmiVol && (vLvSnort[i] || (showBullSnort && vSnort[i])) && (
                   <rect x={x-volBarW/2-0.5} y={volTop} width={volBarW+1} height={volH}
                     fill={LAKSHMI_VOL_COLORS.BULL_SNORT_BG} opacity={0.28}/>
                 )}
                 <rect x={x-volBarW/2} y={barTopY} width={volBarW} height={barH}
-                  fill={fill} opacity={0.85}/>
+                  fill={fill} opacity={0.5}/>
               </g>
             )
           })}
@@ -8564,7 +9109,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               else if (vLvHy[i])    parts.push({ t:VOL_SIGNAL_ICONS.HY, c:LAKSHMI_BAR_COLORS.HY })
               if (vLvIv[i])         parts.push({ t:VOL_SIGNAL_ICONS.IBV, c:LAKSHMI_VOL_COLORS.IBV_ICON })
               if (vLvPp[i])         parts.push({ t:VOL_SIGNAL_ICONS.PPV, c:LAKSHMI_VOL_COLORS.PPV_ICON })
-              if (vLvSnort[i])      parts.push({ t:VOL_SIGNAL_ICONS.SNORT, c:LAKSHMI_VOL_COLORS.BULL_SNORT_ICON })
+              if (vLvSnort[i] || (showBullSnort && vSnort[i]))
+                parts.push({ t:VOL_SIGNAL_ICONS.SNORT, c:LAKSHMI_VOL_COLORS.BULL_SNORT_ICON })
               const tag = vLvHt[i] ? 'HT' : vLvHy[i] ? 'HY' : vLvHq[i] ? 'HQ' : vLvHm[i] ? 'M' : null
               if (tag) parts.push({ t:tag, c:C.text })
               if (!parts.length) return null
@@ -9312,6 +9858,30 @@ function loadColWidths(){
 }
 function persistColWidths(w){
   try{ localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(normalizeColWidths(w))) }catch{/* ignore */}
+}
+
+/** Vertical grab strip between two side-by-side panels: drag to resize, double-click to reset. */
+function ColumnDivider({active=false,onStart,onReset,style}){
+  const [hov,setHov]=useState(false)
+  const on=active||hov
+  return(
+    <div
+      onMouseDown={onStart}
+      onDoubleClick={onReset}
+      onMouseEnter={()=>setHov(true)}
+      onMouseLeave={()=>setHov(false)}
+      title="Drag to resize · double-click to reset"
+      style={{
+        cursor:'col-resize',position:'relative',zIndex:10,
+        background:active?C.accent+'55':hov?C.accent+'22':'transparent',
+        transition:'background .12s',
+        ...style,
+      }}>
+      <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',
+        width:on?4:3,height:on?52:36,borderRadius:3,
+        background:on?C.accent:C.border,opacity:on?1:0.65,transition:'all .12s'}}/>
+    </div>
+  )
 }
 
 function loadLocalLayoutSlots(){
@@ -14044,7 +14614,7 @@ export default function App(){
         hy:calcHY(s.volumes),ht:calcHT(s.volumes),
         isBullSnort:!!(detectBullSnortDays(
           s.highs||s.prices, s.lows||s.prices, s.prices, s.volumes, s.opens
-        ).slice(-1)[0]),
+        ).slice(-5).some(Boolean)),
         nearEMA5:calcNearEMA5(s.prices,rs),
         nearEMA9:calcNearEMA9(s.prices,rs),
         scanner52wl:detect52WLCrossover(s.prices,s.volumes),
@@ -19758,19 +20328,17 @@ export default function App(){
         (panelWins.chart.open&&!panelWins.chart.minimized&&!panelWins.chart.float)||
         (panelWins.detail.open&&!panelWins.detail.minimized&&!panelWins.detail.float)
       )&&(
-        <div onMouseDown={()=>setIsDraggingDivider(true)}
+        <ColumnDivider
+          active={isDraggingDivider}
+          onStart={()=>setIsDraggingDivider(true)}
+          onReset={()=>{setChartPanelPct(null);persistChartPanelState(chartWideRef.current,null)}}
           style={dockSoloChart?{
-            gridColumn:2,gridRow:'1 / -1',width:'100%',cursor:'col-resize',
-            background:isDraggingDivider?C.accent:'transparent',position:'relative',zIndex:10,
+            gridColumn:2,gridRow:'1 / -1',width:'100%',
           }:{
-            width:6,flexShrink:0,cursor:'col-resize',background:isDraggingDivider?C.accent:'transparent',
-            position:'relative',zIndex:10,
+            width:8,flexShrink:0,
             order: dockLayout.order.indexOf('screener')
               + Math.min(dockLayout.order.indexOf('chart'),dockLayout.order.indexOf('detail')),
-          }}>
-          <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',
-            width:3,height:36,borderRadius:3,background:isDraggingDivider?C.accent:C.border}}/>
-        </div>
+          }}/>
       )}
 
       {/* Three-column layout: drag handles between RS | Chart | Fundamentals */}
@@ -19788,19 +20356,16 @@ export default function App(){
           const rightOrd=dockLayout.order.indexOf(rightId)*2
           const active=colDrag&&colDrag.leftId===leftId&&colDrag.rightId===rightId
           return(
-            <div key={`col-div-${leftId}-${rightId}`}
-              onMouseDown={()=>setColDrag({leftId,rightId})}
-              title="Drag to resize"
+            <ColumnDivider
+              key={`col-div-${leftId}-${rightId}`}
+              active={!!active}
+              onStart={()=>setColDrag({leftId,rightId})}
+              onReset={()=>{setColWidths({...DEFAULT_COL_WIDTHS});persistColWidths(DEFAULT_COL_WIDTHS)}}
               style={{
-                width:6,flexShrink:0,cursor:'col-resize',
-                background:active?C.accent:'transparent',
-                position:'relative',zIndex:10,
+                width:8,flexShrink:0,
                 order:(leftOrd+rightOrd)/2,
                 alignSelf:'stretch',
-              }}>
-              <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',
-                width:3,height:36,borderRadius:3,background:active?C.accent:C.border}}/>
-            </div>
+              }}/>
           )
         })
       })()}
