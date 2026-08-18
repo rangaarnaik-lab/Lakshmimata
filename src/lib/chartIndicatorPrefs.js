@@ -94,7 +94,6 @@ export const INDICATOR_PARAM_FIELDS = {
     },
     { key: 'tableOpacity', label: 'Table opacity %', min: 30, max: 100, step: 5, tab: 'style' },
     { key: 'tableDays', label: 'Table columns', min: 3, max: 10, step: 1, tab: 'style' },
-    { key: 'showStatus', label: 'Status card', type: 'bool', tab: 'style' },
     { key: 'rsColor', label: 'RS line', type: 'color', tab: 'style' },
     { key: 'momColor', label: 'Momentum line', type: 'color', tab: 'style' },
     { key: 'rsMaColor', label: 'RS MA line', type: 'color', tab: 'style' },
@@ -220,7 +219,7 @@ const DEFAULT_PARAMS = {
   },
   supercycle: {
     length: 21, rsMALength: 9, momLength: 21, bbMult: 2.0, kcMult: 1.5,
-    showTable: true, tablePlacement: 'below', tableOpacity: 100, tableDays: 10, showStatus: true,
+    showTable: true, tablePlacement: 'below', tableOpacity: 100, tableDays: 10,
     showRsBg: true, rsBgStrongColor: '#00e676', rsBgAvgColor: '#ffd600', rsBgWeakColor: '#ff1744', rsBgOpacity: 8,
     rsColor: '#29b6f6', momColor: '#26c6da', rsMaColor: '#ffd600', barOpacity: 92,
   },

@@ -5354,7 +5354,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
       <PanelWindow
         key="detail-dock"
         id="detail"
-        title={`${sym} · ${columnsLayout ? 'Fundamentals' : 'Details'}`}
+        title={`${sym} · Fundamentals`}
         colors={C}
         floating={null}
         onFloatingChange={f=>onPanelDetail?.({float:f})}
@@ -5445,7 +5445,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
       {!isIndex&&winDetail.open&&!winDetail.minimized&&winDetail.float&&(
         <PanelWindow
           id="detail-float"
-          title={`${sym} · Details`}
+          title={`${sym} · Fundamentals`}
           colors={C}
           floating={winDetail.float}
           onFloatingChange={f=>onPanelDetail?.({float:f})}
@@ -7541,7 +7541,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const scTableOverlay = scP.tablePlacement === 'overlay'
   const scTableBelow = scP.tablePlacement === 'below'
   const scTableAlpha = Math.min(1, Math.max(0.3, (Number(scP.tableOpacity) || 100) / 100))
-  const scShowStatus = showSuperCycle && scP.showStatus !== false
   const volUpColor = volP.volUpColor || TV_VOL_UP
   const volDownColor = volP.volDownColor || TV_VOL_DN
   const volBarOpacity = Math.min(1, Math.max(0.2, (Number(volP.barOpacity) || 50) / 100))
@@ -7715,10 +7714,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const vLvIv = (lakshmiVol?.ivDay||[]).slice(start)
   const vLvPp = (lakshmiVol?.ppDay||[]).slice(start)
   const vLvSnort = (lakshmiVol?.bullSnort||[]).slice(start)
-  const vLvHt = (lakshmiVol?.isHT||[]).slice(start)
-  const vLvHy = (lakshmiVol?.isHY||[]).slice(start)
-  const vLvHq = (lakshmiVol?.isHQ||[]).slice(start)
-  const vLvHm = (lakshmiVol?.isHM||[]).slice(start)
   const vLvLow = (lakshmiVol?.lowVol||[]).slice(start)
   const vLvColor = (lakshmiVol?.barColor||[]).slice(start)
   const vLvComment = (lakshmiVol?.comment||[]).slice(start)
@@ -9170,47 +9165,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           </div>
         )
       })}
-      {/* Super Cycle status card — compact state readout inside the pane */}
-      {scShowStatus && scRsTable?.length > 0 && scH >= 44 && (() => {
-        const d = scRsTable[scRsTable.length - 1]
-        const rating = d.nifty
-        const strength = rating == null ? '—' : rating >= 70 ? 'STRONG' : rating >= 40 ? 'AVG' : 'WEAK'
-        const strengthColor = rating == null ? C.muted : rating >= 70 ? C.green : rating >= 40 ? C.orange : C.red
-        const cycleUp = d.cycle != null && d.prevCycle != null ? d.cycle > d.prevCycle : !!d.cycleUp
-        const rows = [
-          { k: 'RS Rating', v: rating == null ? '—' : `${rating} ${strength}`, c: strengthColor },
-          { k: 'Cycle', v: cycleUp ? '▲ Up' : '▼ Down', c: cycleUp ? C.green : C.red },
-          { k: 'RS vs MA', v: d.aboveMA ? 'Above MA' : 'Below MA', c: d.aboveMA ? C.green : C.red },
-          { k: 'Squeeze', v: d.sqRel ? '● Released' : d.sqOn ? '● Coiled' : '—',
-            c: d.sqRel ? C.green : d.sqOn ? C.yellow : C.muted },
-        ]
-        const cardW = Math.min(168, Math.max(118, chartW * 0.28))
-        return (
-          <div style={{
-            position:'absolute',
-            left: `${((padL + chartW - cardW) / W) * 100}%`,
-            width: `${(cardW / W) * 100}%`,
-            top: `${((scTop + 3) / H) * 100}%`,
-            zIndex: 4,
-            border:`1px solid ${C.border}`,
-            background:C.card,
-            pointerEvents:'none',
-            overflow:'hidden',
-            fontVariantNumeric:'tabular-nums',
-          }} title="Super Cycle state (latest bar)">
-            {rows.map((r,i)=>(
-              <div key={r.k} style={{
-                display:'flex', alignItems:'center', gap:4,
-                padding:'1px 5px',
-                borderTop: i === 0 ? 'none' : `1px solid ${C.border}`,
-              }}>
-                <span style={{flex:1, fontSize:7.5, fontWeight:700, color:C.muted, whiteSpace:'nowrap'}}>{r.k}</span>
-                <span style={{fontSize:8.5, fontWeight:800, color:r.c, whiteSpace:'nowrap'}}>{r.v}</span>
-              </div>
-            ))}
-          </div>
-        )
-      })()}
       {/* Live bar countdown, pinned to the price scale under the last price */}
       {(() => {
         const last = vCloses[vCloses.length - 1]
@@ -9801,12 +9755,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           const av = li >= 0 ? vVolEma[li] : null
           const rel = (vv != null && av) ? (vv / av) * 100 : null
           const maLen = showLakshmiVol ? (volMetrics?.maLength || volP.maLength || 10) : 20
-          const sig = showLakshmiVol && li >= 0
-            ? (vLvHt[li] ? { t:'HT', ic:VOL_SIGNAL_ICONS.HT, c:LAKSHMI_BAR_COLORS.HT }
-             : vLvHy[li] ? { t:'HY', ic:VOL_SIGNAL_ICONS.HY, c:LAKSHMI_BAR_COLORS.HY }
-             : vLvHq[li] ? { t:'HQ', ic:VOL_SIGNAL_ICONS.HQ, c:LAKSHMI_VOL_COLORS.IBV }
-             : vLvHm[li] ? { t:'M',  ic:VOL_SIGNAL_ICONS.M,  c:C.muted } : null)
-            : null
           return (
             <text x={padL+4} y={volTop+11} fontSize={isMobile?8:9} fontWeight={700}>
               <tspan fill={C.muted}>{showLakshmiVol ? '📊 Lakshmi Volume' : '📊 Volume'}</tspan>
@@ -9815,7 +9763,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               {rel != null && (
                 <tspan fill={rel>=100?C.green:C.red} dx={7}>{`${Math.round(rel)}%`}</tspan>
               )}
-              {sig && <tspan fill={sig.c} dx={7}>{`${sig.ic} ${sig.t}`}</tspan>}
             </text>
           )
         })()}
@@ -10304,17 +10251,17 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           )
         })()}
 
-        {/* Lakshmi Volume icons + HT/HY/HQ/M labels on candles (Pine force_overlay). */}
+        {/* Lakshmi Volume icons on candles (IBV / PPV / Bull Snort only —
+            HT / HY / HQ / M text labels clutter the main price pane). */}
         {showLakshmiVol && (
           <g style={{pointerEvents:'none'}}>
             {vCloses.map((c,i)=>{
-              const hi = vHighs[i], lo = vLows[i]
-              if (c==null || hi==null || lo==null) return null
+              const lo = vLows[i]
+              if (c==null || lo==null) return null
               const x = idxToX(i)
               const yBelow0 = Math.min(priceTop + priceH - 4, priceToY(lo) + 11)
-              const yAbove0 = Math.max(priceTop + 11, priceToY(hi) - 9)
               const nodes = []
-              let b = 0, a = 0
+              let b = 0
               if (vLvIv[i]) {
                 nodes.push(<text key={`iv-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={10} fontWeight={800}
                   fill={LAKSHMI_VOL_COLORS.IBV_ICON} textAnchor="middle"
@@ -10328,34 +10275,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               if (vLvSnort[i] || (showBullSnort && vSnort[i])) {
                 nodes.push(<text key={`bs-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={snortMarkerSize}
                   fill={snortP.markerColor || LAKSHMI_VOL_COLORS.BULL_SNORT_ICON} textAnchor="middle">🐂</text>)
-              }
-              if (vLvHt[i]) {
-                const yHt = yAbove0 - (a++) * 12
-                nodes.push(<text key={`ht-ico-${i}`} x={x} y={yHt} fontSize={9}
-                  fill={LAKSHMI_BAR_COLORS.HT} textAnchor="middle"
-                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>🚀</text>)
-                nodes.push(<text key={`ht-lbl-${i}`} x={x} y={yHt + 9} fontSize={7} fontWeight={800}
-                  fill={LAKSHMI_BAR_COLORS.HT} textAnchor="middle"
-                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>HT</text>)
-              }
-              if (vLvHy[i]) {
-                const yHy = yAbove0 - (a++) * 12
-                nodes.push(<text key={`hy-ico-${i}`} x={x} y={yHy} fontSize={9}
-                  fill={LAKSHMI_BAR_COLORS.HY} textAnchor="middle"
-                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>🔥</text>)
-                nodes.push(<text key={`hy-lbl-${i}`} x={x} y={yHy + 9} fontSize={7} fontWeight={800}
-                  fill={LAKSHMI_BAR_COLORS.HY} textAnchor="middle"
-                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>HY</text>)
-              }
-              if (vLvHq[i] && !vLvHt[i] && !vLvHy[i]) {
-                nodes.push(<text key={`hq-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={8} fontWeight={700}
-                  fill="#E0E0E0" textAnchor="middle"
-                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>HQ</text>)
-              }
-              if (vLvHm[i] && !vLvHt[i] && !vLvHy[i] && !vLvHq[i]) {
-                nodes.push(<text key={`hm-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={8} fontWeight={700}
-                  fill="#E0E0E0" textAnchor="middle"
-                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2}}>M</text>)
               }
               if (!nodes.length) return null
               return <g key={`vol-ico-${i}`}>{nodes}</g>
@@ -10524,8 +10443,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           })}
         </g>
 
-        {/* Signal marker row under the volume axis — icons plus the
-            HT/HY/HQ/M tag for each bar, so tall bars never hide them. */}
+        {/* Signal marker row under the volume axis — IBV / PPV / Bull Snort
+            only (no HT / HY / HQ / M text tags on the chart). */}
         {volShowMarkers && volMarkerH > 0 && (
           <g>
             <line x1={padL} y1={volMarkerTop} x2={padL+chartW} y2={volMarkerTop}
@@ -10533,14 +10452,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             {vCloses.map((c,i)=>{
               if (c==null) return null
               const parts = []
-              if (vLvHt[i])         parts.push({ t:VOL_SIGNAL_ICONS.HT, c:LAKSHMI_BAR_COLORS.HT })
-              else if (vLvHy[i])    parts.push({ t:VOL_SIGNAL_ICONS.HY, c:LAKSHMI_BAR_COLORS.HY })
               if (vLvIv[i])         parts.push({ t:VOL_SIGNAL_ICONS.IBV, c:LAKSHMI_VOL_COLORS.IBV_ICON })
               if (vLvPp[i])         parts.push({ t:VOL_SIGNAL_ICONS.PPV, c:LAKSHMI_VOL_COLORS.PPV_ICON })
               if (vLvSnort[i] || (showBullSnort && vSnort[i]))
                 parts.push({ t:VOL_SIGNAL_ICONS.SNORT, c:LAKSHMI_VOL_COLORS.BULL_SNORT_ICON })
-              const tag = vLvHt[i] ? 'HT' : vLvHy[i] ? 'HY' : vLvHq[i] ? 'HQ' : vLvHm[i] ? 'M' : null
-              if (tag) parts.push({ t:tag, c:C.text })
               if (!parts.length) return null
               return (
                 <text key={`volmark-${i}`} x={idxToX(i)} y={volMarkerTop + volMarkerH - 4}
@@ -10731,10 +10646,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           <span><span style={{color:TV_VOL_MA}}>—</span> Vol MA{showLakshmiVol ? (volP.maLength ?? 10) : 20}</span>
         )}
         {volShowMarkers && <>
-          <span title="All-time high volume"><span style={{color:LAKSHMI_BAR_COLORS.HT}}>{VOL_SIGNAL_ICONS.HT} HT</span> all-time high vol</span>
-          <span title="52-week high volume"><span style={{color:LAKSHMI_BAR_COLORS.HY}}>{VOL_SIGNAL_ICONS.HY} HY</span> year high vol</span>
-          <span title="Quarter high volume"><span style={{color:LAKSHMI_VOL_COLORS.IBV}}>{VOL_SIGNAL_ICONS.HQ} HQ</span> quarter high vol</span>
-          <span title="Month high volume"><span style={{color:C.text}}>{VOL_SIGNAL_ICONS.M} M</span> month high vol</span>
           <span title="Institutional buy volume"><span style={{color:LAKSHMI_VOL_COLORS.IBV_ICON}}>{VOL_SIGNAL_ICONS.IBV}</span> IBV</span>
           <span title="Pivot pocket volume"><span style={{color:LAKSHMI_VOL_COLORS.PPV_ICON}}>{VOL_SIGNAL_ICONS.PPV}</span> PPV</span>
           <span title="Bull Snort"><span style={{color:LAKSHMI_VOL_COLORS.BULL_SNORT_ICON}}>{VOL_SIGNAL_ICONS.SNORT}</span> Bull Snort</span>
@@ -10777,9 +10688,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           <span><span style={{color:LAKSHMI_VOL_COLORS.IBV}}>■</span> IBV ▲</span>
           <span><span style={{color:LAKSHMI_VOL_COLORS.PPV}}>■</span> PPV ★</span>
           <span><span style={{color:LAKSHMI_VOL_COLORS.DOWN}}>■</span> Down</span>
-          <span><span style={{color:LAKSHMI_BAR_COLORS.HT}}>🚀</span> HT</span>
-          <span><span style={{color:LAKSHMI_BAR_COLORS.HY}}>🔥</span> HY</span>
-          <span>HQ · M</span>
         </>}
         {showBullSnort && !showLakshmiVol && <span><span style={{color:snortP.markerColor || BULL_SNORT_COLOR}}>■</span> Bull Snort</span>}
         {showBuySell && <>
@@ -12265,7 +12173,7 @@ function CompanyLinkIcon({sym, onOpen, size=11}){
   const go=(e)=>{ e.stopPropagation(); onOpen(sym) }
   return(
     <span role="button" tabIndex={0}
-      title={`Open ${sym} company page — about, fundamentals, results`}
+      title={`Open ${sym} Fundamentals — About, ratios, results`}
       onClick={go}
       onKeyDown={e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(e) } }}
       onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
@@ -12367,7 +12275,7 @@ function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpen
               style={itemStyle}>
               Company page ↗
               <div style={{fontSize:9,fontWeight:500,color:C.muted,marginTop:1}}>
-                About · fundamentals · results
+                Opens Fundamentals section
               </div>
             </button>
           )}
@@ -15103,22 +15011,7 @@ export default function App(){
     })
   },[isMobile,mainTab])
   const openOurChart=useCallback((sym)=>openChart(sym,{chartTab:'own'}),[openChart])
-  /**
-   * ↗ beside a symbol — the company page. Same Details panel the chart uses,
-   * but forced open on About even when the user normally keeps it closed.
-   */
-  const openCompanyPage=useCallback((sym)=>{
-    if(!sym) return
-    setChartDetailTabHint('about')
-    openChart(sym,{isIndex:false})
-    if(isMobile||isFullWidthMainTab(mainTab)) return
-    // Deliberately not persisted — opening one company page shouldn't change
-    // whether Details follows every future symbol click.
-    setPanelWins(w=>({
-      ...w,
-      detail:{...(w.detail||{}),open:true,minimized:false},
-    }))
-  },[openChart,isMobile,mainTab])
+  // openCompanyPage is declared after colWidths state (needs setColWidths).
   const prevChartSymRef=useRef(null)
   useEffect(()=>{
     // First pick from null (e.g. auto-open on RS) — open chart; Details only if pref says so.
@@ -15508,6 +15401,29 @@ export default function App(){
   // Three-column layout (RS | Chart | Fund): drag handles between panes.
   const [colWidths,setColWidths]=useState(()=>loadColWidths())
   const [colDrag,setColDrag]=useState(null) // {leftId, rightId} | null
+  /**
+   * ↗ beside a symbol — open that company's detailed page in its own
+   * Fundamentals section (third full-height column). Does not change the
+   * "follow every tape click" preference for Fundamentals.
+   */
+  const openCompanyPage=useCallback((sym)=>{
+    if(!sym) return
+    setChartDetailTabHint('about')
+    openChart(sym,{isIndex:false})
+    if(isMobile) return
+    // Columns layout only applies on RS Rating — land there so Fundamentals
+    // can sit as its own full-height section beside Chart and RS.
+    if(mainTab!=='rs') setMainTab('rs')
+    applyDockLayout({ mode:'columns', order:['chart','screener','detail'] })
+    const companyCols = { chart:50, screener:25, detail:25 }
+    setColWidths(companyCols)
+    persistColWidths(companyCols)
+    setPanelWins(w=>({
+      ...w,
+      chart:{...(w.chart||{}),open:true,minimized:false},
+      detail:{...(w.detail||{}),open:true,minimized:false},
+    }))
+  },[openChart,isMobile,mainTab])
   const innerRowRef=useRef(null)
   const chartWideRef=useRef(chartWide)
   const chartPanelPctRef=useRef(chartPanelPct)
@@ -22380,7 +22296,7 @@ export default function App(){
             }]:[]),
             ...(chartSym&&!(chartIsIndex||indexData.some(idx=>idx.name===chartSym))&&(!panelWins.detail.open||panelWins.detail.minimized)?[{
               id:'detail',
-              title:`${chartSym} · Details`,
+              title:`${chartSym} · Fundamentals`,
               minimized:!!panelWins.detail.minimized,
               onRestore:()=>patchDetailPanel({open:true,minimized:false}),
             }]:[]),
