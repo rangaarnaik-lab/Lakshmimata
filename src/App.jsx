@@ -16,6 +16,10 @@ import {
   availableIntervalEntries, normalizeIntervalFavorites,
 } from './lib/chartIntervalPrefs'
 import {
+  loadChartView, persistChartView, heikinAshi,
+  SERIES_TYPES, PRICE_SCALES, OHLC_SERIES,
+} from './lib/chartViewPrefs'
+import {
   loadChartLayout, persistChartLayout, defaultChartLayout, isChartLayoutDefault,
   visiblePaneOrder, movePane, normalizeAxisW,
   loadLayoutPresets, persistLayoutPresets, upsertPreset, removePreset,
@@ -6520,7 +6524,24 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const skipIntervalFavSaveRef = useRef(true)
   const [zoomBars, setZoomBars] = useState(RANGE_BARS_BY_INTERVAL.D['1Y'])
   const [panOffset, setPanOffset] = useState(0) // bars back from the most recent
-  const [chartStyle, setChartStyle] = useState('candle') // candle | line — all intervals
+  // Series type (candles / hollow / bars / Heikin Ashi / line / area / baseline)
+  // and price scale mode (regular / log / percent), both remembered per device.
+  const [chartView, setChartView] = useState(() => loadChartView())
+  const chartStyle = chartView.style
+  const scaleMode = chartView.scale
+  const setChartStyle = (style) => setChartView(v => ({ ...v, style }))
+  const setScaleMode = (scale) => setChartView(v => ({ ...v, scale }))
+  const [showSeriesMenu, setShowSeriesMenu] = useState(false)
+  const seriesMenuRef = useRef(null)
+  useEffect(() => { persistChartView(chartView) }, [chartView])
+  useEffect(() => {
+    if (!showSeriesMenu) return
+    const onDown = (e) => {
+      if (seriesMenuRef.current && !seriesMenuRef.current.contains(e.target)) setShowSeriesMenu(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [showSeriesMenu])
   const [indPrefs, setIndPrefs] = useState(() => loadChartIndicatorPrefs(userId))
   const [indSettingsId, setIndSettingsId] = useState(null) // which indicator settings panel is open
   const skipIndSaveRef = useRef(true)
@@ -6538,6 +6559,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const showSuperCycle = prefsN.indicators.supercycle.enabled
   const showCandleColors = prefsN.indicators.barcolor.enabled
   const showLakshmiVol = prefsN.indicators.lakshmivol?.enabled !== false
+  const showCircuit = prefsN.indicators.circuit?.enabled === true
+  const circuitP = prefsN.indicators.circuit?.params || {}
   const maP = prefsN.indicators.ma.params
   const rsiP = prefsN.indicators.rsi.params
   const macdP = prefsN.indicators.macd.params
@@ -6559,6 +6582,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const setShowSuperCycle = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'supercycle', typeof v === 'function' ? v(showSuperCycle) : v))
   const setShowCandleColors = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'barcolor', typeof v === 'function' ? v(showCandleColors) : v))
   const setShowLakshmiVol = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'lakshmivol', typeof v === 'function' ? v(showLakshmiVol) : v))
+  const setShowCircuit = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'circuit', typeof v === 'function' ? v(showCircuit) : v))
   const [niftyCloses, setNiftyCloses] = useState(null)
   const [midcapCloses, setMidcapCloses] = useState(null)
   const [smallcapCloses, setSmallcapCloses] = useState(null)
@@ -6567,6 +6591,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const [drawTool, setDrawTool] = useState('pan') // pan | trend | ray | hline | vline | rect
   const [drawings, setDrawings] = useState([])
   const [drawDraft, setDrawDraft] = useState(null) // { type, p1, p2? }
+  const [measureBox, setMeasureBox] = useState(null) // ruler result: { p1, p2 }
+  const chartHoverRef = useRef(false)
+  const navRef = useRef({ barsToShow: 60, maxPanOffset: 0, n: 60, minZoom: 5 })
   const [selectedDrawId, setSelectedDrawId] = useState(null)
   const [hoverIdx, setHoverIdx] = useState(null)
   const [hoverCrossY, setHoverCrossY] = useState(null)
@@ -6707,6 +6734,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       if (e.key === 'Escape') {
         setDrawDraft(null)
         setSelectedDrawId(null)
+        setMeasureBox(null)
         setDrawTool('pan')
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedDrawId) {
@@ -6720,6 +6748,56 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [selectedDrawId])
+
+  useEffect(() => { setMeasureBox(null) }, [sym, barInterval])
+  useEffect(() => { if (drawTool !== 'measure') setMeasureBox(null) }, [drawTool])
+
+  // TradingView-style keyboard control. Only while the pointer is over the
+  // chart, so typing in the screener/search is never hijacked.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!chartHoverRef.current) return
+      const tag = e.target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const nav = navRef.current
+      const step = Math.max(1, Math.round(nav.barsToShow * (e.shiftKey ? 0.25 : 0.05)))
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        setPanOffset(p => Math.min(nav.maxPanOffset, p + step))
+        return
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        setPanOffset(p => Math.max(0, p - step))
+        return
+      }
+      if (e.key === '+' || e.key === '=') {
+        e.preventDefault()
+        setZoomBars(z => Math.max(nav.minZoom, Math.round(z * 0.8)))
+        return
+      }
+      if (e.key === '-' || e.key === '_') {
+        e.preventDefault()
+        setZoomBars(z => Math.min(nav.n, Math.max(z + 1, Math.round(z * 1.25))))
+        return
+      }
+      if (e.key === 'Home' || e.key === 'End') {
+        e.preventDefault()
+        setPanOffset(0)
+        return
+      }
+      const tool = { t:'trend', r:'ray', h:'hline', v:'vline', b:'rect', m:'measure' }[e.key.toLowerCase()]
+      if (tool) {
+        e.preventDefault()
+        setDrawTool(tool)
+        setDrawDraft(null)
+        setMeasureBox(null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // Close TradingView-style Indicators menu on outside click / Escape
   useEffect(()=>{
@@ -7187,6 +7265,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const maxPanOffset = Math.max(0, n - barsToShow)
   const clampedPanOffset = Math.min(panOffset, maxPanOffset)
   const start = Math.max(0, n - barsToShow - clampedPanOffset)
+  navRef.current = { barsToShow, maxPanOffset, n, minZoom: intervalMeta.minZoom }
 
   // ── Zoom (wheel / pinch) and pan (drag) handlers ──
   // Defined later (after price/date geometry) so draw tools can map clicks → date/price.
@@ -7417,8 +7496,62 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     window.addEventListener('pointercancel', end)
   }
 
-  const visibleHighs = vHighs.filter(v=>v!=null)
-  const visibleLows  = vLows.filter(v=>v!=null)
+  // ── Export: PNG snapshot of the plot, or CSV of the visible bars ──
+  const downloadBlob = (blob, filename) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 2000)
+  }
+  const exportStamp = () => `${sym}_${barInterval}_${new Date().toISOString().slice(0,10)}`
+  const exportPng = () => {
+    const svg = svgRef.current
+    if (!svg) return
+    const clone = svg.cloneNode(true)
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    clone.setAttribute('width', String(W))
+    clone.setAttribute('height', String(H))
+    const markup = new XMLSerializer().serializeToString(clone)
+    const img = new Image()
+    img.onload = () => {
+      const scale = 2
+      const canvas = document.createElement('canvas')
+      canvas.width = W * scale
+      canvas.height = H * scale
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.fillStyle = C.bg
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      canvas.toBlob(b => { if (b) downloadBlob(b, `${exportStamp()}.png`) })
+    }
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup)
+  }
+  const exportCsv = () => {
+    const rows = [['date','open','high','low','close','volume']]
+    for (let i = 0; i < vCloses.length; i++) {
+      rows.push([
+        vDates[i] ?? '',
+        vOpens[i] ?? '', vHighs[i] ?? '', vLows[i] ?? '', vCloses[i] ?? '',
+        vVol[i] ?? '',
+      ])
+    }
+    const csv = rows.map(r => r.join(',')).join('\n')
+    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `${exportStamp()}.csv`)
+  }
+
+  // Display series: Heikin Ashi smooths OHLC before plotting (hover/legend keep
+  // the real values). Everything else plots the raw bars.
+  const haFull = chartStyle === 'heikin' ? heikinAshi(o, highs, lows, closes) : null
+  const dOpens  = haFull ? haFull.open.slice(start)  : vOpens
+  const dHighs  = haFull ? haFull.high.slice(start)  : vHighs
+  const dLows   = haFull ? haFull.low.slice(start)   : vLows
+  const dCloses = haFull ? haFull.close.slice(start) : vCloses
+  const drawsBars = OHLC_SERIES.includes(chartStyle)
+  const visibleHighs = dHighs.filter(v=>v!=null)
+  const visibleLows  = dLows.filter(v=>v!=null)
   const guppyVals = showGuppy
     ? [...vGuppyShort, ...vGuppyLong].flat().filter(v=>v!=null)
     : []
@@ -7429,7 +7562,22 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const pad = (maxP - minP) * 0.06 || 1
   maxP += pad; minP -= pad
 
-  const priceToY = p => priceTop + (maxP - p) / (maxP - minP) * priceH
+  // Price scale. Regular and Percent share the same geometry (percent is just a
+  // relabelled linear axis, as in TradingView); Log spaces equal % moves equally.
+  const logOk = scaleMode === 'log' && minP > 0 && maxP > 0
+  const lgMin = logOk ? Math.log10(minP) : 0
+  const lgMax = logOk ? Math.log10(maxP) : 1
+  const scaleBase = dCloses.find(v => v != null) ?? vCloses.find(v => v != null) ?? null
+  const priceToY = p => (logOk
+    ? priceTop + (lgMax - Math.log10(Math.max(p, 1e-9))) / Math.max(1e-9, lgMax - lgMin) * priceH
+    : priceTop + (maxP - p) / (maxP - minP) * priceH)
+  const yToPrice = y => (logOk
+    ? Math.pow(10, lgMax - ((y - priceTop) / Math.max(1, priceH)) * Math.max(1e-9, lgMax - lgMin))
+    : maxP - ((y - priceTop) / Math.max(1, priceH)) * (maxP - minP))
+  // Percent mode labels the same positions as % change from the left-most bar.
+  const axisLabel = p => (scaleMode === 'percent' && scaleBase
+    ? `${p / scaleBase - 1 >= 0 ? '+' : ''}${((p / scaleBase - 1) * 100).toFixed(2)}%`
+    : formatAxisPrice(p))
   // Forecast (simple linear regression trend projection, NOT a real
   // prediction model) reserves some room on the right by treating the
   // effective bar count as larger than what's actually plotted.
@@ -7464,6 +7612,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     }
   }
 
+  const priceTicks = nicePriceTicks(minP, maxP, Math.max(4, Math.round(priceH / 48)))
   const maxVol = Math.max(...vVol.filter(v=>v!=null), 1)
   const volToY = v => volTop + volH - (v / maxVol) * volH
   const volBarW = Math.max(1.5, candleW * 0.92)
@@ -7511,7 +7660,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     const visIdx = Math.max(0, Math.min(barsToShow - 1, Math.round(barF)))
     const absIdx = start + visIdx
     const date = dates[absIdx]
-    const price = maxP - ((sy - priceTop) / Math.max(1, priceH)) * (maxP - minP)
+    const price = yToPrice(sy)
     if (!date || !Number.isFinite(price)) return null
     return { date, price }
   }
@@ -7603,6 +7752,16 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       e.preventDefault()
       const pt = clientToPoint(e.clientX, e.clientY)
       if (!pt) return
+      if (drawTool === 'measure') {
+        if (!drawDraft?.p1) {
+          setMeasureBox(null)
+          setDrawDraft({ type: 'measure', p1: pt, p2: pt })
+        } else {
+          setMeasureBox({ p1: drawDraft.p1, p2: pt })
+          setDrawDraft(null)
+        }
+        return
+      }
       if (drawTool === 'hline' || drawTool === 'vline') {
         commitDrawing(drawTool, pt, null)
         return
@@ -7761,6 +7920,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     { id:'bullsnort', group:'Signals', label:'Bull Snort', short:'Bull Snort', desc:'', on:showBullSnort, set:setShowBullSnort },
     { id:'buysell', group:'Signals', label:'Lakshmi Buy/Sell', short:'Buy/Sell', desc:'', on:showBuySell, set:setShowBuySell },
     { id:'forecast', group:'Signals', label:'Forecast', short:'Forecast', desc:'', on:showForecast, set:setShowForecast },
+    { id:'circuit', group:'Overlays', label:'Circuit Band (UC / LC)', short:'UC/LC', desc:'', on:showCircuit, set:setShowCircuit },
   ]
   const indQ = indSearch.trim().toLowerCase()
   const filteredIndicators = indQ
@@ -7910,6 +8070,64 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             }}>
             <TvLineIcon active={chartStyle==='line'} muted={C.muted}/>
           </button>
+          <div ref={seriesMenuRef} style={{position:'relative',display:'flex',alignItems:'center'}}>
+            <button type="button" onClick={()=>setShowSeriesMenu(v=>!v)}
+              title="Series type and price scale"
+              style={{
+                display:'flex',alignItems:'center',justifyContent:'center',
+                width:18,height:24,border:'none',borderRadius:3,cursor:'pointer',
+                background: showSeriesMenu ? TV_TOOLBAR_BLUE+'22' : 'transparent',
+                color: OHLC_SERIES.includes(chartStyle)||chartStyle==='line' ? C.muted : TV_TOOLBAR_BLUE,
+                fontSize:9,fontFamily:'inherit',
+              }}>▾</button>
+            {showSeriesMenu && (
+              <div style={{position:'absolute',top:'100%',left:0,marginTop:4,zIndex:60,
+                minWidth:206,padding:6,borderRadius:8,
+                border:`1px solid ${C.border}`,background:C.card,
+                boxShadow:'0 10px 28px rgba(0,0,0,0.45)'}}>
+                <div style={{fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',
+                  letterSpacing:'0.06em',margin:'2px 0 4px'}}>Series</div>
+                {SERIES_TYPES.map(s=>{
+                  const blocked = isIndex && OHLC_SERIES.includes(s.id)
+                  const on = chartStyle===s.id
+                  return (
+                    <button key={s.id} type="button" disabled={blocked}
+                      onClick={()=>{setChartStyle(s.id);setShowSeriesMenu(false)}}
+                      title={blocked ? 'Indices have close-only history' : s.hint}
+                      style={{display:'flex',alignItems:'center',gap:6,width:'100%',
+                        padding:'4px 6px',borderRadius:3,border:'none',textAlign:'left',
+                        background:on?TV_TOOLBAR_BLUE+'22':'transparent',
+                        color:blocked?C.border:on?TV_TOOLBAR_BLUE:C.text,
+                        fontSize:11,fontWeight:on?700:500,
+                        cursor:blocked?'default':'pointer',fontFamily:'inherit'}}>
+                      <span style={{width:9,fontSize:9}}>{on?'✓':''}</span>
+                      <span style={{flex:1}}>{s.label}</span>
+                    </button>
+                  )
+                })}
+                <div style={{height:1,background:C.border,opacity:0.6,margin:'6px 0'}}/>
+                <div style={{fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',
+                  letterSpacing:'0.06em',marginBottom:4}}>Price scale</div>
+                {PRICE_SCALES.map(s=>{
+                  const on = scaleMode===s.id
+                  return (
+                    <button key={s.id} type="button"
+                      onClick={()=>{setScaleMode(s.id);setShowSeriesMenu(false)}}
+                      title={s.hint}
+                      style={{display:'flex',alignItems:'center',gap:6,width:'100%',
+                        padding:'4px 6px',borderRadius:3,border:'none',textAlign:'left',
+                        background:on?TV_TOOLBAR_BLUE+'22':'transparent',
+                        color:on?TV_TOOLBAR_BLUE:C.text,
+                        fontSize:11,fontWeight:on?700:500,
+                        cursor:'pointer',fontFamily:'inherit'}}>
+                      <span style={{width:9,fontSize:9}}>{on?'✓':''}</span>
+                      <span style={{flex:1}}>{s.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
         <div style={{width:1,height:18,background:C.border,margin:'0 6px'}}/>
         {/* Drawing tools — TradingView-style; saved per symbol in localStorage */}
@@ -8104,6 +8322,18 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             Reset
           </button>
         )}
+        <button type="button" onClick={exportPng}
+          title="Save chart image (PNG) — indicator panes and price action; overlay tables are not included"
+          style={{padding:'4px 8px',border:'none',borderRadius:3,background:'transparent',
+            color:C.muted,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+          PNG
+        </button>
+        <button type="button" onClick={exportCsv}
+          title={`Download the ${barsToShow} visible bars as CSV`}
+          style={{padding:'4px 8px',border:'none',borderRadius:3,background:'transparent',
+            color:C.muted,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+          CSV
+        </button>
         <div ref={layoutMenuRef} style={{position:'relative',display:'flex',alignItems:'center'}}>
           <button type="button" onClick={()=>setShowLayoutMenu(v=>!v)}
             title="Pane order, price scale width and saved layouts"
@@ -8288,12 +8518,43 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               </span>
             )}
           </span>
-        ) : drawTool!=='pan'
-          ? `${sym} · draw ${drawTool} · ${drawDraft?.p1 ? 'click 2nd point (Esc cancel)' : 'click on chart'} · saved on this device`
-          : `${sym} · ${barsToShow} ${intervalMeta.unit} · tap a candle to pin`}
+        ) : drawTool!=='pan' ? (
+          drawTool==='measure'
+            ? `${sym} · ruler · ${drawDraft?.p1 ? 'click 2nd point (Esc clears)' : 'click the first point'}`
+            : `${sym} · draw ${drawTool} · ${drawDraft?.p1 ? 'click 2nd point (Esc cancel)' : 'click on chart'} · saved on this device`
+        ) : (() => {
+          // Resting legend, TradingView style: symbol · interval · last bar OHLC + change
+          const i = vCloses.length - 1
+          const c = vCloses[i], op = vOpens[i], hi = vHighs[i], lo = vLows[i]
+          const prev = i > 0 ? vCloses[i-1] : op
+          const chg = c != null && prev != null ? c - prev : null
+          const chgPct = chg != null && prev ? (chg / prev) * 100 : null
+          const upDay = (chg ?? 0) >= 0
+          if (c == null) return `${sym} · ${intervalMeta.label} · NSE`
+          return (
+            <span>
+              <b style={{color:C.text}}>{sym}</b>
+              <span style={{color:C.muted}}>{'  '}{intervalMeta.label} · NSE{'  '}</span>
+              {op!=null && <><span style={{color:C.muted}}>O</span> <span style={{color:C.text}}>{op.toFixed(2)}</span>{'  '}</>}
+              {hi!=null && <><span style={{color:C.muted}}>H</span> <span style={{color:TV_VOL_UP}}>{hi.toFixed(2)}</span>{'  '}</>}
+              {lo!=null && <><span style={{color:C.muted}}>L</span> <span style={{color:TV_VOL_DN}}>{lo.toFixed(2)}</span>{'  '}</>}
+              <span style={{color:C.muted}}>C</span>{' '}
+              <span style={{color:upDay?TV_VOL_UP:TV_VOL_DN,fontWeight:800}}>{c.toFixed(2)}</span>
+              {chg!=null && (
+                <span style={{marginLeft:6,fontWeight:700,color:upDay?TV_VOL_UP:TV_VOL_DN}}>
+                  {upDay?'+':''}{chg.toFixed(2)} ({upDay?'+':''}{chgPct?.toFixed(2)}%)
+                </span>
+              )}
+              <span style={{color:C.muted,opacity:0.8}}>{'  '}· {barsToShow} {intervalMeta.unit} · hover for details</span>
+            </span>
+          )
+        })()}
       </div>
 
-      <div ref={plotRef} style={{flex:1,minHeight:0,position:'relative',width:'100%'}}>
+      <div ref={plotRef}
+        onMouseEnter={()=>{chartHoverRef.current=true}}
+        onMouseLeave={()=>{chartHoverRef.current=false}}
+        style={{flex:1,minHeight:0,position:'relative',width:'100%'}}>
       {/* Drag any separator to resize the panes (TradingView style); double-click resets.
           Desktop only — on touch the strips would swallow pan gestures. */}
       {!isMobile && paneDividers.map(div => {
@@ -8338,6 +8599,64 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           </div>
         )
       })}
+      {/* Super Cycle status card — compact state readout inside the pane */}
+      {showSuperCycle && scRsTable?.length > 0 && scH >= 44 && (() => {
+        const d = scRsTable[scRsTable.length - 1]
+        const rating = d.nifty
+        const strength = rating == null ? '—' : rating >= 70 ? 'STRONG' : rating >= 40 ? 'AVG' : 'WEAK'
+        const strengthColor = rating == null ? C.muted : rating >= 70 ? C.green : rating >= 40 ? C.orange : C.red
+        const cycleUp = d.cycle != null && d.prevCycle != null ? d.cycle > d.prevCycle : !!d.cycleUp
+        const rows = [
+          { k: 'RS Rating', v: rating == null ? '—' : `${rating} ${strength}`, c: strengthColor },
+          { k: 'Cycle', v: cycleUp ? '▲ Up' : '▼ Down', c: cycleUp ? C.green : C.red },
+          { k: 'RS vs MA', v: d.aboveMA ? 'Above MA' : 'Below MA', c: d.aboveMA ? C.green : C.red },
+          { k: 'Squeeze', v: d.sqRel ? '● Released' : d.sqOn ? '● Coiled' : '—',
+            c: d.sqRel ? C.green : d.sqOn ? C.yellow : C.muted },
+        ]
+        const cardW = Math.min(168, Math.max(118, chartW * 0.28))
+        return (
+          <div style={{
+            position:'absolute',
+            left: `${((padL + chartW - cardW) / W) * 100}%`,
+            width: `${(cardW / W) * 100}%`,
+            top: `${((scTop + 3) / H) * 100}%`,
+            zIndex: 4,
+            border:`1px solid ${C.border}`,
+            background:C.card,
+            pointerEvents:'none',
+            overflow:'hidden',
+            fontVariantNumeric:'tabular-nums',
+          }} title="Super Cycle state (latest bar)">
+            {rows.map((r,i)=>(
+              <div key={r.k} style={{
+                display:'flex', alignItems:'center', gap:4,
+                padding:'1px 5px',
+                borderTop: i === 0 ? 'none' : `1px solid ${C.border}`,
+              }}>
+                <span style={{flex:1, fontSize:7.5, fontWeight:700, color:C.muted, whiteSpace:'nowrap'}}>{r.k}</span>
+                <span style={{fontSize:8.5, fontWeight:800, color:r.c, whiteSpace:'nowrap'}}>{r.v}</span>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
+      {/* Live bar countdown, pinned to the price scale under the last price */}
+      {(() => {
+        const last = vCloses[vCloses.length - 1]
+        if (last == null || !Number.isFinite(last)) return null
+        const y = priceToY(last)
+        if (y < priceTop || y > priceTop + priceH - 14) return null
+        const prev = vCloses.length > 1 ? vCloses[vCloses.length - 2] : last
+        return (
+          <BarCloseCountdown
+            barMinutes={intervalMeta.rollup || 375}
+            color={last >= (prev ?? last) ? TV_VOL_UP : TV_VOL_DN}
+            style={{
+              left:`${((padL + chartW + 1) / W) * 100}%`,
+              top:`${((y + 8) / H) * 100}%`,
+            }}/>
+        )
+      })()}
       {/* Price scale width — drag the axis edge, double-click for auto */}
       {!isMobile && (
         <div
@@ -8603,14 +8922,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}>
         {/* Grid lines + nice price labels */}
-        {nicePriceTicks(minP, maxP, Math.max(4, Math.round(priceH / 48))).map(p=>{
+        {priceTicks.map(p=>{
           const y = priceToY(p)
           if (y < priceTop - 1 || y > priceTop + priceH + 1) return null
           return (
             <g key={`pt-${p}`}>
               <line x1={padL} y1={y} x2={padL+chartW} y2={y} stroke={C.border} strokeWidth={0.5} opacity={0.28}/>
               <text x={padL+chartW+4} y={y+3} fontSize={9} fill={C.muted}
-                style={{fontVariantNumeric:'tabular-nums'}}>{formatAxisPrice(p)}</text>
+                style={{fontVariantNumeric:'tabular-nums'}}>{axisLabel(p)}</text>
             </g>
           )
         })}
@@ -8787,6 +9106,36 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           return pts.length>1 ? <polyline key={k} points={pts.join(' ')} fill="none" stroke={color} strokeWidth={1.3} opacity={0.9}/> : null
         })}
 
+        {/* Circuit band — UC/LC around the previous close, labelled on the scale */}
+        {showCircuit && (() => {
+          const pct = Math.min(20, Math.max(2, Number(circuitP.pct) || 20))
+          const base = vCloses.length > 1 ? vCloses[vCloses.length - 2] : vCloses[vCloses.length - 1]
+          if (base == null || !Number.isFinite(base)) return null
+          const rows = [
+            { label: 'UC', price: base * (1 + pct/100), color: TV_VOL_UP },
+            { label: 'LC', price: base * (1 - pct/100), color: TV_VOL_DN },
+          ]
+          return (
+            <g style={{pointerEvents:'none'}}>
+              {rows.map(r => {
+                const y = priceToY(r.price)
+                if (y < priceTop - 1 || y > priceTop + priceH + 1) return null
+                return (
+                  <g key={r.label}>
+                    <line x1={padL} y1={y} x2={padL+chartW} y2={y}
+                      stroke={r.color} strokeWidth={0.9} strokeDasharray="7,4" opacity={0.55}/>
+                    <text x={padL+chartW-4} y={y-3} fontSize={8.5} fontWeight={700}
+                      fill={r.color} textAnchor="end" opacity={0.9}
+                      style={{fontVariantNumeric:'tabular-nums'}}>
+                      {r.label} {pct}% {formatAxisPrice(r.price)}
+                    </text>
+                  </g>
+                )
+              })}
+            </g>
+          )
+        })()}
+
         {/* Line-chart mode — continuous close-price line instead of
             candlesticks. Volume bars, pattern markers, hover/click
             targets all stay exactly as they are; only the price
@@ -8796,9 +9145,61 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           return pts.length>1 ? <polyline points={pts.join(' ')} fill="none" stroke={C.accent} strokeWidth={1.8}/> : null
         })()}
 
+        {/* Area — close line with a gradient body down to the pane floor */}
+        {chartStyle==='area' && (() => {
+          const xy = vCloses.map((c,i)=> c!=null ? [idxToX(i), priceToY(c)] : null).filter(Boolean)
+          if (xy.length < 2) return null
+          const floor = priceTop + priceH
+          const line = xy.map(([x,y])=>`${x},${y}`).join(' ')
+          const area = `M ${xy[0][0]},${floor} `
+            + xy.map(([x,y])=>`L ${x},${y}`).join(' ')
+            + ` L ${xy[xy.length-1][0]},${floor} Z`
+          return (
+            <g>
+              <defs>
+                <linearGradient id="lm-area-fill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={C.accent} stopOpacity={0.34}/>
+                  <stop offset="100%" stopColor={C.accent} stopOpacity={0.02}/>
+                </linearGradient>
+              </defs>
+              <path d={area} fill="url(#lm-area-fill)" stroke="none"/>
+              <polyline points={line} fill="none" stroke={C.accent} strokeWidth={1.8}/>
+            </g>
+          )
+        })()}
+
+        {/* Baseline — green above / red below the first visible close */}
+        {chartStyle==='baseline' && (() => {
+          const xy = vCloses.map((c,i)=> c!=null ? [idxToX(i), priceToY(c)] : null).filter(Boolean)
+          if (xy.length < 2 || scaleBase == null) return null
+          const baseY = priceToY(scaleBase)
+          const line = xy.map(([x,y])=>`${x},${y}`).join(' ')
+          const body = `M ${xy[0][0]},${baseY} `
+            + xy.map(([x,y])=>`L ${x},${y}`).join(' ')
+            + ` L ${xy[xy.length-1][0]},${baseY} Z`
+          return (
+            <g>
+              <defs>
+                <clipPath id="lm-base-up">
+                  <rect x={padL} y={priceTop} width={chartW} height={Math.max(0, baseY - priceTop)}/>
+                </clipPath>
+                <clipPath id="lm-base-dn">
+                  <rect x={padL} y={baseY} width={chartW} height={Math.max(0, priceTop + priceH - baseY)}/>
+                </clipPath>
+              </defs>
+              <path d={body} fill={TV_VOL_UP} fillOpacity={0.22} stroke="none" clipPath="url(#lm-base-up)"/>
+              <path d={body} fill={TV_VOL_DN} fillOpacity={0.22} stroke="none" clipPath="url(#lm-base-dn)"/>
+              <polyline points={line} fill="none" stroke={TV_VOL_UP} strokeWidth={1.6} clipPath="url(#lm-base-up)"/>
+              <polyline points={line} fill="none" stroke={TV_VOL_DN} strokeWidth={1.6} clipPath="url(#lm-base-dn)"/>
+              <line x1={padL} y1={baseY} x2={padL+chartW} y2={baseY}
+                stroke={C.muted} strokeWidth={0.8} strokeDasharray="4,3" opacity={0.7}/>
+            </g>
+          )
+        })()}
+
         {/* Candlesticks — TradingView hollow-up / filled-down */}
-        {vCloses.map((c,i)=>{
-          const op = vOpens[i], hi = vHighs[i], lo = vLows[i]
+        {dCloses.map((c,i)=>{
+          const op = dOpens[i], hi = dHighs[i], lo = dLows[i]
           if(c==null||op==null||hi==null||lo==null) return null
           const up = c >= op
           const custom = showCandleColors && vBarColor[i]
@@ -8808,9 +9209,11 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           const bodyTop = Math.min(yOpen,yClose)
           const rawBodyH = Math.abs(yClose-yOpen)
           const isDoji = rawBodyH < 0.75
-          const bodyH = Math.max(isDoji ? 0 : 1, rawBodyH)
+          const bodyH = Math.max(isDoji && chartStyle !== 'hollow' ? 0 : 1, rawBodyH)
           const wickW = Math.max(1, Math.min(2.2, candleW * 0.18))
-          const hollow = !custom && up && !isDoji
+          const hollow = chartStyle==='hollow'
+            ? !custom
+            : (!custom && up && !isDoji && chartStyle==='candle')
           return (
             <g key={i}
               onClick={(e)=>{
@@ -8819,10 +9222,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               }}
               style={{cursor: drawTool==='pan' ? 'crosshair' : 'inherit'}}>
               <rect x={x-candleW/2-1} y={priceTop} width={candleW+2} height={priceH} fill="transparent"/>
-              {chartStyle==='candle' && <>
+              {chartStyle==='bar' ? (
+                <>
+                  <line x1={x} y1={priceToY(hi)} x2={x} y2={priceToY(lo)}
+                    stroke={color} strokeWidth={Math.max(1, wickW)} strokeLinecap="butt"/>
+                  <line x1={x-candleW/2} y1={yOpen} x2={x} y2={yOpen}
+                    stroke={color} strokeWidth={Math.max(1, wickW)}/>
+                  <line x1={x} y1={yClose} x2={x+candleW/2} y2={yClose}
+                    stroke={color} strokeWidth={Math.max(1, wickW)}/>
+                </>
+              ) : drawsBars && <>
                 <line x1={x} y1={priceToY(hi)} x2={x} y2={priceToY(lo)}
                   stroke={color} strokeWidth={wickW} strokeLinecap="round"/>
-                {isDoji ? (
+                {isDoji && chartStyle!=='hollow' ? (
                   <line x1={x-candleW/2} y1={yClose} x2={x+candleW/2} y2={yClose}
                     stroke={color} strokeWidth={1.35}/>
                 ) : hollow ? (
@@ -8873,8 +9285,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             <line x1={padL} y1={hoverCrossY} x2={padL+chartW} y2={hoverCrossY}
               stroke={C.muted} strokeWidth={0.6} strokeDasharray="3,3" opacity={0.85}/>
             {(() => {
-              const px = maxP - ((hoverCrossY - priceTop) / Math.max(1, priceH)) * (maxP - minP)
-              const label = formatAxisPrice(px)
+              const px = yToPrice(hoverCrossY)
+              const label = axisLabel(px)
               const tw = Math.max(44, label.length * 6.5 + 10)
               return (
                 <>
@@ -8888,8 +9300,46 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           </g>
         )}
 
+        {/* Per-series value tags on the price scale, TradingView style */}
+        {showMA && (() => {
+          const lastOf = arr => {
+            for (let i = arr.length - 1; i >= 0; i--) if (arr[i] != null) return arr[i]
+            return null
+          }
+          const tags = [
+            { v: lastOf(vEma9line), color: C.teal },
+            { v: lastOf(vMA20),  color: C.blue },
+            { v: lastOf(vMA50),  color: C.yellow },
+            { v: lastOf(vMA200), color: C.purple },
+          ]
+            .filter(t => t.v != null && Number.isFinite(t.v))
+            .map(t => ({ ...t, y: priceToY(t.v) }))
+            .filter(t => t.y >= priceTop - 2 && t.y <= priceTop + priceH + 2)
+            .sort((a,b) => a.y - b.y)
+          // Nudge overlapping tags apart so every line stays readable.
+          for (let i = 1; i < tags.length; i++) {
+            if (tags[i].y - tags[i-1].y < 12) tags[i].y = tags[i-1].y + 12
+          }
+          return (
+            <g style={{pointerEvents:'none'}}>
+              {tags.map((t,i) => {
+                const label = axisLabel(t.v)
+                const tw = Math.max(42, label.length * 6.2 + 8)
+                return (
+                  <g key={`mt-${i}`}>
+                    <rect x={padL+chartW+1} y={t.y-6.5} width={tw} height={13} rx={2}
+                      fill={t.color} opacity={0.9}/>
+                    <text x={padL+chartW+5} y={t.y+3.5} fontSize={8.5} fontWeight={700} fill="#0a0a0f"
+                      style={{fontVariantNumeric:'tabular-nums'}}>{label}</text>
+                  </g>
+                )
+              })}
+            </g>
+          )
+        })()}
+
         {/* Last price line + right-scale tag (TradingView live marker) */}
-        {chartStyle==='candle' && vCloses.length > 0 && (() => {
+        {vCloses.length > 0 && (() => {
           const last = vCloses[vCloses.length - 1]
           if (last == null || !Number.isFinite(last)) return null
           const prev = vCloses.length > 1 ? vCloses[vCloses.length - 2] : last
@@ -8897,7 +9347,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           const color = up ? TV_VOL_UP : TV_VOL_DN
           const y = priceToY(last)
           if (y < priceTop || y > priceTop + priceH) return null
-          const label = formatAxisPrice(last)
+          const label = axisLabel(last)
           const tw = Math.max(48, label.length * 6.5 + 12)
           return (
             <g style={{pointerEvents:'none'}}>
@@ -8982,7 +9432,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           </clipPath>
         </defs>
         <g clipPath={`url(#priceClip-${sym})`}>
-          {[...drawings, ...(drawDraft?.p1 ? [{ id:'_draft', type: drawDraft.type, p1: drawDraft.p1, p2: drawDraft.p2, color: TV_TOOLBAR_BLUE, draft: true }] : [])].map(d=>{
+          {[...drawings, ...(drawDraft?.p1 && drawDraft.type !== 'measure' ? [{ id:'_draft', type: drawDraft.type, p1: drawDraft.p1, p2: drawDraft.p2, color: TV_TOOLBAR_BLUE, draft: true }] : [])].map(d=>{
             const a = pointToXY(d.p1)
             if (!a) return null
             const b = pointToXY(d.p2 || d.p1)
@@ -9054,6 +9504,43 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             )
           })}
         </g>
+
+        {/* Ruler — price change, % and bar count between two clicks */}
+        {(() => {
+          const m = drawDraft?.type === 'measure' && drawDraft.p1
+            ? { p1: drawDraft.p1, p2: drawDraft.p2 || drawDraft.p1 }
+            : measureBox
+          if (!m?.p1 || !m?.p2) return null
+          const a = pointToXY(m.p1), b = pointToXY(m.p2)
+          if (!a || !b) return null
+          const delta = m.p2.price - m.p1.price
+          const pct = m.p1.price ? (delta / m.p1.price) * 100 : 0
+          const bars = Math.abs(dateIndex(m.p2.date) - dateIndex(m.p1.date))
+          const up = delta >= 0
+          const color = up ? TV_VOL_UP : TV_VOL_DN
+          const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y)
+          const w = Math.max(1, Math.abs(b.x - a.x)), h = Math.max(1, Math.abs(b.y - a.y))
+          const label = `${up?'+':''}${formatAxisPrice(delta)} (${up?'+':''}${pct.toFixed(2)}%)`
+          const sub = `${bars} ${bars === 1 ? intervalMeta.unit.replace(/s$/,'') : intervalMeta.unit}`
+          const boxW = Math.max(96, label.length * 6.6 + 16)
+          const boxX = Math.min(Math.max(padL, x + w/2 - boxW/2), padL + chartW - boxW)
+          const above = b.y <= a.y
+          const boxY = above ? Math.max(priceTop + 2, y - 34) : Math.min(priceTop + priceH - 34, y + h + 6)
+          return (
+            <g style={{pointerEvents:'none'}}>
+              <rect x={x} y={y} width={w} height={h} fill={color} fillOpacity={0.12}
+                stroke={color} strokeWidth={1} strokeDasharray="4,3"/>
+              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={color} strokeWidth={1.4}/>
+              <circle cx={a.x} cy={a.y} r={3} fill={color}/>
+              <circle cx={b.x} cy={b.y} r={3} fill={color}/>
+              <rect x={boxX} y={boxY} width={boxW} height={30} rx={3} fill={color} opacity={0.95}/>
+              <text x={boxX + boxW/2} y={boxY + 13} fontSize={10} fontWeight={800} textAnchor="middle"
+                fill="#0a0a0f" style={{fontVariantNumeric:'tabular-nums'}}>{label}</text>
+              <text x={boxX + boxW/2} y={boxY + 24} fontSize={9} fontWeight={600} textAnchor="middle"
+                fill="#0a0a0f" opacity={0.85}>{sub}</text>
+            </g>
+          )
+        })()}
 
         {/* Volume bars — Lakshmi Volume colors when enabled; else TV teal/red */}
         <g>
@@ -12788,6 +13275,41 @@ function playAlertSoundFromPrefs(prefs){
 
 
 // ── Market open check for sidebar dot ────────────────────────────────
+/**
+ * Time left in the live bar — TradingView's countdown under the last price.
+ * Isolated so its 1s tick never re-renders the whole chart. NSE session only.
+ */
+function BarCloseCountdown({ barMinutes, color, style }){
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const left = (() => {
+    const ist = new Date(now + ((330 + new Date(now).getTimezoneOffset()) * 60000))
+    const day = ist.getDay()
+    if (day === 0 || day === 6) return null
+    const secs = ist.getHours()*3600 + ist.getMinutes()*60 + ist.getSeconds()
+    const open = 555*60, close = 930*60 // 09:15 → 15:30 IST
+    if (secs < open || secs >= close) return null
+    const iv = Math.max(1, barMinutes) * 60
+    return Math.min(iv - ((secs - open) % iv), close - secs)
+  })()
+  if (left == null) return null
+  const h = Math.floor(left/3600), m = Math.floor((left%3600)/60), s = left%60
+  const text = h > 0
+    ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+    : `${m}:${String(s).padStart(2,'0')}`
+  return (
+    <div style={{
+      position:'absolute', padding:'1px 4px', borderRadius:2,
+      background:color, color:'#0a0a0f', fontSize:8.5, fontWeight:800,
+      fontVariantNumeric:'tabular-nums', pointerEvents:'none', whiteSpace:'nowrap',
+      ...style,
+    }}>{text}</div>
+  )
+}
+
 function isMarketOpen(){
   const ist = new Date(Date.now() + ((330 + new Date().getTimezoneOffset())*60000))
   const day = ist.getDay()

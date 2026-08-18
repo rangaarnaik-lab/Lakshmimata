@@ -67,6 +67,9 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'sampleBars', label: 'Bars', min: 10, max: 60, step: 1 },
     { key: 'projPct', label: 'Reach', min: 0.05, max: 0.4, step: 0.01 },
   ],
+  circuit: [
+    { key: 'pct', label: 'Band %', min: 2, max: 20, step: 1 },
+  ],
 }
 
 const DEFAULT_ENABLED = {
@@ -82,6 +85,7 @@ const DEFAULT_ENABLED = {
   bullsnort: true,
   buysell: true,
   forecast: false,
+  circuit: false, // UC/LC circuit band around the previous close
 }
 
 const DEFAULT_PARAMS = {
@@ -108,6 +112,7 @@ const DEFAULT_PARAMS = {
     rsMin: 50, rsRise: 10,
   },
   forecast: { sampleBars: 30, projPct: 0.15 },
+  circuit: { pct: 20 },
 }
 
 export function defaultChartIndicatorPrefs() {

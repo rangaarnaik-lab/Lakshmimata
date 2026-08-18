@@ -9,6 +9,8 @@ export const DRAW_TOOLS = [
   { id: 'hline', label: 'H-Line', title: 'Horizontal line (1 click)' },
   { id: 'vline', label: 'V-Line', title: 'Vertical line (1 click)' },
   { id: 'rect', label: 'Rect', title: 'Rectangle (2 clicks)' },
+  // Ruler is transient: it measures, it is never saved as a drawing.
+  { id: 'measure', label: 'Ruler', title: 'Measure price, % and bars (2 clicks · M)' },
 ]
 
 function storageKey(sym, barInterval) {
