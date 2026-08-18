@@ -9,7 +9,7 @@ import {
 import {
   loadChartIndicatorPrefs, persistChartIndicatorPrefsLocal, normalizeChartIndicatorPrefs,
   setIndicatorEnabled, setIndicatorParam, resetIndicatorParams, INDICATOR_PARAM_FIELDS,
-  indEnabled, indParams,
+  indEnabled, indParams, defaultChartIndicatorPrefs,
 } from './lib/chartIndicatorPrefs'
 import {
   loadChartIntervalFavorites, persistChartIntervalFavorites, toggleIntervalFavorite,
@@ -4701,8 +4701,24 @@ function ChartBelowContent({sym, stocks, sectionOrder, sectionHidden=[], onSecti
         {customizeOpen&&(
           <div style={{marginBottom:12,padding:'10px 12px',borderRadius:10,
             border:`1px solid ${C.border}`,background:C.card}}>
-            <div style={{fontSize:10,color:C.muted,marginBottom:8}}>
-              Hide blocks you don&apos;t want (saved with your layout). Drag to reorder visible ones.
+            <div style={{display:'flex',alignItems:'flex-start',gap:8,marginBottom:8}}>
+              <div style={{flex:1,fontSize:10,color:C.muted}}>
+                Hide blocks you don&apos;t want (saved with your layout). Drag to reorder visible ones.
+              </div>
+              <button type="button"
+                onClick={()=>{
+                  onSectionHiddenChange?.([])
+                  onSectionOrderChange?.(normalizeChartSectionOrder(CHART_SECTION_ORDER_DEFAULT))
+                }}
+                disabled={hiddenSet.size===0}
+                title="Bring back every block and restore the default order"
+                style={{padding:'4px 8px',borderRadius:6,flexShrink:0,
+                  border:`1px solid ${hiddenSet.size?C.accent:C.border}`,
+                  background:'transparent',color:hiddenSet.size?C.accent:C.muted,
+                  fontSize:10,fontWeight:700,cursor:hiddenSet.size?'pointer':'default',
+                  opacity:hiddenSet.size?1:0.5}}>
+                Show all
+              </button>
             </div>
             <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
               {CHART_SECTION_ORDER_DEFAULT.map(key=>{
@@ -4735,6 +4751,21 @@ function ChartBelowContent({sym, stocks, sectionOrder, sectionHidden=[], onSecti
           </div>
         )}
       </div>
+      {visibleSections.length===0&&(
+        <div style={{padding:'18px 4px',fontSize:11,color:C.muted,lineHeight:1.6}}>
+          Every block below the chart is hidden.
+          {' '}
+          <button type="button"
+            onClick={()=>{
+              setCustomizeOpen(true)
+              onSectionHiddenChange?.([])
+            }}
+            style={{padding:0,border:'none',background:'transparent',color:C.accent,
+              fontSize:11,fontWeight:700,cursor:'pointer',textDecoration:'underline'}}>
+            Show them again
+          </button>
+        </div>
+      )}
       {visibleSections.map(sectionId=>{
         if(sectionId==='details'){
           return (
@@ -6544,6 +6575,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   }, [showSeriesMenu])
   const [indPrefs, setIndPrefs] = useState(() => loadChartIndicatorPrefs(userId))
   const [indSettingsId, setIndSettingsId] = useState(null) // which indicator settings panel is open
+  const [indSettingsTab, setIndSettingsTab] = useState('inputs') // TradingView-style Inputs / Style tabs
   const skipIndSaveRef = useRef(true)
   const indSaveTimer = useRef(null)
   const prefsN = useMemo(() => normalizeChartIndicatorPrefs(indPrefs), [indPrefs])
@@ -6556,7 +6588,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const showMACD = prefsN.indicators.macd.enabled
   const showForecast = prefsN.indicators.forecast.enabled
   const showBuySell = prefsN.indicators.buysell.enabled
-  const showSuperCycle = prefsN.indicators.supercycle.enabled
+  // Super Cycle measures RS against the index, so it has nothing to plot on an
+  // index chart — keep the preference but don't reserve a pane for it there.
+  const showSuperCycle = prefsN.indicators.supercycle.enabled && !isIndex
   const showCandleColors = prefsN.indicators.barcolor.enabled
   const showLakshmiVol = prefsN.indicators.lakshmivol?.enabled !== false
   const showCircuit = prefsN.indicators.circuit?.enabled === true
@@ -6570,6 +6604,30 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const volP = prefsN.indicators.lakshmivol?.params || {}
   const snortP = prefsN.indicators.bullsnort.params
   const fcP = prefsN.indicators.forecast.params
+  const maWidth = Math.min(4, Math.max(0.5, Number(maP.lineWidth) || 1.3))
+  const maColors = {
+    ema9: maP.ema9Color || C.teal,
+    ma20: maP.ma20Color || C.blue,
+    ma50: maP.ma50Color || C.yellow,
+    ma200: maP.ma200Color || C.purple,
+  }
+  const maShowTags = maP.showScaleTags !== false
+  const maVisible = {
+    ema9: maP.showEma9 !== false,
+    ma20: maP.showMa20 !== false,
+    ma50: maP.showMa50 !== false,
+    ma200: maP.showMa200 !== false,
+  }
+  const guppyP = prefsN.indicators.guppy?.params || {}
+  const srP = prefsN.indicators.sr?.params || {}
+  const patP = prefsN.indicators.patterns?.params || {}
+  const buySellFont = Math.min(14, Math.max(6, Number(buyP.labelSize) || 8))
+  const barColorOpacity = Math.min(1, Math.max(0.4, (Number(barP.barOpacity) || 100) / 100))
+  const snortMarkerSize = Math.min(16, Math.max(4, Number(snortP.markerSize) || 9))
+  const pct01 = (v, fb) => Math.min(1, Math.max(0.2, (Number(v) || fb) / 100))
+  const lineW = (v, fb) => Math.min(4, Math.max(0.4, Number(v) || fb))
+  const dashFor = (style, w = 1) =>
+    style === 'solid' ? undefined : style === 'dotted' ? `${w},${w * 2}` : '4,3'
   const setShowMA = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'ma', typeof v === 'function' ? v(showMA) : v))
   const setShowGuppy = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'guppy', typeof v === 'function' ? v(showGuppy) : v))
   const setShowSR = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'sr', typeof v === 'function' ? v(showSR) : v))
@@ -7205,13 +7263,30 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     : Math.max(44, Math.round(W*0.06))
   // Reserve a strip above the volume pane for the Pine volume metrics table.
   const volShowTable = showLakshmiVol && volP.showTable !== false
+  // Tables can either reserve their own strip (default) or overlap the pane
+  // they belong to, TradingView style, giving the chart the space back.
+  const volTableOverlay = volP.tablePlacement === 'overlay'
+  const volTableBelow = volP.tablePlacement === 'below'
+  const volTableAlpha = Math.min(1, Math.max(0.3, (Number(volP.tableOpacity) || 100) / 100))
+  const scShowTable = showSuperCycle && scP.showTable !== false
+  const scTableOverlay = scP.tablePlacement === 'overlay'
+  const scTableBelow = scP.tablePlacement === 'below'
+  const scTableAlpha = Math.min(1, Math.max(0.3, (Number(scP.tableOpacity) || 100) / 100))
+  const scShowStatus = showSuperCycle && scP.showStatus !== false
+  const volUpColor = volP.volUpColor || TV_VOL_UP
+  const volDownColor = volP.volDownColor || TV_VOL_DN
+  const volBarOpacity = Math.min(1, Math.max(0.2, (Number(volP.barOpacity) || 50) / 100))
   const volShowMarkers = showLakshmiVol && volP.showMarkers !== false
-  const volTableH = volShowTable ? (isMobile ? 48 : 40) : 0
+  const volTableBoxH = isMobile ? 48 : 40
+  const volTableH = volShowTable && !volTableOverlay && !volTableBelow ? volTableBoxH : 0
+  const volTableFootH = volShowTable && volTableBelow ? volTableBoxH : 0
   // Marker row under the volume pane baseline: signal icons + HT/HY/HQ/M tags,
   // kept out of the bars so tall bars never clip them.
   const volMarkerH = volShowMarkers ? (isMobile ? 16 : 15) : 0
   // Reserve strip above Super Cycle for the TV-style RS rating history table.
-  const scTableH = showSuperCycle ? (isMobile ? 132 : 122) : 0
+  const scTableBoxH = isMobile ? 132 : 122
+  const scTableH = scShowTable && !scTableOverlay && !scTableBelow ? scTableBoxH : 0
+  const scTableFootH = scShowTable && scTableBelow ? scTableBoxH : 0
   const panelGaps = gapH + (showRSI ? gapH : 0) + (showMACD ? gapH : 0) + (showSuperCycle ? gapH : 0)
   const usable = Math.max(160, H - padT - panelGaps - axisPad - volTableH - volMarkerH - scTableH)
   // When RSI/MACD/Super Cycle panes are on, shrink price/volume so everything fits.
@@ -7323,7 +7398,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   // Pine RS history table uses the last N bars of the full series (not the zoom window).
   const scRsTable = (() => {
     if (!showSuperCycle || !superCycle) return null
-    const lookback = 10
+    const lookback = Math.min(10, Math.max(3, Number(scP.tableDays) || 10))
     const len = (superCycle.rsRatingNifty || superCycle.rsRating || []).length
     if (len < 1) return null
     const last = len - 1
@@ -7377,29 +7452,41 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   })
   const paneHeights = { price: priceH, vol: volH, sc: scH, rsi: rsiH, macd: macdH }
   const paneHeadHeights = { price: 0, vol: volTableH, sc: scTableH, rsi: 0, macd: 0 }
-  const paneFootHeights = { price: 0, vol: volMarkerH, sc: 0, rsi: 0, macd: 0 }
+  const paneFootHeights = {
+    price: 0,
+    vol: volMarkerH + volTableFootH,
+    sc: scTableFootH,
+    rsi: 0,
+    macd: 0,
+  }
   const paneLayout = (() => {
-    const headTop = {}, top = {}
+    const headTop = {}, top = {}, footTop = {}
     let y = padT
     paneOrder.forEach((k, i) => {
       if (i > 0) y += gapH
       headTop[k] = y
       y += paneHeadHeights[k]
       top[k] = y
-      y += paneHeights[k] + paneFootHeights[k]
+      y += paneHeights[k]
+      footTop[k] = y
+      y += paneFootHeights[k]
     })
-    return { headTop, top, bottom: y }
+    return { headTop, top, footTop, bottom: y }
   })()
   const paneHeadTop = paneLayout.headTop
   const paneTop = paneLayout.top
+  const paneFootTop = paneLayout.footTop
   const panesBottom = paneLayout.bottom
   const priceTop = paneTop.price ?? padT
-  // Metrics table sits directly above the volume indicator (TV/Pine style).
-  const volTableTop = paneHeadTop.vol ?? padT
   const volTop = paneTop.vol ?? padT
   const volMarkerTop = volTop + volH
-  // Super Cycle RS history table sits directly above the Super Cycle pane.
-  const scTableTop = paneHeadTop.sc ?? 0
+  // Metrics table sits above the volume pane (TV/Pine style) unless the user
+  // moved it below, where it follows the signal-icon row.
+  const volTableTop = volTableBelow
+    ? (paneFootTop.vol ?? volMarkerTop) + volMarkerH
+    : (paneHeadTop.vol ?? padT)
+  // Super Cycle RS history table: above the pane, or below it on request.
+  const scTableTop = scTableBelow ? (paneFootTop.sc ?? 0) : (paneHeadTop.sc ?? 0)
   const scTop = paneTop.sc ?? 0
   const rsiTop = paneTop.rsi ?? 0
   const macdTop = paneTop.macd ?? 0
@@ -7913,7 +8000,11 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     { id:'sr', group:'Overlays', label:'Support & Resistance', short:'S/R', desc:'', on:showSR, set:setShowSR },
     { id:'rsi', group:'Oscillators', label:'Relative Strength Index', short:'RSI', desc:'', on:showRSI, set:setShowRSI },
     { id:'macd', group:'Oscillators', label:'MACD', short:'MACD', desc:'', on:showMACD, set:setShowMACD },
-    ...(!isIndex ? [{ id:'supercycle', group:'Oscillators', label:'Lakshmi Super Cycle', short:'Super Cycle', desc:'', on:showSuperCycle, set:setShowSuperCycle }] : []),
+    // Always listed so it can be switched back on; on an index it has nothing
+    // to compare against, so it stays visible but blocked instead of vanishing.
+    { id:'supercycle', group:'Oscillators', label:'Lakshmi Super Cycle', short:'Super Cycle',
+      desc: isIndex ? 'Needs a stock — it measures RS against the index' : '',
+      blocked: isIndex, on:showSuperCycle, set:setShowSuperCycle },
     { id:'patterns', group:'Signals', label:'Patterns', short:'Patterns', desc:'', on:showPatterns, set:setShowPatterns },
     { id:'lakshmivol', group:'Signals', label:'Lakshmi Volume', short:'Volume', desc:'', on:showLakshmiVol, set:setShowLakshmiVol },
     { id:'barcolor', group:'Signals', label:'Volume Candle Colors', short:'Bar Color', desc:'', on:showCandleColors, set:setShowCandleColors },
@@ -8233,22 +8324,26 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                           padding:'6px 10px 6px 14px',
                           background: ind.on ? TV_TOOLBAR_BLUE+'14' : 'transparent',
                         }}>
-                          <button type="button"
-                            onClick={()=>ind.set(v=>!v)}
+                          <button type="button" disabled={ind.blocked}
+                            title={ind.blocked ? ind.desc : undefined}
+                            onClick={()=>{ if (!ind.blocked) ind.set(v=>!v) }}
                             style={{
                               flex:1, display:'flex', alignItems:'flex-start', gap:10,
                               padding:'2px 0', border:'none', background:'transparent',
-                              cursor:'pointer', textAlign:'left', fontFamily:'inherit',
+                              cursor: ind.blocked ? 'default' : 'pointer',
+                              opacity: ind.blocked ? 0.55 : 1,
+                              textAlign:'left', fontFamily:'inherit',
                             }}>
                             <span style={{
                               marginTop:2, width:16, height:16, borderRadius:3, flexShrink:0,
-                              border:`1.5px solid ${ind.on ? TV_TOOLBAR_BLUE : C.border}`,
-                              background: ind.on ? TV_TOOLBAR_BLUE : 'transparent',
+                              border:`1.5px solid ${ind.on && !ind.blocked ? TV_TOOLBAR_BLUE : C.border}`,
+                              background: ind.on && !ind.blocked ? TV_TOOLBAR_BLUE : 'transparent',
                               color:'#fff', fontSize:11, fontWeight:800,
                               display:'inline-flex', alignItems:'center', justifyContent:'center',
-                            }}>{ind.on ? '✓' : ''}</span>
+                            }}>{ind.on && !ind.blocked ? '✓' : ''}</span>
                             <span style={{display:'flex', flexDirection:'column', gap:2, minWidth:0}}>
-                              <span style={{fontSize:12.5, fontWeight:700, color: ind.on ? TV_TOOLBAR_BLUE : C.text}}>
+                              <span style={{fontSize:12.5, fontWeight:700,
+                                color: ind.on && !ind.blocked ? TV_TOOLBAR_BLUE : C.text}}>
                                 {ind.label}
                               </span>
                               {ind.desc ? (
@@ -8258,7 +8353,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                           </button>
                           {INDICATOR_PARAM_FIELDS[ind.id]?.length > 0 && (
                             <button type="button" title="Settings"
-                              onClick={(e)=>{ e.stopPropagation(); setIndSettingsId(s => s===ind.id ? null : ind.id) }}
+                              onClick={(e)=>{
+                                e.stopPropagation()
+                                setIndSettingsId(s => s===ind.id ? null : ind.id)
+                                setIndSettingsTab(
+                                  (INDICATOR_PARAM_FIELDS[ind.id] || []).some(f => (f.tab||'inputs')==='inputs')
+                                    ? 'inputs' : 'style'
+                                )
+                              }}
                               style={{
                                 marginTop:1, width:26, height:26, border:'none', borderRadius:4, cursor:'pointer',
                                 background: indSettingsId===ind.id ? TV_TOOLBAR_BLUE+'22' : 'transparent',
@@ -8267,50 +8369,115 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                               }}>⚙</button>
                           )}
                         </div>
-                        {indSettingsId===ind.id && INDICATOR_PARAM_FIELDS[ind.id] && (
-                          <div style={{padding:'6px 14px 10px 40px', background:C.bg||'#0e1117'}}>
-                            <div style={{fontSize:9, color:C.muted, marginBottom:6, fontWeight:700}}>
-                              Settings
-                            </div>
-                            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
-                              {INDICATOR_PARAM_FIELDS[ind.id].map(f=> f.type === 'bool' ? (
-                                <label key={f.key} style={{
-                                  display:'flex', alignItems:'center', gap:6, fontSize:10, color:C.muted,
-                                  cursor:'pointer', gridColumn:'span 2',
-                                }}>
-                                  <input type="checkbox"
-                                    checked={indParams(indPrefs, ind.id)[f.key] !== false}
-                                    onChange={e=>setIndPrefs(p => setIndicatorParam(p, ind.id, f.key, e.target.checked))}
-                                    style={{accentColor:TV_TOOLBAR_BLUE, cursor:'pointer', margin:0}}/>
-                                  {f.label}
-                                </label>
-                              ) : (
-                                <label key={f.key} style={{display:'flex', flexDirection:'column', gap:2, fontSize:10, color:C.muted}}>
-                                  {f.label}
-                                  <input type="number" min={f.min} max={f.max} step={f.step}
-                                    value={indParams(indPrefs, ind.id)[f.key] ?? ''}
-                                    onChange={e=>setIndPrefs(p => setIndicatorParam(p, ind.id, f.key, e.target.value))}
+                        {indSettingsId===ind.id && INDICATOR_PARAM_FIELDS[ind.id] && (() => {
+                          const all = INDICATOR_PARAM_FIELDS[ind.id]
+                          const tabs = [
+                            { id:'inputs', label:'Inputs' },
+                            { id:'style',  label:'Style' },
+                          ].filter(t => all.some(f => (f.tab||'inputs')===t.id))
+                          const tab = tabs.some(t => t.id===indSettingsTab) ? indSettingsTab : tabs[0]?.id
+                          const fields = all.filter(f => (f.tab||'inputs')===tab)
+                          const vals = indParams(indPrefs, ind.id)
+                          const setVal = (key, value) =>
+                            setIndPrefs(p => setIndicatorParam(p, ind.id, key, value))
+                          const inputBox = {
+                            width:'100%', boxSizing:'border-box',
+                            padding:'5px 7px', borderRadius:4, border:`1px solid ${C.border}`,
+                            background:C.card, color:C.text, fontSize:12, fontFamily:'inherit',
+                          }
+                          return (
+                            <div style={{padding:'6px 14px 10px 40px', background:C.bg||'#0e1117'}}>
+                              <div style={{display:'flex', gap:2, marginBottom:8}}>
+                                {tabs.map(t=>(
+                                  <button key={t.id} type="button"
+                                    onClick={()=>setIndSettingsTab(t.id)}
                                     style={{
-                                      width:'100%', boxSizing:'border-box',
-                                      padding:'5px 7px', borderRadius:4, border:`1px solid ${C.border}`,
-                                      background:C.card, color:C.text, fontSize:12, fontFamily:'inherit',
-                                    }}/>
-                                </label>
-                              ))}
+                                      padding:'3px 9px', border:'none', borderRadius:3, cursor:'pointer',
+                                      fontFamily:'inherit', fontSize:10, fontWeight:700,
+                                      background: tab===t.id ? TV_TOOLBAR_BLUE+'22' : 'transparent',
+                                      color: tab===t.id ? TV_TOOLBAR_BLUE : C.muted,
+                                    }}>{t.label}</button>
+                                ))}
+                              </div>
+                              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
+                                {fields.map(f=>{
+                                  if (f.type === 'bool') return (
+                                    <label key={f.key} style={{
+                                      display:'flex', alignItems:'center', gap:6, fontSize:10, color:C.muted,
+                                      cursor:'pointer', gridColumn:'span 2',
+                                    }}>
+                                      <input type="checkbox"
+                                        checked={vals[f.key] !== false}
+                                        onChange={e=>setVal(f.key, e.target.checked)}
+                                        style={{accentColor:TV_TOOLBAR_BLUE, cursor:'pointer', margin:0}}/>
+                                      {f.label}
+                                    </label>
+                                  )
+                                  if (f.type === 'color') return (
+                                    <label key={f.key} style={{display:'flex', alignItems:'center', gap:6, fontSize:10, color:C.muted}}>
+                                      <input type="color"
+                                        value={vals[f.key] || '#ffffff'}
+                                        onChange={e=>setVal(f.key, e.target.value)}
+                                        style={{
+                                          width:26, height:20, padding:0, borderRadius:3, cursor:'pointer',
+                                          border:`1px solid ${C.border}`, background:'transparent', flexShrink:0,
+                                        }}/>
+                                      <span style={{flex:1}}>{f.label}</span>
+                                    </label>
+                                  )
+                                  if (f.type === 'select') return (
+                                    <label key={f.key} style={{display:'flex', flexDirection:'column', gap:2, fontSize:10, color:C.muted, gridColumn:'span 2'}}>
+                                      {f.label}
+                                      <select value={vals[f.key] ?? f.options?.[0]?.value}
+                                        onChange={e=>setVal(f.key, e.target.value)}
+                                        style={{...inputBox, cursor:'pointer'}}>
+                                        {(f.options||[]).map(o=>(
+                                          <option key={o.value} value={o.value}>{o.label}</option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                  )
+                                  return (
+                                    <label key={f.key} style={{display:'flex', flexDirection:'column', gap:2, fontSize:10, color:C.muted}}>
+                                      {f.label}
+                                      <input type="number" min={f.min} max={f.max} step={f.step}
+                                        value={vals[f.key] ?? ''}
+                                        onChange={e=>setVal(f.key, e.target.value)}
+                                        style={inputBox}/>
+                                    </label>
+                                  )
+                                })}
+                              </div>
+                              <button type="button"
+                                onClick={()=>setIndPrefs(p => resetIndicatorParams(p, ind.id))}
+                                style={{
+                                  marginTop:8, padding:'3px 8px', border:`1px solid ${C.border}`, borderRadius:3,
+                                  background:'transparent', color:C.muted, fontSize:10, fontWeight:600,
+                                  cursor:'pointer', fontFamily:'inherit',
+                                }}>Reset defaults</button>
                             </div>
-                            <button type="button"
-                              onClick={()=>setIndPrefs(p => resetIndicatorParams(p, ind.id))}
-                              style={{
-                                marginTop:8, padding:'3px 8px', border:`1px solid ${C.border}`, borderRadius:3,
-                                background:'transparent', color:C.muted, fontSize:10, fontWeight:600,
-                                cursor:'pointer', fontFamily:'inherit',
-                              }}>Reset defaults</button>
-                          </div>
-                        )}
+                          )
+                        })()}
                       </div>
                     ))}
                   </div>
                 ))}
+              </div>
+              <div style={{
+                display:'flex', alignItems:'center', gap:6, flexShrink:0,
+                padding:'7px 12px', borderTop:`1px solid ${C.border}`,
+              }}>
+                <span style={{flex:1, fontSize:10, color:C.muted}}>
+                  {activeIndicators.length} on
+                </span>
+                <button type="button"
+                  onClick={()=>{ setIndSearch(''); setIndPrefs(defaultChartIndicatorPrefs()) }}
+                  title="Switch every indicator back to its default state and settings"
+                  style={{
+                    padding:'3px 8px', border:`1px solid ${C.border}`, borderRadius:3,
+                    background:'transparent', color:C.text, fontSize:10, fontWeight:700,
+                    cursor:'pointer', fontFamily:'inherit',
+                  }}>Restore defaults</button>
               </div>
             </div>
           )}
@@ -8600,7 +8767,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         )
       })}
       {/* Super Cycle status card — compact state readout inside the pane */}
-      {showSuperCycle && scRsTable?.length > 0 && scH >= 44 && (() => {
+      {scShowStatus && scRsTable?.length > 0 && scH >= 44 && (() => {
         const d = scRsTable[scRsTable.length - 1]
         const rating = d.nifty
         const strength = rating == null ? '—' : rating >= 70 ? 'STRONG' : rating >= 40 ? 'AVG' : 'WEAK'
@@ -8696,7 +8863,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         </div>
       )}
       {/* Pine volume metrics table — directly above the volume pane */}
-      {volShowTable && volMetrics && volTableH > 0 && (() => {
+      {volShowTable && volMetrics && (() => {
         const m = volMetrics
         const commentMap = {
           HT: `${VOL_SIGNAL_ICONS.HT} All-Time High Vol (HT)`,
@@ -8741,16 +8908,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             position:'absolute',
             left: padL,
             width: chartW,
-            top: (volTableTop / H) * 100 + '%',
-            height: (volTableH / H) * 100 + '%',
+            top: ((volTableOverlay ? volTop + 1 : volTableTop) / H) * 100 + '%',
+            height: (volTableBoxH / H) * 100 + '%',
             zIndex: 3,
             display:'flex', flexWrap:'nowrap', gap:0, alignItems:'stretch',
             boxSizing:'border-box',
             border:`1px solid ${C.border}`,
             background: C.bg,
+            opacity: volTableOverlay ? volTableAlpha : 1,
             overflow:'hidden',
             pointerEvents:'none',
-          }} title="Lakshmi Volume metrics (above volume pane)">
+          }} title={`Lakshmi Volume metrics (${
+            volTableOverlay ? 'overlapping the volume pane' : volTableBelow ? 'below the volume pane' : 'above the volume pane'
+          })`}>
             {cell('📊 Volume', m.volume != null ? Number(m.volume).toLocaleString('en-IN') : '—')}
             {cell(`〰 ${m.lookbackAvg || 50} Bar Avg.Vol`, m.avgVol != null ? fmtVol(m.avgVol) : '—')}
             {cell(`⚡ ${m.lookbackAvg || 50} Bar Rel.Vol`, rel != null ? `${Math.round(rel)}%` : '—', relBg)}
@@ -8764,7 +8934,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         )
       })()}
       {/* Pine Super Cycle RS history table (TradingView-style) */}
-      {showSuperCycle && scRsTable && (() => {
+      {scShowTable && scRsTable && (() => {
         const COL = {
           hdr: '#1E1E2E', label: '#12121A', cell: '#1A1A28',
           lime: '#00E676', red: '#FF1744', orange: '#FF9100', gray: '#78909C', white: '#E0E0E0',
@@ -8857,15 +9027,18 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             position: 'absolute',
             left: padL,
             width: chartW,
-            top: (scTableTop / H) * 100 + '%',
-            height: (scTableH / H) * 100 + '%',
+            top: ((scTableOverlay ? scTop + 1 : scTableTop) / H) * 100 + '%',
+            height: (Math.min(scTableBoxH, scTableOverlay ? Math.max(40, scH - 2) : scTableBoxH) / H) * 100 + '%',
             zIndex: 4,
             overflow: 'auto',
             border: '1px solid #3A3A5C',
             background: '#0D0D14',
+            opacity: scTableOverlay ? scTableAlpha : 1,
             boxSizing: 'border-box',
             pointerEvents: 'auto',
-          }} title="Super Cycle RS Rating history (TradingView-style)">
+          }} title={`Super Cycle RS Rating history (${
+            scTableOverlay ? 'overlapping the pane' : scTableBelow ? 'below the pane' : 'above the pane'
+          })`}>
             <div style={{
               display: 'grid',
               gridTemplateColumns: `minmax(64px,auto) repeat(${scRsTable.length}, minmax(36px,1fr))`,
@@ -8901,6 +9074,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                   Today RS {scRsLatest}
                 </span>
               )}
+              <button type="button"
+                onClick={()=>setIndPrefs(p => setIndicatorParam(
+                  p, 'supercycle', 'tablePlacement',
+                  scTableOverlay ? 'reserve' : scTableBelow ? 'overlay' : 'below'))}
+                title="Move the table: above the pane → below it → overlapping it"
+                style={{
+                  marginLeft: scRsLatest != null ? 8 : 'auto',
+                  padding:'0 5px', border:'1px solid #2A2A3E', borderRadius:3,
+                  background:'transparent', color:COL.white, fontSize:7, fontWeight:800,
+                  cursor:'pointer', fontFamily:'inherit',
+                }}>
+                {scTableOverlay ? 'OVERLAP' : scTableBelow ? 'BELOW' : 'ABOVE'}
+              </button>
             </div>
           </div>
         )
@@ -8982,17 +9168,25 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         })()}
 
         {/* Support/Resistance lines */}
-        {showSR && [['r1',sr.r1,C.red],['r2',sr.r2,C.red],['s1',sr.s1,C.green],['s2',sr.s2,C.green]].map(([k,val,color])=>
-          val!=null && val<=maxP && val>=minP ? (
-            <g key={k}>
-              <line x1={padL} y1={priceToY(val)} x2={padL+chartW} y2={priceToY(val)}
-                stroke={color} strokeWidth={1} strokeDasharray="4,3" opacity={0.6}/>
-              <text x={padL+2} y={priceToY(val)-3} fontSize={8} fontWeight={700} fill={color}>
-                {k.toUpperCase()} {val.toFixed(1)}
-              </text>
-            </g>
-          ) : null
-        )}
+        {showSR && (() => {
+          const resC = srP.resColor || C.red
+          const supC = srP.supColor || C.green
+          const w = lineW(srP.lineWidth, 1)
+          const dash = dashFor(srP.lineStyle || 'dashed', w)
+          return [['r1',sr.r1,resC],['r2',sr.r2,resC],['s1',sr.s1,supC],['s2',sr.s2,supC]].map(([k,val,color])=>
+            val!=null && val<=maxP && val>=minP ? (
+              <g key={k}>
+                <line x1={padL} y1={priceToY(val)} x2={padL+chartW} y2={priceToY(val)}
+                  stroke={color} strokeWidth={w} strokeDasharray={dash} opacity={0.6}/>
+                {srP.showLabels !== false && (
+                  <text x={padL+2} y={priceToY(val)-3} fontSize={8} fontWeight={700} fill={color}>
+                    {k.toUpperCase()} {val.toFixed(1)}
+                  </text>
+                )}
+              </g>
+            ) : null
+          )
+        })()}
 
         {/* Cup & Handle outline — smooth curved overlay (not the actual
             noisy price action) tracing the cup shape, like a hand-drawn
@@ -9032,15 +9226,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               handlePts.push(`${idxToX(idx)},${y}`)
             }
           }
+          const cupC = patP.cupColor || C.purple
+          const cupW = lineW(patP.lineWidth, 2)
           return (
             <g>
-              <path d={`M ${pts.join(' L ')}`} fill="none" stroke={C.purple} strokeWidth={2} opacity={0.75} strokeLinecap="round"/>
+              <path d={`M ${pts.join(' L ')}`} fill="none" stroke={cupC} strokeWidth={cupW} opacity={0.75} strokeLinecap="round"/>
               {handlePts.length>0 && (
-                <path d={`M ${handlePts.join(' L ')}`} fill="none" stroke={C.purple} strokeWidth={2} opacity={0.6} strokeDasharray="4,2" strokeLinecap="round"/>
+                <path d={`M ${handlePts.join(' L ')}`} fill="none" stroke={cupC} strokeWidth={cupW} opacity={0.6} strokeDasharray="4,2" strokeLinecap="round"/>
               )}
-              <text x={idxToX((li+ri)/2)} y={Math.min(ly,ry)-8} fontSize={9} fontWeight={700} fill={C.purple} textAnchor="middle">
-                Cup {cup.depthPct}%{cup.hasHandle?' + Handle':''}
-              </text>
+              {patP.showLabels !== false && (
+                <text x={idxToX((li+ri)/2)} y={Math.min(ly,ry)-8} fontSize={9} fontWeight={700} fill={cupC} textAnchor="middle">
+                  Cup {cup.depthPct}%{cup.hasHandle?' + Handle':''}
+                </text>
+              )}
             </g>
           )
         })()}
@@ -9050,35 +9248,38 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           c.high.idx>=start && c.low.idx>=start ? (
             <line key={i} x1={idxToX(c.high.idx-start)} y1={priceToY(c.high.price)}
               x2={idxToX(c.low.idx-start)} y2={priceToY(c.low.price)}
-              stroke={C.orange} strokeWidth={1.5} strokeDasharray="3,2" opacity={0.7}/>
+              stroke={patP.vcpColor || C.orange} strokeWidth={lineW(patP.lineWidth, 2) * 0.75}
+              strokeDasharray="3,2" opacity={0.7}/>
           ) : null
         )}
 
         {/* Guppy MMA ribbons (short teal / long rose) + EMA9×EMA50 cross markers */}
         {showGuppy && (
-          <g opacity={0.85}>
+          <g opacity={pct01(guppyP.ribbonOpacity, 85)}>
             {vGuppyShort.map((series,k)=>{
               const pts = series.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
               return pts.length>1 ? (
                 <polyline key={`gs-${k}`} points={pts.join(' ')} fill="none"
-                  stroke="#2dd4bf" strokeWidth={0.9} opacity={0.45 + k*0.06}/>
+                  stroke={guppyP.shortColor || '#2dd4bf'} strokeWidth={lineW(guppyP.lineWidth, 0.9)}
+                  opacity={0.45 + k*0.06}/>
               ) : null
             })}
             {vGuppyLong.map((series,k)=>{
               const pts = series.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
               return pts.length>1 ? (
                 <polyline key={`gl-${k}`} points={pts.join(' ')} fill="none"
-                  stroke="#f472b6" strokeWidth={0.9} opacity={0.4 + k*0.05}/>
+                  stroke={guppyP.longColor || '#f472b6'} strokeWidth={lineW(guppyP.lineWidth, 0.9)}
+                  opacity={0.4 + k*0.05}/>
               ) : null
             })}
             {/* Highlight EMA9 / EMA50 used for crossover */}
-            {(() => {
+            {guppyP.showHighlight !== false && (() => {
               const e9 = vEma9line.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
               const e50 = vEma50line.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
               return (
                 <>
-                  {e9.length>1 && <polyline points={e9.join(' ')} fill="none" stroke={C.teal} strokeWidth={1.6} opacity={0.95}/>}
-                  {e50.length>1 && <polyline points={e50.join(' ')} fill="none" stroke={C.purple} strokeWidth={1.6} opacity={0.95}/>}
+                  {e9.length>1 && <polyline points={e9.join(' ')} fill="none" stroke={guppyP.fastColor || C.teal} strokeWidth={1.6} opacity={0.95}/>}
+                  {e50.length>1 && <polyline points={e50.join(' ')} fill="none" stroke={guppyP.slowColor || C.purple} strokeWidth={1.6} opacity={0.95}/>}
                 </>
               )
             })()}
@@ -9101,9 +9302,15 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         )}
 
         {/* MA lines */}
-        {showMA && [[vMA20,C.blue],[vMA50,C.yellow],[vMA200,C.purple],[vEma9line,C.teal]].map(([series,color],k)=>{
+        {showMA && [
+          [vMA20,  maColors.ma20,  maVisible.ma20],
+          [vMA50,  maColors.ma50,  maVisible.ma50],
+          [vMA200, maColors.ma200, maVisible.ma200],
+          [vEma9line, maColors.ema9, maVisible.ema9],
+        ].map(([series,color,on],k)=>{
+          if (!on) return null
           const pts = series.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
-          return pts.length>1 ? <polyline key={k} points={pts.join(' ')} fill="none" stroke={color} strokeWidth={1.3} opacity={0.9}/> : null
+          return pts.length>1 ? <polyline key={k} points={pts.join(' ')} fill="none" stroke={color} strokeWidth={maWidth} opacity={0.9}/> : null
         })}
 
         {/* Circuit band — UC/LC around the previous close, labelled on the scale */}
@@ -9112,8 +9319,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           const base = vCloses.length > 1 ? vCloses[vCloses.length - 2] : vCloses[vCloses.length - 1]
           if (base == null || !Number.isFinite(base)) return null
           const rows = [
-            { label: 'UC', price: base * (1 + pct/100), color: TV_VOL_UP },
-            { label: 'LC', price: base * (1 - pct/100), color: TV_VOL_DN },
+            { label: 'UC', price: base * (1 + pct/100), color: circuitP.ucColor || TV_VOL_UP },
+            { label: 'LC', price: base * (1 - pct/100), color: circuitP.lcColor || TV_VOL_DN },
           ]
           return (
             <g style={{pointerEvents:'none'}}>
@@ -9123,12 +9330,15 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                 return (
                   <g key={r.label}>
                     <line x1={padL} y1={y} x2={padL+chartW} y2={y}
-                      stroke={r.color} strokeWidth={0.9} strokeDasharray="7,4" opacity={0.55}/>
-                    <text x={padL+chartW-4} y={y-3} fontSize={8.5} fontWeight={700}
-                      fill={r.color} textAnchor="end" opacity={0.9}
-                      style={{fontVariantNumeric:'tabular-nums'}}>
-                      {r.label} {pct}% {formatAxisPrice(r.price)}
-                    </text>
+                      stroke={r.color} strokeWidth={lineW(circuitP.lineWidth, 0.9)}
+                      strokeDasharray="7,4" opacity={0.55}/>
+                    {circuitP.showLabels !== false && (
+                      <text x={padL+chartW-4} y={y-3} fontSize={8.5} fontWeight={700}
+                        fill={r.color} textAnchor="end" opacity={0.9}
+                        style={{fontVariantNumeric:'tabular-nums'}}>
+                        {r.label} {pct}% {formatAxisPrice(r.price)}
+                      </text>
+                    )}
                   </g>
                 )
               })}
@@ -9220,6 +9430,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                 if (drawTool!=='pan') return
                 e.stopPropagation();setPinnedIdx(p=>p===i?null:i)
               }}
+              opacity={custom ? barColorOpacity : 1}
               style={{cursor: drawTool==='pan' ? 'crosshair' : 'inherit'}}>
               <rect x={x-candleW/2-1} y={priceTop} width={candleW+2} height={priceH} fill="transparent"/>
               {chartStyle==='bar' ? (
@@ -9247,18 +9458,24 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               </>}
               {/* Pattern markers */}
               {showPatterns && vInsideBars[i] && (
-                <circle cx={x} cy={priceToY(hi)-6} r={2} fill={C.teal}/>
+                <circle cx={x} cy={priceToY(hi)-6} r={2} fill={patP.insideColor || C.teal}/>
               )}
               {showBuySell && vBuy[i] && (
                 <g>
-                  <rect x={x-14} y={priceToY(lo)+4} width={28} height={12} rx={2} fill={LAKSHMI_BUY_SELL_COLORS.BUY}/>
-                  <text x={x} y={priceToY(lo)+13} fontSize={8} fontWeight={800} fill="#fff" textAnchor="middle">Buy</text>
+                  <rect x={x-14} y={priceToY(lo)+4} width={28} height={12} rx={2}
+                    fill={buyP.buyColor || LAKSHMI_BUY_SELL_COLORS.BUY}/>
+                  {buyP.showLabels !== false && (
+                    <text x={x} y={priceToY(lo)+13} fontSize={buySellFont} fontWeight={800} fill="#fff" textAnchor="middle">Buy</text>
+                  )}
                 </g>
               )}
               {showBuySell && vSell[i] && (
                 <g>
-                  <rect x={x-14} y={priceToY(hi)-16} width={28} height={12} rx={2} fill={LAKSHMI_BUY_SELL_COLORS.SELL}/>
-                  <text x={x} y={priceToY(hi)-7} fontSize={8} fontWeight={800} fill="#fff" textAnchor="middle">Sell</text>
+                  <rect x={x-14} y={priceToY(hi)-16} width={28} height={12} rx={2}
+                    fill={buyP.sellColor || LAKSHMI_BUY_SELL_COLORS.SELL}/>
+                  {buyP.showLabels !== false && (
+                    <text x={x} y={priceToY(hi)-7} fontSize={buySellFont} fontWeight={800} fill="#fff" textAnchor="middle">Sell</text>
+                  )}
                 </g>
               )}
               {(hoverIdx===i || pinnedIdx===i) && (
@@ -9301,17 +9518,17 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         )}
 
         {/* Per-series value tags on the price scale, TradingView style */}
-        {showMA && (() => {
+        {showMA && maShowTags && (() => {
           const lastOf = arr => {
             for (let i = arr.length - 1; i >= 0; i--) if (arr[i] != null) return arr[i]
             return null
           }
           const tags = [
-            { v: lastOf(vEma9line), color: C.teal },
-            { v: lastOf(vMA20),  color: C.blue },
-            { v: lastOf(vMA50),  color: C.yellow },
-            { v: lastOf(vMA200), color: C.purple },
-          ]
+            maVisible.ema9  ? { v: lastOf(vEma9line), color: maColors.ema9 }  : null,
+            maVisible.ma20  ? { v: lastOf(vMA20),  color: maColors.ma20 }  : null,
+            maVisible.ma50  ? { v: lastOf(vMA50),  color: maColors.ma50 }  : null,
+            maVisible.ma200 ? { v: lastOf(vMA200), color: maColors.ma200 } : null,
+          ].filter(Boolean)
             .filter(t => t.v != null && Number.isFinite(t.v))
             .map(t => ({ ...t, y: priceToY(t.v) }))
             .filter(t => t.y >= priceTop - 2 && t.y <= priceTop + priceH + 2)
@@ -9388,8 +9605,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                   style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2.5}}>★</text>)
               }
               if (vLvSnort[i] || (showBullSnort && vSnort[i])) {
-                nodes.push(<text key={`bs-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={10}
-                  fill={LAKSHMI_VOL_COLORS.BULL_SNORT_ICON} textAnchor="middle">🐂</text>)
+                nodes.push(<text key={`bs-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={snortMarkerSize}
+                  fill={snortP.markerColor || LAKSHMI_VOL_COLORS.BULL_SNORT_ICON} textAnchor="middle">🐂</text>)
               }
               if (vLvHt[i]) {
                 const yHt = yAbove0 - (a++) * 12
@@ -9561,7 +9778,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                 PP:LAKSHMI_BAR_COLORS.PPV,
               }[signal]
               // Volume.pine does not recolor columns for Bull Snort (BG only)
-              fill=signal?signalColor:(up?TV_VOL_UP:TV_VOL_DN)
+              fill=signal?signalColor:(up?volUpColor:volDownColor)
             }
             const barTopY=volToY(vVol[i])
             const barH=volTop+volH-barTopY
@@ -9577,7 +9794,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                     fill={LAKSHMI_VOL_COLORS.BULL_SNORT_BG} opacity={0.28}/>
                 )}
                 <rect x={x-volBarW/2} y={barTopY} width={volBarW} height={barH}
-                  fill={fill} opacity={0.5}/>
+                  fill={fill} opacity={volBarOpacity}/>
               </g>
             )
           })}
@@ -9618,7 +9835,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         {(!showLakshmiVol || volP.showVolMA !== false) && (() => {
           const pts = vVolEma.map((v,i)=> v!=null ? `${idxToX(i)},${volToY(v)}` : null).filter(Boolean)
           return pts.length>1 ? (
-            <polyline points={pts.join(' ')} fill="none" stroke={TV_VOL_MA} strokeWidth={1.4} opacity={0.95}/>
+            <polyline points={pts.join(' ')} fill="none" stroke={volP.volMaColor || TV_VOL_MA}
+              strokeWidth={1.4} opacity={0.95}/>
           ) : null
         })()}
 
@@ -9629,10 +9847,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             <line x1={padL} y1={rsiTop} x2={padL+chartW} y2={rsiTop} stroke={C.border} strokeWidth={1} opacity={0.8}/>
             <rect x={padL} y={rsiToY(rsiP.overbought ?? 70)} width={chartW} height={Math.max(0, rsiToY(rsiP.oversold ?? 30)-rsiToY(rsiP.overbought ?? 70))}
               fill={C.muted} opacity={0.08}/>
-            {[rsiP.overbought ?? 70, 50, rsiP.oversold ?? 30].map(lvl=>(
+            {(rsiP.showBands === false ? [50] : [rsiP.overbought ?? 70, 50, rsiP.oversold ?? 30]).map(lvl=>(
               <g key={`rsi-${lvl}`}>
                 <line x1={padL} y1={rsiToY(lvl)} x2={padL+chartW} y2={rsiToY(lvl)}
-                  stroke={lvl===50?C.border:lvl===(rsiP.overbought ?? 70)?C.red:C.green}
+                  stroke={lvl===50?C.border:(rsiP.bandColor || C.red)}
                   strokeWidth={0.6} strokeDasharray={lvl===50?'2,2':'3,3'} opacity={0.7}/>
                 <text x={padL+chartW+4} y={rsiToY(lvl)+3} fontSize={8} fill={C.muted}>{lvl}</text>
               </g>
@@ -9641,7 +9859,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             {(() => {
               const pts = vRSI.map((v,i)=> v!=null ? `${idxToX(i)},${rsiToY(v)}` : null).filter(Boolean)
               return pts.length>1 ? (
-                <polyline points={pts.join(' ')} fill="none" stroke="#a78bfa" strokeWidth={1.4} opacity={0.95}/>
+                <polyline points={pts.join(' ')} fill="none"
+                  stroke={rsiP.lineColor || '#a78bfa'}
+                  strokeWidth={lineW(rsiP.lineWidth, 1.4)}
+                  opacity={0.95}/>
               ) : null
             })()}
           </g>
@@ -9664,7 +9885,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               const height = Math.max(1, Math.abs(y1 - y0))
               return (
                 <rect key={`mh-${i}`} x={x-volBarW/2} y={top} width={volBarW} height={height}
-                  fill={h>=0?C.green:C.red} opacity={0.55}/>
+                  fill={h>=0?(macdP.histUpColor||C.green):(macdP.histDnColor||C.red)} opacity={0.55}/>
               )
             })}
             {(() => {
@@ -9672,8 +9893,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               const sPts = vMacdSig.map((v,i)=> v!=null ? `${idxToX(i)},${macdToY(v)}` : null).filter(Boolean)
               return (
                 <>
-                  {mPts.length>1 && <polyline points={mPts.join(' ')} fill="none" stroke={C.blue} strokeWidth={1.3}/>}
-                  {sPts.length>1 && <polyline points={sPts.join(' ')} fill="none" stroke={C.orange} strokeWidth={1.3}/>}
+                  {mPts.length>1 && <polyline points={mPts.join(' ')} fill="none" stroke={macdP.macdColor || C.blue} strokeWidth={lineW(macdP.lineWidth, 1.3)}/>}
+                  {sPts.length>1 && <polyline points={sPts.join(' ')} fill="none" stroke={macdP.signalColor || C.orange} strokeWidth={lineW(macdP.lineWidth, 1.3)}/>}
                 </>
               )
             })()}
@@ -9707,7 +9928,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               const prev = i > 0 ? vScCycle[i - 1] : null
               return (
                 <rect key={`sc-${i}`} x={x-volBarW/2} y={top} width={volBarW} height={height}
-                  fill={lakshmiCycleBarColor(c, prev)} opacity={0.92}/>
+                  fill={lakshmiCycleBarColor(c, prev)} opacity={pct01(scP.barOpacity, 92)}/>
               )
             })}
             {(() => {
@@ -9716,9 +9937,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               const maPts = vScMa.map((v,i)=> v!=null ? `${idxToX(i)},${scToY(v)}` : null).filter(Boolean)
               return (
                 <>
-                  {rsPts.length>1 && <polyline points={rsPts.join(' ')} fill="none" stroke={LAKSHMI_CYCLE_COLORS.RS} strokeWidth={1.5} opacity={0.85}/>}
-                  {momPts.length>1 && <polyline points={momPts.join(' ')} fill="none" stroke={LAKSHMI_CYCLE_COLORS.MOM} strokeWidth={1.3} opacity={0.9}/>}
-                  {maPts.length>1 && <polyline points={maPts.join(' ')} fill="none" stroke={LAKSHMI_CYCLE_COLORS.RS_MA} strokeWidth={1.1} opacity={0.85}/>}
+                  {rsPts.length>1 && <polyline points={rsPts.join(' ')} fill="none" stroke={scP.rsColor || LAKSHMI_CYCLE_COLORS.RS} strokeWidth={1.5} opacity={0.85}/>}
+                  {momPts.length>1 && <polyline points={momPts.join(' ')} fill="none" stroke={scP.momColor || LAKSHMI_CYCLE_COLORS.MOM} strokeWidth={1.3} opacity={0.9}/>}
+                  {maPts.length>1 && <polyline points={maPts.join(' ')} fill="none" stroke={scP.rsMaColor || LAKSHMI_CYCLE_COLORS.RS_MA} strokeWidth={1.1} opacity={0.85}/>}
                 </>
               )
             })()}
@@ -9741,10 +9962,13 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           <>
             <polyline
               points={forecastPoints.map(p=>`${idxToX(p.idx)},${priceToY(p.price)}`).join(' ')}
-              fill="none" stroke={C.accent} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.8}/>
-            <text x={idxToX(forecastPoints[forecastPoints.length-1].idx)}
-              y={priceToY(forecastPoints[forecastPoints.length-1].price)-6}
-              fontSize={8} fontWeight={700} fill={C.accent} textAnchor="end">Forecast</text>
+              fill="none" stroke={fcP.lineColor || C.accent} strokeWidth={lineW(fcP.lineWidth, 1.5)}
+              strokeDasharray="5,4" opacity={0.8}/>
+            {fcP.showLabel !== false && (
+              <text x={idxToX(forecastPoints[forecastPoints.length-1].idx)}
+                y={priceToY(forecastPoints[forecastPoints.length-1].price)-6}
+                fontSize={8} fontWeight={700} fill={fcP.lineColor || C.accent} textAnchor="end">Forecast</text>
+            )}
           </>
         )}
 
@@ -9792,30 +10016,30 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           <span title="Bull Snort"><span style={{color:LAKSHMI_VOL_COLORS.BULL_SNORT_ICON}}>{VOL_SIGNAL_ICONS.SNORT}</span> Bull Snort</span>
         </>}
         {showMA && <>
-          <span><span style={{color:C.teal}}>■</span> EMA9</span>
-          <span><span style={{color:C.blue}}>■</span> MA20</span>
-          <span><span style={{color:C.yellow}}>■</span> MA50</span>
-          <span><span style={{color:C.purple}}>■</span> MA200</span>
+          {maVisible.ema9 && <span><span style={{color:maColors.ema9}}>■</span> EMA{maP.ema9 ?? 9}</span>}
+          {maVisible.ma20 && <span><span style={{color:maColors.ma20}}>■</span> MA{maP.ma20 ?? 20}</span>}
+          {maVisible.ma50 && <span><span style={{color:maColors.ma50}}>■</span> MA{maP.ma50 ?? 50}</span>}
+          {maVisible.ma200 && <span><span style={{color:maColors.ma200}}>■</span> MA{maP.ma200 ?? 200}</span>}
         </>}
         {showGuppy && <>
-          <span><span style={{color:'#2dd4bf'}}>—</span> Guppy short</span>
-          <span><span style={{color:'#f472b6'}}>—</span> Guppy long</span>
+          <span><span style={{color:guppyP.shortColor || '#2dd4bf'}}>—</span> Guppy short</span>
+          <span><span style={{color:guppyP.longColor || '#f472b6'}}>—</span> Guppy long</span>
           <span><span style={{color:C.green}}>▲</span>/<span style={{color:C.red}}>▼</span> EMA9×50 cross</span>
         </>}
-        {showRSI && <span><span style={{color:'#a78bfa'}}>—</span> RSI {rsiP.length ?? 14}</span>}
+        {showRSI && <span><span style={{color:rsiP.lineColor || '#a78bfa'}}>—</span> RSI {rsiP.length ?? 14}</span>}
         {showMACD && <>
-          <span><span style={{color:C.blue}}>—</span> MACD</span>
-          <span><span style={{color:C.orange}}>—</span> Signal</span>
-          <span><span style={{color:C.green}}>■</span> Hist</span>
+          <span><span style={{color:macdP.macdColor || C.blue}}>—</span> MACD</span>
+          <span><span style={{color:macdP.signalColor || C.orange}}>—</span> Signal</span>
+          <span><span style={{color:macdP.histUpColor || C.green}}>■</span> Hist</span>
         </>}
         {showSuperCycle && <>
           <span><span style={{color:LAKSHMI_CYCLE_COLORS.POS_UP}}>■</span> Cycle +↑</span>
           <span><span style={{color:LAKSHMI_CYCLE_COLORS.POS_DOWN}}>■</span> Cycle +↓</span>
           <span><span style={{color:LAKSHMI_CYCLE_COLORS.NEG_DOWN}}>■</span> Cycle −↓</span>
           <span><span style={{color:LAKSHMI_CYCLE_COLORS.NEG_UP}}>■</span> Cycle −↑</span>
-          <span><span style={{color:LAKSHMI_CYCLE_COLORS.RS}}>—</span> RS</span>
-          <span><span style={{color:LAKSHMI_CYCLE_COLORS.MOM}}>—</span> Mom</span>
-          <span><span style={{color:LAKSHMI_CYCLE_COLORS.RS_MA}}>—</span> RS MA</span>
+          <span><span style={{color:scP.rsColor || LAKSHMI_CYCLE_COLORS.RS}}>—</span> RS</span>
+          <span><span style={{color:scP.momColor || LAKSHMI_CYCLE_COLORS.MOM}}>—</span> Mom</span>
+          <span><span style={{color:scP.rsMaColor || LAKSHMI_CYCLE_COLORS.RS_MA}}>—</span> RS MA</span>
           <span><span style={{color:LAKSHMI_CYCLE_COLORS.SQUEEZE_ON}}>●</span> Squeeze</span>
           <span><span style={{color:LAKSHMI_CYCLE_COLORS.SQUEEZE_RELEASE}}>●</span> Release</span>
         </>}
@@ -9833,13 +10057,13 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           <span><span style={{color:LAKSHMI_BAR_COLORS.HY}}>🔥</span> HY</span>
           <span>HQ · M</span>
         </>}
-        {showBullSnort && !showLakshmiVol && <span><span style={{color:BULL_SNORT_COLOR}}>■</span> Bull Snort</span>}
+        {showBullSnort && !showLakshmiVol && <span><span style={{color:snortP.markerColor || BULL_SNORT_COLOR}}>■</span> Bull Snort</span>}
         {showBuySell && <>
-          <span><span style={{color:LAKSHMI_BUY_SELL_COLORS.BUY}}>■</span> Buy</span>
-          <span><span style={{color:LAKSHMI_BUY_SELL_COLORS.SELL}}>■</span> Sell</span>
+          <span><span style={{color:buyP.buyColor || LAKSHMI_BUY_SELL_COLORS.BUY}}>■</span> Buy</span>
+          <span><span style={{color:buyP.sellColor || LAKSHMI_BUY_SELL_COLORS.SELL}}>■</span> Sell</span>
         </>}
         {showPatterns && <>
-          <span><span style={{color:C.teal}}>●</span> Inside Bar</span>
+          <span><span style={{color:patP.insideColor || C.teal}}>●</span> Inside Bar</span>
           <span><span style={{color:LAKSHMI_BAR_COLORS.HT}}>■</span> HT</span>
           <span><span style={{color:LAKSHMI_BAR_COLORS.HY}}>■</span> HY</span>
           <span><span style={{color:LAKSHMI_BAR_COLORS.IBV}}>■</span> IBV</span>
@@ -10353,7 +10577,6 @@ function ColumnDivider({active=false,onStart,onReset,style}){
   const on=active||hov
   return(
     <div
-      onMouseDown={onStart}
       onDoubleClick={onReset}
       onMouseEnter={()=>setHov(true)}
       onMouseLeave={()=>setHov(false)}
@@ -10364,9 +10587,19 @@ function ColumnDivider({active=false,onStart,onReset,style}){
         transition:'background .12s',
         ...style,
       }}>
+      {/* The column itself is a thin strip, so the grab zone is widened past
+          its own bounds — an 8px target is very hard to hit. */}
+      <div
+        onPointerDown={onStart}
+        style={{position:'absolute',top:0,bottom:0,left:-7,right:-7,cursor:'col-resize',touchAction:'none'}}/>
+      {/* Full-height hairline so the split is always visible, plus a grip. */}
+      <div style={{position:'absolute',top:0,bottom:0,left:'50%',transform:'translateX(-50%)',
+        width:1,background:on?C.accent:C.border,opacity:on?0.9:0.5,
+        transition:'all .12s',pointerEvents:'none'}}/>
       <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',
-        width:on?4:3,height:on?52:36,borderRadius:3,
-        background:on?C.accent:C.border,opacity:on?1:0.65,transition:'all .12s'}}/>
+        width:on?5:4,height:on?64:44,borderRadius:3,
+        background:on?C.accent:C.border,opacity:on?1:0.8,transition:'all .12s',
+        pointerEvents:'none'}}/>
     </div>
   )
 }
@@ -14275,15 +14508,20 @@ export default function App(){
       const chartPct=chartOnLeftRef.current
         ?(relX/rect.width)*100
         :((rect.width-relX)/rect.width)*100
-      setChartPanelPct(Math.min(80,Math.max(15,chartPct)))
+      setChartPanelPct(Math.min(85,Math.max(15,chartPct)))
     }
     const onUp=()=>{
       setIsDraggingDivider(false)
       persistChartPanelState(chartWideRef.current,chartPanelPctRef.current)
     }
-    window.addEventListener('mousemove',onMove)
-    window.addEventListener('mouseup',onUp)
-    return()=>{window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp)}
+    window.addEventListener('pointermove',onMove)
+    window.addEventListener('pointerup',onUp)
+    window.addEventListener('pointercancel',onUp)
+    return()=>{
+      window.removeEventListener('pointermove',onMove)
+      window.removeEventListener('pointerup',onUp)
+      window.removeEventListener('pointercancel',onUp)
+    }
   },[isDraggingDivider])
   useEffect(()=>{
     if(!colDrag) return
@@ -14312,9 +14550,14 @@ export default function App(){
       setColDrag(null)
       persistColWidths(colWidthsRef.current)
     }
-    window.addEventListener('mousemove',onMove)
-    window.addEventListener('mouseup',onUp)
-    return()=>{window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp)}
+    window.addEventListener('pointermove',onMove)
+    window.addEventListener('pointerup',onUp)
+    window.addEventListener('pointercancel',onUp)
+    return()=>{
+      window.removeEventListener('pointermove',onMove)
+      window.removeEventListener('pointerup',onUp)
+      window.removeEventListener('pointercancel',onUp)
+    }
   },[colDrag])
   const [rsPage,setRsPage]=useState(0)
   const RS_PAGE_SIZE=25
@@ -14803,6 +15046,25 @@ export default function App(){
     setChartWide(1)
     setChartPanelPct(null)
     persistChartPanelAutoSave(1,null)
+    setActiveLayoutSlot(null)
+    setLayoutMsg('')
+  }
+  // Escape hatch for "I closed everything and can't get it back": unlike
+  // applyDefaultLayout (which replays the saved layout) this ignores what was
+  // saved and puts every panel and block back on screen.
+  const restoreWorkspace=()=>{
+    applyDockLayout({...DEFAULT_DOCK_LAYOUT,order:[...DEFAULT_DOCK_LAYOUT.order]})
+    setChartWide(1)
+    setChartPanelPct(null)
+    persistChartPanelAutoSave(1,null)
+    patchPanel('screener',{open:true,minimized:false,float:null})
+    patchPanel('chart',{open:true,minimized:false,float:null})
+    patchDetailPanel({open:true,minimized:false,float:null})
+    persistDetailPanelPref(true)
+    const order=normalizeChartSectionOrder(CHART_SECTION_ORDER_DEFAULT)
+    setChartSectionOrder(order)
+    setChartSectionHidden([])
+    persistChartSectionsBundle(order, [], {...DEFAULT_DOCK_LAYOUT,order:[...DEFAULT_DOCK_LAYOUT.order]}, true)
     setActiveLayoutSlot(null)
     setLayoutMsg('')
   }
@@ -16041,20 +16303,12 @@ export default function App(){
                           </div>
                         ))}
                         <button type="button"
-                          onClick={()=>{
-                            applyDockLayout({...DEFAULT_DOCK_LAYOUT,order:[...DEFAULT_DOCK_LAYOUT.order]})
-                            setChartWide(1)
-                            setChartPanelPct(null)
-                            persistChartPanelAutoSave(1,null)
-                            patchPanel('screener',{open:true,minimized:false,float:null})
-                            patchPanel('chart',{open:true,minimized:false,float:null})
-                            patchDetailPanel({open:true,minimized:false,float:null})
-                            setDockLayoutMenuOpen(false)
-                          }}
+                          onClick={()=>{ restoreWorkspace(); setDockLayoutMenuOpen(false) }}
+                          title="Reopen every panel, unhide every block below the chart and restore the default arrangement"
                           style={{marginTop:10,width:'100%',padding:'7px 8px',borderRadius:6,
                             border:`1px solid ${C.border}`,background:'transparent',color:C.muted,
                             fontSize:10,fontWeight:600,cursor:'pointer'}}>
-                          Reset to default (RS | Chart + Overview)
+                          Restore everything (RS | Chart + Overview)
                         </button>
                       </div>
                     </>

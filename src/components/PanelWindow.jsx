@@ -372,6 +372,17 @@ function defaultChipPos(index) {
 export function PanelTaskbar({ items, colors: C }) {
   const [posMap, setPosMap] = useState(loadTaskbarChipPos)
   const dragRef = useRef(null)
+  const movedRef = useRef(false)
+  const [viewport, setViewport] = useState(() => ({
+    w: typeof window !== 'undefined' ? window.innerWidth : 1200,
+    h: typeof window !== 'undefined' ? window.innerHeight : 800,
+  }))
+
+  useEffect(() => {
+    const onResize = () => setViewport({ w: window.innerWidth, h: window.innerHeight })
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   useEffect(() => () => {
     if (dragRef.current) {
@@ -382,19 +393,28 @@ export function PanelTaskbar({ items, colors: C }) {
 
   if (!items?.length) return null
 
+  // Saved positions are absolute, so a smaller window / different monitor could
+  // otherwise park a chip off-screen where it can never be clicked again.
+  const clampPos = (p) => ({
+    x: Math.max(8, Math.min(Math.max(8, viewport.w - 96), Number(p?.x) || 8)),
+    y: Math.max(8, Math.min(Math.max(8, viewport.h - 40), Number(p?.y) || 8)),
+  })
+
   const startChipDrag = (e, id, index) => {
     if (e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
     const startX = e.clientX
     const startY = e.clientY
-    const cur = posMap[id] || defaultChipPos(index)
+    const cur = clampPos(posMap[id] || defaultChipPos(index))
     let moved = false
+    movedRef.current = false
     const onMove = (ev) => {
       const dx = ev.clientX - startX
       const dy = ev.clientY - startY
       if (!moved && Math.hypot(dx, dy) < 5) return
       moved = true
+      movedRef.current = true
       const next = {
         x: Math.max(8, Math.min(window.innerWidth - 80, cur.x + dx)),
         y: Math.max(8, Math.min(window.innerHeight - 36, cur.y + dy)),
@@ -409,8 +429,6 @@ export function PanelTaskbar({ items, colors: C }) {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
       dragRef.current = null
-      // Click without drag → restore panel
-      if (!moved) items.find((it) => it.id === id)?.onRestore?.()
     }
     dragRef.current = { onMove, onUp }
     window.addEventListener('mousemove', onMove)
@@ -420,12 +438,14 @@ export function PanelTaskbar({ items, colors: C }) {
   return (
     <>
       {items.map((it, index) => {
-        const pos = posMap[it.id] || defaultChipPos(index)
+        const pos = clampPos(posMap[it.id] || defaultChipPos(index))
         return (
           <button
             key={it.id}
             type="button"
             onMouseDown={(e) => startChipDrag(e, it.id, index)}
+            // Click (incl. touch/keyboard) restores unless the press was a drag.
+            onClick={() => { if (!movedRef.current) it.onRestore?.() }}
             title={`${it.title} — drag to move, click to restore`}
             style={{
               position: 'fixed',
