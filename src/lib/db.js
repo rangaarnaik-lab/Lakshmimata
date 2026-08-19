@@ -734,9 +734,10 @@ export async function saveUserAlertPrefs(userId, prefs) {
   return { data }
 }
 
-/** Load per-user Our Chart indicator params (null if none saved yet). */
+/** Load per-user Our Chart indicator params.
+ *  Returns { prefs, error }. prefs is null when none saved yet or on error. */
 export async function fetchUserChartIndicatorPrefs(userId) {
-  if (!userId) return null
+  if (!userId) return { prefs: null, error: null }
   const { data, error } = await supabase
     .from('user_chart_indicator_prefs')
     .select('prefs,updated_at')
@@ -744,12 +745,13 @@ export async function fetchUserChartIndicatorPrefs(userId) {
     .maybeSingle()
   if (error) {
     console.error('fetchUserChartIndicatorPrefs error:', error.message)
-    return null
+    return { prefs: null, error: error.message || 'Could not load chart indicator settings' }
   }
-  return data?.prefs && typeof data.prefs === 'object' ? data.prefs : null
+  const prefs = data?.prefs && typeof data.prefs === 'object' ? data.prefs : null
+  return { prefs, error: null }
 }
 
-/** Upsert per-user Our Chart indicator params. */
+/** Upsert per-user Our Chart indicator params (enabled flags + Inputs/Style/Visibility). */
 export async function saveUserChartIndicatorPrefs(userId, prefs) {
   if (!userId) return { error: 'Sign in to save chart indicator settings.' }
   const payload = {

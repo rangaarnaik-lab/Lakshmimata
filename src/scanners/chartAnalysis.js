@@ -76,23 +76,31 @@ export function detectIBVDays(highs, lows, closes, volumes) {
 }
 
 /**
- * Bull Snort — strong bullish volume climax day:
- * up close, volume ≥ 2× the 20-bar volume average, and close in the
- * upper 30% of the bar's range. Works on daily or weekly bars.
- * `opens` optional; falls back to prior close.
+ * Bull Snort — strong bullish volume climax day. One definition, shared by
+ * the Lakshmi Volume pane (🐗 icon), the screener badge, the standalone
+ * marker, and the backend alert (live_scan.detect_bull_snort):
+ *   relative volume ≥ 3× the 50-bar volume average,
+ *   close above the prior close,
+ *   daily closing range (DCR) ≥ 65% of the bar.
+ * Works on daily or weekly bars. `opens` is unused by the rule and kept
+ * only so existing call sites don't have to change.
  */
+export const BULL_SNORT_DEFAULTS = { volMa: 50, volMult: 3, closePct: 65 }
+
 export function detectBullSnortDays(highs, lows, closes, volumes, opens, opts = {}) {
   const n = closes.length
   const flags = new Array(n).fill(false)
-  const volMaLen = opts.volMa ?? 20
-  const volMult = opts.volMult ?? 2
-  const closePct = opts.closePct ?? 0.7
+  const volMaLen = opts.volMa ?? BULL_SNORT_DEFAULTS.volMa
+  const volMult = opts.volMult ?? BULL_SNORT_DEFAULTS.volMult
+  // Accept percent (65) or legacy fraction (0.65) so old saved prefs still work.
+  const rawClose = opts.closePct ?? BULL_SNORT_DEFAULTS.closePct
+  const closePct = Number(rawClose) > 1 ? Number(rawClose) / 100 : Number(rawClose)
   const volMa = calcSMASeries(volumes, volMaLen)
-  for (let i = volMaLen; i < n; i++) {
+  for (let i = 1; i < n; i++) {
     const hi = highs[i], lo = lows[i], cl = closes[i], vol = volumes[i]
     if (hi == null || lo == null || cl == null || vol == null) continue
-    const op = (opens && opens[i] != null) ? opens[i] : (i > 0 ? closes[i - 1] : cl)
-    if (cl < op) continue
+    const prev = closes[i - 1]
+    if (prev == null || cl <= prev) continue
     const range = hi - lo
     if (range <= 0) continue
     if ((cl - lo) / range < closePct) continue

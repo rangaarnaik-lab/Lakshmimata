@@ -3,6 +3,25 @@
 export const CHART_IND_PREF_KEY = 'lakshmimata:chartIndicatorPrefs:v1'
 
 /**
+ * Bull Snort thresholds — single source of truth for the standalone marker.
+ * Mirrors the Lakshmi Volume pane's snortAvgLen / bullSnortMult / bullSnortDcr
+ * and live_scan.detect_bull_snort, so the marker, the 🐗 icon, the screener
+ * badge and the alert all agree.
+ */
+export const BULL_SNORT_PARAM_DEFAULTS = { volMa: 50, volMult: 3, closePct: 65 }
+
+/** TradingView-style controls shared by every indicator. */
+export const INDICATOR_VISIBILITY_FIELDS = [
+  { key: 'visible', label: 'Visible on chart', type: 'bool', tab: 'visibility' },
+  { key: 'showLegend', label: 'Show indicator name on chart', type: 'bool', tab: 'visibility' },
+]
+
+/** Own indicator fields plus controls that every study supports. */
+export function indicatorFields(id) {
+  return [...(INDICATOR_PARAM_FIELDS[id] || []), ...INDICATOR_VISIBILITY_FIELDS]
+}
+
+/**
  * Field defs for the Indicators settings UI (per indicator id).
  * `tab` splits them into the TradingView-style Inputs / Style tabs.
  * Types: number (default), bool, color, select.
@@ -145,9 +164,9 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'ivMult', label: 'Mult A', min: 1.2, max: 6, step: 0.1 },
     { key: 'ivDcr', label: 'Floor A', min: 30, max: 90, step: 1 },
     { key: 'lowVolMult', label: 'Quiet mult', min: 0.1, max: 1, step: 0.05 },
-    { key: 'bullSnortMult', label: 'Snort mult', min: 2, max: 8, step: 0.5 },
-    { key: 'bullSnortDcr', label: 'Snort floor', min: 50, max: 90, step: 1 },
-    { key: 'snortAvgLen', label: 'Snort avg bars', min: 10, max: 200, step: 1 },
+    { key: 'bullSnortMult', label: 'Bull Snort: Min Rel Vol (× Avg)', min: 2, max: 8, step: 0.5 },
+    { key: 'bullSnortDcr', label: 'Min DCR %', min: 50, max: 90, step: 1 },
+    { key: 'snortAvgLen', label: 'Rel Vol Avg Bars (e.g. 50d)', min: 10, max: 200, step: 1 },
     { key: 'relVolHigh', label: 'Rel.Vol high %', min: 100, max: 500, step: 10 },
     { key: 'showTable', label: 'Metrics table', type: 'bool', tab: 'style' },
     {
@@ -164,13 +183,14 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'volUpColor', label: 'Volume up', type: 'color', tab: 'style' },
     { key: 'volDownColor', label: 'Volume down', type: 'color', tab: 'style' },
     { key: 'volMaColor', label: 'Volume MA', type: 'color', tab: 'style' },
+    { key: 'bullSnortColor', label: 'Bull Snort Color', type: 'color', tab: 'style' },
     { key: 'barOpacity', label: 'Bar opacity %', min: 20, max: 100, step: 5, tab: 'style' },
   ],
   bullsnort: [
-    { key: 'volMa', label: 'MA', min: 5, max: 50, step: 1 },
-    { key: 'volMult', label: 'Mult', min: 1, max: 5, step: 0.1 },
-    { key: 'closePct', label: 'Floor', min: 0.4, max: 0.95, step: 0.05 },
-    { key: 'markerColor', label: 'Marker color', type: 'color', tab: 'style' },
+    { key: 'volMult', label: 'Bull Snort: Min Rel Vol (× Avg)', min: 1, max: 8, step: 0.1 },
+    { key: 'closePct', label: 'Min DCR %', min: 50, max: 90, step: 1 },
+    { key: 'volMa', label: 'Rel Vol Avg Bars (e.g. 50d)', min: 5, max: 200, step: 1 },
+    { key: 'markerColor', label: 'Bull Snort Color', type: 'color', tab: 'style' },
     { key: 'markerSize', label: 'Marker size', min: 4, max: 16, step: 0.5, tab: 'style' },
   ],
   forecast: [
@@ -259,10 +279,11 @@ const DEFAULT_PARAMS = {
     relVolHigh: 200,
     showTable: true, tablePlacement: 'reserve', tableOpacity: 100,
     showMarkers: true, showVolMA: true,
-    volUpColor: '#26a69a', volDownColor: '#ef5350', volMaColor: '#f0b90b', barOpacity: 50,
+    volUpColor: '#26a69a', volDownColor: '#ef5350', volMaColor: '#f0b90b',
+    bullSnortColor: '#E040FB', barOpacity: 50,
   },
   barcolor: { lookbackIV: 10, lookbackPP: 10, barOpacity: 100 },
-  bullsnort: { volMa: 20, volMult: 2, closePct: 0.7, markerColor: '#f59e0b', markerSize: 9 },
+  bullsnort: { ...BULL_SNORT_PARAM_DEFAULTS, markerColor: '#E040FB', markerSize: 9 },
   buysell: {
     atrPeriod: 10, multiplier: 2.0,
     emaFast: 9, emaMid: 21, emaSlow: 50, emaLong: 200,
@@ -278,10 +299,15 @@ export function defaultChartIndicatorPrefs() {
   for (const id of Object.keys(DEFAULT_ENABLED)) {
     indicators[id] = {
       enabled: DEFAULT_ENABLED[id],
-      params: { ...(DEFAULT_PARAMS[id] || {}) },
+      params: {
+        ...(DEFAULT_PARAMS[id] || {}),
+        // Persist explicitly so cloud restore always has Visibility toggles.
+        visible: true,
+        showLegend: true,
+      },
     }
   }
-  return { version: 6, indicators }
+  return { version: 8, indicators }
 }
 
 function clampNum(v, min, max, fallback) {
@@ -316,7 +342,7 @@ export function normalizeChartIndicatorPrefs(raw) {
     if (!row || typeof row !== 'object') continue
     if (typeof row.enabled === 'boolean') base.indicators[id].enabled = row.enabled
     const params = row.params && typeof row.params === 'object' ? row.params : row
-    const fields = INDICATOR_PARAM_FIELDS[id] || []
+    const fields = indicatorFields(id)
     for (const f of fields) {
       if (params[f.key] == null) continue
       base.indicators[id].params[f.key] =
@@ -343,7 +369,30 @@ export function normalizeChartIndicatorPrefs(raw) {
   if (prevVer < 6) {
     base.indicators.hilo52.enabled = true
   }
-  base.version = 6
+  // v7: Bull Snort shipped with looser thresholds (2x of a 20-bar average,
+  // DCR 70) than the Lakshmi Volume pane it is supposed to mirror. Saved
+  // params would otherwise keep overriding the corrected defaults and the
+  // marker would disagree with the 🐗 icon, so re-seed them once.
+  if (prevVer < 7) {
+    base.indicators.bullsnort.params = {
+      ...base.indicators.bullsnort.params,
+      ...BULL_SNORT_PARAM_DEFAULTS,
+    }
+  }
+  // v8: Min DCR is edited as a percent (65) like TradingView / Lakshmi Volume,
+  // not a 0–1 fraction. Convert any leftover fractional closePct once.
+  if (prevVer < 8) {
+    const cp = Number(base.indicators.bullsnort.params.closePct)
+    if (Number.isFinite(cp) && cp > 0 && cp <= 1) {
+      base.indicators.bullsnort.params.closePct = Math.round(cp * 100)
+    } else {
+      base.indicators.bullsnort.params.closePct = BULL_SNORT_PARAM_DEFAULTS.closePct
+    }
+    if (base.indicators.lakshmivol.params.bullSnortColor == null) {
+      base.indicators.lakshmivol.params.bullSnortColor = '#E040FB'
+    }
+  }
+  base.version = 8
   return base
 }
 
@@ -378,7 +427,7 @@ export function setIndicatorEnabled(prefs, id, enabled) {
 export function setIndicatorParam(prefs, id, key, value) {
   const next = normalizeChartIndicatorPrefs(prefs)
   if (!next.indicators[id]) return next
-  const fields = INDICATOR_PARAM_FIELDS[id] || []
+  const fields = indicatorFields(id)
   const f = fields.find(x => x.key === key)
   const fallback = next.indicators[id].params[key]
   next.indicators[id] = {

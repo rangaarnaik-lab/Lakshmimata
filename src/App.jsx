@@ -14,7 +14,7 @@ import {
 } from './lib/chartAlerts'
 import {
   loadChartIndicatorPrefs, persistChartIndicatorPrefsLocal, normalizeChartIndicatorPrefs,
-  setIndicatorEnabled, setIndicatorParam, resetIndicatorParams, INDICATOR_PARAM_FIELDS,
+  setIndicatorEnabled, setIndicatorParam, resetIndicatorParams, INDICATOR_PARAM_FIELDS, indicatorFields,
   indEnabled, indParams, defaultChartIndicatorPrefs,
 } from './lib/chartIndicatorPrefs'
 import {
@@ -6723,9 +6723,9 @@ const BUNDLED_CHILD_IDS = new Set(
 
 /** Own fields plus every bundled child's — decides the gear and the tab set. */
 function indSettingsFields(id) {
-  const own = INDICATOR_PARAM_FIELDS[id] || []
+  const own = INDICATOR_BUNDLES[id] ? [] : indicatorFields(id)
   const kids = (INDICATOR_BUNDLES[id] || [])
-    .flatMap(b => INDICATOR_PARAM_FIELDS[b.id] || [])
+    .flatMap(b => indicatorFields(b.id))
   return own.concat(kids)
 }
 const BULL_SNORT_COLOR = LAKSHMI_BUY_SELL_COLORS.BULL_SNORT
@@ -6852,26 +6852,34 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const [indPrefs, setIndPrefs] = useState(() => loadChartIndicatorPrefs(userId))
   const [indSettingsId, setIndSettingsId] = useState(null) // which indicator settings panel is open
   const [indSettingsTab, setIndSettingsTab] = useState('inputs') // TradingView-style Inputs / Style tabs
+  // local | loading | synced | saved | error — so the settings modal can
+  // tell the user their Inputs/Style are on their account, not just this browser.
+  const [indCloudStatus, setIndCloudStatus] = useState(userId ? 'loading' : 'local')
+  const [indCloudError, setIndCloudError] = useState(null)
   const skipIndSaveRef = useRef(true)
   const indSaveTimer = useRef(null)
   const prefsN = useMemo(() => normalizeChartIndicatorPrefs(indPrefs), [indPrefs])
-  const showMA = prefsN.indicators.ma.enabled
-  const showGuppy = prefsN.indicators.guppy.enabled
-  const showSqueeze = prefsN.indicators.squeeze?.enabled !== false
-  const showHiLo52 = prefsN.indicators.hilo52?.enabled !== false
-  const showSR = prefsN.indicators.sr.enabled
-  const showPatterns = prefsN.indicators.patterns.enabled
-  const showBullSnort = prefsN.indicators.bullsnort.enabled
-  const showRSI = prefsN.indicators.rsi.enabled
-  const showMACD = prefsN.indicators.macd.enabled
-  const showForecast = prefsN.indicators.forecast.enabled
-  const showBuySell = prefsN.indicators.buysell.enabled
+  const indicatorEnabled = id => prefsN.indicators[id]?.enabled !== false
+  const indicatorVisible = id =>
+    indicatorEnabled(id) && prefsN.indicators[id]?.params?.visible !== false
+  const showMA = indicatorVisible('ma')
+  const showGuppy = indicatorVisible('guppy')
+  const showSqueeze = indicatorVisible('squeeze')
+  const showHiLo52 = indicatorVisible('hilo52')
+  const showSR = indicatorVisible('sr')
+  const showPatterns = indicatorVisible('patterns')
+  const showBullSnort = indicatorVisible('bullsnort')
+  const showRSI = indicatorVisible('rsi')
+  const showMACD = indicatorVisible('macd')
+  const showForecast = indicatorVisible('forecast')
+  const showBuySell = indicatorVisible('buysell')
   // Super Cycle measures RS against the index, so it has nothing to plot on an
   // index chart — keep the preference but don't reserve a pane for it there.
-  const showSuperCycle = prefsN.indicators.supercycle.enabled && !isIndex
-  const showCandleColors = prefsN.indicators.barcolor.enabled
-  const showLakshmiVol = prefsN.indicators.lakshmivol?.enabled !== false
+  const showSuperCycle = indicatorVisible('supercycle') && !isIndex
+  const showCandleColors = indicatorVisible('barcolor')
+  const showLakshmiVol = indicatorVisible('lakshmivol')
   const showCircuit = prefsN.indicators.circuit?.enabled === true
+    && prefsN.indicators.circuit?.params?.visible !== false
   const circuitP = prefsN.indicators.circuit?.params || {}
   const maP = prefsN.indicators.ma.params
   const rsiP = prefsN.indicators.rsi.params
@@ -6907,25 +6915,30 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const bsTagH = clean ? 10 : 12
   const barColorOpacity = Math.min(1, Math.max(0.4, (Number(barP.barOpacity) || 100) / 100))
   const snortMarkerSize = Math.min(16, Math.max(4, Number(snortP.markerSize) || 9))
+  const bullSnortColor = volP.bullSnortColor || snortP.markerColor || LAKSHMI_VOL_COLORS.BULL_SNORT_ICON
   const pct01 = (v, fb) => Math.min(1, Math.max(0.2, (Number(v) || fb) / 100))
   const lineW = (v, fb) => Math.min(4, Math.max(0.4, Number(v) || fb))
   const dashFor = (style, w = 1) =>
     style === 'solid' ? undefined : style === 'dotted' ? `${w},${w * 2}` : '4,3'
-  const setShowMA = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'ma', typeof v === 'function' ? v(showMA) : v))
-  const setShowGuppy = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'guppy', typeof v === 'function' ? v(showGuppy) : v))
-  const setShowSqueeze = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'squeeze', typeof v === 'function' ? v(showSqueeze) : v))
-  const setShowHiLo52 = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'hilo52', typeof v === 'function' ? v(showHiLo52) : v))
-  const setShowSR = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'sr', typeof v === 'function' ? v(showSR) : v))
-  const setShowPatterns = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'patterns', typeof v === 'function' ? v(showPatterns) : v))
-  const setShowBullSnort = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'bullsnort', typeof v === 'function' ? v(showBullSnort) : v))
-  const setShowRSI = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'rsi', typeof v === 'function' ? v(showRSI) : v))
-  const setShowMACD = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'macd', typeof v === 'function' ? v(showMACD) : v))
-  const setShowForecast = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'forecast', typeof v === 'function' ? v(showForecast) : v))
-  const setShowBuySell = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'buysell', typeof v === 'function' ? v(showBuySell) : v))
-  const setShowSuperCycle = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'supercycle', typeof v === 'function' ? v(showSuperCycle) : v))
-  const setShowCandleColors = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'barcolor', typeof v === 'function' ? v(showCandleColors) : v))
-  const setShowLakshmiVol = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'lakshmivol', typeof v === 'function' ? v(showLakshmiVol) : v))
-  const setShowCircuit = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'circuit', typeof v === 'function' ? v(showCircuit) : v))
+  const setIndicatorOn = (id, v) => setIndPrefs(p => {
+    const current = normalizeChartIndicatorPrefs(p).indicators[id]?.enabled !== false
+    return setIndicatorEnabled(p, id, typeof v === 'function' ? v(current) : v)
+  })
+  const setShowMA = v => setIndicatorOn('ma', v)
+  const setShowGuppy = v => setIndicatorOn('guppy', v)
+  const setShowSqueeze = v => setIndicatorOn('squeeze', v)
+  const setShowHiLo52 = v => setIndicatorOn('hilo52', v)
+  const setShowSR = v => setIndicatorOn('sr', v)
+  const setShowPatterns = v => setIndicatorOn('patterns', v)
+  const setShowBullSnort = v => setIndicatorOn('bullsnort', v)
+  const setShowRSI = v => setIndicatorOn('rsi', v)
+  const setShowMACD = v => setIndicatorOn('macd', v)
+  const setShowForecast = v => setIndicatorOn('forecast', v)
+  const setShowBuySell = v => setIndicatorOn('buysell', v)
+  const setShowSuperCycle = v => setIndicatorOn('supercycle', v)
+  const setShowCandleColors = v => setIndicatorOn('barcolor', v)
+  const setShowLakshmiVol = v => setIndicatorOn('lakshmivol', v)
+  const setShowCircuit = v => setIndicatorOn('circuit', v)
   const [niftyCloses, setNiftyCloses] = useState(null)
   const [midcapCloses, setMidcapCloses] = useState(null)
   const [smallcapCloses, setSmallcapCloses] = useState(null)
@@ -7049,19 +7062,47 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     return () => document.removeEventListener('mousedown', onDoc)
   }, [showIntervalFavMenu])
 
-  // Load indicator prefs per user (local → cloud); remember params across sessions
+  // Load indicator prefs per user (local → cloud). Cloud wins when present so
+  // Inputs / Style / Visibility / which studies are on follow the account
+  // across browsers. First login with no cloud row seeds from this device.
   useEffect(() => {
     skipIndSaveRef.current = true
     setIndPrefs(loadChartIndicatorPrefs(userId))
     setIndSettingsId(null)
-    if (!userId) return
+    setIndCloudError(null)
+    if (!userId) {
+      setIndCloudStatus('local')
+      return
+    }
+    setIndCloudStatus('loading')
     let cancelled = false
-    fetchUserChartIndicatorPrefs(userId).then(cloud => {
-      if (cancelled || !cloud) return
-      const next = normalizeChartIndicatorPrefs(cloud)
-      skipIndSaveRef.current = true
-      setIndPrefs(next)
-      persistChartIndicatorPrefsLocal(next, userId)
+    fetchUserChartIndicatorPrefs(userId).then(res => {
+      if (cancelled) return
+      if (res?.error) {
+        setIndCloudStatus('error')
+        setIndCloudError(res.error)
+        return
+      }
+      if (res?.prefs) {
+        const next = normalizeChartIndicatorPrefs(res.prefs)
+        skipIndSaveRef.current = true
+        setIndPrefs(next)
+        persistChartIndicatorPrefsLocal(next, userId)
+        setIndCloudStatus('synced')
+        return
+      }
+      // No cloud row yet — push this device's current prefs so the next
+      // login (or another browser) restores the same Inputs by default.
+      const local = normalizeChartIndicatorPrefs(loadChartIndicatorPrefs(userId))
+      saveUserChartIndicatorPrefs(userId, local).then(saveRes => {
+        if (cancelled) return
+        if (saveRes?.error) {
+          setIndCloudStatus('error')
+          setIndCloudError(saveRes.error)
+          return
+        }
+        setIndCloudStatus('synced')
+      })
     })
     return () => { cancelled = true }
   }, [userId])
@@ -7070,14 +7111,25 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       skipIndSaveRef.current = false
       return
     }
-    persistChartIndicatorPrefsLocal(indPrefs, userId || null)
-    if (!userId) return
+    const normalized = normalizeChartIndicatorPrefs(indPrefs)
+    persistChartIndicatorPrefsLocal(normalized, userId || null)
+    if (!userId) {
+      setIndCloudStatus('local')
+      return
+    }
     if (indSaveTimer.current) clearTimeout(indSaveTimer.current)
     indSaveTimer.current = setTimeout(() => {
-      saveUserChartIndicatorPrefs(userId, indPrefs).then(res => {
-        if (res?.error) console.warn('Chart indicator prefs save failed:', res.error)
+      saveUserChartIndicatorPrefs(userId, normalized).then(res => {
+        if (res?.error) {
+          setIndCloudStatus('error')
+          setIndCloudError(res.error)
+          console.warn('Chart indicator prefs save failed:', res.error)
+          return
+        }
+        setIndCloudError(null)
+        setIndCloudStatus('saved')
       })
-    }, 500)
+    }, 400)
     return () => { if (indSaveTimer.current) clearTimeout(indSaveTimer.current) }
   }, [indPrefs, userId])
 
@@ -7211,16 +7263,21 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   useEffect(()=>{
     if (!showIndMenu) return
     const onDown = (e) => {
+      if (indSettingsId) return
       if (indMenuRef.current && !indMenuRef.current.contains(e.target)) setShowIndMenu(false)
     }
-    const onKey = (e) => { if (e.key === 'Escape') setShowIndMenu(false) }
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return
+      if (indSettingsId) setIndSettingsId(null)
+      else setShowIndMenu(false)
+    }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [showIndMenu])
+  }, [showIndMenu, indSettingsId])
 
   // Measure the plot pane only (not toolbar/legend) so the SVG fills the device panel.
   useEffect(()=>{
@@ -8483,33 +8540,35 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     // Main price overlay — the parent row for the EMA lines and Guppy cloud.
     { id:'lakshmimata', group:'Overlays', label:'Lakshmi Mata', short:'Lakshmi',
       desc:'EMA / MA lines + Guppy cloud + squeeze dots + 52-week flags on price',
-      on: showMA || showGuppy || showSqueeze || showHiLo52,
+      on: indicatorEnabled('ma') || indicatorEnabled('guppy') || indicatorEnabled('squeeze') || indicatorEnabled('hilo52'),
+      visible: showMA || showGuppy || showSqueeze || showHiLo52,
       set: (v)=>{
-        const next = typeof v === 'function' ? v(showMA || showGuppy || showSqueeze || showHiLo52) : v
+        const current = indicatorEnabled('ma') || indicatorEnabled('guppy') || indicatorEnabled('squeeze') || indicatorEnabled('hilo52')
+        const next = typeof v === 'function' ? v(current) : v
         setShowMA(next)
         setShowGuppy(next)
         setShowSqueeze(next)
         setShowHiLo52(next)
       } },
-    { id:'ma', group:'Overlays', label:'Moving Average', short:'MA', desc:'', on:showMA, set:setShowMA },
-    { id:'guppy', group:'Overlays', label:'Guppy MMA', short:'Guppy', desc:'', on:showGuppy, set:setShowGuppy },
-    { id:'squeeze', group:'Overlays', label:'Squeeze Dots', short:'Squeeze', desc:'', on:showSqueeze, set:setShowSqueeze },
-    { id:'hilo52', group:'Overlays', label:'52-Week High / Low Flags', short:'52W', desc:'', on:showHiLo52, set:setShowHiLo52 },
-    { id:'sr', group:'Overlays', label:'Support & Resistance', short:'S/R', desc:'', on:showSR, set:setShowSR },
-    { id:'rsi', group:'Oscillators', label:'Relative Strength Index', short:'RSI', desc:'', on:showRSI, set:setShowRSI },
-    { id:'macd', group:'Oscillators', label:'MACD', short:'MACD', desc:'', on:showMACD, set:setShowMACD },
+    { id:'ma', group:'Overlays', label:'Moving Average', short:'MA', desc:'', on:indicatorEnabled('ma'), visible:showMA, set:setShowMA },
+    { id:'guppy', group:'Overlays', label:'Guppy MMA', short:'Guppy', desc:'', on:indicatorEnabled('guppy'), visible:showGuppy, set:setShowGuppy },
+    { id:'squeeze', group:'Overlays', label:'Squeeze Dots', short:'Squeeze', desc:'', on:indicatorEnabled('squeeze'), visible:showSqueeze, set:setShowSqueeze },
+    { id:'hilo52', group:'Overlays', label:'52-Week High / Low Flags', short:'52W', desc:'', on:indicatorEnabled('hilo52'), visible:showHiLo52, set:setShowHiLo52 },
+    { id:'sr', group:'Overlays', label:'Support & Resistance', short:'S/R', desc:'', on:indicatorEnabled('sr'), visible:showSR, set:setShowSR },
+    { id:'rsi', group:'Oscillators', label:'Relative Strength Index', short:'RSI', desc:'', on:indicatorEnabled('rsi'), visible:showRSI, set:setShowRSI },
+    { id:'macd', group:'Oscillators', label:'MACD', short:'MACD', desc:'', on:indicatorEnabled('macd'), visible:showMACD, set:setShowMACD },
     // Always listed so it can be switched back on; on an index it has nothing
     // to compare against, so it stays visible but blocked instead of vanishing.
     { id:'supercycle', group:'Oscillators', label:'Lakshmi Super Cycle', short:'Super Cycle',
       desc: isIndex ? 'Needs a stock — it measures RS against the index' : '',
-      blocked: isIndex, on:showSuperCycle, set:setShowSuperCycle },
-    { id:'patterns', group:'Signals', label:'Patterns', short:'Patterns', desc:'', on:showPatterns, set:setShowPatterns },
-    { id:'lakshmivol', group:'Signals', label:'Lakshmi Volume', short:'Volume', desc:'', on:showLakshmiVol, set:setShowLakshmiVol },
-    { id:'barcolor', group:'Signals', label:'Volume Candle Colors', short:'Bar Color', desc:'', on:showCandleColors, set:setShowCandleColors },
-    { id:'bullsnort', group:'Signals', label:'Bull Snort', short:'Bull Snort', desc:'', on:showBullSnort, set:setShowBullSnort },
-    { id:'buysell', group:'Signals', label:'Lakshmi Buy/Sell', short:'Buy/Sell', desc:'', on:showBuySell, set:setShowBuySell },
-    { id:'forecast', group:'Signals', label:'Forecast', short:'Forecast', desc:'', on:showForecast, set:setShowForecast },
-    { id:'circuit', group:'Overlays', label:'Circuit Band (UC / LC)', short:'UC/LC', desc:'', on:showCircuit, set:setShowCircuit },
+      blocked: isIndex, on:indicatorEnabled('supercycle'), visible:showSuperCycle, set:setShowSuperCycle },
+    { id:'patterns', group:'Signals', label:'Patterns', short:'Patterns', desc:'', on:indicatorEnabled('patterns'), visible:showPatterns, set:setShowPatterns },
+    { id:'lakshmivol', group:'Signals', label:'Lakshmi Volume', short:'Volume', desc:'', on:indicatorEnabled('lakshmivol'), visible:showLakshmiVol, set:setShowLakshmiVol },
+    { id:'barcolor', group:'Signals', label:'Volume Candle Colors', short:'Bar Color', desc:'', on:indicatorEnabled('barcolor'), visible:showCandleColors, set:setShowCandleColors },
+    { id:'bullsnort', group:'Signals', label:'Bull Snort', short:'Bull Snort', desc:'', on:indicatorEnabled('bullsnort'), visible:showBullSnort, set:setShowBullSnort },
+    { id:'buysell', group:'Signals', label:'Lakshmi Buy/Sell', short:'Buy/Sell', desc:'', on:indicatorEnabled('buysell'), visible:showBuySell, set:setShowBuySell },
+    { id:'forecast', group:'Signals', label:'Forecast', short:'Forecast', desc:'', on:indicatorEnabled('forecast'), visible:showForecast, set:setShowForecast },
+    { id:'circuit', group:'Overlays', label:'Circuit Band (UC / LC)', short:'UC/LC', desc:'', on:prefsN.indicators.circuit?.enabled===true, visible:showCircuit, set:setShowCircuit },
   ]
   // Children of a bundle are configured inside their parent, not as their own rows.
   const chartIndicators = chartIndicatorsAll.filter(i => !BUNDLED_CHILD_IDS.has(i.id))
@@ -8527,6 +8586,22 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   })).filter(g => g.items.length)
   const activeIndicators = chartIndicators.filter(i => i.on)
   const anyIndOn = activeIndicators.length > 0
+  const legendOwnerId = id => id === 'lakshmimata' ? 'ma' : id
+  const indicatorShowsLegend = ind =>
+    indParams(indPrefs, legendOwnerId(ind.id)).showLegend !== false
+  const setIndicatorVisible = (ind, visible) => {
+    const ids = (INDICATOR_BUNDLES[ind.id] || []).map(x=>x.id)
+    const targets = ids.length ? ids : [ind.id]
+    setIndPrefs(p => targets.reduce(
+      (next,id)=>setIndicatorParam(next,id,'visible',visible), p
+    ))
+  }
+  const openIndicatorSettings = ind => {
+    setShowIndMenu(true)
+    setIndSettingsId(ind.id)
+    const fields = indSettingsFields(ind.id)
+    setIndSettingsTab(fields.some(f=>(f.tab||'inputs')==='inputs') ? 'inputs' : 'style')
+  }
 
   return (
     <div ref={chartWrapRef} style={{
@@ -8921,12 +8996,13 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                           )}
                         </div>
                         {indSettingsId===ind.id && indSettingsFields(ind.id).length > 0 && (() => {
-                          const own = INDICATOR_PARAM_FIELDS[ind.id] || []
+                          const own = INDICATOR_BUNDLES[ind.id] ? [] : indicatorFields(ind.id)
                           const all = indSettingsFields(ind.id)
                           const tabs = [
                             { id:'inputs', label:'Inputs' },
                             { id:'style',  label:'Style' },
-                          ].filter(t => all.some(f => (f.tab||'inputs')===t.id))
+                            { id:'visibility', label:'Visibility' },
+                          ].filter(t => t.id==='visibility' || all.some(f => (f.tab||'inputs')===t.id))
                           const tab = tabs.some(t => t.id===indSettingsTab) ? indSettingsTab : tabs[0]?.id
                           const fields = own.filter(f => (f.tab||'inputs')===tab)
                           const inputBox = {
@@ -8994,20 +9070,47 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                             .map(b => ({
                               ...b,
                               entry: chartIndicatorsAll.find(x => x.id === b.id),
-                              fields: (INDICATOR_PARAM_FIELDS[b.id] || [])
+                              fields: indicatorFields(b.id)
                                 .filter(f => (f.tab||'inputs')===tab),
                             }))
                             .filter(b => b.entry)
-                          return (
-                            <div style={{padding:'6px 14px 10px 40px', background:C.bg||'#0e1117'}}>
-                              <div style={{display:'flex', gap:2, marginBottom:8}}>
+                          return createPortal((
+                            <>
+                            <div onMouseDown={()=>setIndSettingsId(null)}
+                              style={{position:'fixed',inset:0,zIndex:4998,background:'rgba(0,0,0,0.52)'}}/>
+                            <div role="dialog" aria-modal="true" aria-label={`${ind.label} settings`}
+                              onMouseDown={e=>e.stopPropagation()}
+                              style={{
+                                position:'fixed',left:'50%',top:'50%',transform:'translate(-50%,-50%)',
+                                zIndex:4999,width:'min(620px,calc(100vw - 24px))',
+                                maxHeight:'min(720px,calc(100vh - 24px))',overflowY:'auto',
+                                padding:'0 18px 16px',background:C.card,
+                                border:`1px solid ${C.border}`,borderRadius:10,
+                                boxShadow:'0 22px 70px rgba(0,0,0,0.55)',
+                              }}>
+                              <div style={{position:'sticky',top:0,zIndex:2,display:'flex',
+                                alignItems:'center',gap:10,padding:'14px 0 10px',
+                                background:C.card,borderBottom:`1px solid ${C.border}`}}>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:15,fontWeight:800,color:C.text}}>{ind.label}</div>
+                                  <div style={{fontSize:10,color:C.muted,marginTop:2}}>Indicator settings</div>
+                                </div>
+                                <button type="button" title="Close settings"
+                                  onClick={()=>setIndSettingsId(null)}
+                                  style={{width:30,height:30,border:'none',borderRadius:5,
+                                    background:'transparent',color:C.muted,cursor:'pointer',
+                                    fontSize:19,lineHeight:1}}>×</button>
+                              </div>
+                              <div style={{display:'flex', gap:4, margin:'12px 0 14px',
+                                borderBottom:`1px solid ${C.border}`}}>
                                 {tabs.map(t=>(
                                   <button key={t.id} type="button"
                                     onClick={()=>setIndSettingsTab(t.id)}
                                     style={{
-                                      padding:'3px 9px', border:'none', borderRadius:3, cursor:'pointer',
-                                      fontFamily:'inherit', fontSize:10, fontWeight:700,
-                                      background: tab===t.id ? TV_TOOLBAR_BLUE+'22' : 'transparent',
+                                      padding:'7px 12px', border:'none',
+                                      borderBottom:`2px solid ${tab===t.id?TV_TOOLBAR_BLUE:'transparent'}`,
+                                      cursor:'pointer',fontFamily:'inherit', fontSize:11, fontWeight:700,
+                                      background:'transparent',
                                       color: tab===t.id ? TV_TOOLBAR_BLUE : C.muted,
                                     }}>{t.label}</button>
                                 ))}
@@ -9040,19 +9143,36 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                                   )}
                                 </div>
                               ))}
-                              <button type="button"
-                                onClick={()=>setIndPrefs(p => {
-                                  let next = resetIndicatorParams(p, ind.id)
-                                  for (const b of bundles) next = resetIndicatorParams(next, b.id)
-                                  return next
-                                })}
-                                style={{
-                                  marginTop:8, padding:'3px 8px', border:`1px solid ${C.border}`, borderRadius:3,
-                                  background:'transparent', color:C.muted, fontSize:10, fontWeight:600,
-                                  cursor:'pointer', fontFamily:'inherit',
-                                }}>Reset defaults</button>
+                              <div style={{
+                                marginTop:14, paddingTop:12, borderTop:`1px solid ${C.border}`,
+                                display:'flex', alignItems:'center', gap:10, flexWrap:'wrap',
+                              }}>
+                                <button type="button"
+                                  onClick={()=>setIndPrefs(p => {
+                                    let next = resetIndicatorParams(p, ind.id)
+                                    for (const b of bundles) next = resetIndicatorParams(next, b.id)
+                                    return next
+                                  })}
+                                  style={{
+                                    padding:'5px 10px', border:`1px solid ${C.border}`, borderRadius:4,
+                                    background:'transparent', color:C.muted, fontSize:11, fontWeight:600,
+                                    cursor:'pointer', fontFamily:'inherit',
+                                  }}>Reset defaults</button>
+                                <div style={{flex:1,minWidth:140,fontSize:10,lineHeight:1.4,
+                                  color: indCloudStatus==='error' ? C.red : C.muted}}>
+                                  {!userId && 'Sign in to save Inputs / Style to your account.'}
+                                  {userId && indCloudStatus==='loading' && 'Loading your saved settings…'}
+                                  {userId && indCloudStatus==='synced' && 'Synced to your account — opens with these Inputs by default.'}
+                                  {userId && indCloudStatus==='saved' && 'Saved to your account.'}
+                                  {userId && indCloudStatus==='local' && 'Saved on this device.'}
+                                  {userId && indCloudStatus==='error' && (
+                                    <>Could not sync to cloud{indCloudError?`: ${indCloudError}`:'.'} Run 012_user_chart_indicator_prefs.sql in Supabase if the table is missing.</>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                          )
+                            </>
+                          ), document.body)
                         })()}
                       </div>
                     ))}
@@ -9232,26 +9352,44 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         </span>
       </div>
 
-      {/* Active studies — TradingView-style chips with remove. Clean mode drops
-          the row; the Indicators button already shows the count and lets you
-          switch any of them off. */}
-      {anyIndOn && !clean && (
+      {/* Active studies — TradingView-style status line. The eye only hides the
+          plot (the study remains added), gear opens its full settings modal,
+          and × removes it from the chart. */}
+      {anyIndOn && (
         <div style={{
-          display:'flex', flexWrap:'wrap', gap:4, marginBottom:4, flexShrink:0, alignItems:'center',
+          display:'flex', flexDirection:'column', gap:1, marginBottom:4,
+          flexShrink:0, alignItems:'flex-start',
         }}>
-          {activeIndicators.map(ind=>(
+          {activeIndicators.filter(indicatorShowsLegend).map(ind=>(
             <span key={ind.id} style={{
               display:'inline-flex', alignItems:'center', gap:4,
-              padding:'2px 4px 2px 8px', borderRadius:3,
-              background:C.card, border:`1px solid ${C.border}`,
-              fontSize:10, fontWeight:700, color:C.text,
+              padding:'2px 4px', borderRadius:3,
+              background:'transparent',
+              fontSize:10.5, fontWeight:700,
+              color:ind.visible===false?C.muted:C.text,
+              opacity:ind.visible===false?0.72:1,
             }}>
-              {ind.short}
-              <button type="button" title={`Remove ${ind.short}`}
+              <button type="button" title={ind.visible===false?`Show ${ind.label}`:`Hide ${ind.label}`}
+                onClick={()=>setIndicatorVisible(ind, ind.visible===false)}
+                style={{
+                  width:22,height:20,border:'none',borderRadius:3,
+                  background:'transparent',color:ind.visible===false?C.muted:TV_TOOLBAR_BLUE,
+                  cursor:'pointer',fontSize:13,lineHeight:1,padding:0,fontFamily:'inherit',
+                }}>{ind.visible===false?'◯':'◉'}</button>
+              <span style={{minWidth:0}}>{ind.label}</span>
+              <button type="button" title={`${ind.label} settings`}
+                onClick={()=>openIndicatorSettings(ind)}
+                style={{
+                  width:22,height:20,border:'none',borderRadius:3,
+                  background:'transparent',color:C.muted,cursor:'pointer',
+                  fontSize:13,lineHeight:1,padding:0,fontFamily:'inherit',
+                }}>⚙</button>
+              <button type="button" title={`Remove ${ind.label}`}
                 onClick={()=>ind.set(false)}
                 style={{
-                  border:'none', background:'transparent', color:C.muted, cursor:'pointer',
-                  fontSize:12, lineHeight:1, padding:'0 2px', fontFamily:'inherit',
+                  width:20,height:20,border:'none',borderRadius:3,
+                  background:'transparent',color:C.muted,cursor:'pointer',
+                  fontSize:14,lineHeight:1,padding:0,fontFamily:'inherit',
                 }}>×</button>
             </span>
           ))}
@@ -10567,7 +10705,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               if (vLvSnort[i] || (showBullSnort && vSnort[i])) {
                 nodes.push(<text key={`bs-${i}`} x={x} y={yBelow0 + (b++) * icoStep}
                   fontSize={clean ? Math.max(6, snortMarkerSize - 3) : snortMarkerSize}
-                  fill={snortP.markerColor || LAKSHMI_VOL_COLORS.BULL_SNORT_ICON} textAnchor="middle">🐂</text>)
+                  fill={bullSnortColor} textAnchor="middle">🐂</text>)
               }
               if (!nodes.length) return null
               return <g key={`vol-ico-${i}`}>{nodes}</g>
@@ -10748,7 +10886,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               if (vLvIv[i])         parts.push({ t:VOL_SIGNAL_ICONS.IBV, c:LAKSHMI_VOL_COLORS.IBV_ICON })
               if (vLvPp[i])         parts.push({ t:VOL_SIGNAL_ICONS.PPV, c:LAKSHMI_VOL_COLORS.PPV_ICON })
               if (vLvSnort[i] || (showBullSnort && vSnort[i]))
-                parts.push({ t:VOL_SIGNAL_ICONS.SNORT, c:LAKSHMI_VOL_COLORS.BULL_SNORT_ICON })
+                parts.push({ t:VOL_SIGNAL_ICONS.SNORT, c:bullSnortColor })
               if (!parts.length) return null
               return (
                 <text key={`volmark-${i}`} x={idxToX(i)} y={volMarkerTop + volMarkerH - 4}
@@ -10963,7 +11101,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         {volShowMarkers && <>
           <span title="Institutional buy volume"><span style={{color:LAKSHMI_VOL_COLORS.IBV_ICON}}>{VOL_SIGNAL_ICONS.IBV}</span> IBV</span>
           <span title="Pivot pocket volume"><span style={{color:LAKSHMI_VOL_COLORS.PPV_ICON}}>{VOL_SIGNAL_ICONS.PPV}</span> PPV</span>
-          <span title="Bull Snort"><span style={{color:LAKSHMI_VOL_COLORS.BULL_SNORT_ICON}}>{VOL_SIGNAL_ICONS.SNORT}</span> Bull Snort</span>
+          <span title="Bull Snort"><span style={{color:bullSnortColor}}>{VOL_SIGNAL_ICONS.SNORT}</span> Bull Snort</span>
         </>}
         {showMA && <>
           {maVisible.ema9 && <span><span style={{color:maColors.ema9}}>■</span> EMA{maP.ema9 ?? 9}</span>}
@@ -11017,7 +11155,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           <span><span style={{color:LAKSHMI_VOL_COLORS.PPV}}>■</span> PPV ★</span>
           <span><span style={{color:LAKSHMI_VOL_COLORS.DOWN}}>■</span> Down</span>
         </>}
-        {showBullSnort && !showLakshmiVol && <span><span style={{color:snortP.markerColor || BULL_SNORT_COLOR}}>■</span> Bull Snort</span>}
+        {showBullSnort && !showLakshmiVol && <span><span style={{color:bullSnortColor}}>■</span> Bull Snort</span>}
         {showBuySell && <>
           <span><span style={{color:buyP.buyColor || LAKSHMI_BUY_SELL_COLORS.BUY}}>■</span> Buy</span>
           <span><span style={{color:buyP.sellColor || LAKSHMI_BUY_SELL_COLORS.SELL}}>■</span> Sell</span>
