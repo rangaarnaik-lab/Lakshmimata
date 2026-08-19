@@ -5034,9 +5034,13 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
   }
   // Peer ranking pills open Results; catch-up / history can open PPT/Concall/Results Summary.
   const [detailTab, setDetailTab] = useState('about')
+  // Phones are chart-first: the Overview sits below as a peeking sheet the
+  // user pulls up to read, rather than permanently eating a third of the screen.
+  const [mobileOverviewOpen, setMobileOverviewOpen] = useState(false)
   const openResultsOnNavRef = useRef(false)
   const pendingDetailTabRef = useRef(null)
   useEffect(()=>{ if(isIndex) setChartTab('own') },[isIndex])
+  useEffect(()=>{ setMobileOverviewOpen(false) },[sym])
   useEffect(()=>{
     if(chartTabHint==='own' || chartTabHint==='tv'){
       if(isIndex) setChartTab('own')
@@ -5047,16 +5051,19 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
   useEffect(()=>{
     if(detailTabHint){
       setDetailTab(detailTabHint)
+      setMobileOverviewOpen(true)
       onConsumeDetailTabHint?.()
       return
     }
     if(pendingDetailTabRef.current){
       setDetailTab(pendingDetailTabRef.current)
+      setMobileOverviewOpen(true)
       pendingDetailTabRef.current = null
       return
     }
     if(openResultsOnNavRef.current){
       setDetailTab('results')
+      setMobileOverviewOpen(true)
       // Delay clear so React Strict Mode's double-effect still sees the flag.
       queueMicrotask(()=>{ openResultsOnNavRef.current = false })
     } else {
@@ -5297,14 +5304,36 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
               lineHeight:1}}>×
           </button>
         </div>
-        <div style={{flex:chartFlex,minHeight:chartMinH,
-          maxHeight:chartMaxH,position:'relative',overflow:'hidden',
+        <div style={{
+          flex: detailBody ? (mobileOverviewOpen ? '0 0 42%' : '1 1 86%') : '1 1 100%',
+          minHeight: mobileOverviewOpen ? 180 : 300,
+          position:'relative',overflow:'hidden',
           display:'flex',flexDirection:'column'}}>
           {chartTabsAndBody}
         </div>
-        <div style={{flex:1,minHeight:0,overflow:'hidden',display:'flex',flexDirection:'column'}}>
-          {detailBody}
-        </div>
+        {detailBody&&(
+          <>
+            {/* Grab bar: the Overview's only job when collapsed is to say it's
+                there and open on one tap. */}
+            <button type="button"
+              onClick={()=>setMobileOverviewOpen(o=>!o)}
+              title={mobileOverviewOpen?'Collapse company overview':'Expand company overview'}
+              style={{flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',gap:8,
+                width:'100%',padding:'6px 12px',border:'none',
+                borderTop:`1px solid ${C.divider}`,borderBottom:`1px solid ${C.divider}`,
+                background:C.card,color:C.muted,fontSize:11,fontWeight:700,
+                cursor:'pointer',fontFamily:'inherit'}}>
+              <span style={{width:26,height:3,borderRadius:2,background:C.border}}/>
+              {mobileOverviewOpen?'▾ Hide overview':'▴ Company overview'}
+              <span style={{width:26,height:3,borderRadius:2,background:C.border}}/>
+            </button>
+            <div style={{
+              flex: mobileOverviewOpen ? 1 : '0 0 0px',
+              minHeight:0,overflow:'hidden',display:'flex',flexDirection:'column'}}>
+              {detailBody}
+            </div>
+          </>
+        )}
       </div>
     )
   }
@@ -7597,7 +7626,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   // kept out of the bars so tall bars never clip them.
   const volMarkerH = volShowMarkers ? (isMobile ? 16 : 15) : 0
   // Reserve strip above Super Cycle for the TV-style RS rating history table.
-  const scTableBoxH = clean ? (isMobile ? 100 : 88) : (isMobile ? 132 : 122)
+  const scTableBoxH = clean ? (isMobile ? 112 : 100) : (isMobile ? 144 : 134)
   const scTableH = scShowTable && !scTableOverlay && !scTableBelow ? scTableBoxH : 0
   const scTableFootH = scShowTable && scTableBelow ? scTableBoxH : 0
   const panelGaps = gapH + (showRSI ? gapH : 0) + (showMACD ? gapH : 0) + (showSuperCycle ? gapH : 0)
@@ -7735,6 +7764,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const vNewHigh = (hiLo52?.newHigh||[]).slice(start)
   const vNewLow = (hiLo52?.newLow||[]).slice(start)
   const vScRating = (superCycle?.rsRating||[]).slice(start)
+  // Each VCP contraction spans its swing high → swing low, so the table can
+  // report which bars sat inside a contraction and how deep it was.
+  const vcpBands = (vcp?.contractions || []).map((c, i, arr) => ({
+    from: c.high?.idx ?? -1,
+    to: c.low?.idx ?? -1,
+    depth: c.pullbackPct,
+    tightening: i === 0 ? true : c.pullbackPct < arr[i - 1].pullbackPct,
+  })).filter(b => b.from >= 0 && b.to >= b.from)
   // Pine RS history table uses the last N bars of the full series (not the zoom window).
   const scRsTable = (() => {
     if (!showSuperCycle || !superCycle) return null
@@ -7761,10 +7798,15 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       const cyclePos = cycle != null && !Number.isNaN(cycle) && cycle >= 0
       const cond = (cyclePos ? 1 : 0) + (nifty != null && nifty >= 70 ? 1 : 0)
         + (aboveMA ? 1 : 0) + (sqRel ? 1 : 0)
+      // VCP is pivot-based, so the bar is "in" a contraction when it sits
+      // between that contraction's swing high and its swing low.
+      const vcpHit = vcpBands.find(b => i >= b.from && i <= b.to) || null
       days.push({
         hdr: d === 0 ? 'Today' : `${d}D`,
         nifty, mid, sml, prevN, prevM, prevS,
         cycle, prevCycle, cycleUp, aboveMA, sqOn, sqRel, cond,
+        vcpDepth: vcpHit?.depth ?? null,
+        vcpTightening: !!vcpHit?.tightening,
       })
     }
     return days.length ? days : null
@@ -9662,8 +9704,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           hdr: '#1E1E2E', label: '#12121A', cell: '#1A1A28',
           lime: '#00E676', red: '#FF1744', orange: '#FF9100', gray: '#78909C', white: '#E0E0E0',
         }
-        const ratingColor = (r) => r == null ? COL.gray : r >= 70 ? COL.lime : r < 40 ? COL.red : COL.orange
-        // Tiny TradingView-style labels (no emoji — emoji was clipping / hiding CYCLE)
+        const ratingColor = (r) => r == null ? COL.gray : r > 70 ? COL.lime : r >= 50 ? '#FFD600' : COL.red
+        // Tiny TradingView-style labels (no emoji — emoji was clipping the row)
         const cycleCell = (cycle, prev) => {
           if (cycle == null || Number.isNaN(cycle)) return { text: '—', color: COL.gray }
           const color = lakshmiCycleBarColor(cycle, prev)
@@ -9721,15 +9763,21 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             cells: scRsTable.map(d => ({ text: ratingCell(d.sml, d.prevS), color: ratingColor(d.sml) })),
           },
           {
-            label: 'CYCLE',
+            label: 'IN CYCLE',
             cells: scRsTable.map(d => ({ ...cycleCell(d.cycle, d.prevCycle), big: true })),
           },
           {
-            label: 'RS vs MA',
+            label: 'OUTPERFORM',
             cells: scRsTable.map(d => ({
-              text: d.aboveMA ? 'Above' : 'Below',
+              text: d.aboveMA ? 'YES' : 'NO',
               color: d.aboveMA ? COL.lime : COL.red,
-              big: true,
+            })),
+          },
+          {
+            label: 'VCP',
+            cells: scRsTable.map(d => ({
+              text: d.vcpDepth == null ? '—' : `${d.vcpDepth.toFixed(0)}%${d.vcpTightening ? '↓' : ''}`,
+              color: d.vcpDepth == null ? COL.gray : d.vcpTightening ? COL.lime : COL.orange,
             })),
           },
           {
@@ -9796,6 +9844,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               <span><span style={{color:LAKSHMI_CYCLE_COLORS.POS_DOWN,fontWeight:800}}>+↓</span> pos↓</span>
               <span><span style={{color:LAKSHMI_CYCLE_COLORS.NEG_DOWN,fontWeight:800}}>−↓</span> neg↓</span>
               <span><span style={{color:LAKSHMI_CYCLE_COLORS.NEG_UP,fontWeight:800}}>−↑</span> neg↑</span>
+              <span style={{opacity:0.5}}>|</span>
+              <span title="Pullback depth of the contraction this bar sits in; ↓ means tighter than the one before">
+                VCP %↓ tightening
+              </span>
               {scRsLatest != null && (
                 <span style={{marginLeft:'auto', fontWeight:800, color: ratingColor(scRsLatest)}}>
                   Today RS {scRsLatest}
@@ -10720,12 +10772,32 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         {showSuperCycle && (
           <g>
             <rect x={padL} y={scTop} width={chartW} height={scH} fill={C.card} opacity={0.4}/>
-            {/* Pine RS rating background bands */}
-            {scRsLatest != null && (
-              <rect x={padL} y={scTop} width={chartW} height={scH}
-                fill={scRsLatest > 70 ? '#00E676' : scRsLatest >= 50 ? '#FFD600' : '#FF1744'}
-                opacity={0.08}/>
-            )}
+            {/* Per-bar RS rating backdrop — same >70 / 50–70 / <50 bands as
+                the price pane, so the histogram sits on RS strength. */}
+            {(() => {
+              const n = vScRating.length
+              if (!n) return null
+              const step = n > 1 ? Math.max(1, idxToX(1) - idxToX(0)) : Math.max(2, candleW + 1)
+              const o = Math.min(0.35, Math.max(0.02, (Number(scP.rsBgOpacity) || 8) / 100))
+              const cStrong = scP.rsBgStrongColor || '#00e676'
+              const cAvg = scP.rsBgAvgColor || '#ffd600'
+              const cWeak = scP.rsBgWeakColor || '#ff1744'
+              return (
+                <g style={{ pointerEvents: 'none' }}>
+                  {vScRating.map((r, i) => {
+                    if (r == null || !Number.isFinite(r)) return null
+                    const x0 = idxToX(i) - step / 2
+                    const x1 = x0 + step + 0.75
+                    const x = Math.max(padL, x0)
+                    const w = Math.min(padL + chartW, x1) - x
+                    if (w <= 0) return null
+                    const fill = r > 70 ? cStrong : r >= 50 ? cAvg : cWeak
+                    return <rect key={`sc-rsbg-${i}`} x={x} y={scTop} width={w} height={scH}
+                      fill={fill} opacity={o}/>
+                  })}
+                </g>
+              )
+            })()}
             <line x1={padL} y1={scTop} x2={padL+chartW} y2={scTop} stroke={C.border} strokeWidth={1} opacity={0.8}/>
             <line x1={padL} y1={scToY(0)} x2={padL+chartW} y2={scToY(0)}
               stroke={LAKSHMI_CYCLE_COLORS.ZERO} strokeWidth={0.7}/>
@@ -10934,6 +11006,14 @@ const RsLayoutContext = React.createContext({
 })
 
 const RS_OPTIONAL_COL_ORDER_DEFAULT = ['trend','signals','stage','squeeze','wl52','weakrs','mcap','pe','roe','de','prom','fundRating','resultRating']
+
+// RS Last 7d is off: Super Cycle already paints that history as the pane
+// background and the 10-day RS table, so the 7 boxes were a duplicate.
+const RS_COL_VIS_DEFAULTS = {
+  mid:true, sml:true, sec:true, trend:true, pp10:true, rs7d:false, stage:true,
+  mcap:false, pe:false, roe:false, de:false, prom:false,
+  fundRating:true, resultRating:true, squeeze:false, wl52:false, weakrs:false,
+}
 
 const RS_COL_WIDTH = {
   trend:'52px', signals:'182px', stage:'140px', squeeze:'170px', wl52:'160px', weakrs:'150px',
@@ -11164,12 +11244,12 @@ function buildLayoutChartSectionsPayload({ order, hidden, dock, detailOpen }){
 /** Main workspace tiles: RS table (screener), Chart, Overview/Details. */
 const DOCK_TILE_IDS = ['screener', 'chart', 'detail']
 const DOCK_TILE_LABELS = { screener:'RS / Table', chart:'Chart', detail:'Fundamentals' }
-/** Product default workspace: Chart 75% on the left, RS table 25% on the
- *  right, Fundamentals closed — two sections, nothing else competing for
- *  width until the user asks for it. */
-const DEFAULT_DOCK_LAYOUT = { mode:'side', solo:'chart', order:['chart','screener','detail'] }
+/** Product default workspace: three full-height columns — a wide Chart on
+ *  the left, the RS table beside it, and the company Overview on the right,
+ *  so picking a symbol shows its chart and its fundamentals together. */
+const DEFAULT_DOCK_LAYOUT = { mode:'columns', solo:'chart', order:['chart','screener','detail'] }
 const DEFAULT_CHART_WIDE = 2      // index into [35,50,75] — the chart column %
-const DEFAULT_DETAIL_OPEN = false // Fundamentals starts closed
+const DEFAULT_DETAIL_OPEN = true  // Overview rides along with the chart
 const DOCK_LAYOUT_KEY = 'lakshmimata-dock-layout'
 
 /** TradingView-style layout presets — swap RS table / Chart / Fundamentals.
@@ -11179,8 +11259,15 @@ const DOCK_LAYOUT_KEY = 'lakshmimata-dock-layout'
  *  `detailOpen:false` keeps Fundamentals out of the way for 2-pane presets. */
 const DOCK_LAYOUT_PRESETS = [
   {
-    id: 'side-chart-rs',
+    id: 'columns-chart-rs-fund',
     label: 'Default',
+    hint: 'Wide Chart · RS · Overview',
+    layout: { mode: 'columns', order: ['chart', 'screener', 'detail'] },
+    detailOpen: true,
+  },
+  {
+    id: 'side-chart-rs',
+    label: 'Chart | RS',
     hint: 'Chart 75% left · RS 25% right',
     layout: { mode: 'side', solo: 'chart', order: ['chart', 'screener', 'detail'] },
     chartWide: 2, // 75% chart column
@@ -11316,7 +11403,7 @@ function normalizeDockLayout(raw){
   const solo = mode === 'side' && raw?.solo === 'chart' ? 'chart' : 'screener'
   return { mode, order, solo }
 }
-const DOCK_DEFAULT_VER = '3' // v3: Chart 75% left · RS 25% right, no Fundamentals
+const DOCK_DEFAULT_VER = '4' // v4: wide Chart · RS · Overview, all three visible
 function loadDockLayout(){
   try{
     const ver=localStorage.getItem('lakshmimata-dock-default-ver')
@@ -11378,7 +11465,11 @@ function persistChartPanelAutoSave(wide,pct){
 }
 
 const COL_WIDTHS_KEY = 'lakshmimata-col-widths'
-const DEFAULT_COL_WIDTHS = { screener: 32, chart: 36, detail: 32 }
+// The chart is the thing you read bar by bar, so it takes the lion's share;
+// the RS table only needs its first few columns, and the Overview is text.
+const DEFAULT_COL_WIDTHS = { screener: 19, chart: 55, detail: 26 }
+const COL_WIDTHS_VER_KEY = 'lakshmimata-col-widths-ver'
+const COL_WIDTHS_VER = '2' // v2: wide chart column by default
 function normalizeColWidths(raw){
   let s = Number(raw?.screener), c = Number(raw?.chart), d = Number(raw?.detail)
   if(!Number.isFinite(s)) s = DEFAULT_COL_WIDTHS.screener
@@ -11395,7 +11486,15 @@ function normalizeColWidths(raw){
   }
 }
 function loadColWidths(){
-  try{ return normalizeColWidths(JSON.parse(localStorage.getItem(COL_WIDTHS_KEY)||'null')) }
+  try{
+    // The wider chart column rolls out once; after that a dragged width wins.
+    if(localStorage.getItem(COL_WIDTHS_VER_KEY)!==COL_WIDTHS_VER){
+      localStorage.setItem(COL_WIDTHS_VER_KEY,COL_WIDTHS_VER)
+      localStorage.removeItem(COL_WIDTHS_KEY)
+      return {...DEFAULT_COL_WIDTHS}
+    }
+    return normalizeColWidths(JSON.parse(localStorage.getItem(COL_WIDTHS_KEY)||'null'))
+  }
   catch{ return {...DEFAULT_COL_WIDTHS} }
 }
 function persistColWidths(w){
@@ -12509,7 +12608,7 @@ function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder,showOurChartHover=true
   const layout=useContext(RsLayoutContext)
   const [open,setOpen]=useState(false)
   const companyPage=onCompanyPage||layout.openCompanyPage
-  const vis=visibleRsCols||layout.visibleRsCols||{mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true,resultRating:true}
+  const vis=visibleRsCols||layout.visibleRsCols||RS_COL_VIS_DEFAULTS
   const order=normalizeRsColOrder(rsColOrder||layout.colOrder)
   const COLS=computeRsGridCols(vis, order)
   const minW=computeRsGridMinWidth(vis, order)
@@ -12795,7 +12894,7 @@ function TickerBanner({stocks, indices, onSelect, onSelectIndex, onHide}){
       {stockRow}
       {onHide&&(
         <button type="button" onClick={onHide}
-          title="Hide the top ticker (turn it back on in Account ▸ Top Ticker)"
+          title="Hide the rolling ticker — a Show ticker button takes its place"
           style={{position:'absolute',top:2,right:4,zIndex:2,width:18,height:18,lineHeight:1,
             borderRadius:4,border:`1px solid ${C.border}`,background:C.card,color:C.muted,
             fontSize:11,fontWeight:700,cursor:'pointer',padding:0}}>×</button>
@@ -15069,10 +15168,10 @@ export default function App(){
   const HOVER_OUR_CHART_PREF_KEY='lakshmimata-hover-our-chart'
   const TICKER_PREF_KEY='lakshmimata-top-ticker'
   const DETAIL_PANEL_VER_KEY='lakshmimata-detail-panel-ver'
-  const DETAIL_PANEL_VER='3' // v3: two-pane default, Fundamentals closed
+  const DETAIL_PANEL_VER='4' // v4: Overview opens with the chart by default
   const loadDetailPanelPref=()=>{
     try{
-      // The 2-pane default rolls out once; after that the user's own
+      // The 3-pane default rolls out once; after that the user's own
       // open/close choice wins again.
       if(localStorage.getItem(DETAIL_PANEL_VER_KEY)!==DETAIL_PANEL_VER){
         localStorage.setItem(DETAIL_PANEL_VER_KEY,DETAIL_PANEL_VER)
@@ -16167,17 +16266,17 @@ export default function App(){
     return()=>{ cancelled=true }
   },[session?.user?.id])
   const [visibleRsCols,setVisibleRsCols]=useState(()=>{
-    const RS_COL_PREFS_VER=3
-    const fundOff={mcap:false,pe:false,roe:false,de:false,prom:false}
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,...fundOff,fundRating:true,resultRating:true,squeeze:false,wl52:false,weakrs:false}
+    const RS_COL_PREFS_VER=4
+    const defaults={...RS_COL_VIS_DEFAULTS}
     try{
       const ver=parseInt(localStorage.getItem('lakshmimata-rs-col-ver')||'0',10)
       const saved=JSON.parse(localStorage.getItem('lakshmimata-rs-columns')||'null')
       if(ver<RS_COL_PREFS_VER){
         try{localStorage.setItem('lakshmimata-rs-col-ver',String(RS_COL_PREFS_VER))}catch(e){}
         if(!saved) return defaults
-        // Hide fundamental ratio cols by default; enable Result quality column.
-        return {...defaults,...saved,...fundOff,resultRating:true}
+        // v3 hid fund-ratio cols; v4 drops RS Last 7d (Super Cycle covers it).
+        const fundOff={mcap:false,pe:false,roe:false,de:false,prom:false}
+        return {...defaults,...saved,...fundOff,resultRating:true,rs7d:false}
       }
       return saved?{...defaults,...saved}:defaults
     }catch(e){return defaults}
@@ -16192,8 +16291,7 @@ export default function App(){
   const applyLayout=(layout)=>{
     if(!layout) return
     skipLayoutAutoSaveRef.current=true
-    const fundOff={mcap:false,pe:false,roe:false,de:false,prom:false}
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,...fundOff,fundRating:true,resultRating:true,squeeze:false,wl52:false,weakrs:false}
+    const defaults={...RS_COL_VIS_DEFAULTS}
     const cols=layout.columns&&typeof layout.columns==='object'?{...defaults,...layout.columns}:defaults
     delete cols.__meta
     const order=normalizeRsColOrder(layout.col_order||layout.colOrder)
@@ -16227,14 +16325,13 @@ export default function App(){
     }catch(e){}
   }
   const applyDefaultLayout=()=>{
-    const fundOff={mcap:false,pe:false,roe:false,de:false,prom:false}
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,...fundOff,fundRating:true,resultRating:true,squeeze:false,wl52:false,weakrs:false}
+    const defaults={...RS_COL_VIS_DEFAULTS}
     try{
       const saved=JSON.parse(localStorage.getItem('lakshmimata-rs-columns')||'null')
       const order=JSON.parse(localStorage.getItem('lakshmimata-rs-col-order')||'null')
       const sectionsRaw=JSON.parse(localStorage.getItem('lakshmimata-chart-sections')||'null')
       const parsed=parseLayoutChartSections(sectionsRaw)
-      setVisibleRsCols(saved?{...defaults,...saved,...fundOff}:defaults)
+      setVisibleRsCols(saved?{...defaults,...saved,mcap:false,pe:false,roe:false,de:false,prom:false}:defaults)
       if(order) setRsColOrder(normalizeRsColOrder(order))
       setChartSectionOrder(parsed.order)
       setChartSectionHidden(parsed.hidden)
@@ -16253,6 +16350,7 @@ export default function App(){
   // applyDefaultLayout (which replays the saved layout) this ignores what was
   // saved and puts every panel and block back on screen.
   const restoreWorkspace=()=>{
+    persistTickerPref(true)
     applyDockLayout({...DEFAULT_DOCK_LAYOUT,order:[...DEFAULT_DOCK_LAYOUT.order]})
     setChartWide(DEFAULT_CHART_WIDE)
     setChartPanelPct(null)
@@ -16333,7 +16431,7 @@ export default function App(){
     setLayoutMsg(`Cleared slot ${s}.`)
   }
   const resetRsCols=()=>{
-    const defaults={mid:true,sml:true,sec:true,trend:true,pp10:true,rs7d:true,stage:true,mcap:false,pe:false,roe:false,de:false,prom:false,fundRating:true,resultRating:true,squeeze:false,wl52:false,weakrs:false}
+    const defaults={...RS_COL_VIS_DEFAULTS}
     const order=[...RS_OPTIONAL_COL_ORDER_DEFAULT]
     const sections=buildLayoutChartSectionsPayload({
       order: CHART_SECTION_ORDER_DEFAULT,
@@ -16351,7 +16449,7 @@ export default function App(){
     persistDetailPanelPref(DEFAULT_DETAIL_OPEN)
     try{
       localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(defaults))
-      localStorage.setItem('lakshmimata-rs-col-ver','3')
+      localStorage.setItem('lakshmimata-rs-col-ver','4')
       localStorage.setItem('lakshmimata-rs-col-order',JSON.stringify(order))
       localStorage.setItem('lakshmimata-chart-sections',JSON.stringify(sections))
       localStorage.setItem('lakshmimata-chart-sections-hidden',JSON.stringify([]))
@@ -17509,11 +17607,11 @@ export default function App(){
                         ))}
                         <button type="button"
                           onClick={()=>{ restoreWorkspace(); setDockLayoutMenuOpen(false) }}
-                          title="Reopen every panel, unhide every block below the chart and restore the default arrangement"
+                          title="Reopen every panel, bring back the ticker, unhide every block below the chart and restore the default arrangement"
                           style={{marginTop:10,width:'100%',padding:'7px 8px',borderRadius:6,
                             border:`1px solid ${C.border}`,background:'transparent',color:C.muted,
                             fontSize:10,fontWeight:600,cursor:'pointer'}}>
-                          Restore everything (Chart 75% | RS 25%)
+                          Restore everything (Chart | RS | Overview)
                         </button>
                       </div>
                     </>
@@ -17558,11 +17656,24 @@ export default function App(){
           )}
         </div>
 
-        {tickerEnabled&&(
+        {tickerEnabled?(
           <div style={{flexShrink:0}}>
             <TickerBanner stocks={topMovers} indices={indexData}
               onSelect={openChart} onSelectIndex={name=>openChart(name,{isIndex:true})}
               onHide={()=>persistTickerPref(false)}/>
+          </div>
+        ):(
+          // Closing the ticker used to leave nothing behind, so the only way
+          // back was the quick-settings popover. Keep a one-click stub here.
+          <div style={{flexShrink:0,display:'flex',justifyContent:'flex-end',
+            background:C.card,borderBottom:`1px solid ${C.divider}`,padding:'1px 4px'}}>
+            <button type="button" onClick={()=>persistTickerPref(true)}
+              title="Show the rolling index & top-mover ticker again"
+              style={{border:`1px solid ${C.border}`,borderRadius:4,background:'transparent',
+                color:C.muted,fontSize:9,fontWeight:700,lineHeight:1,padding:'2px 6px',
+                cursor:'pointer',fontFamily:'inherit'}}>
+              ▾ Show ticker
+            </button>
           </div>
         )}
 
