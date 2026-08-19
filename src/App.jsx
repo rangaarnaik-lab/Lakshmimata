@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo, useContext } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, useContext } from 'react'
+import { createPortal } from 'react-dom'
 import PanelWindow, { PanelTaskbar, ScreenerFrame } from './components/PanelWindow'
 import EarningsTracker from './components/EarningsTracker'
 import PaymentPage from './components/PaymentPage'
@@ -38,7 +39,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchMissedAiFilings } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -1738,7 +1739,7 @@ const ANN_ALERT_CAT_OPTIONS=[
 // Browser-notification prefs — enable/disable each signal type + alert sound.
 const ALERT_PREF_KEY='lakshmimata-alert-prefs'
 const DEFAULT_ALERT_PREFS={
-  hy:true, ht:true, pp:true, squeeze:true, stage2:true, guppy:true, rs70:true, announcements:true,
+  hy:true, ht:true, pp:true, bullsnort:true, squeeze:true, stage2:true, guppy:true, rs70:true, announcements:true,
   watchlistOnly:false,
   soundEnabled:true,
   soundId:'ping',
@@ -1755,6 +1756,7 @@ const ALERT_PREF_OPTIONS=[
   {key:'hy', label:'HY (High Yield vol)', icon:'📊'},
   {key:'ht', label:'HT (High Turnover)', icon:'🚀'},
   {key:'pp', label:'PP (Power Play)', icon:'🔥'},
+  {key:'bullsnort', label:'Bull Snort', icon:'🐂'},
   {key:'squeeze', label:'Squeeze / VCP', icon:'🌀'},
   {key:'stage2', label:'Stage 2 new entry', icon:'📈'},
   {key:'guppy', label:'Guppy crossover', icon:'🐠'},
@@ -1824,6 +1826,7 @@ function alertPrefKeysForFireType(fireType){
   if(/\bHY\b/.test(t)) keys.push('hy')
   if(/\bHT\b/.test(t)) keys.push('ht')
   if(/\bPP\b/.test(t)) keys.push('pp')
+  if(/Bull\s*Snort/i.test(t)) keys.push('bullsnort')
   if(/Squeeze|VCP/i.test(t)) keys.push('squeeze')
   if(/Stage\s*2|S2/i.test(t)) keys.push('stage2')
   if(/Guppy/i.test(t)) keys.push('guppy')
@@ -1954,6 +1957,7 @@ function alertNotificationTitle(alert){
   const t=String(alert.fire_type||'')
   if(/\bHY\b|\bHT\b/.test(t) && !/Squeeze|VCP/i.test(t)) return `🔊 ${alert.sym} — ${t} Volume!`
   if(/\bPP\b/.test(t)) return `🔥 ${alert.sym} — Power Play!`
+  if(/Bull\s*Snort/i.test(t)) return `🐂 ${alert.sym} — Bull Snort!`
   if(/Stage\s*2/i.test(t)) return `📈 ${alert.sym} — Stage 2 Entry!`
   if(/Guppy/i.test(t)) return `🐠 ${alert.sym} — Guppy Crossover!`
   if(/RS\s*>\s*70|RS\s*≥\s*70|RS\s*>=\s*70/i.test(t)){
@@ -2010,7 +2014,7 @@ function fireChartAlertNotifications(fired, prefs, onOpenSymbol){
   })
 }
 
-function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestPermission, colors:C, cloudSynced, notifHistory=[], onClearHistory, onHistoryClick, savedScanners=[], onOpenSymbol}){
+function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestPermission, colors:C, cloudSynced, notifHistory=[], serverHistory=[], onLoadHistory, historyLoading=false, onClearHistory, onHistoryClick, savedScanners=[], onOpenSymbol}){
   const [open,setOpen]=useState(false)
   const [menuSection,setMenuSection]=useState('settings') // 'settings' | 'history'
   // Price alerts drawn on the chart — listed here so they're manageable
@@ -2026,6 +2030,12 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
       window.removeEventListener('storage', refresh)
     }
   },[open])
+  // Local history only holds what popped while this device had the app open,
+  // so pull the server's recent fires whenever History is actually shown.
+  useEffect(()=>{
+    if(open && menuSection==='history') onLoadHistory?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[open,menuSection])
   const enabledCount=ALERT_PREF_OPTIONS.filter(o=>{
     if(o.key==='watchlistOnly') return prefs.watchlistOnly===true
     return prefs[o.key]!==false
@@ -2049,27 +2059,29 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
   const annHistory=(notifHistory||[]).filter(h=>h.kind==='announcement')
   const scannerAlertsOn=prefs.scannerAlerts!==false
   const scannerAlertIds=Array.isArray(prefs.scannerAlertIds)?prefs.scannerAlertIds.map(String):[]
-  if(typeof Notification==='undefined') return null
-  if(notifPermission!=='granted'){
-    return(
-      <button type="button" onClick={onRequestPermission}
-        title="Enable browser alerts"
-        style={{padding:'5px 10px',borderRadius:6,
-          border:`1px solid ${C.yellow}44`,background:C.yellow+'11',
-          color:C.yellow,fontSize:10,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>
-        🔔 Enable Alerts
-      </button>
-    )
-  }
+  const notifSupported=typeof Notification!=='undefined'
+  const notifOn=notifSupported && notifPermission==='granted'
+  const notifBlocked=notifSupported && notifPermission==='denied'
+  // History merges server-side fires with what actually popped on this device,
+  // so it has something to show even when the app was closed at the time.
+  const historyItems=(()=>{
+    const byId=new Map()
+    for(const h of notifHistory||[]) if(h?.id) byId.set(h.id,h)
+    for(const h of serverHistory||[]) if(h?.id && !byId.has(h.id)) byId.set(h.id,h)
+    return [...byId.values()].sort((a,b)=>String(b.at||'').localeCompare(String(a.at||'')))
+  })()
+  const bellTint=notifOn?C.green:C.yellow
   return(
     <div style={{position:'relative'}}>
       <button type="button" onClick={()=>setOpen(v=>!v)}
-        title={cloudSynced?'Your alert types (saved to your account)':'Customize which alerts you receive'}
+        title={notifOn
+          ?(cloudSynced?'Your alert types (saved to your account)':'Customize which alerts you receive')
+          :'Alerts are off — open to turn them on and see recent signals'}
         style={{padding:'5px 10px',borderRadius:6,
-          border:`1px solid ${open?C.accent:C.green}33`,
-          background:open?C.accent+'18':C.green+'11',
-          color:open?C.accent:C.green,fontSize:10,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>
-        🔔 Alerts {enabledCount}/{ALERT_PREF_OPTIONS.length}{soundOn?' 🔊':''}{notifHistory.length?` · ${notifHistory.length}`:''} ▾
+          border:`1px solid ${open?C.accent:bellTint}33`,
+          background:open?C.accent+'18':bellTint+'11',
+          color:open?C.accent:bellTint,fontSize:10,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>
+        🔔 Alerts {notifOn?`${enabledCount}/${ALERT_PREF_OPTIONS.length}`:'Off'}{notifOn&&soundOn?' 🔊':''}{notifHistory.length?` · ${notifHistory.length}`:''} ▾
       </button>
       {open&&(
         <>
@@ -2077,8 +2089,30 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
           <div style={{position:'absolute',top:34,right:0,zIndex:81,width:300,maxHeight:'min(70vh,560px)',overflowY:'auto',
             background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
             padding:10,boxShadow:'0 12px 32px rgba(0,0,0,0.4)'}}>
+            {!notifOn&&(
+              <div style={{border:`1px solid ${C.yellow}44`,background:C.yellow+'11',borderRadius:8,
+                padding:8,marginBottom:10,fontSize:10,lineHeight:1.5,color:C.text}}>
+                <div style={{fontWeight:800,color:C.yellow,marginBottom:4}}>
+                  {!notifSupported?'This browser can\u2019t show notifications'
+                    :notifBlocked?'Notifications are blocked'
+                    :'Notifications are off'}
+                </div>
+                {!notifSupported?(
+                  <div style={{color:C.muted}}>On iPhone, add this app to your Home Screen first, then reopen it from there.</div>
+                ):notifBlocked?(
+                  <div style={{color:C.muted}}>Your browser blocked them for this site. Click the padlock in the address bar → Notifications → Allow, then reload.</div>
+                ):(
+                  <button type="button" onClick={onRequestPermission}
+                    style={{marginTop:2,padding:'4px 10px',borderRadius:6,border:`1px solid ${C.yellow}66`,
+                      background:C.yellow+'22',color:C.yellow,fontSize:10,fontWeight:700,cursor:'pointer'}}>
+                    Turn on notifications
+                  </button>
+                )}
+                <div style={{color:C.muted,marginTop:5}}>Signals still show under History below.</div>
+              </div>
+            )}
             <div style={{display:'flex',gap:4,marginBottom:10}}>
-              {[['settings','Settings'],['history',`History${notifHistory.length?` (${notifHistory.length})`:''}`]].map(([id,label])=>(
+              {[['settings','Settings'],['history',`History${historyItems.length?` (${historyItems.length})`:''}`]].map(([id,label])=>(
                 <button key={id} type="button" onClick={()=>setMenuSection(id)}
                   style={{flex:1,padding:'5px 0',borderRadius:6,border:`1px solid ${menuSection===id?C.accent:C.border}`,
                     background:menuSection===id?C.accent+'18':'transparent',
@@ -2092,10 +2126,10 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
                 <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
                   letterSpacing:'0.05em',marginBottom:6}}>Notification history</div>
                 <NotifHistoryList
-                  items={notifHistory}
+                  items={historyItems}
                   colors={C}
                   maxShow={40}
-                  emptyText="No alerts fired yet while the app was open."
+                  emptyText={historyLoading?'Loading recent signals…':'No signals yet today. Fires appear here during market hours.'}
                   onClear={()=>onClearHistory?.()}
                   onItemClick={h=>{ onHistoryClick?.(h); setOpen(false) }}
                 />
@@ -3171,6 +3205,9 @@ function StockCard({s,i,onChart,onCompanyPage}){
 // used in the main RS tab, without duplicating that markup everywhere.
 function SimpleStockTable({stocks, isMobile, onChart, showOurChartHover=true, onOurChart}){
   const dragProps = useDragScroll()
+  const layout=useContext(RsLayoutContext)
+  const vis=layout.visibleRsCols||RS_COL_VIS_DEFAULTS
+  const order=normalizeRsColOrder(layout.colOrder)
   if(!stocks || stocks.length===0){
     return <div style={{padding:20,textAlign:'center',color:C.muted,fontSize:12}}>No stocks found.</div>
   }
@@ -3180,29 +3217,16 @@ function SimpleStockTable({stocks, isMobile, onChart, showOurChartHover=true, on
   return (
     <div ref={dragProps.ref} {...dragProps.handlers}
       style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflowX:'auto',...dragProps.style}}>
-      <div style={{display:'grid',gridTemplateColumns:'32px 130px 52px 48px 48px 52px 52px 64px 90px 112px 182px 140px 55px 55px 48px 48px 48px 55px',
-        padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:4,
-        fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
-        <span style={{textAlign:'center',color:C.muted}}>#</span>
-        <span style={{color:C.muted}}>Symbol</span>
-        <span style={{textAlign:'center',color:C.muted}}>RS-TV</span>
-        <span style={{textAlign:'center',color:C.muted,fontSize:9}}>MID</span>
-        <span style={{textAlign:'center',color:C.muted,fontSize:9}}>SML</span>
-        <span style={{textAlign:'center',color:C.muted,fontSize:9}}>SEC</span>
-        <span style={{textAlign:'center',color:C.muted}}>Trend</span>
-        <span style={{textAlign:'right',color:C.muted}}>Price</span>
-        <span style={{textAlign:'center',color:C.muted}}>Chg%</span>
-        <span style={{textAlign:'center',color:C.muted}}>10 D Vol</span>
-        <span style={{textAlign:'center',color:C.muted}}>RS Last 7d</span>
-        <span title="Stage: Weinstein trend stage (S1 Base/S2 Up/S3 Top/S4 Down). Vol: today's volume as % of its recent peak day, not a price." style={{textAlign:'center',color:C.muted,cursor:'help'}}>Stage/Vol</span>
-        <span style={{textAlign:'right',color:C.muted,fontSize:9}}>MCap</span>
-        <span style={{textAlign:'right',color:C.muted,fontSize:9}}>P/E</span>
-        <span style={{textAlign:'right',color:C.muted,fontSize:9}}>ROE</span>
-        <span style={{textAlign:'right',color:C.muted,fontSize:9}}>D/E</span>
-        <span style={{textAlign:'right',color:C.muted,fontSize:9}}>Prom%</span>
-        <span title="Overall fundamental quality — not the same as Excellent/Good Result (latest quarter only)." style={{textAlign:'right',color:C.muted,fontSize:9,cursor:'help'}}>Rating</span>
+      <div style={{minWidth:computeRsGridMinWidth(vis, order)}}>
+        <div style={{display:'grid',gridTemplateColumns:computeRsGridCols(vis, order),
+          minWidth:computeRsGridMinWidth(vis, order),
+          padding:'7px 14px',borderBottom:`1px solid ${C.border}`,gap:10,
+          fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.06em'}}>
+          <RsTableHeaderRow visibleRsCols={vis} colOrder={order}
+            sortBy={null} sortDir={null} handleSort={()=>{}}/>
+        </div>
+        {stocks.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>onChart&&onChart(s.sym)} onOurChart={onOurChart} showOurChartHover={showOurChartHover} visibleRsCols={vis} rsColOrder={order}/>)}
       </div>
-      {stocks.map((s,i)=><DesktopRow key={s.sym} s={s} i={i} onChart={()=>onChart&&onChart(s.sym)} onOurChart={onOurChart} showOurChartHover={showOurChartHover}/>)}
     </div>
   )
 }
@@ -6907,6 +6931,22 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const [smallcapCloses, setSmallcapCloses] = useState(null)
   const [showIndMenu, setShowIndMenu] = useState(false)
   const [indSearch, setIndSearch] = useState('')
+  // Measure the RS history table's natural height so every row stays visible
+  // instead of being clipped by a hardcoded strip height.
+  const [scTableNatH, setScTableNatH] = useState(0)
+  const scTableRoRef = useRef(null)
+  const scTableContentRef = useCallback((el) => {
+    scTableRoRef.current?.disconnect()
+    scTableRoRef.current = null
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      const h = Math.ceil(el.getBoundingClientRect().height)
+      if (h > 0) setScTableNatH(prev => Math.abs(prev - h) <= 1 ? prev : h)
+    })
+    ro.observe(el)
+    scTableRoRef.current = ro
+  }, [])
+  useEffect(() => () => scTableRoRef.current?.disconnect(), [])
   const [drawTool, setDrawTool] = useState('pan') // pan | trend | ray | hline | vline | rect
   const [drawings, setDrawings] = useState([])
   const [drawDraft, setDrawDraft] = useState(null) // { type, p1, p2? }
@@ -7343,7 +7383,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     setPinnedIdx(null)
     // Keep bar interval (1m/5m/D/…) when switching stocks — only reset pan/pin.
     // Zoom stays as-is so a maximized 1m chart does not snap back to daily 1Y.
-    if (isIndex) setChartStyle('line') // no real OHLC exists for indices, only a close-price series
+    // Default every chart (stocks and indices) to candlesticks.
+    setChartStyle('candle')
     const fetcher = isIndex ? fetchIndexPriceHistory(sym) : fetchStockFullHistory(sym)
     fetcher
       .then(res => { if(!cancelled) setData(res) })
@@ -7626,7 +7667,15 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   // kept out of the bars so tall bars never clip them.
   const volMarkerH = volShowMarkers ? (isMobile ? 16 : 15) : 0
   // Reserve strip above Super Cycle for the TV-style RS rating history table.
-  const scTableBoxH = clean ? (isMobile ? 112 : 100) : (isMobile ? 144 : 134)
+  // Reserve strip for the TV-style RS rating history table. Fall back to an
+  // estimate until the first measurement lands, then use the real content
+  // height so every row is visible. Overlay can be taller because it costs
+  // the panes nothing; a reserved strip is capped so candles still fit.
+  const scTableEstH = clean ? (isMobile ? 150 : 138) : (isMobile ? 182 : 170)
+  const scTableBoxH = Math.min(
+    Math.max(60, scTableNatH || scTableEstH),
+    Math.max(80, Math.round(H * (scTableOverlay ? 0.62 : 0.42))),
+  )
   const scTableH = scShowTable && !scTableOverlay && !scTableBelow ? scTableBoxH : 0
   const scTableFootH = scShowTable && scTableBelow ? scTableBoxH : 0
   const panelGaps = gapH + (showRSI ? gapH : 0) + (showMACD ? gapH : 0) + (showSuperCycle ? gapH : 0)
@@ -7775,7 +7824,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   // Pine RS history table uses the last N bars of the full series (not the zoom window).
   const scRsTable = (() => {
     if (!showSuperCycle || !superCycle) return null
-    const lookback = Math.min(10, Math.max(3, Number(scP.tableDays) || 10))
+    const lookback = Math.min(30, Math.max(3, Number(scP.tableDays) || 10))
     const len = (superCycle.rsRatingNifty || superCycle.rsRating || []).length
     if (len < 1) return null
     const last = len - 1
@@ -8513,7 +8562,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             const barItems = catalog.filter(([key]) => favSet.has(key) || key === barInterval)
             const selectInterval = (val) => {
               setBarInterval(val)
-              if (!isIndex) setChartStyle('candle')
+              setChartStyle('candle')
               setShowIntervalFavMenu(false)
             }
             const starToggle = (key, e) => {
@@ -8593,14 +8642,13 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         <div style={{width:1,height:18,background:C.border,margin:'0 6px'}}/>
         {/* Chart type icons */}
         <div style={{display:'flex',alignItems:'center',gap:2}}>
-          <button type="button" disabled={isIndex}
+          <button type="button"
             onClick={()=>setChartStyle('candle')}
-            title={isIndex ? 'Indices have close-only history — use Line' : 'Candles'}
+            title="Candles"
             style={{
               display:'flex',alignItems:'center',justifyContent:'center',
-              width:28,height:24,border:'none',borderRadius:3,cursor:isIndex?'default':'pointer',
+              width:28,height:24,border:'none',borderRadius:3,cursor:'pointer',
               background: chartStyle==='candle' ? TV_TOOLBAR_BLUE+'22' : 'transparent',
-              opacity: isIndex ? 0.35 : 1,
             }}>
             <TvCandleIcon active={chartStyle==='candle'} muted={C.muted}/>
           </button>
@@ -8630,18 +8678,17 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                 <div style={{fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',
                   letterSpacing:'0.06em',margin:'2px 0 4px'}}>Series</div>
                 {SERIES_TYPES.map(s=>{
-                  const blocked = isIndex && OHLC_SERIES.includes(s.id)
                   const on = chartStyle===s.id
                   return (
-                    <button key={s.id} type="button" disabled={blocked}
+                    <button key={s.id} type="button"
                       onClick={()=>{setChartStyle(s.id);setShowSeriesMenu(false)}}
-                      title={blocked ? 'Indices have close-only history' : s.hint}
+                      title={s.hint}
                       style={{display:'flex',alignItems:'center',gap:6,width:'100%',
                         padding:'4px 6px',borderRadius:3,border:'none',textAlign:'left',
                         background:on?TV_TOOLBAR_BLUE+'22':'transparent',
-                        color:blocked?C.border:on?TV_TOOLBAR_BLUE:C.text,
+                        color:on?TV_TOOLBAR_BLUE:C.text,
                         fontSize:11,fontWeight:on?700:500,
-                        cursor:blocked?'default':'pointer',fontFamily:'inherit'}}>
+                        cursor:'pointer',fontFamily:'inherit'}}>
                       <span style={{width:9,fontSize:9}}>{on?'✓':''}</span>
                       <span style={{flex:1}}>{s.label}</span>
                     </button>
@@ -9795,13 +9842,20 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             })),
           },
         ]
+        // Overlay floats over the cycle pane TradingView-style, so it must not
+        // be clipped to the pane — only kept inside the chart body.
+        const labW = clean ? 52 : 64
+        const colW = clean ? 28 : 36
+        const boxTop = scTableOverlay
+          ? Math.max(padT, Math.min(scTop + 1, H - axisPad - scTableBoxH - 2))
+          : scTableTop
         return (
           <div style={{
             position: 'absolute',
             left: padL,
             width: chartW,
-            top: ((scTableOverlay ? scTop + 1 : scTableTop) / H) * 100 + '%',
-            height: (Math.min(scTableBoxH, scTableOverlay ? Math.max(40, scH - 2) : scTableBoxH) / H) * 100 + '%',
+            top: (boxTop / H) * 100 + '%',
+            height: (scTableBoxH / H) * 100 + '%',
             zIndex: 4,
             overflow: 'auto',
             border: '1px solid #3A3A5C',
@@ -9809,16 +9863,15 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             opacity: scTableOverlay ? scTableAlpha : 1,
             boxSizing: 'border-box',
             pointerEvents: 'auto',
-          }} title={`Super Cycle RS Rating history (${
+          }} title={`Super Cycle RS Rating history — ${scRsTable.length} sessions (${
             scTableOverlay ? 'overlapping the pane' : scTableBelow ? 'below the pane' : 'above the pane'
           })`}>
+            <div ref={scTableContentRef}>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: clean
-                ? `minmax(52px,auto) repeat(${scRsTable.length}, minmax(28px,1fr))`
-                : `minmax(64px,auto) repeat(${scRsTable.length}, minmax(36px,1fr))`,
+              gridTemplateColumns: `minmax(${labW}px,auto) repeat(${scRsTable.length}, minmax(${colW}px,1fr))`,
               width: '100%',
-              minWidth: isMobile ? 420 : undefined,
+              minWidth: Math.max(isMobile ? 420 : 0, labW + scRsTable.length * colW),
             }}>
               {th('INDEX')}
               {scRsTable.map(d => th(d.hdr))}
@@ -9855,17 +9908,30 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               )}
               <button type="button"
                 onClick={()=>setIndPrefs(p => setIndicatorParam(
-                  p, 'supercycle', 'tablePlacement',
-                  scTableOverlay ? 'reserve' : scTableBelow ? 'overlay' : 'below'))}
-                title="Move the table: above the pane → below it → overlapping it"
+                  p, 'supercycle', 'tableDays',
+                  scRsTable.length >= 30 ? 10 : scRsTable.length >= 20 ? 30 : 20))}
+                title="Cycle the history window: 10 → 20 → 30 sessions"
                 style={{
                   marginLeft: scRsLatest != null ? 8 : 'auto',
                   padding:'0 5px', border:'1px solid #2A2A3E', borderRadius:3,
                   background:'transparent', color:COL.white, fontSize:7, fontWeight:800,
                   cursor:'pointer', fontFamily:'inherit',
                 }}>
+                {scRsTable.length}D
+              </button>
+              <button type="button"
+                onClick={()=>setIndPrefs(p => setIndicatorParam(
+                  p, 'supercycle', 'tablePlacement',
+                  scTableOverlay ? 'reserve' : scTableBelow ? 'overlay' : 'below'))}
+                title="Move the table: above the pane → below it → overlapping it"
+                style={{
+                  padding:'0 5px', border:'1px solid #2A2A3E', borderRadius:3,
+                  background:'transparent', color:COL.white, fontSize:7, fontWeight:800,
+                  cursor:'pointer', fontFamily:'inherit',
+                }}>
                 {scTableOverlay ? 'OVERLAP' : scTableBelow ? 'BELOW' : 'ABOVE'}
               </button>
+            </div>
             </div>
           </div>
         )
@@ -11003,16 +11069,21 @@ const RsLayoutContext = React.createContext({
   // Every stock row in the app can open a company page, so it rides the
   // context instead of being threaded through a dozen table components.
   openCompanyPage: null,
+  // Draw the chart inside the symbol hover popup (Settings → App Preferences).
+  hoverChartEnabled: true,
 })
 
 const RS_OPTIONAL_COL_ORDER_DEFAULT = ['trend','signals','stage','squeeze','wl52','weakrs','mcap','pe','roe','de','prom','fundRating','resultRating']
 
 // RS Last 7d is off: Super Cycle already paints that history as the pane
 // background and the 10-day RS table, so the 7 boxes were a duplicate.
+// Default columns match the compact stock tables: #, Symbol, Price/Chg%,
+// Stage/Vol, Squeeze/VCP, Rating, Result. Trend and Nifty/Mid/Sml/Sec RS
+// are off — turn them back on from Columns if needed.
 const RS_COL_VIS_DEFAULTS = {
-  mid:true, sml:true, sec:true, trend:true, pp10:true, rs7d:false, stage:true,
+  nifty:false, mid:false, sml:false, sec:false, trend:false, pp10:false, rs7d:false, stage:true,
   mcap:false, pe:false, roe:false, de:false, prom:false,
-  fundRating:true, resultRating:true, squeeze:false, wl52:false, weakrs:false,
+  fundRating:true, resultRating:true, squeeze:true, wl52:false, weakrs:false,
 }
 
 const RS_COL_WIDTH = {
@@ -11043,14 +11114,20 @@ function activeRsOptionalCols(vis, colOrder){
   return normalizeRsColOrder(colOrder).filter(k=>isRsOptionalColVisible(k, vis||{}))
 }
 
+function rsBenchmarkCount(vis){
+  return (vis?.nifty?1:0)+(vis?.mid?1:0)+(vis?.sml?1:0)+(vis?.sec?1:0)
+}
+
 // Shared between the RS table's header row and DesktopRow so both always
 // compute the exact same grid-column layout from the same visibility
 // state — if they ever drifted out of sync, headers and cells would
-// misalign. Core columns: #, Symbol, RS, Price (fixed). Optional cols
-// follow in the user's saved order.
+// misalign. Core columns: #, Symbol, Price (fixed). Optional RS benchmarks
+// and other cols follow in the user's saved order.
 function computeRsGridCols(vis, colOrder=RS_OPTIONAL_COL_ORDER_DEFAULT){
-  const rsCount=1+(vis.mid?1:0)+(vis.sml?1:0)+(vis.sec?1:0)
-  const cols=['32px','130px',`${rsCount*40}px`,'64px']
+  const rsCount=rsBenchmarkCount(vis)
+  const cols=['32px','130px']
+  if(rsCount>0) cols.push(`${rsCount*40}px`)
+  cols.push('64px')
   for(const key of activeRsOptionalCols(vis, colOrder)){
     cols.push(RS_COL_WIDTH[key]||'50px')
   }
@@ -11108,20 +11185,23 @@ function RsOptionalColHeader({colKey, sortBy, sortDir, handleSort, vis}){
 function RsTableHeaderRow({visibleRsCols, colOrder, sortBy, sortDir, handleSort}){
   const vis=visibleRsCols||{}
   const order=normalizeRsColOrder(colOrder)
+  const showRs=rsBenchmarkCount(vis)>0
   return (
     <>
       <span style={{textAlign:'center',color:C.muted}}>#</span>
       <SortableHeader label="Symbol" sortKey="sym" sortBy={sortBy} sortDir={sortDir} onSort={handleSort}/>
-      <div style={{display:'flex'}}>
-        <span onClick={()=>handleSort('rsTv')} style={{flex:1,textAlign:'center',cursor:'pointer',
-          color:sortBy==='rsTv'?C.accent:C.muted,fontSize:9}}>NIFTY{sortBy==='rsTv'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
-        {vis.mid&&<span onClick={()=>handleSort('rsMidcap')} style={{flex:1,textAlign:'center',cursor:'pointer',
-          color:sortBy==='rsMidcap'?C.accent:C.muted,fontSize:9}}>MID{sortBy==='rsMidcap'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
-        {vis.sml&&<span onClick={()=>handleSort('rsSmallcap')} style={{flex:1,textAlign:'center',cursor:'pointer',
-          color:sortBy==='rsSmallcap'?C.accent:C.muted,fontSize:9}}>SML{sortBy==='rsSmallcap'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
-        {vis.sec&&<span onClick={()=>handleSort('rsSector')} style={{flex:1,textAlign:'center',cursor:'pointer',
-          color:sortBy==='rsSector'?C.accent:C.muted,fontSize:9}}>SEC{sortBy==='rsSector'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
-      </div>
+      {showRs&&(
+        <div style={{display:'flex'}}>
+          {vis.nifty&&<span onClick={()=>handleSort('rsTv')} style={{flex:1,textAlign:'center',cursor:'pointer',
+            color:sortBy==='rsTv'?C.accent:C.muted,fontSize:9}}>NIFTY{sortBy==='rsTv'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
+          {vis.mid&&<span onClick={()=>handleSort('rsMidcap')} style={{flex:1,textAlign:'center',cursor:'pointer',
+            color:sortBy==='rsMidcap'?C.accent:C.muted,fontSize:9}}>MID{sortBy==='rsMidcap'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
+          {vis.sml&&<span onClick={()=>handleSort('rsSmallcap')} style={{flex:1,textAlign:'center',cursor:'pointer',
+            color:sortBy==='rsSmallcap'?C.accent:C.muted,fontSize:9}}>SML{sortBy==='rsSmallcap'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
+          {vis.sec&&<span onClick={()=>handleSort('rsSector')} style={{flex:1,textAlign:'center',cursor:'pointer',
+            color:sortBy==='rsSector'?C.accent:C.muted,fontSize:9}}>SEC{sortBy==='rsSector'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>}
+        </div>
+      )}
       <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end'}}>
         <span onClick={()=>handleSort('last')} style={{cursor:'pointer',fontSize:9,fontWeight:700,
           color:sortBy==='last'?C.accent:C.muted}}>Price{sortBy==='last'?(sortDir==='desc'?' ↓':' ↑'):' ↕'}</span>
@@ -11790,7 +11870,7 @@ function rrgIdentityColor(id){
  * StockCharts-style RRG inputs — JdK RS-Ratio (X) and JdK RS-Momentum (Y),
  * both normalized around 100. Uses the open JdK z-score approximation
  * (SMA/StdDev of relative strength + ROC of RS, each re-centered at 100).
- * Input series is our daily RS-TV / avg RS trail (already a relative-
+ * Input series is our daily RS rating / avg RS trail (already a relative-
  * strength measure vs the market), which is what we have in history tables.
  * Proprietary StockCharts exact weights aren't published; this matches the
  * widely used open formula (RRG-Lite / India RRG implementations).
@@ -12061,8 +12141,7 @@ const HELP_CONTENT = [
     research further with RS, Results rating, and Concall/PPT — not automated advice.`},
   {id:'feedback', title:'User Feedback', body:`Rate Lakshmimata 1–5 stars and leave a short review. 
     The home page shows the average rating, star breakdown, and public quotes (first name only).`},
-  {id:'settings', title:'Account / Settings', body:`Theme, account, and app preferences. Help (?) in the header 
-    opens this guide for every page.`},
+  {id:'settings', title:'Account / Settings', body:`App Preferences lists every enable/disable (ticker, chart-on-hover, Overview, ambient). Account, plans, and sign-out are below that. Theme & zoom also sit on the 🎨 palette button.`},
   {id:'chart', title:'Stock chart & Results', body:`Open any stock for Our Chart plus Results / Concall / PPT under the chart. Result quality (Excellent/Good/Neutral/Weak) is the latest quarter only. Peer pills under Results are clickable.`},
 ]
 
@@ -12101,7 +12180,7 @@ const GUIDE_QA = [
   {keys:['excellent','result rating','weak result','good result','neutral result'],
     answer:'Result quality (Excellent/Good/Neutral/Weak) comes from Sales & PAT YoY, with OPM and other-income checks. Margin compression or an other-income spike caps the badge — QoQ recovery cannot override those caps. Headline PAT declines are capped too.'},
   {keys:['rrg','rotation','rs-ratio','rs-momentum','leading','improving','weakening','lagging','jdk'],
-    answer:'Rotate uses a StockCharts-style Relative Rotation Graph. X = JdK RS-Ratio (relative-strength trend), Y = JdK RS-Momentum (how fast that trend is changing), both centered at 100. Leading = both > 100; Weakening = Ratio > 100 but Momentum < 100; Lagging = both < 100; Improving = Momentum > 100 while Ratio still < 100. Idealized path is clockwise. Built from daily RS-TV / sector avg RS history.'},
+    answer:'Rotate uses a StockCharts-style Relative Rotation Graph. X = JdK RS-Ratio (relative-strength trend), Y = JdK RS-Momentum (how fast that trend is changing), both centered at 100. Leading = both > 100; Weakening = Ratio > 100 but Momentum < 100; Lagging = both < 100; Improving = Momentum > 100 while Ratio still < 100. Idealized path is clockwise. Built from daily RS rating / sector avg RS history.'},
   {keys:['peer','ranking','jewellery','industry'],
     answer:'Under Results, peers are ranked in the same industry when available. Click another peer pill to open that stock’s Results tab.'},
   {keys:['theme','emerging'],
@@ -12480,34 +12559,225 @@ function CompanyLinkIcon({sym, onOpen, size=11}){
   )
 }
 
+/**
+ * Our Chart preview drawn straight into the symbol hover popup — candles,
+ * volume and EMA9/21 off the same stored history the full chart reads, so a
+ * hover answers "what does this look like" without opening the panel.
+ * Cached per symbol for the session: re-hovering a row costs nothing.
+ */
+const HOVER_CHART_CACHE=new Map()
+function SymbolHoverChart({sym, bars=90, width=336, height=176}){
+  const key=String(sym||'').trim().toUpperCase()
+  const [hist,setHist]=useState(()=>HOVER_CHART_CACHE.get(key)||null)
+  const [err,setErr]=useState(null)
+  useEffect(()=>{
+    if(!key) return
+    const hit=HOVER_CHART_CACHE.get(key)
+    if(hit){ setHist(hit); setErr(null); return }
+    let cancelled=false
+    setHist(null); setErr(null)
+    fetchStockFullHistory(key).then(res=>{
+      if(cancelled) return
+      if(res?.error || !(res?.prices||[]).length){ setErr(res?.error||'No stored history yet'); return }
+      HOVER_CHART_CACHE.set(key,res)
+      setHist(res)
+    }).catch(e=>{ if(!cancelled) setErr(e?.message||'Could not load history') })
+    return ()=>{ cancelled=true }
+  },[key])
+
+  const frame=(inner)=>(
+    <div style={{width,height,display:'flex',alignItems:'center',justifyContent:'center',
+      fontSize:10,color:C.muted,padding:'0 12px',textAlign:'center',lineHeight:1.45}}>
+      {inner}
+    </div>
+  )
+  if(err) return frame(err)
+  if(!hist) return frame('Loading chart…')
+
+  const closes=(hist.prices||[]).map(Number)
+  const n=Math.min(bars, closes.length)
+  if(n<2) return frame('Not enough history to draw')
+  const cut=closes.length-n
+  const c=closes.slice(cut)
+  const o=(hist.opens||[]).slice(cut)
+  const h=(hist.highs||[]).slice(cut)
+  const l=(hist.lows||[]).slice(cut)
+  const v=(hist.volumes||[]).slice(cut).map(x=>Number(x)||0)
+  const dates=(hist.dates||[]).slice(cut)
+  // EMAs come off the full series so the leading values aren't warm-up nulls.
+  const ema9=emaArr(closes,9).slice(cut)
+  const ema21=emaArr(closes,21).slice(cut)
+
+  const padL=4, padR=46, padT=8, volH=Math.round(height*0.22), gap=6
+  const plotW=width-padL-padR
+  const priceH=height-padT-volH-gap-14
+  const at=(arr,i,fb)=>{ const x=Number(arr?.[i]); return Number.isFinite(x)?x:fb }
+  const hi=Math.max(...c.map((x,i)=>at(h,i,x)))
+  const lo=Math.min(...c.map((x,i)=>at(l,i,x)))
+  const span=(hi-lo)||1
+  const y=p=>padT+priceH-((p-lo)/span)*priceH
+  const step=plotW/n
+  const bw=Math.max(1.2, Math.min(6, step*0.62))
+  const maxVol=Math.max(...v,1)
+  const volTop=padT+priceH+gap
+  const last=c[n-1], first=c[0]
+  const up=last>=first
+  const line=(arr,color)=>{
+    const pts=[]
+    for(let i=0;i<n;i++){
+      const val=Number(arr[i])
+      if(!Number.isFinite(val)) continue
+      pts.push(`${(padL+i*step+step/2).toFixed(1)},${y(val).toFixed(1)}`)
+    }
+    return pts.length>1
+      ? <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="1.1" opacity="0.9"/>
+      : null
+  }
+  const fmtDate=(d)=>{
+    if(!d) return ''
+    const dt=new Date(d)
+    if(Number.isNaN(dt.getTime())) return ''
+    return dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})
+  }
+
+  return(
+    <div style={{width,padding:'2px 0 0'}}>
+      <svg width={width} height={height} style={{display:'block'}}>
+        {[0.25,0.5,0.75].map(f=>(
+          <line key={f} x1={padL} x2={padL+plotW} y1={padT+priceH*f} y2={padT+priceH*f}
+            stroke={C.border} strokeWidth="0.5" opacity="0.5"/>
+        ))}
+        {c.map((close,i)=>{
+          const open=at(o,i,close), high=at(h,i,Math.max(open,close)), low=at(l,i,Math.min(open,close))
+          const col=close>=open?C.green:C.red
+          const cx=padL+i*step+step/2
+          const yO=y(open), yC=y(close)
+          const top=Math.min(yO,yC)
+          const bodyH=Math.max(1,Math.abs(yC-yO))
+          return(
+            <g key={i}>
+              <line x1={cx} x2={cx} y1={y(high)} y2={y(low)} stroke={col} strokeWidth="0.8" opacity="0.85"/>
+              <rect x={cx-bw/2} y={top} width={bw} height={bodyH} fill={col} opacity="0.95"/>
+            </g>
+          )
+        })}
+        {line(ema9,C.accent)}
+        {line(ema21,C.yellow)}
+        <line x1={padL} x2={padL+plotW} y1={y(last)} y2={y(last)}
+          stroke={up?C.green:C.red} strokeWidth="0.7" strokeDasharray="3 3" opacity="0.8"/>
+        <text x={padL+plotW+4} y={y(last)+3.5} fontSize="9.5" fontWeight="700" fill={up?C.green:C.red}>
+          {last>=1000?last.toFixed(0):last.toFixed(2)}
+        </text>
+        <text x={padL+plotW+4} y={padT+8} fontSize="8.5" fill={C.muted}>{hi>=1000?hi.toFixed(0):hi.toFixed(1)}</text>
+        <text x={padL+plotW+4} y={padT+priceH} fontSize="8.5" fill={C.muted}>{lo>=1000?lo.toFixed(0):lo.toFixed(1)}</text>
+        {v.map((vol,i)=>{
+          const barH=Math.max(0.6,(vol/maxVol)*volH)
+          const close=c[i], open=at(o,i,close)
+          return <rect key={i} x={padL+i*step+step/2-bw/2} y={volTop+volH-barH} width={bw} height={barH}
+            fill={close>=open?C.green:C.red} opacity="0.4"/>
+        })}
+        <text x={padL} y={height-3} fontSize="8.5" fill={C.muted}>{fmtDate(dates[0])}</text>
+        <text x={padL+plotW} y={height-3} fontSize="8.5" fill={C.muted} textAnchor="end">{fmtDate(dates[n-1])}</text>
+      </svg>
+      <div style={{display:'flex',gap:9,padding:'0 12px 7px',fontSize:8.5,color:C.muted}}>
+        <span>{n}D</span>
+        <span><b style={{color:C.accent}}>—</b> EMA9</span>
+        <span><b style={{color:C.yellow}}>—</b> EMA21</span>
+      </div>
+    </div>
+  )
+}
+
 /** Hover menu on a stock symbol — company snapshot, then chart links. */
 function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpenChart, onCompanyPage, children}){
   const [open,setOpen]=useState(false)
+  // Chart lags the popup slightly so skimming down a table doesn't fire a
+  // history request per row.
+  const [chartArmed,setChartArmed]=useState(false)
   const hideTimer=useRef(null)
+  const chartTimer=useRef(null)
   const layout=useContext(RsLayoutContext)
-  const show=()=>{ if(hideTimer.current) clearTimeout(hideTimer.current); setOpen(true) }
+  const hoverChart=layout?.hoverChartEnabled!==false
+  const show=()=>{
+    if(hideTimer.current) clearTimeout(hideTimer.current)
+    setOpen(true)
+    if(hoverChart&&!chartTimer.current) chartTimer.current=setTimeout(()=>setChartArmed(true),260)
+  }
   const scheduleHide=()=>{
     if(hideTimer.current) clearTimeout(hideTimer.current)
-    hideTimer.current=setTimeout(()=>setOpen(false),200)
+    if(chartTimer.current){ clearTimeout(chartTimer.current); chartTimer.current=null }
+    hideTimer.current=setTimeout(()=>{ setOpen(false); setChartArmed(false) },200)
   }
-  useEffect(()=>()=>{ if(hideTimer.current) clearTimeout(hideTimer.current) },[])
+  useEffect(()=>()=>{
+    if(hideTimer.current) clearTimeout(hideTimer.current)
+    if(chartTimer.current) clearTimeout(chartTimer.current)
+  },[])
   const itemStyle={
     display:'block',width:'100%',textAlign:'left',padding:'8px 12px',border:'none',
     background:'transparent',color:C.text,fontSize:12,fontWeight:600,cursor:'pointer',
   }
+  // The popup is portalled and viewport-positioned: tables scroll on both
+  // axes, which clips absolutely-positioned children — and a popup carrying a
+  // chart is tall enough that it also needs to flip above the row near the
+  // bottom of the screen.
+  const anchorRef=useRef(null)
+  const menuRef=useRef(null)
+  const [pos,setPos]=useState(null)
+  const place=useCallback(()=>{
+    const a=anchorRef.current
+    if(!a) return
+    const r=a.getBoundingClientRect()
+    const mh=menuRef.current?.offsetHeight||(hoverChart?430:260)
+    const mw=menuRef.current?.offsetWidth||(hoverChart?336:232)
+    let top=r.bottom+4
+    if(top+mh>window.innerHeight-8) top=Math.max(8, r.top-mh-4)
+    const left=Math.max(8, Math.min(r.left, window.innerWidth-mw-8))
+    setPos({top,left})
+  },[hoverChart])
+  useLayoutEffect(()=>{
+    if(!open){ setPos(null); return }
+    place()
+    window.addEventListener('scroll',place,true)
+    window.addEventListener('resize',place)
+    return ()=>{
+      window.removeEventListener('scroll',place,true)
+      window.removeEventListener('resize',place)
+    }
+  },[open,chartArmed,place])
   return(
-    <span style={{position:'relative',display:'inline-flex'}}
+    <span ref={anchorRef} style={{position:'relative',display:'inline-flex'}}
       onMouseEnter={show} onMouseLeave={scheduleHide}>
       {children}
-      {open&&(
-        <div role="menu"
+      {open&&createPortal((
+        <div role="menu" ref={menuRef}
           onMouseEnter={show} onMouseLeave={scheduleHide}
           style={{
-            position:'absolute',left:0,top:'100%',marginTop:4,zIndex:90,
-            minWidth:stock?232:168,
+            position:'fixed',left:pos?.left??-9999,top:pos?.top??-9999,zIndex:4000,
+            minWidth:hoverChart?336:(stock?232:168),
+            visibility:pos?'visible':'hidden',
             background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
             boxShadow:'0 10px 28px rgba(0,0,0,0.35)',padding:'4px 0',overflow:'hidden',
           }}>
+          {hoverChart&&(
+            <div style={{borderBottom:`1px solid ${C.divider}`,paddingBottom:2}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+                padding:'5px 12px 0',fontSize:9,fontWeight:700,color:C.muted,letterSpacing:'0.05em'}}>
+                <span>OUR CHART · {String(sym||'').toUpperCase()}</span>
+                {(onOurChart||onOpenChart)&&(
+                  <button type="button"
+                    onClick={e=>{e.stopPropagation(); setOpen(false); (onOurChart||onOpenChart)?.(sym)}}
+                    style={{border:'none',background:'transparent',color:C.accent,fontSize:9,
+                      fontWeight:700,cursor:'pointer',padding:0}}>
+                    Open full ↗
+                  </button>
+                )}
+              </div>
+              {chartArmed
+                ? <SymbolHoverChart sym={sym}/>
+                : <div style={{width:336,height:176,display:'flex',alignItems:'center',
+                    justifyContent:'center',fontSize:10,color:C.muted}}>Loading chart…</div>}
+            </div>
+          )}
           {stock&&(()=>{
             const rating=(layout?.resultRatingsMap||{})[String(sym||'').toUpperCase()]||null
             const mcap=fmtMarketCap(stock.marketCap)
@@ -12593,13 +12863,13 @@ function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpen
             style={{...itemStyle,textDecoration:'none'}}>
             Screener.in ↗
           </a>
-          {!showOurChart&&(
+          {!showOurChart&&!hoverChart&&(
             <div style={{padding:'6px 12px',fontSize:10,color:C.muted,lineHeight:1.4}}>
-              Our Chart hidden — enable in 🎨 Quick Settings
+              Our Chart hidden — enable in Settings → App Preferences
             </div>
           )}
         </div>
-      )}
+      ), document.body)}
     </span>
   )
 }
@@ -12639,7 +12909,9 @@ function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder,showOurChartHover=true
                 style={{fontWeight:600,fontSize:12,color:C.accent,
                   letterSpacing:'0.01em',cursor:'pointer',textDecoration:'underline',
                   textDecorationColor:C.accent+'55',textUnderlineOffset:'2px'}}
-                title={`Hover for company snapshot · click to open`}>{s.sym}</span>
+                title={layout?.hoverChartEnabled!==false
+                  ? 'Hover for chart + snapshot · click to open'
+                  : 'Hover for company snapshot · click to open'}>{s.sym}</span>
             </SymbolHoverMenu>
             <CompanyLinkIcon sym={s.sym} onOpen={companyPage}/>
             {s.pp.isPP&&<span style={{fontSize:9,color:C.orange,fontWeight:700}}>PP</span>}
@@ -12657,20 +12929,19 @@ function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder,showOurChartHover=true
           </div>
         </div>
 
-        {/* RS Rating vs each benchmark, combined into one compact cell
-            instead of 4 separate grid columns - saves horizontal table
-            width. Nifty always shown; Mid/Small/Sector toggle with
-            visibleRsCols same as before. */}
+        {/* RS Rating vs each benchmark — only when Columns has at least one
+            benchmark on (Nifty / Mid / Sml / Sec). Off by default. */}
+        {rsBenchmarkCount(vis)>0&&(
         <div style={{display:'flex',background:C.bg,borderRadius:6,overflow:'hidden'}}>
-          <div style={{flex:1,textAlign:'center',padding:'2px 1px'}} title={`RS-TV: ${s.rsTv??'N/A'}`}>
+          {vis.nifty&&<div style={{flex:1,textAlign:'center',padding:'2px 1px'}} title={`RS rating: ${s.rsTv??'N/A'}`}>
             {s.rsTv!=null?(
               <>
                 <div style={{fontWeight:700,fontSize:13,color:rsColor(s.rsTv),lineHeight:1.1}}>{s.rsTv}</div>
                 <div style={{fontSize:6.5,color:C.teal,fontWeight:700}}>NIFTY</div>
               </>
             ):<span style={{color:C.muted,fontSize:9}}>—</span>}
-          </div>
-          {vis.mid&&<div style={{flex:1,textAlign:'center',padding:'2px 1px',borderLeft:`1px solid ${C.border}`}}
+          </div>}
+          {vis.mid&&<div style={{flex:1,textAlign:'center',padding:'2px 1px',borderLeft:vis.nifty?`1px solid ${C.border}`:'none'}}
             title={`RS vs Midcap 150 index: ${s.rsMidcap??'N/A'}`}>
             {s.rsMidcap!=null?(
               <>
@@ -12679,7 +12950,7 @@ function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder,showOurChartHover=true
               </>
             ):<span style={{color:C.border,fontSize:9}}>—</span>}
           </div>}
-          {vis.sml&&<div style={{flex:1,textAlign:'center',padding:'2px 1px',borderLeft:`1px solid ${C.border}`}}
+          {vis.sml&&<div style={{flex:1,textAlign:'center',padding:'2px 1px',borderLeft:(vis.nifty||vis.mid)?`1px solid ${C.border}`:'none'}}
             title={`RS vs Smallcap 250 index: ${s.rsSmallcap??'N/A'}`}>
             {s.rsSmallcap!=null?(
               <>
@@ -12688,7 +12959,7 @@ function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder,showOurChartHover=true
               </>
             ):<span style={{color:C.border,fontSize:9}}>—</span>}
           </div>}
-          {vis.sec&&<div style={{flex:1,textAlign:'center',padding:'2px 1px',borderLeft:`1px solid ${C.border}`}}
+          {vis.sec&&<div style={{flex:1,textAlign:'center',padding:'2px 1px',borderLeft:(vis.nifty||vis.mid||vis.sml)?`1px solid ${C.border}`:'none'}}
             title={`RS rank vs ${s.sector} sector peers: ${s.rsSector??'N/A'}`}>
             {s.rsSector!=null?(
               <>
@@ -12698,6 +12969,7 @@ function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder,showOurChartHover=true
             ):<span style={{color:C.border,fontSize:9}}>—</span>}
           </div>}
         </div>
+        )}
 
         {/* Price + Chg% */}
         <div style={{textAlign:'right'}}>
@@ -12954,7 +13226,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
     {icon:'💼', title:'Portfolio & lists', desc:'Multi-watchlists, brokerage CSV import (Zerodha, Dhan, etc.), stock compare, company-name search, and alerts.'},
   ]
   const howItWorks=[
-    ['I.','Relative Strength (RS-TV)','Every stock ranked 1–99 against the broader market and its own peer group, recalculated through the trading session — not a static end-of-day number.'],
+    ['I.','Relative Strength (RS rating)','Every stock ranked 1–99 against the broader market and its own peer group, recalculated through the trading session — not a static end-of-day number.'],
     ['II.','Volume conviction','Pocket Pivots, HY/HT surges, IBV, Bull Snort — then Vol→EMA when price pulls back near EMA5/9/21/50 after that climax.'],
     ['III.','Structure & breakouts','Resistance breaks, cup-and-handle, Guppy crosses, Stage 2 entries, squeezes and VCP — flagged the day they happen.'],
     ['IV.','Market & sector context','Index tape, market breadth, FII–DII, and sector/index rotation so you know if a stock is leading or just riding a theme.'],
@@ -14320,18 +14592,130 @@ function UserFeedbackPanel({session,onExitDemo}){
 }
 
 // ── Settings Panel ────────────────────────────────────────────────────
-function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchTheme,ambient,userSubscription,onOpenPayment}){
+/** One-line enable/disable row used by the Features list in Settings. */
+function PrefToggleRow({label, hint, on, onToggle, icon}){
+  return(
+    <button type="button" onClick={()=>onToggle(!on)}
+      style={{width:'100%',display:'flex',alignItems:'center',gap:12,textAlign:'left',
+        padding:'11px 12px',border:'none',borderBottom:`1px solid ${C.divider}`,
+        background:'transparent',cursor:'pointer',color:C.text}}>
+      {icon&&<span style={{fontSize:15,width:22,textAlign:'center',flexShrink:0}}>{icon}</span>}
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:12.5,fontWeight:700,lineHeight:1.25}}>{label}</div>
+        {hint&&<div style={{fontSize:10,color:C.muted,marginTop:2,lineHeight:1.4}}>{hint}</div>}
+      </div>
+      <span style={{
+        flexShrink:0,minWidth:52,textAlign:'center',padding:'3px 9px',borderRadius:999,
+        fontSize:10,fontWeight:800,letterSpacing:'0.04em',
+        background:on?C.accent+'22':C.bg, color:on?C.accent:C.muted,
+        border:`1px solid ${on?C.accent+'66':C.border}`,
+      }}>{on?'ON':'OFF'}</span>
+    </button>
+  )
+}
 
-  // Demo mode: session is deliberately null (see the demoMode feature —
-  // it's real sample data, not a fake account), and this whole panel is
-  // account management that doesn't apply without one. Everything below
-  // this point assumes session.user exists without optional chaining, so
-  // without this guard a demo user clicking into Settings would crash
-  // the whole app (this is exactly what happened — 'Cannot read
-  // properties of null (reading user)').
+function AppPreferencesCard({
+  hoverChartPreviewEnabled, onHoverChartPreview,
+  hoverOurChartEnabled, onHoverOurChart,
+  tickerEnabled, onTicker,
+  detailPanelPref, onDetailPanel,
+  ambient, themeKey, switchTheme,
+}){
+  return(
+    <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:0,marginBottom:16,overflow:'hidden'}}>
+      <div style={{padding:'16px 18px 10px'}}>
+        <div style={{fontWeight:800,fontSize:16}}>App Preferences</div>
+        <div style={{color:C.muted,fontSize:11.5,marginTop:3,lineHeight:1.45}}>
+          Every enable / disable switch in one place. Changes save on this device.
+        </div>
+      </div>
+
+      <div style={{padding:'0 6px 4px'}}>
+        <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+          letterSpacing:'0.07em',padding:'8px 12px 2px'}}>Workspace</div>
+        <PrefToggleRow icon="📰" label="Scrolling ticker"
+          hint="Rolling index & stock strip above the tabs"
+          on={!!tickerEnabled} onToggle={onTicker}/>
+        <PrefToggleRow icon="📋" label="Open Overview with chart"
+          hint="Fundamentals panel opens automatically when you pick a stock"
+          on={!!detailPanelPref} onToggle={onDetailPanel}/>
+      </div>
+
+      <div style={{padding:'0 6px 4px'}}>
+        <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+          letterSpacing:'0.07em',padding:'10px 12px 2px'}}>Symbol hover</div>
+        <PrefToggleRow icon="📈" label="Chart on hover"
+          hint="Draw candles + EMA in the popup (desktop). Skip the click."
+          on={!!hoverChartPreviewEnabled} onToggle={onHoverChartPreview}/>
+        <PrefToggleRow icon="🔗" label="Our Chart link"
+          hint="Show the Our Chart menu item next to TradingView & Screener"
+          on={!!hoverOurChartEnabled} onToggle={onHoverOurChart}/>
+      </div>
+
+      <div style={{padding:'0 6px 4px'}}>
+        <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+          letterSpacing:'0.07em',padding:'10px 12px 2px'}}>Sound</div>
+        <PrefToggleRow icon="🔔" label="Ambient sound"
+          hint="Soft background pad while you scan. Theme & zoom stay on 🎨."
+          on={!!ambient?.enabled} onToggle={()=>ambient?.toggle?.()}/>
+        {ambient?.enabled&&(
+          <div style={{padding:'4px 12px 12px'}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
+              {AMBIENT_SOUNDS.map(([key,label])=>(
+                <button key={key} type="button" onClick={()=>ambient.setSoundType(key)}
+                  style={{padding:'6px 6px',borderRadius:6,cursor:'pointer',fontSize:10.5,fontWeight:600,
+                    border:`1px solid ${ambient.soundType===key?C.accent:C.border}`,
+                    background:ambient.soundType===key?C.accent+'18':C.bg,
+                    color:ambient.soundType===key?C.accent:C.muted}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <input type="range" min={0} max={1} step={0.05} value={ambient.volume}
+              onChange={e=>ambient.setVolume(+e.target.value)} style={{width:'100%'}}/>
+          </div>
+        )}
+      </div>
+
+      <div style={{padding:'4px 18px 16px'}}>
+        <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+          letterSpacing:'0.07em',marginBottom:8}}>Theme</div>
+        <div style={{display:'flex',gap:6}}>
+          {[['dark','🌙 Dark'],['light','☀️ Light'],['midnight','🌌 Midnight']].map(([key,label])=>(
+            <button key={key} type="button" onClick={()=>switchTheme(key)}
+              style={{flex:1,padding:'8px 0',borderRadius:8,cursor:'pointer',fontSize:11,fontWeight:700,
+                border:`1px solid ${themeKey===key?C.accent:C.border}`,
+                background:themeKey===key?C.accent+'18':C.bg,
+                color:themeKey===key?C.accent:C.muted}}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div style={{fontSize:10,color:C.muted,marginTop:10,lineHeight:1.45}}>
+          Alert types (HY, HT, Bull Snort, …) are under the 🔔 bell in the header.
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchTheme,ambient,userSubscription,onOpenPayment,
+  hoverChartPreviewEnabled,onHoverChartPreview,
+  hoverOurChartEnabled,onHoverOurChart,
+  tickerEnabled,onTicker,
+  detailPanelPref,onDetailPanel}){
+
+  // Demo mode: session is deliberately null — still show App Preferences
+  // (they don't need an account). Account / billing stay behind Sign Up.
   if(!session){
     return (
-      <div style={{maxWidth:480,margin:'32px auto',padding:'0 16px'}}>
+      <div style={{maxWidth:520,margin:'32px auto',padding:'0 16px'}}>
+        <AppPreferencesCard
+          hoverChartPreviewEnabled={hoverChartPreviewEnabled} onHoverChartPreview={onHoverChartPreview}
+          hoverOurChartEnabled={hoverOurChartEnabled} onHoverOurChart={onHoverOurChart}
+          tickerEnabled={tickerEnabled} onTicker={onTicker}
+          detailPanelPref={detailPanelPref} onDetailPanel={onDetailPanel}
+          ambient={ambient} themeKey={themeKey} switchTheme={switchTheme}/>
         <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:24,textAlign:'center'}}>
           <div style={{fontSize:32,marginBottom:10}}>👁</div>
           <div style={{fontWeight:800,fontSize:16,marginBottom:6}}>You're in Demo Mode</div>
@@ -14355,16 +14739,18 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
   const displayName=(meta.full_name||meta.name||'').trim()
 
   return(
-    <div style={{maxWidth:480,margin:'32px auto',padding:'0 16px'}}>
+    <div style={{maxWidth:520,margin:'32px auto',padding:'0 16px'}}>
+      <AppPreferencesCard
+        hoverChartPreviewEnabled={hoverChartPreviewEnabled} onHoverChartPreview={onHoverChartPreview}
+        hoverOurChartEnabled={hoverOurChartEnabled} onHoverOurChart={onHoverOurChart}
+        tickerEnabled={tickerEnabled} onTicker={onTicker}
+        detailPanelPref={detailPanelPref} onDetailPanel={onDetailPanel}
+        ambient={ambient} themeKey={themeKey} switchTheme={switchTheme}/>
+
       <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:24}}>
-        <div style={{fontWeight:800,fontSize:18,marginBottom:4}}>Account Settings</div>
+        <div style={{fontWeight:800,fontSize:18,marginBottom:4}}>Account</div>
         <div style={{color:C.muted,fontSize:12,marginBottom:12,lineHeight:1.5}}>
           Signed in as <strong style={{color:C.accent}}>{session.user.email}</strong>
-        </div>
-        <div style={{marginBottom:16,padding:'9px 12px',borderRadius:10,border:`1px solid ${C.border}`,
-          background:C.bg,fontSize:11.5,color:C.muted,lineHeight:1.55}}>
-          <strong style={{color:C.text}}>Tip:</strong> Theme, zoom, and ambient sound live on the palette button (top-right) from any tab.
-          Plans &amp; billing are below.
         </div>
         {(displayName||displayPhone)&&(
           <div style={{marginBottom:16,background:C.bg,border:`1px solid ${C.border}`,
@@ -15166,6 +15552,7 @@ export default function App(){
   // drag title bar to float, minimize to taskbar, close to hide (restore from taskbar).
   const DETAIL_PANEL_PREF_KEY='lakshmimata-detail-panel-open'
   const HOVER_OUR_CHART_PREF_KEY='lakshmimata-hover-our-chart'
+  const HOVER_CHART_PREVIEW_PREF_KEY='lakshmimata-hover-chart-preview'
   const TICKER_PREF_KEY='lakshmimata-top-ticker'
   const DETAIL_PANEL_VER_KEY='lakshmimata-detail-panel-ver'
   const DETAIL_PANEL_VER='4' // v4: Overview opens with the chart by default
@@ -15188,6 +15575,12 @@ export default function App(){
       return v==null ? true : v==='1'
     }catch{ return true }
   }
+  const loadHoverChartPreviewPref=()=>{
+    try{
+      const v=localStorage.getItem(HOVER_CHART_PREVIEW_PREF_KEY)
+      return v==null ? true : v==='1'
+    }catch{ return true }
+  }
   const loadTickerPref=()=>{
     try{
       const v=localStorage.getItem(TICKER_PREF_KEY)
@@ -15196,6 +15589,7 @@ export default function App(){
   }
   const [detailPanelPref,setDetailPanelPref]=useState(loadDetailPanelPref)
   const [hoverOurChartEnabled,setHoverOurChartEnabled]=useState(loadHoverOurChartPref)
+  const [hoverChartPreviewEnabled,setHoverChartPreviewEnabled]=useState(loadHoverChartPreviewPref)
   const [tickerEnabled,setTickerEnabled]=useState(loadTickerPref)
   const persistTickerPref=(on)=>{
     const next=!!on
@@ -15214,6 +15608,11 @@ export default function App(){
     const next=!!on
     setHoverOurChartEnabled(next)
     try{ localStorage.setItem(HOVER_OUR_CHART_PREF_KEY, next?'1':'0') }catch(e){}
+  }
+  const persistHoverChartPreviewPref=(on)=>{
+    const next=!!on
+    setHoverChartPreviewEnabled(next)
+    try{ localStorage.setItem(HOVER_CHART_PREVIEW_PREF_KEY, next?'1':'0') }catch(e){}
   }
   const defaultPanelWin=(open=true)=>({open:!!open,minimized:false,float:null})
   const [panelWins,setPanelWins]=useState(()=>({
@@ -15249,6 +15648,10 @@ export default function App(){
   const isFullWidthMainTab=tab=>['portfolio','settings','watchlist','compare','feedback',
     'announcements','themes','bestpicks'].includes(tab)
   const fullWidthTab=isFullWidthMainTab(mainTab)
+  // Market is a market-wide page, not a company one: dock the chart at a
+  // fixed 70/30 and suppress the company Overview entirely.
+  const chartOnlyDock=mainTab==='market'
+  const CHART_ONLY_DOCK_PCT=70
   const dockStack=rsLayoutActive&&dockLayout.mode==='stack'
   const dockColumns=rsLayoutActive&&dockLayout.mode==='columns'
   // Chart alone full-height; RS + Overview stack on the opposite side (see dockSoloChart below).
@@ -15389,6 +15792,49 @@ export default function App(){
     })
     return ()=>{ cancelled=true }
   },[session?.user?.id, demoMode])
+  // Recent fires straight from squeeze_alerts, so the bell's History has
+  // content even when this device wasn't open (or never granted notification
+  // permission) at the moment they fired. Loaded on demand, not polled.
+  const [serverAlertHistory,setServerAlertHistory]=useState([])
+  const [serverAlertLoading,setServerAlertLoading]=useState(false)
+  const [inAppAlert,setInAppAlert]=useState(null)
+  const inAppAlertTimer=useRef(null)
+  const showInAppAlert=useCallback((entry)=>{
+    setInAppAlert(entry)
+    if(inAppAlertTimer.current) clearTimeout(inAppAlertTimer.current)
+    inAppAlertTimer.current=setTimeout(()=>setInAppAlert(null), 9000)
+  },[])
+  useEffect(()=>()=>{ if(inAppAlertTimer.current) clearTimeout(inAppAlertTimer.current) },[])
+  const serverAlertFetchedAt=useRef(0)
+  const loadServerAlertHistory=useCallback(async()=>{
+    if(Date.now()-serverAlertFetchedAt.current < 60000) return
+    serverAlertFetchedAt.current=Date.now()
+    setServerAlertLoading(true)
+    try{
+      const rows=await fetchRecentAlerts(60)
+      const prefs=alertPrefsRef.current
+      const wlOnly=prefs.watchlistOnly===true
+      const wlSyms=watchlistAlertSymsRef.current
+      setServerAlertHistory((rows||[]).filter(r=>{
+        if(!isAlertTypeEnabled(r.fire_type, prefs)) return false
+        if(wlOnly){
+          const sym=String(r.sym||'').toUpperCase()
+          if(!sym || !wlSyms.has(sym)) return false
+        }
+        return true
+      }).map(r=>({
+        id:`signal-${r.sym}-${r.fire_type}-${r.fired_at||''}`,
+        at:r.fired_at||new Date().toISOString(),
+        kind:'signal',
+        sym:r.sym,
+        title:alertNotificationTitle(r),
+        body:`${r.fire_type} | RS: ${r.rs_tv||r.rs} | ${r.chg_pct>=0?'+':''}${Number(r.chg_pct||0).toFixed(2)}% | ${r.sector||''}`,
+        fireType:r.fire_type,
+      })))
+    } finally {
+      setServerAlertLoading(false)
+    }
+  },[])
   const lastAlertCheck = useRef(null)
   const lastAnnouncementCheck = useRef(null)
   const scannerAlertSeenRef = useRef(loadScannerAlertSeen())
@@ -15418,15 +15864,12 @@ export default function App(){
     }
   },[])
 
-  // Poll for new squeeze/VCP and HY/HT fires every minute — both write to
-  // the same squeeze_alerts table on the backend. Gated on notifPermission
-  // too, not just session — polling for a notification a user has never
-  // granted permission to receive is pure wasted egress, they'd never see
-  // the result either way. Was previously unconditional for any logged-in
-  // session, an independent source of continuous background traffic the
-  // autoRefresh opt-in change didn't touch.
+  // Poll for new backend signal fires every minute. In-app history, sound and
+  // the toast work in every browser while the app is open; the optional OS
+  // notification is added only where the Web Notification API is supported
+  // and permission has been granted.
   useEffect(()=>{
-    if(!session || notifPermission!=='granted') return
+    if(!session) return
     const checkSqueezeAlerts = async()=>{
       try{
         const since = lastAlertCheck.current || new Date(Date.now()-90000).toISOString()
@@ -15445,7 +15888,6 @@ export default function App(){
           const wlSyms=watchlistAlertSymsRef.current
           let playedSound=false
           data.forEach(alert=>{
-            if(typeof Notification==='undefined' || Notification.permission!=='granted') return
             if(!isAlertTypeEnabled(alert.fire_type, prefs)) return
             if(wlOnly){
               const sym=String(alert.sym||'').toUpperCase()
@@ -15454,10 +15896,10 @@ export default function App(){
             if(!playedSound){ playAlertSoundFromPrefs(prefs); playedSound=true }
             const ft=String(alert.fire_type||'')
             const goSqueeze=/Squeeze|VCP/i.test(ft)
-            const goPatterns=/Stage\s*2|Guppy|HY\/HT|Breakout|Cup|52W/i.test(ft)
+            const goPatterns=/Stage\s*2|Guppy|Bull\s*Snort|HY\/HT|Breakout|Cup|52W/i.test(ft)
             const title=alertNotificationTitle(alert)
             const body=`${alert.fire_type} | RS: ${alert.rs_tv||alert.rs} | ${alert.chg_pct>=0?'+':''}${Number(alert.chg_pct||0).toFixed(2)}% | ${alert.sector||''}`
-            pushNotifHistory({
+            const historyEntry={
               id:`signal-${alert.sym}-${alert.fire_type}-${alert.fired_at||''}`,
               at: alert.fired_at || new Date().toISOString(),
               kind:'signal',
@@ -15465,8 +15907,11 @@ export default function App(){
               title,
               body,
               fireType: alert.fire_type,
-            })
-            const n = new Notification(title, {
+            }
+            pushNotifHistory(historyEntry)
+            showInAppAlert(historyEntry)
+            if(typeof Notification==='undefined' || Notification.permission!=='granted') return
+            const n=new Notification(title,{
                 body,
                 icon: '/favicon.ico',
                 tag: `alert-${alert.sym}-${alert.fire_type}`,
@@ -15495,7 +15940,7 @@ export default function App(){
     checkSqueezeAlerts()
     const timer = setInterval(checkSqueezeAlerts, 60000)
     return ()=>clearInterval(timer)
-  },[session,notifPermission])
+  },[session,showInAppAlert])
 
   // Chart price alerts, checked app-wide. The open chart already checks its
   // own symbol at the live-price cadence; this covers every other symbol the
@@ -15616,7 +16061,7 @@ export default function App(){
   // extra, mostly-empty checks for not missing a new announcement by
   // more than a minute once the backend does have one.
   useEffect(()=>{
-    if(!session || notifPermission!=='granted') return
+    if(!session) return
     const checkAnnouncementAlerts = async()=>{
       try{
         const since = lastAnnouncementCheck.current || new Date(Date.now()-90000).toISOString()
@@ -15636,7 +16081,6 @@ export default function App(){
           const wlSyms=watchlistAlertSymsRef.current
           let playedSound=false
           data.forEach(ann=>{
-            if(typeof Notification==='undefined' || Notification.permission!=='granted') return
             if(!isAnnouncementAlertEnabled(ann, prefs)) return
             if(wlOnly){
               const sym=String(ann.symbol||'').toUpperCase()
@@ -15646,7 +16090,7 @@ export default function App(){
             const cat=classifyAnnouncementAlert(ann)
             const title=`📢 ${ann.symbol} — ${cat.label}`
             const body=ann.subject.length>110 ? ann.subject.slice(0,107)+'…' : ann.subject
-            pushNotifHistory({
+            const historyEntry={
               id:`ann-${ann.symbol}-${ann.id||ann.announced_at||ann.created_at}`,
               at: ann.created_at || ann.announced_at || new Date().toISOString(),
               kind:'announcement',
@@ -15654,8 +16098,11 @@ export default function App(){
               title,
               body,
               category: cat.label,
-            })
-            const n = new Notification(title, {
+            }
+            pushNotifHistory(historyEntry)
+            showInAppAlert(historyEntry)
+            if(typeof Notification==='undefined' || Notification.permission!=='granted') return
+            const n=new Notification(title,{
                 body,
                 icon: '/favicon.ico',
                 tag: `announcement-${ann.symbol}-${ann.id}`,
@@ -15679,7 +16126,7 @@ export default function App(){
     checkAnnouncementAlerts()
     const timer = setInterval(checkAnnouncementAlerts, 60000)
     return ()=>clearInterval(timer)
-  },[session,notifPermission])
+  },[session,showInAppAlert])
   const [chartWide,setChartWide]=useState(()=>loadChartPanelAutoSave().chart_wide) // 0=normal 1=wide 2=extra-wide
   // Drag-to-resize divider between the table and chart panel — continuous
   // resize in addition to the existing 3-preset expand button. null means
@@ -15907,7 +16354,7 @@ export default function App(){
   const [showFilters,setShowFilters]=useState(false)
   // RS table column customization — the 20-column grid was previously
   // fixed. These are the "optional" ones (core identity/price columns
-  // like Symbol/RS-TV/Price/Chg%/Expand/TV/Scr always stay visible,
+  // like Symbol/RS rating/Price/Chg%/Expand/TV/Scr always stay visible,
   // same as before). Persisted to localStorage as the user's saved
   // layout, so it survives reloads.
   const [showColumns,setShowColumns]=useState(false)
@@ -16266,17 +16713,19 @@ export default function App(){
     return()=>{ cancelled=true }
   },[session?.user?.id])
   const [visibleRsCols,setVisibleRsCols]=useState(()=>{
-    const RS_COL_PREFS_VER=4
+    const RS_COL_PREFS_VER=5
     const defaults={...RS_COL_VIS_DEFAULTS}
     try{
       const ver=parseInt(localStorage.getItem('lakshmimata-rs-col-ver')||'0',10)
       const saved=JSON.parse(localStorage.getItem('lakshmimata-rs-columns')||'null')
       if(ver<RS_COL_PREFS_VER){
-        try{localStorage.setItem('lakshmimata-rs-col-ver',String(RS_COL_PREFS_VER))}catch(e){}
-        if(!saved) return defaults
-        // v3 hid fund-ratio cols; v4 drops RS Last 7d (Super Cycle covers it).
-        const fundOff={mcap:false,pe:false,roe:false,de:false,prom:false}
-        return {...defaults,...saved,...fundOff,resultRating:true,rs7d:false}
+        try{
+          localStorage.setItem('lakshmimata-rs-col-ver',String(RS_COL_PREFS_VER))
+          localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(defaults))
+        }catch(e){}
+        // v5: compact default — # Symbol Price Stage/Vol Squeeze Rating Result
+        // (no Trend, no Nifty/Mid/Sml/Sec RS, no 10 D Vol).
+        return {...defaults}
       }
       return saved?{...defaults,...saved}:defaults
     }catch(e){return defaults}
@@ -16449,7 +16898,7 @@ export default function App(){
     persistDetailPanelPref(DEFAULT_DETAIL_OPEN)
     try{
       localStorage.setItem('lakshmimata-rs-columns',JSON.stringify(defaults))
-      localStorage.setItem('lakshmimata-rs-col-ver','4')
+      localStorage.setItem('lakshmimata-rs-col-ver','5')
       localStorage.setItem('lakshmimata-rs-col-order',JSON.stringify(order))
       localStorage.setItem('lakshmimata-chart-sections',JSON.stringify(sections))
       localStorage.setItem('lakshmimata-chart-sections-hidden',JSON.stringify([]))
@@ -17213,7 +17662,8 @@ export default function App(){
   const scanLabel=activeWlObj?`📋 ${activeWlObj.name} (${activeWlObj.stocks.length})`:({all:'All',nifty50:'Nifty 50',midcap:'Midcap',smallcap:'Smallcap'}[indexFilter])
 
   return (
-    <RsLayoutContext.Provider value={{colOrder:rsColOrder, visibleRsCols, resultRatingsMap, openCompanyPage}}>
+    <RsLayoutContext.Provider value={{colOrder:rsColOrder, visibleRsCols, resultRatingsMap, openCompanyPage,
+      hoverChartEnabled:hoverChartPreviewEnabled&&!isMobile}}>
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:"'Inter','SF Pro Display',sans-serif",
       color:C.text,fontSize:13,display:'flex',flexDirection:'row',zoom:zoomLevel}}>
 
@@ -17479,6 +17929,9 @@ export default function App(){
                 cloudSynced={!!(session?.user?.id && !demoMode)}
                 notifPermission={notifPermission}
                 notifHistory={notifHistory}
+                serverHistory={serverAlertHistory}
+                onLoadHistory={loadServerAlertHistory}
+                historyLoading={serverAlertLoading}
                 savedScanners={savedScanners}
                 onOpenSymbol={(s)=>{ if(s){ setMainTab('rs'); openChart(s) } }}
                 onClearHistory={(kind)=>clearNotifHistory(kind||null)}
@@ -17492,7 +17945,7 @@ export default function App(){
                     else if(cat.includes('transcript')) setAnnouncementsCategory('transcript')
                   }
                   else if(/Squeeze|VCP/i.test(h?.fireType||'')) setMainTab('squeeze')
-                  else if(/Stage\s*2|Guppy|HY\/HT|Breakout|Cup|52W/i.test(h?.fireType||'')){
+                  else if(/Stage\s*2|Guppy|Bull\s*Snort|HY\/HT|Breakout|Cup|52W/i.test(h?.fireType||'')){
                     setMainTab('patterns'); setPatternsSubTab('breakouts')
                   }
                   else setMainTab('rs')
@@ -17500,10 +17953,38 @@ export default function App(){
                 }}
                 onRequestPermission={()=>{
                   playAlertSoundFromPrefs(alertPrefsRef.current) // unlock AudioContext for later alerts
+                  if(typeof Notification==='undefined') return
                   Notification.requestPermission().then(p=>setNotifPermission(p))
                 }}
                 colors={C}
               />
+              {inAppAlert&&(
+                <button type="button"
+                  onClick={()=>{
+                    const h=inAppAlert
+                    setInAppAlert(null)
+                    if(h.kind==='announcement') setMainTab('announcements')
+                    else if(/Squeeze|VCP/i.test(h.fireType||'')) setMainTab('squeeze')
+                    else if(/Stage\s*2|Guppy|Bull\s*Snort|HY\/HT|Breakout|Cup|52W/i.test(h.fireType||'')){
+                      setMainTab('patterns'); setPatternsSubTab('breakouts')
+                    } else setMainTab('rs')
+                    if(h.sym) openChart(h.sym)
+                  }}
+                  style={{position:'fixed',top:isMobile?58:52,right:isMobile?8:16,zIndex:200,
+                    width:isMobile?'calc(100vw - 16px)':330,textAlign:'left',
+                    padding:'11px 34px 11px 12px',borderRadius:10,
+                    border:`1px solid ${C.accent}66`,background:C.card,color:C.text,
+                    boxShadow:'0 12px 34px rgba(0,0,0,.45)',cursor:'pointer'}}>
+                  <span style={{display:'block',fontSize:12,fontWeight:800,color:C.accent,marginBottom:3}}>
+                    {inAppAlert.title}
+                  </span>
+                  <span style={{display:'block',fontSize:10.5,color:C.muted,lineHeight:1.4}}>
+                    {inAppAlert.body}
+                  </span>
+                  <span aria-hidden="true" onClick={e=>{e.stopPropagation();setInAppAlert(null)}}
+                    style={{position:'absolute',top:8,right:10,fontSize:16,color:C.muted}}>×</span>
+                </button>
+              )}
 
               {/* Scan button removed — the scope dropdown auto-filters on
                   change now. A small progress chip stands in while loading
@@ -17744,9 +18225,11 @@ export default function App(){
           order: dockLayout.order.indexOf('screener') * 2,
           flex:(chartSym&&!isMobile&&!panelWins.screener.float&&(
             (panelWins.chart.open&&!panelWins.chart.minimized&&!panelWins.chart.float)||
-            (panelWins.detail.open&&!panelWins.detail.minimized&&!panelWins.detail.float)
+            (!chartOnlyDock&&panelWins.detail.open&&!panelWins.detail.minimized&&!panelWins.detail.float)
           ))
-            ?(dockStack
+            ?(chartOnlyDock
+              ? `0 0 ${100-CHART_ONLY_DOCK_PCT}%`
+              :dockStack
               ? '1 1 45%'
               :(chartPanelPct!=null?`0 0 ${100-chartPanelPct}%`:['0 0 65%','0 0 50%','0 0 25%'][chartWide]))
             :1,
@@ -18021,7 +18504,7 @@ export default function App(){
                           border:'none',cursor:'pointer'}}>Reset to default</button>
                     </div>
                     <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:14}}>
-                      {[['mid','MID (Midcap RS)'],['sml','SML (Smallcap RS)'],['sec','SEC (Sector RS)'],
+                      {[['nifty','NIFTY (RS rating)'],['mid','MID (Midcap RS)'],['sml','SML (Smallcap RS)'],['sec','SEC (Sector RS)'],
                         ['trend','Trend'],['pp10','10 D Vol'],['rs7d','RS Last 7d'],['stage','Stage/Vol'],
                         ['squeeze','Squeeze/VCP'],
                         ['wl52','52WL Signal'],['weakrs','Weak RS'],
@@ -18041,7 +18524,7 @@ export default function App(){
                     <ReorderableList
                       items={rsColOrder}
                       onReorder={persistRsColOrder}
-                      hint="Drag to reorder optional columns. #, Symbol, RS, and Price stay fixed on the left."
+                      hint="Drag to reorder optional columns. #, Symbol, and Price stay fixed on the left."
                       renderItem={(key)=>(
                         <div style={{display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}>
                           <span style={{fontSize:12,fontWeight:700,color:C.text}}>{RS_COL_LABELS[key]||key}</span>
@@ -18550,49 +19033,14 @@ export default function App(){
               const gapUps   = stocks.filter(s=>s.gapPct!=null&&s.gapPct>=GAP_THRESH).sort((a,b)=>b.gapPct-a.gapPct)
               const gapDowns = stocks.filter(s=>s.gapPct!=null&&s.gapPct<=-GAP_THRESH).sort((a,b)=>a.gapPct-b.gapPct)
 
-              // Smart money by sector — rolls up the FII/DII holding
-              // trend (already tracked per-stock, quarterly shareholding
-              // data) into a per-sector average, so instead of reading
-              // one stock at a time you can see which sectors
-              // institutions have been net accumulating vs distributing
-              // over the last quarter. MIN_N guards against a sector
-              // with only 1-2 stocks reporting data swinging wildly.
+              // Smart money by sector — rolls up FII/DII holding trend into a
+              // per-sector average. Kept for Smart Money tab (Sector Holdings);
+              // Overview only uses the daily price/volume momentum table below.
               const MIN_N = 3
-              const smartMoneyBySector = (()=>{
-                const bySector = {}
-                for(const s of stocks){
-                  if(s.fiiTrend==null && s.diiTrend==null) continue
-                  const key = s.sector || 'Other'
-                  if(!bySector[key]) bySector[key] = {sector:key, n:0, fiiSum:0, fiiN:0, diiSum:0, diiN:0, accumulating:0, distributing:0}
-                  const b = bySector[key]
-                  b.n++
-                  if(s.fiiTrend!=null){ b.fiiSum+=s.fiiTrend; b.fiiN++ }
-                  if(s.diiTrend!=null){ b.diiSum+=s.diiTrend; b.diiN++ }
-                  const combined = (s.fiiTrend||0)+(s.diiTrend||0)
-                  if(combined>0) b.accumulating++
-                  else if(combined<0) b.distributing++
-                }
-                return Object.values(bySector)
-                  .filter(b=>b.n>=MIN_N)
-                  .map(b=>({
-                    sector: b.sector,
-                    n: b.n,
-                    avgFii: b.fiiN? b.fiiSum/b.fiiN : null,
-                    avgDii: b.diiN? b.diiSum/b.diiN : null,
-                    score: (b.fiiN?b.fiiSum/b.fiiN:0) + (b.diiN?b.diiSum/b.diiN:0),
-                    accumulating: b.accumulating,
-                    distributing: b.distributing,
-                  }))
-                  .sort((a,b)=>b.score-a.score)
-              })()
 
               // Smart Money Momentum — price & volume, not holdings data.
-              // Uses Pocket Pivots (is_pp: an up-day whose volume beats
-              // the worst down-volume day of the last 10, with price
-              // above its 10/50-day averages — the classic IBD
-              // "institutional footprint" pattern) rolled up with the
-              // existing IBV composite score. This reacts daily, unlike
-              // the FII/DII table above which only updates quarterly.
+              // Uses Pocket Pivots rolled up with the IBV composite score.
+              // This reacts daily, unlike quarterly FII/DII holdings.
               const volumeSmartMoneyBySector = (()=>{
                 const bySector = {}
                 for(const s of stocks){
@@ -18710,6 +19158,33 @@ export default function App(){
                       onViewAll={()=>setMarketSubTab('sectors')}/>
                   </div>
 
+                  {volumeSmartMoneyBySector.length>0&&(
+                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:10}}>
+                      <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
+                        📊 Momentum — Sector (Price & Volume)
+                      </div>
+                      <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
+                        Avg. institutional-footprint score (Pocket Pivots + RS/trend) — reacts daily, unlike quarterly FII/DII holdings
+                      </div>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Avg Score</div>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>PP Today</div>
+                        <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Repeat (≥3/10d)</div>
+                        {volumeSmartMoneyBySector.slice(0,10).map(b=>(
+                          <React.Fragment key={b.sector}>
+                            <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
+                            <div style={{textAlign:'right',fontWeight:700,color:b.avgIbv>=3?C.green:b.avgIbv>=1.5?C.yellow:C.muted}}>
+                              {b.avgIbv.toFixed(2)}
+                            </div>
+                            <div style={{textAlign:'right',color:C.text}}>{b.ppToday}<span style={{color:C.muted}}>/{b.n}</span></div>
+                            <div style={{textAlign:'right',color:C.text}}>{b.ppRepeat}<span style={{color:C.muted}}>/{b.n}</span></div>
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <StageDistributionBar stocks={stocks}/>
 
                   {/* Breadth header + A/D ratio on one line */}
@@ -18771,7 +19246,7 @@ export default function App(){
               <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>🗂 Index Performance Dashboard</div>
               <div style={{fontSize:11,color:C.muted,lineHeight:1.45}}>
                 Official index series (e.g. Nifty Auto) — market-cap weighted. Not the same as Sector Avg RS
-                or Industries (Auto Ancillaries / Passenger Cars…). RS-TV + Stage + period % change.
+                or Industries (Auto Ancillaries / Passenger Cars…). RS rating + Stage + period % change.
               </div>
             </div>
             )}
@@ -18806,16 +19281,16 @@ export default function App(){
                 {marketSubTab==='indices'&&(()=>{
                   const tiles=[
                     {l:'Stage 2 (Up)',   v:indexData.filter(i=>i.stage===2).length, c:C.green,
-                      why:"Indices actively in an uptrend — RS-TV 50+ with a rising trend. These are the sectors currently leading the market. Check here first when deciding where to focus stock-picking — a stock in a Stage 2 sector has the wind at its back, while the same stock in a Stage 4 sector is fighting the current. Tap any 'S2 Up' index below to drill into which stocks are driving that strength right now."},
+                      why:"Indices actively in an uptrend — RS rating 50+ with a rising trend. These are the sectors currently leading the market. Check here first when deciding where to focus stock-picking — a stock in a Stage 2 sector has the wind at its back, while the same stock in a Stage 4 sector is fighting the current. Tap any 'S2 Up' index below to drill into which stocks are driving that strength right now."},
                     {l:'Stage 1 (Base)', v:indexData.filter(i=>i.stage===1).length, c:C.yellow,
-                      why:"Indices building a base — not yet trending either way, RS-TV below 50. These are potential future leaders still consolidating. Worth watching for an eventual breakout into Stage 2, but the momentum isn't there yet to justify aggressive buying — patience here, not urgency."},
+                      why:"Indices building a base — not yet trending either way, RS rating below 50. These are potential future leaders still consolidating. Worth watching for an eventual breakout into Stage 2, but the momentum isn't there yet to justify aggressive buying — patience here, not urgency."},
                     {l:'Stage 3 (Top)',  v:indexData.filter(i=>i.stage===3).length, c:C.orange,
-                      why:"Indices showing signs of topping — still strong (RS-TV 70+) but the trend is flattening or turning down. Be cautious about new buys here even though the RS number looks good — this is often where late-cycle money gets trapped. Better time to tighten stops on existing positions than add fresh ones."},
+                      why:"Indices showing signs of topping — still strong (RS rating 70+) but the trend is flattening or turning down. Be cautious about new buys here even though the RS number looks good — this is often where late-cycle money gets trapped. Better time to tighten stops on existing positions than add fresh ones."},
                     {l:'Stage 4 (Down)', v:indexData.filter(i=>i.stage===4).length, c:C.red,
-                      why:"Indices in an active downtrend — weak RS-TV, falling trend. Avoid new long positions here regardless of how cheap individual stocks look — a falling sector tends to drag even good stocks down with it. Stay away or look elsewhere rather than bargain-hunt."},
-                    {l:'RS-TV ≥ 70',     v:indexData.filter(i=>(i.rsTv||0)>=70).length,    c:C.accent,
-                      why:"Indices outperforming the broader market right now. This is your shortlist for where money is actively rotating into. Cross-reference with the Stage tiles — an index that's both RS-TV≥70 and Stage 2 is the strongest combination, since momentum and trend agree."},
-                    {l:'RS-TV < 40',     v:indexData.filter(i=>i.rsTv!=null&&i.rsTv<40).length, c:C.red,
+                      why:"Indices in an active downtrend — weak RS rating, falling trend. Avoid new long positions here regardless of how cheap individual stocks look — a falling sector tends to drag even good stocks down with it. Stay away or look elsewhere rather than bargain-hunt."},
+                    {l:'RS rating ≥ 70',     v:indexData.filter(i=>(i.rsTv||0)>=70).length,    c:C.accent,
+                      why:"Indices outperforming the broader market right now. This is your shortlist for where money is actively rotating into. Cross-reference with the Stage tiles — an index that's both RS rating≥70 and Stage 2 is the strongest combination, since momentum and trend agree."},
+                    {l:'RS rating < 40',     v:indexData.filter(i=>i.rsTv!=null&&i.rsTv<40).length, c:C.red,
                       why:"Indices lagging the broader market. Generally avoid for new positions, but worth watching for a potential turnaround if the RS Trend column starts improving — early positioning often happens here, before the crowd notices."},
                   ]
                   const expanded = tiles.find(t=>t.l===expandedTileInfo)
@@ -18866,7 +19341,7 @@ export default function App(){
                       gridTemplateColumns:'150px 90px 60px 90px 70px 70px 70px 60px 60px',
                       gap:4,padding:'10px 12px',background:C.bg,
                       borderBottom:`1px solid ${C.border}`,position:'sticky',top:0}}>
-                      {[['Index','name'],['Price','lastPrice'],['RS-TV','rsTv'],['Stage','stage'],
+                      {[['Index','name'],['Price','lastPrice'],['RS rating','rsTv'],['Stage','stage'],
                         ['1D','chgD'],['1W','chgW'],['1M','chgM'],['3M','chgQ'],['1Y','chgY']].map(([h,key],hi)=>(
                         <div key={h} onClick={()=>setIdxSort(s=>({key,dir:s.key===key?-s.dir:-1}))}
                           title={IDX_COLUMN_TOOLTIPS[key]}
@@ -19009,7 +19484,7 @@ export default function App(){
                               {showRowGuidance&&(
                                 <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
                                   padding:'10px 12px',marginBottom:12,fontSize:11,color:C.muted,lineHeight:1.6}}>
-                                  <strong style={{color:C.text}}>How to read this:</strong> RS-TV above 70 with
+                                  <strong style={{color:C.text}}>How to read this:</strong> RS rating above 70 with
                                   a rising Stage (2 or 3) means money is actively rotating into {idx.name} right
                                   now, not just a one-day blip. {rankStreak
                                     ? <span style={{color:C.green}}> This index is currently ranked in the top 3 across 1D, 1W, and 1M — sustained leadership, not a fluke spike.</span>
@@ -19501,28 +19976,6 @@ export default function App(){
               .sort((a,b)=>b.score-a.score)
           })()
 
-          const volumeSmartMoneyBySector = (()=>{
-            const bySector = {}
-            for(const s of stocks){
-              const key = s.sector || 'Other'
-              if(!bySector[key]) bySector[key] = {sector:key, n:0, ibvSum:0, ppToday:0, ppRepeat:0}
-              const b = bySector[key]
-              b.n++
-              b.ibvSum += calcIBV(s).ibvScore
-              if(s.pp?.isPP) b.ppToday++
-              if((s.pp?.ppCount10d||0)>=3) b.ppRepeat++
-            }
-            return Object.values(bySector)
-              .filter(b=>b.n>=MIN_N)
-              .map(b=>({
-                sector: b.sector, n: b.n,
-                avgIbv: b.ibvSum/b.n,
-                ppToday: b.ppToday,
-                ppRepeat: b.ppRepeat,
-              }))
-              .sort((a,b)=>b.avgIbv-a.avgIbv)
-          })()
-
           return(
             <div style={{padding:'0 0 20px'}}>
               {marketSubTab==='gaps'&&(
@@ -19570,16 +20023,22 @@ export default function App(){
                   <div style={{marginBottom:12}}>
                     <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>Smart Money</div>
                     <div style={{fontSize:11,color:C.muted}}>
-                      Daily FII/DII cash flows (NSE) plus quarterly sector holdings and price/volume momentum
+                      Daily FII/DII cash flows (NSE) plus quarterly sector holdings
                       {fiiDiiHistory?.length
                         ? ` · ${fiiDiiHistory.length} daily flow rows loaded`
                         : ' · daily flows still loading or empty'}
                       {lastRefresh?` · scan ${new Date(lastRefresh).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}`:''}
+                      {' · '}
+                      <button type="button" onClick={()=>setMarketSubTab('overview')}
+                        style={{border:'none',background:'transparent',padding:0,color:C.accent,
+                          fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>
+                        Momentum Sector → Overview
+                      </button>
                     </div>
                   </div>
                   <FiiDiiDailyPanel data={fiiDiiHistory} isMobile={isMobile}
                     range={fiiDiiRange} setRange={setFiiDiiRange}/>
-                  {smartMoneyBySector.length===0&&volumeSmartMoneyBySector.length===0&&fiiDiiHistory.length===0&&(
+                  {smartMoneyBySector.length===0&&fiiDiiHistory.length===0&&(
                     <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13,lineHeight:1.55}}>
                       No FII/DII flow or sector shareholding data yet.
                       Daily flows need the worker&apos;s fii_dii_daily table; sector holdings come from stock fundamentals.
@@ -19615,32 +20074,6 @@ export default function App(){
                   </div>
                 </div>
               )}
-              {volumeSmartMoneyBySector.length>0&&(
-                    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'14px',marginBottom:12}}>
-                  <div style={{fontWeight:700,fontSize:13,color:C.text,marginBottom:2}}>
-                        📊 Momentum — Sector (Price & Volume)
-                  </div>
-                  <div style={{fontSize:10,color:C.muted,marginBottom:10}}>
-                    Avg. institutional-footprint score (Pocket Pivots + RS/trend) — reacts daily, unlike the FII/DII table above
-                  </div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'6px 10px',fontSize:11.5}}>
-                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase'}}>Sector</div>
-                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Avg Score</div>
-                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>PP Today</div>
-                    <div style={{color:C.muted,fontWeight:700,fontSize:9,textTransform:'uppercase',textAlign:'right'}}>Repeat (≥3/10d)</div>
-                    {volumeSmartMoneyBySector.slice(0,10).map(b=>(
-                      <React.Fragment key={b.sector}>
-                        <div style={{color:C.text,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.sector}</div>
-                        <div style={{textAlign:'right',fontWeight:700,color:b.avgIbv>=3?C.green:b.avgIbv>=1.5?C.yellow:C.muted}}>
-                          {b.avgIbv.toFixed(2)}
-                        </div>
-                        <div style={{textAlign:'right',color:C.text}}>{b.ppToday}<span style={{color:C.muted}}>/{b.n}</span></div>
-                        <div style={{textAlign:'right',color:C.text}}>{b.ppRepeat}<span style={{color:C.muted}}>/{b.n}</span></div>
-                      </React.Fragment>
-                    ))}
-                  </div>
-                </div>
-                  )}
                 </>
               )}
             </div>
@@ -20329,7 +20762,7 @@ export default function App(){
                     </div>
                     {avgRs!=null&&(
                       <div style={{fontSize:11,color:C.muted}}>
-                        RS-TV{haveValueFor>0?' (wtd)':''}{' '}
+                        RS rating{haveValueFor>0?' (wtd)':''}{' '}
                         <b style={{fontSize:16,color:rsColor(avgRs)}}>{avgRs.toFixed(0)}</b>
                       </div>
                     )}
@@ -20787,7 +21220,7 @@ export default function App(){
                           <div style={{display:'flex',justifyContent:'space-between',marginBottom:12}}>
                             <div>
                               <div style={{fontWeight:700,fontSize:22,color:rsColor(s.rsTv||s.rs)}}>{s.rsTv||s.rs}</div>
-                              <div style={{fontSize:9,color:C.teal}}>RS-TV</div>
+                              <div style={{fontSize:9,color:C.teal}}>RS rating</div>
                             </div>
                             {stage&&<StageBadge stage={stage}/>}
                           </div>
@@ -21114,7 +21547,7 @@ export default function App(){
           const maxAvailable=data.length?Math.max(...data.map(s=>s.trailDays||s.windowDays||1)):0
           const requestedWindow=ROTATION_WINDOWS.find(w=>w.days===rotationWindow)
           const scopeLabel=rotationScope==='sector'?'Sector':rotationScope==='index'?'Index':'Watchlist'
-          const rawLevelLabel=rotationScope==='sector'?'avg RS':'RS-TV'
+          const rawLevelLabel=rotationScope==='sector'?'avg RS':'RS rating'
           const rrgGroups=rankRrgByQuadrant(rolledData)
           return(
           <div style={{padding:'0 0 20px'}}>
@@ -22359,7 +22792,15 @@ export default function App(){
             onExitDemo={()=>{setDemoMode(false);setStocks([]);setAuthMode('register');setShowAuth(true)}}
             themeKey={themeKey} switchTheme={switchTheme} ambient={ambient}
             userSubscription={userSubscription}
-            onOpenPayment={()=>setShowPayment(true)}/>
+            onOpenPayment={()=>setShowPayment(true)}
+            hoverChartPreviewEnabled={hoverChartPreviewEnabled}
+            onHoverChartPreview={persistHoverChartPreviewPref}
+            hoverOurChartEnabled={hoverOurChartEnabled}
+            onHoverOurChart={persistHoverOurChartPref}
+            tickerEnabled={tickerEnabled}
+            onTicker={persistTickerPref}
+            detailPanelPref={detailPanelPref}
+            onDetailPanel={(open)=>patchDetailPanel({open:!!open, minimized:false})}/>
         )}
 
         {mainTab==='feedback'&&(
@@ -22370,9 +22811,8 @@ export default function App(){
       </div>
       </ScreenerFrame>
 
-      {/* Quick settings — theme + ambient sound, always reachable from any
-          tab via a floating button, instead of needing to navigate into
-          Account Settings first. */}
+      {/* Quick settings — theme + zoom only. Feature enable/disable
+          switches live on the Settings tab so they're easy to track. */}
       <div style={{position:'fixed',top:isMobile?12:16,right:isMobile?12:16,zIndex:60}}>
         <button onClick={()=>setShowQuickSettings(v=>!v)}
           style={{width:38,height:38,borderRadius:'50%',border:`1px solid ${C.border}`,
@@ -22399,7 +22839,7 @@ export default function App(){
             </div>
             <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',
               letterSpacing:'0.06em',marginBottom:8}}>Zoom</div>
-            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:16}}>
+            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:14}}>
               <button onClick={zoomOut} disabled={zoomLevel<=ZOOM_LEVELS[0]}
                 style={{width:34,height:34,borderRadius:8,cursor:zoomLevel<=ZOOM_LEVELS[0]?'default':'pointer',
                   fontSize:16,fontWeight:700,border:`1px solid ${C.border}`,background:C.bg,
@@ -22417,57 +22857,14 @@ export default function App(){
                     border:`1px solid ${C.border}`,background:C.bg,color:C.muted}}>Reset</button>
               )}
             </div>
-            <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',
-              letterSpacing:'0.06em',marginBottom:8}}>Ambient Sound</div>
-            <button onClick={ambient.toggle}
-              style={{width:'100%',padding:'8px 0',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
-                border:`1px solid ${ambient.enabled?C.accent:C.border}`,
-                background:ambient.enabled?C.accent+'18':C.bg,
-                color:ambient.enabled?C.accent:C.muted,marginBottom:10}}>
-              {ambient.enabled?'🔔 Enabled':'🔕 Disabled'}
+            <button type="button"
+              onClick={()=>{ setShowQuickSettings(false); setMainTab('settings') }}
+              style={{width:'100%',padding:'9px 0',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:700,
+                border:`1px solid ${C.border}`,background:C.bg,color:C.text}}>
+              All enable / disable → Settings
             </button>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:10}}>
-              {AMBIENT_SOUNDS.map(([key,label])=>(
-                <button key={key} onClick={()=>ambient.setSoundType(key)}
-                  style={{padding:'6px 6px',borderRadius:6,cursor:'pointer',fontSize:10.5,fontWeight:600,
-                    border:`1px solid ${ambient.soundType===key?C.accent:C.border}`,
-                    background:ambient.soundType===key?C.accent+'18':C.bg,
-                    color:ambient.soundType===key?C.accent:C.muted}}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <input type="range" min={0} max={1} step={0.05} value={ambient.volume}
-              onChange={e=>ambient.setVolume(+e.target.value)}
-              style={{width:'100%'}}/>
-            {ambient.enabled&&!ambient.playing&&(
-              <div style={{fontSize:9.5,color:C.muted,marginTop:6}}>
-                Will start on your next tap anywhere (browsers block silent autoplay).
-              </div>
-            )}
-            <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',
-              letterSpacing:'0.06em',margin:'14px 0 8px'}}>Symbol Hover</div>
-            <button type="button" onClick={()=>persistHoverOurChartPref(!hoverOurChartEnabled)}
-              style={{width:'100%',padding:'8px 0',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
-                border:`1px solid ${hoverOurChartEnabled?C.accent:C.border}`,
-                background:hoverOurChartEnabled?C.accent+'18':C.bg,
-                color:hoverOurChartEnabled?C.accent:C.muted}}>
-              {hoverOurChartEnabled?'Our Chart · Enabled':'Our Chart · Disabled'}
-            </button>
-            <div style={{fontSize:9.5,color:C.muted,marginTop:6,lineHeight:1.45}}>
-              When enabled, hovering a stock name shows Our Chart in the popup (with TradingView &amp; Screener).
-            </div>
-            <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',
-              letterSpacing:'0.06em',margin:'14px 0 8px'}}>Top Ticker</div>
-            <button type="button" onClick={()=>persistTickerPref(!tickerEnabled)}
-              style={{width:'100%',padding:'8px 0',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
-                border:`1px solid ${tickerEnabled?C.accent:C.border}`,
-                background:tickerEnabled?C.accent+'18':C.bg,
-                color:tickerEnabled?C.accent:C.muted}}>
-              {tickerEnabled?'Scrolling Ticker · Enabled':'Scrolling Ticker · Disabled'}
-            </button>
-            <div style={{fontSize:9.5,color:C.muted,marginTop:6,lineHeight:1.45}}>
-              The rolling index &amp; stock strip above the tabs. Turn it off to free up vertical space.
+            <div style={{fontSize:9.5,color:C.muted,marginTop:8,lineHeight:1.45}}>
+              Ticker, chart-on-hover, Overview, ambient sound — one list on the Settings tab.
             </div>
             <BreathingExercise ambient={ambient}/>
           </div>
@@ -22479,7 +22876,7 @@ export default function App(){
           moving left/right updates chartPanelPct directly; the mousemove/
           mouseup listeners live in the isDraggingDivider effect above so
           dragging still works even if the cursor leaves this thin strip. */}
-      {chartSym&&!isMobile&&!dockStack&&!dockColumns&&panelWins.screener.open&&!panelWins.screener.minimized&&!panelWins.screener.float&&(
+      {chartSym&&!isMobile&&!dockStack&&!dockColumns&&!chartOnlyDock&&panelWins.screener.open&&!panelWins.screener.minimized&&!panelWins.screener.float&&(
         (panelWins.chart.open&&!panelWins.chart.minimized&&!panelWins.chart.float)||
         (panelWins.detail.open&&!panelWins.detail.minimized&&!panelWins.detail.float)
       )&&(
@@ -22533,7 +22930,7 @@ export default function App(){
         isIndex={chartIsIndex || indexData.some(idx=>idx.name===chartSym)}
         wide={chartWide}
         userId={session?.user?.id || null}
-        customPct={dockStack||dockColumns||dockSoloChart?null:chartPanelPct}
+        customPct={chartOnlyDock?CHART_ONLY_DOCK_PCT:(dockStack||dockColumns||dockSoloChart?null:chartPanelPct)}
         onToggleWide={()=>{
           setChartPanelPct(null)
           setChartWide(v=>{
@@ -22556,7 +22953,7 @@ export default function App(){
         onChartSectionOrderChange={persistChartSections}
         onChartSectionHiddenChange={persistChartSectionHidden}
         panelChart={panelWins.chart}
-        panelDetail={panelWins.detail}
+        panelDetail={chartOnlyDock?{...panelWins.detail,open:false,float:null}:panelWins.detail}
         onPanelChart={patch=>patchPanel('chart',patch)}
         onPanelDetail={patchDetailPanel}
         expandCol={!isMobile&&!(panelWins.screener.open&&!panelWins.screener.minimized&&!panelWins.screener.float)}
@@ -22595,7 +22992,7 @@ export default function App(){
               minimized:!!panelWins.chart.minimized,
               onRestore:()=>patchPanel('chart',{open:true,minimized:false}),
             }]:[]),
-            ...(chartSym&&!(chartIsIndex||indexData.some(idx=>idx.name===chartSym))&&(!panelWins.detail.open||panelWins.detail.minimized)?[{
+            ...(chartSym&&!chartOnlyDock&&!(chartIsIndex||indexData.some(idx=>idx.name===chartSym))&&(!panelWins.detail.open||panelWins.detail.minimized)?[{
               id:'detail',
               title:`${chartSym} · Fundamentals`,
               minimized:!!panelWins.detail.minimized,

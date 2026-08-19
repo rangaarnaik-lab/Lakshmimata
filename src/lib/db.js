@@ -1175,14 +1175,11 @@ function indexNameCandidates(name) {
 }
 
 /**
- * Fetch an index's price history for "Our Chart" — index_price_history
- * only stores a bare `prices` array (no dates/opens/highs/lows/volumes
- * like stock_full_history has), populated by the backend for RS-TV
- * calculations, not originally meant for charting. Synthesizes dates by
- * counting back trading days from today, and sets opens=highs=lows=
- * prices so it can still be handed to the same chart component — the
- * caller should force line-chart display (no real OHLC exists) rather
- * than candles, which would just show degenerate flat-body candles.
+ * Fetch an index's price history for "Our Chart".
+ * `index_price_history` stores a bare `prices` (close) array — no real dates
+ * or OHLC. We synthesize trading-day dates and build candle OHLC from
+ * consecutive closes (open = prior close, high/low = max/min of the body)
+ * so Candles / Bars / Heikin Ashi work the same as for stocks.
  */
 export async function fetchIndexPriceHistory(name) {
   const candidates = indexNameCandidates(name)
@@ -1245,11 +1242,16 @@ export async function fetchIndexPriceHistory(name) {
     dates.unshift(localISODate(d))
     d.setDate(d.getDate() - 1)
   }
+  // Close-only → candle OHLC: open = previous close so each bar has a
+  // real up/down body instead of a flat doji on every session.
+  const opens = prices.map((c, i) => (i > 0 ? prices[i - 1] : c))
+  const highs = prices.map((c, i) => Math.max(opens[i], c))
+  const lows  = prices.map((c, i) => Math.min(opens[i], c))
   return {
     sym: row.name || name,
     dates,
     prices,
-    opens: prices, highs: prices, lows: prices,
+    opens, highs, lows,
     volumes: prices.map(() => 0),
     daysCount: prices.length,
   }

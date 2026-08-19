@@ -12,7 +12,7 @@ export const SERIES_TYPES = [
   { id: 'baseline', label: 'Baseline',      hint: 'Above / below first bar' },
 ]
 
-/** Types that need real OHLC — unavailable for close-only index history. */
+/** Types that draw from OHLC (stocks have real OHLC; indices synthesize it from closes). */
 export const OHLC_SERIES = ['candle', 'hollow', 'bar', 'heikin']
 /** Types drawn from the close series alone. */
 export const CLOSE_SERIES = ['line', 'area', 'baseline']

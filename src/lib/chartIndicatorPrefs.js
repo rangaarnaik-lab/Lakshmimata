@@ -106,7 +106,7 @@ export const INDICATOR_PARAM_FIELDS = {
       ],
     },
     { key: 'tableOpacity', label: 'Table opacity %', min: 30, max: 100, step: 5, tab: 'style' },
-    { key: 'tableDays', label: 'Table columns', min: 3, max: 10, step: 1, tab: 'style' },
+    { key: 'tableDays', label: 'Table days', min: 3, max: 30, step: 1, tab: 'style' },
     { key: 'rsColor', label: 'RS line', type: 'color', tab: 'style' },
     { key: 'momColor', label: 'Momentum line', type: 'color', tab: 'style' },
     { key: 'rsMaColor', label: 'RS MA line', type: 'color', tab: 'style' },
