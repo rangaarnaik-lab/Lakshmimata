@@ -3,6 +3,14 @@ import { createPortal } from 'react-dom'
 import PanelWindow, { PanelTaskbar, ScreenerFrame } from './components/PanelWindow'
 import EarningsTracker from './components/EarningsTracker'
 import PaymentPage from './components/PaymentPage'
+import HelpDocsPage from './components/HelpDocsPage'
+import {
+  HELP_CONTENT_ORDERED as HELP_CONTENT,
+  GUIDE_SUGGESTIONS,
+  GUIDE_QA,
+  DOCS_ARTICLES,
+  getArticle,
+} from './content/helpDocs'
 import { SUBSCRIPTION_PLANS } from './lib/plans'
 import {
   loadChartDrawings, saveChartDrawings, newDrawingId, nextDrawColor, DRAW_TOOLS,
@@ -35,7 +43,7 @@ import { loadChartDensity, persistChartDensity } from './lib/chartDensity'
 import {
   TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap,
   TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal, Layers,
-  ThumbsUp, ThumbsDown, MessageSquare, RotateCcw
+  ThumbsUp, ThumbsDown, MessageSquare, RotateCcw, BookOpen
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
@@ -8685,26 +8693,26 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         setShowCandleColors(next)
         setShowBullSnort(next)
       } },
-    { id:'ma', group:'Overlays', label:'Moving Average', short:'MA', desc:'', on:indicatorEnabled('ma'), visible:showMA, set:setShowMA },
-    { id:'guppy', group:'Overlays', label:'Guppy MMA', short:'Guppy', desc:'', on:indicatorEnabled('guppy'), visible:showGuppy, set:setShowGuppy },
+    { id:'ma', group:'Overlays', label:'Moving Average', short:'MA', desc:'EMA 9 / 21 / 50 / 150 / 200 (Lakshmi Mata Pine periods)', on:indicatorEnabled('ma'), visible:showMA, set:setShowMA },
+    { id:'guppy', group:'Overlays', label:'Guppy MMA', short:'Guppy', desc:'GMMA ribbon — compression vs expansion of the trend', on:indicatorEnabled('guppy'), visible:showGuppy, set:setShowGuppy },
     { id:'squeeze', group:'Overlays', label:'Squeeze Pro Dots', short:'Squeeze Pro', desc:'John Carter compression tiers — high / mid / low coil + momentum bias', on:indicatorEnabled('squeeze'), visible:showSqueeze, set:setShowSqueeze },
-    { id:'hilo52', group:'Overlays', label:'52-Week High / Low Flags', short:'52W', desc:'', on:indicatorEnabled('hilo52'), visible:showHiLo52, set:setShowHiLo52 },
-    { id:'sr', group:'Overlays', label:'Support & Resistance', short:'S/R', desc:'', on:indicatorEnabled('sr'), visible:showSR, set:setShowSR },
+    { id:'hilo52', group:'Overlays', label:'52-Week High / Low Flags', short:'52W', desc:'Marks fresh 52-week high / low events on the chart', on:indicatorEnabled('hilo52'), visible:showHiLo52, set:setShowHiLo52 },
+    { id:'sr', group:'Overlays', label:'Support & Resistance', short:'S/R', desc:'Pivot-based support and resistance from swing highs/lows', on:indicatorEnabled('sr'), visible:showSR, set:setShowSR },
     { id:'bb', group:'Overlays', label:'Bollinger Bands', short:'BB', desc:'Lakshmi Mata Pine: SMA 20 ± 2 standard deviations', on:indicatorEnabled('bb'), visible:showBB, set:setShowBB },
-    { id:'rsi', group:'Oscillators', label:'Relative Strength Index', short:'RSI', desc:'', on:indicatorEnabled('rsi'), visible:showRSI, set:setShowRSI },
-    { id:'macd', group:'Oscillators', label:'MACD', short:'MACD', desc:'', on:indicatorEnabled('macd'), visible:showMACD, set:setShowMACD },
+    { id:'rsi', group:'Oscillators', label:'Relative Strength Index', short:'RSI', desc:'Momentum oscillator — typically overbought/oversold context', on:indicatorEnabled('rsi'), visible:showRSI, set:setShowRSI },
+    { id:'macd', group:'Oscillators', label:'MACD', short:'MACD', desc:'Trend/momentum — MACD line, signal, and histogram', on:indicatorEnabled('macd'), visible:showMACD, set:setShowMACD },
     // Always listed so it can be switched back on; on an index it has nothing
     // to compare against, so it stays visible but blocked instead of vanishing.
     { id:'supercycle', group:'Oscillators', label:'Lakshmi Super Cycle', short:'Super Cycle',
-      desc: isIndex ? 'Needs a stock — it measures RS against the index' : '',
+      desc: isIndex ? 'Needs a stock — it measures RS against the index' : 'RS-vs-index cycle oscillator — leadership warming or cooling',
       blocked: isIndex, on:indicatorEnabled('supercycle'), visible:showSuperCycle, set:setShowSuperCycle },
-    { id:'patterns', group:'Signals', label:'Patterns', short:'Patterns', desc:'', on:indicatorEnabled('patterns'), visible:showPatterns, set:setShowPatterns },
-    { id:'lakshmivol', group:'Signals', label:'Lakshmi Volume', short:'Volume', desc:'', on:indicatorEnabled('lakshmivol'), visible:showLakshmiVol, set:setShowLakshmiVol },
-    { id:'barcolor', group:'Signals', label:'Volume Candle Colors', short:'Bar Color', desc:'', on:indicatorEnabled('barcolor'), visible:showCandleColors, set:setShowCandleColors },
-    { id:'bullsnort', group:'Signals', label:'Bull Snort', short:'Bull Snort', desc:'', on:indicatorEnabled('bullsnort'), visible:showBullSnort, set:setShowBullSnort },
-    { id:'buysell', group:'Signals', label:'Lakshmi Buy/Sell', short:'Buy/Sell', desc:'', on:indicatorEnabled('buysell'), visible:showBuySell, set:setShowBuySell },
-    { id:'forecast', group:'Signals', label:'Forecast', short:'Forecast', desc:'', on:indicatorEnabled('forecast'), visible:showForecast, set:setShowForecast },
-    { id:'circuit', group:'Overlays', label:'Circuit Band (UC / LC)', short:'UC/LC', desc:'', on:prefsN.indicators.circuit?.enabled===true, visible:showCircuit, set:setShowCircuit },
+    { id:'patterns', group:'Signals', label:'Patterns', short:'Patterns', desc:'Pattern markers aligned with scanner detections', on:indicatorEnabled('patterns'), visible:showPatterns, set:setShowPatterns },
+    { id:'lakshmivol', group:'Signals', label:'Lakshmi Volume', short:'Volume', desc:'Unusual volume, climax and dry-up context for Our Chart', on:indicatorEnabled('lakshmivol'), visible:showLakshmiVol, set:setShowLakshmiVol },
+    { id:'barcolor', group:'Signals', label:'Volume Candle Colors', short:'Bar Color', desc:'Colors candles by volume character', on:indicatorEnabled('barcolor'), visible:showCandleColors, set:setShowCandleColors },
+    { id:'bullsnort', group:'Signals', label:'Bull Snort', short:'Bull Snort', desc:'Bullish volume climax — heavy up volume with a strong close', on:indicatorEnabled('bullsnort'), visible:showBullSnort, set:setShowBullSnort },
+    { id:'buysell', group:'Signals', label:'Lakshmi Buy/Sell', short:'Buy/Sell', desc:'Rule-based markers from Lakshmi Mata — prompts, not auto-orders', on:indicatorEnabled('buysell'), visible:showBuySell, set:setShowBuySell },
+    { id:'forecast', group:'Signals', label:'Forecast', short:'Forecast', desc:'Forward projection overlay (research aid only)', on:indicatorEnabled('forecast'), visible:showForecast, set:setShowForecast },
+    { id:'circuit', group:'Overlays', label:'Circuit Band (UC / LC)', short:'UC/LC', desc:'Upper/lower circuit-style bands from detected lock percentages', on:prefsN.indicators.circuit?.enabled===true, visible:showCircuit, set:setShowCircuit },
   ]
   // Children of a bundle are configured inside their parent, not as their own rows.
   const chartIndicators = chartIndicatorsAll.filter(i => !BUNDLED_CHILD_IDS.has(i.id))
@@ -12205,14 +12213,66 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=25,de
  * side. Filters and tables keep their own state so the rest of the app doesn't
  * re-render when you change them.
  */
+const SQZ_TILE_VIEWS = {
+  bbIn: {
+    title:'🔵 BB In Squeeze',
+    subtitle:'Bollinger Bands currently inside the Keltner Channel — coiled, waiting to expand.',
+    color:C.blue, sort:'sqzDays', label:'BB In Squeeze',
+    match:s=>!!s.squeeze?.inSqueeze || sqzTierRank(s)>0,
+  },
+  bbFired: {
+    title:'🟢 BB Fired',
+    subtitle:'Squeeze just released — bands have expanded back outside the Keltner.',
+    color:C.green, sort:null, label:'BB Fired',
+    match:s=>!!s.squeeze?.squeezeFired,
+  },
+  vcpForming: {
+    title:'📐 VCP Forming',
+    subtitle:'Volatility Contraction Pattern in progress — successive tighter pullbacks.',
+    color:C.purple, sort:'sqzDays', label:'VCP Forming',
+    match:s=>!!s.vcp?.isVCP,
+  },
+  vcpFired: {
+    title:'🚀 VCP Fired',
+    subtitle:'VCP breakout — price pushing out of the contraction with volume.',
+    color:C.accent, sort:null, label:'VCP Fired',
+    match:s=>!!s.vcp?.vcpFired,
+  },
+  high: {
+    title:`${SQZ_TIER_META.high.dot} High compression`,
+    subtitle:SQZ_TIER_META.high.hint, color:SQZ_TIER_META.high.color, sort:'sqzDays',
+    label:'High compression', match:s=>sqzTierKey(s)==='high',
+  },
+  mid: {
+    title:`${SQZ_TIER_META.mid.dot} Mid (classic)`,
+    subtitle:SQZ_TIER_META.mid.hint, color:SQZ_TIER_META.mid.color, sort:'sqzDays',
+    label:'Mid squeeze', match:s=>sqzTierKey(s)==='mid',
+  },
+  low: {
+    title:`${SQZ_TIER_META.low.dot} Low compression`,
+    subtitle:SQZ_TIER_META.low.hint, color:SQZ_TIER_META.low.color, sort:'sqzDays',
+    label:'Low compression', match:s=>sqzTierKey(s)==='low',
+  },
+  long: {
+    title:'▲ Long bias',
+    subtitle:'Coiled with TTM momentum above zero — breaks tend to resolve up.',
+    color:C.green, sort:'sqzDays', label:'Long bias coils',
+    match:s=>sqzTierRank(s)>0 && sqzBiasOf(s).dir==='long',
+  },
+}
+
 function SqueezeProScanner({stocks, isMobile, visibleRsCols, onChartOpen, showOurChartHover, onOurChart}){
   const [tierFilter,setTierFilter]=useState('any')   // any | midplus | high
   const [biasFilter,setBiasFilter]=useState('long')  // all | long | short
   const [minDays,setMinDays]=useState(0)
   const [includeVcp,setIncludeVcp]=useState(false)
+  const [tileView,setTileView]=useState(null)        // SQZ_TILE_VIEWS key, or null
+
+  const toggleTile=(id)=>setTileView(cur=>cur===id?null:id)
 
   const tally=useMemo(()=>{
-    const t={high:0,mid:0,low:0,long:0,short:0,fired:0,firedLong:0,exact:0}
+    const t={high:0,mid:0,low:0,long:0,short:0,fired:0,firedLong:0,exact:0,
+      bbIn:0,bbFired:0,vcpForming:0,vcpFired:0}
     for(const s of stocks){
       const key=sqzTierKey(s)
       if(key!=='none'){
@@ -12222,6 +12282,10 @@ function SqueezeProScanner({stocks, isMobile, visibleRsCols, onChartOpen, showOu
         else if(b.dir==='short') t.short++
         if(s.squeeze?.hasPro) t.exact++
       }
+      if(SQZ_TILE_VIEWS.bbIn.match(s)) t.bbIn++
+      if(s.squeeze?.squeezeFired) t.bbFired++
+      if(s.vcp?.isVCP) t.vcpForming++
+      if(s.vcp?.vcpFired) t.vcpFired++
       if(s.squeeze?.squeezeFired||s.vcp?.vcpFired){
         t.fired++
         if(sqzBiasOf(s).dir==='long') t.firedLong++
@@ -12249,6 +12313,12 @@ function SqueezeProScanner({stocks, isMobile, visibleRsCols, onChartOpen, showOu
     return biasFilter==='all'||sqzBiasOf(s).dir===biasFilter
   }),[stocks,biasFilter,includeVcp])
 
+  const tileStocks=useMemo(()=>{
+    const view=tileView && SQZ_TILE_VIEWS[tileView]
+    if(!view) return []
+    return stocks.filter(view.match)
+  },[stocks,tileView])
+
   const seg=(active,label,onClick,color)=>(
     <button key={label} type="button" onClick={onClick}
       style={{padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:11,fontWeight:700,
@@ -12261,28 +12331,74 @@ function SqueezeProScanner({stocks, isMobile, visibleRsCols, onChartOpen, showOu
       letterSpacing:'0.06em',marginRight:2}}>{text}</span>
   )
 
-  const tiles=[
-    {l:`${SQZ_TIER_META.high.dot} High compression`,v:tally.high,c:SQZ_TIER_META.high.color,
-      t:SQZ_TIER_META.high.hint},
-    {l:`${SQZ_TIER_META.mid.dot} Mid (classic)`,v:tally.mid,c:SQZ_TIER_META.mid.color,
-      t:SQZ_TIER_META.mid.hint},
-    {l:`${SQZ_TIER_META.low.dot} Low compression`,v:tally.low,c:SQZ_TIER_META.low.color,
-      t:SQZ_TIER_META.low.hint},
-    {l:'▲ Long bias',v:tally.long,c:C.green,t:'Coiled with momentum above zero — breaks tend to resolve up'},
-    {l:'🟢 Fired today',v:tally.fired,c:C.teal,t:`${tally.firedLong} of them with long bias`},
+  const headlineTiles=[
+    {id:'bbIn',       l:'🔵 BB In Squeeze', v:tally.bbIn,       c:C.blue,    t:'Stocks still coiled — tap to list them'},
+    {id:'bbFired',    l:'🟢 BB Fired',      v:tally.bbFired,    c:C.green,   t:'Squeeze released today — tap to list them'},
+    {id:'vcpForming', l:'📐 VCP Forming',   v:tally.vcpForming, c:C.purple,  t:'VCP contractions in progress — tap to list them'},
+    {id:'vcpFired',   l:'🚀 VCP Fired',     v:tally.vcpFired,   c:C.accent,  t:'VCP breakouts — tap to list them'},
   ]
+  const proTiles=[
+    {id:'high', l:`${SQZ_TIER_META.high.dot} High compression`, v:tally.high, c:SQZ_TIER_META.high.color, t:SQZ_TIER_META.high.hint},
+    {id:'mid',  l:`${SQZ_TIER_META.mid.dot} Mid (classic)`,     v:tally.mid,  c:SQZ_TIER_META.mid.color,  t:SQZ_TIER_META.mid.hint},
+    {id:'low',  l:`${SQZ_TIER_META.low.dot} Low compression`,   v:tally.low,  c:SQZ_TIER_META.low.color,  t:SQZ_TIER_META.low.hint},
+    {id:'long', l:'▲ Long bias', v:tally.long, c:C.green, t:'Coiled with momentum above zero'},
+  ]
+
+  const renderTile=({id,l,v,c,t})=>{
+    const active=tileView===id
+    return (
+      <button key={id} type="button" title={t} onClick={()=>toggleTile(id)}
+        style={{background:active?c+'18':C.bg,borderRadius:8,padding:'12px',textAlign:'center',
+          border:`1px solid ${active?c:C.border}`,cursor:'pointer',width:'100%'}}>
+        <div style={{fontSize:24,fontWeight:900,color:c}}>{v}</div>
+        <div style={{fontSize:10,color:active?c:C.muted,marginTop:3,fontWeight:active?800:600}}>{l}</div>
+      </button>
+    )
+  }
+
+  const renderTable=(list, title, subtitle, color, copyLabel, sortBy, emptyTitle, emptyBody)=>{
+    return (
+      <div style={{marginBottom:20}}>
+        <div style={{fontWeight:800,fontSize:14,color:color,marginBottom:4,display:'flex',
+          alignItems:'center',gap:8,flexWrap:'wrap'}}>
+          <span>{title}{list.length?` · ${list.length}`:''}</span>
+          {tileView&&(
+            <button type="button" onClick={()=>setTileView(null)}
+              style={{padding:'3px 9px',borderRadius:999,cursor:'pointer',fontSize:10,fontWeight:700,
+                border:`1px solid ${C.border}`,background:C.card,color:C.muted}}>
+              Clear tile filter
+            </button>
+          )}
+        </div>
+        <div style={{fontSize:11,color:C.muted,marginBottom:10}}>{subtitle}</div>
+        {list.length===0?(
+          <EmptyPanel title={emptyTitle||'Nothing in this group right now'}
+            body={emptyBody||'Tap another tile, or clear the filter to return to the full Squeeze Pro lists.'}/>
+        ):(
+          <>
+            <TVCopyPanel stocks={list} label={copyLabel}/>
+            <BreakoutTable key={tileView||copyLabel} stocks={list} isMobile={isMobile}
+              defaultSortBy={sortBy||'rs'}
+              visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={onChartOpen}
+              showOurChartHover={showOurChartHover} onOurChart={onOurChart}/>
+          </>
+        )}
+      </div>
+    )
+  }
+
+  const activeView=tileView && SQZ_TILE_VIEWS[tileView]
 
   return (
     <>
       <div style={{background:C.card,border:`1px solid ${C.teal}44`,borderRadius:12,padding:'14px',marginBottom:12}}>
+        <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+          letterSpacing:'0.06em',marginBottom:8}}>Tap a tile to list those stocks</div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8}}>
-          {tiles.map(({l,v,c,t})=>(
-            <div key={l} title={t} style={{background:C.bg,borderRadius:8,padding:'12px',
-              textAlign:'center',border:`1px solid ${C.border}`}}>
-              <div style={{fontSize:24,fontWeight:900,color:c}}>{v}</div>
-              <div style={{fontSize:10,color:C.muted,marginTop:3}}>{l}</div>
-            </div>
-          ))}
+          {headlineTiles.map(renderTile)}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8,marginTop:8}}>
+          {proTiles.map(renderTile)}
         </div>
         {tally.exact===0&&(tally.high+tally.mid+tally.low)>0&&(
           <div style={{marginTop:10,fontSize:10,color:C.yellow,lineHeight:1.45}}>
@@ -12293,65 +12409,47 @@ function SqueezeProScanner({stocks, isMobile, visibleRsCols, onChartOpen, showOu
         )}
       </div>
 
-      <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:8,marginBottom:14,
-        background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'9px 11px'}}>
-        {groupLabel('Compression')}
-        {seg(tierFilter==='any','Any',()=>setTierFilter('any'))}
-        {seg(tierFilter==='midplus','Mid + High',()=>setTierFilter('midplus'),SQZ_TIER_META.mid.color)}
-        {seg(tierFilter==='high','High only',()=>setTierFilter('high'),SQZ_TIER_META.high.color)}
-        <span style={{width:8}}/>
-        {groupLabel('Direction')}
-        {seg(biasFilter==='long','▲ Long',()=>setBiasFilter('long'),C.green)}
-        {seg(biasFilter==='short','▼ Short',()=>setBiasFilter('short'),C.red)}
-        {seg(biasFilter==='all','Both',()=>setBiasFilter('all'))}
-        <span style={{width:8}}/>
-        {groupLabel('Coiled at least')}
-        {[0,5,10,20].map(d=>seg(minDays===d,d===0?'Any':`${d}d`,()=>setMinDays(d),C.blue))}
-        <span style={{flex:1}}/>
-        {seg(includeVcp,'Include VCP',()=>setIncludeVcp(v=>!v),C.purple)}
-      </div>
+      {activeView ? renderTable(
+        tileStocks, activeView.title, activeView.subtitle, activeView.color,
+        activeView.label, activeView.sort
+      ) : (
+        <>
+          <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:8,marginBottom:14,
+            background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'9px 11px'}}>
+            {groupLabel('Compression')}
+            {seg(tierFilter==='any','Any',()=>setTierFilter('any'))}
+            {seg(tierFilter==='midplus','Mid + High',()=>setTierFilter('midplus'),SQZ_TIER_META.mid.color)}
+            {seg(tierFilter==='high','High only',()=>setTierFilter('high'),SQZ_TIER_META.high.color)}
+            <span style={{width:8}}/>
+            {groupLabel('Direction')}
+            {seg(biasFilter==='long','▲ Long',()=>setBiasFilter('long'),C.green)}
+            {seg(biasFilter==='short','▼ Short',()=>setBiasFilter('short'),C.red)}
+            {seg(biasFilter==='all','Both',()=>setBiasFilter('all'))}
+            <span style={{width:8}}/>
+            {groupLabel('Coiled at least')}
+            {[0,5,10,20].map(d=>seg(minDays===d,d===0?'Any':`${d}d`,()=>setMinDays(d),C.blue))}
+            <span style={{flex:1}}/>
+            {seg(includeVcp,'Include VCP',()=>setIncludeVcp(v=>!v),C.purple)}
+          </div>
 
-      <div style={{marginBottom:20}}>
-        <div style={{fontWeight:800,fontSize:14,color:C.blue,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
-          🌀 In Squeeze — {biasFilter==='long'?'Long Setups':biasFilter==='short'?'Short Setups':'Coiled'}, Longest Coil First
-        </div>
-        <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
-          Sorted by compression tier then bars coiled — a high-compression name that has
-          held for weeks is the tightest spring on the list. ▲ / ▼ is the momentum side.
-        </div>
-        {coiled.length===0?(
-          <EmptyPanel title="Nothing matches these filters"
-            body="Loosen the compression tier, drop the minimum days, or switch direction to Both."/>
-        ):(
-          <>
-            <TVCopyPanel stocks={coiled} label="In Squeeze"/>
-            <BreakoutTable stocks={coiled} isMobile={isMobile} defaultSortBy="sqzDays"
-              visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={onChartOpen}
-              showOurChartHover={showOurChartHover} onOurChart={onOurChart}/>
-          </>
-        )}
-      </div>
-
-      <div>
-        <div style={{fontWeight:800,fontSize:14,color:C.green,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
-          🟢 Firing Now — Breaking Out of the Squeeze
-        </div>
-        <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
-          Bands have pushed back outside the Keltner. Momentum direction on the fire bar is
-          the side the coil released.
-        </div>
-        {fired.length===0?(
-          <EmptyPanel icon="🌀" title="No squeeze fires yet"
-            body="Fires show up when bands expand after a coil. Check back after the next scan cycle."/>
-        ):(
-          <>
-            <TVCopyPanel stocks={fired} label="Squeeze Fired"/>
-            <BreakoutTable stocks={fired} isMobile={isMobile}
-              visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={onChartOpen}
-              showOurChartHover={showOurChartHover} onOurChart={onOurChart}/>
-          </>
-        )}
-      </div>
+          {renderTable(
+            coiled,
+            `🌀 In Squeeze — ${biasFilter==='long'?'Long Setups':biasFilter==='short'?'Short Setups':'Coiled'}, Longest Coil First`,
+            'Sorted by compression tier then bars coiled — a high-compression name that has held for weeks is the tightest spring on the list. ▲ / ▼ is the momentum side. Tap a tile above to jump to BB In Squeeze, BB Fired, VCP Forming, or VCP Fired.',
+            C.blue, 'In Squeeze', 'sqzDays',
+            'Nothing matches these filters',
+            'Loosen the compression tier, drop the minimum days, or switch direction to Both.'
+          )}
+          {renderTable(
+            fired,
+            '🟢 Firing Now — Breaking Out of the Squeeze',
+            'Bands have pushed back outside the Keltner. Momentum direction on the fire bar is the side the coil released.',
+            C.green, 'Squeeze Fired', 'rs',
+            'No squeeze fires yet',
+            'Fires show up when bands expand after a coil. Tap 🟢 BB Fired or 🚀 VCP Fired to see each group on its own.'
+          )}
+        </>
+      )}
     </>
   )
 }
@@ -12591,112 +12689,8 @@ function RRGChart({rolledData, onDotClick, dotSizing=false, height=480}){
  * over data we already have, which is faster and can't drift from the
  * chart or invent a sector that isn't there.
  */
-// Global Help Center content — one place explaining every tab, instead
-// of a separate info icon scattered on each individual page. Keyed by
-// mainTab id so the center can default-open on whichever page the
-// person is currently viewing.
-const HELP_CONTENT = [
-  {id:'rs', title:'RS Rating', body:`The core scanner — every NSE stock ranked by Relative Strength (RS), 1-99, 
-    against the whole market. Filter by index, sector, RS trend, or signal chips. Tap a row for its chart and full 
-    signal breakdown.`},
-  {id:'market', title:'Market', body:`Market-wide health, split into sub-pages (chips under the header):
-    • One chip at a time: Overview, Indices, Sectors, Industries, Gaps, Smart Money.
-    • Overview — Verdict, today's breadth stats, plus A/D and EMA breadth history charts.
-    • Indices / Sectors / Industries — each its own table. Gaps — ≥2% open gaps. Smart Money — daily FII/DII cash flows + quarterly sector holdings + PP/IBV momentum.`},
-  {id:'rotation', title:'Sector Rotation', body:`A StockCharts-style Relative Rotation Graph (RRG):
-    • X-axis = JdK RS-Ratio (trend of relative strength vs the market), Y-axis = JdK RS-Momentum (rate of change of that trend). Both centered at 100.
-    • Leading (top-right, +/+) — strong and still improving. Weakening (bottom-right, +/-) — still strong but momentum fading.
-    • Lagging (bottom-left, -/-) — weak and still falling. Improving (top-left, -/+) — weak but momentum turning up (often early).
-    • Idealized rotation is clockwise. Trail length = your Window chip; thicker trails sit farther from the 100/100 crosshair.
-    Tap an index to drill into constituents. Date slider rewinds the RRG to a past day.`},
-  {id:'leaders', title:'Leaders', body:`Leadership signals, one section at a time (chips under the header):
-    • RS Line New Highs — Early Leaders — relative-strength line (not just price) made a new high.
-    • New Stage 2 Entries Today — flipped into a confirmed Weinstein uptrend today.
-    • 52 Week High Stocks — price leadership at fresh 52-week highs.
-    Each section exports to TradingView and supports alerts.`},
-  {id:'patterns', title:'Patterns', body:`Every chart pattern the scanner detects, grouped and listed one by one:
-    • Breakouts — HY/HT (high volume + strong RS), resistance, 52-week high, cup & handle, new Stage 2.
-    • Coiling — cup forming, Guppy compression, volatility squeeze, VCP.
-    • Classic — Head & Shoulders, Double Top/Bottom, Triangles, Wedges, Flags & Pennants (heuristics; some false positives).
-    • MA Crossovers — Guppy bullish/bearish.
-    • Volume — Pocket Pivot, RS line new high.
-    Each type is its own exportable list under the section chips.`},
-  {id:'squeeze', title:'Squeeze Pro', body:`John Carter's Squeeze Pro. Instead of one on/off squeeze, the Bollinger
-    Bands are tested against three Keltner widths, so you see how hard price is coiled: High compression (inside the
-    1.0-ATR Keltner) is the tightest spring, Mid is the classic TTM squeeze, Low is mild. Days shows how long the coil
-    has held — a long squeeze at high compression is the setup worth watching. The ▲ / ▼ arrow is TTM momentum: above
-    zero the break usually resolves long, below zero short. Filter by tier, direction and minimum days, and sort the
-    Squeeze/VCP column to put the longest, hardest coils on top.`},
-  {id:'52wl', title:'52WL Crossover', body:`Stocks making new 52-week highs (potential breakouts) or sitting near 
-    52-week lows (potential value or falling knives — check the trend before assuming either).`},
-  {id:'weak', title:'Weak RS', body:`The inverse scanner — stocks with deteriorating relative strength, useful for 
-    avoiding laggards or for short-side/hedge ideas.`},
-  {id:'portfolio', title:'Portfolio', body:`Track up to 5 family portfolios — your holdings and theirs — against RS rank and stage, with a trade journal on each so you can see if a position is quietly weakening.`},
-  {id:'compare', title:'Compare', body:`Side-by-side comparison of up to a few stocks across all metrics — RS, 
-    fundamentals, stage, signals — to decide between similar candidates.`},
-  {id:'watchlist', title:'Watchlist', body:`Your saved stock lists. Set one as active from the header dropdown on 
-    any scanner tab to filter that tab down to just your watchlist.`},
-  {id:'announcements', title:'Announcements', body:`Corporate filings feed — results, concalls, PPTs and other NSE 
-    announcements. Open a stock to see Results, Concall, and PPT under the chart. Green 
-    badges on Concall/PPT mean reports are on file; use History chips to read older filings.`},
-  {id:'themes', title:'Emerging Themes', body:`Radar of themes the AI tagged from recent PPT/concall text (data 
-    center, defence, AI, etc.). Pick a theme to see which stocks mentioned it — useful for thematic scans, not a 
-    buy signal by itself.`},
-  {id:'bestpicks', title:'AI Picks', body:`Curated best-picks list from the server scan. Treat as a shortlist to 
-    research further with RS, Results rating, and Concall/PPT — not automated advice.`},
-  {id:'feedback', title:'User Feedback', body:`Rate Lakshmimata 1–5 stars and leave a short review. 
-    The home page shows the average rating, star breakdown, and public quotes (first name only).`},
-  {id:'settings', title:'Account / Settings', body:`App Preferences lists every enable/disable (ticker, chart-on-hover, Overview, ambient). Account, plans, and sign-out are below that. Theme & zoom also sit on the 🎨 palette button.`},
-  {id:'chart', title:'Stock chart & Results', body:`Open any stock for Our Chart plus Results / Concall / PPT under the chart. Result quality (Excellent/Good/Neutral/Weak) is the latest quarter only. Peer pills under Results are clickable.`},
-]
-
-// Free in-app guide agent — answers from predefined help text + local
-// stock fields already loaded in the UI. No Gemini / no API cost.
-const GUIDE_SUGGESTIONS = {
-  _default: [
-    'How do I use this page?',
-    'What is RS rating?',
-    'How do I open a stock chart?',
-    'Where are Concall and PPT?',
-  ],
-  rs: ['How do I use RS Rating?', 'What do the signal chips mean?', 'How do I filter by sector?'],
-  market: ['How do I read Market verdict?', 'What is Smart Money?'],
-  rotation: ['How do I read the rotation chart?', 'What is Leading vs Improving?'],
-  announcements: ['Where are Results / Concall / PPT?', 'What does the green badge mean?'],
-  themes: ['What are Emerging Themes?'],
-  chart: [
-    'How do I read Results rating?',
-    'What is Concall Report?',
-    'What is PPT summary?',
-  ],
-}
-
-const GUIDE_QA = [
-  {keys:['rs rating','relative strength','what is rs','how do i use rs'],
-    answer:'RS (Relative Strength) ranks a stock 1–99 vs the whole market. Higher = stronger tape vs peers. Use the RS Rating tab, tap a row for the chart, and combine with Results/Concall — RS alone is not a buy call.'},
-  {keys:['this page','how do i use','how to use','what is this tab','explain this page'],
-    answer:null}, // filled from HELP_CONTENT for current page
-  {keys:['open chart','stock chart','tap a row','click a stock'],
-    answer:'Open a stock → Results / Concall / PPT tabs under the chart for numbers and filings.'},
-  {keys:['concall','transcript','earnings call'],
-    answer:'Open a stock → Concall Report tab. Green badge on the tab means a report exists. If several filings exist, use History date chips to read older calls. Tone + Watch Next appear when extracted.'},
-  {keys:['ppt','presentation','slide'],
-    answer:'Open a stock → PPT tab. Same History chips as Concall when multiple decks exist. Shows slide story, financial highlights, strategy, risks, and Watch Next when available.'},
-  {keys:['excellent','result rating','weak result','good result','neutral result'],
-    answer:'Result quality (Excellent/Good/Neutral/Weak) comes from Sales & PAT YoY, with OPM and other-income checks. Margin compression or an other-income spike caps the badge — QoQ recovery cannot override those caps. Headline PAT declines are capped too.'},
-  {keys:['rrg','rotation','rs-ratio','rs-momentum','leading','improving','weakening','lagging','jdk'],
-    answer:'Rotate uses a StockCharts-style Relative Rotation Graph. X = JdK RS-Ratio (relative-strength trend), Y = JdK RS-Momentum (how fast that trend is changing), both centered at 100. Leading = both > 100; Weakening = Ratio > 100 but Momentum < 100; Lagging = both < 100; Improving = Momentum > 100 while Ratio still < 100. Idealized path is clockwise. Built from daily RS rating / sector avg RS history.'},
-  {keys:['peer','ranking','jewellery','industry'],
-    answer:'Under Results, peers are ranked in the same industry when available. Click another peer pill to open that stock’s Results tab.'},
-  {keys:['theme','emerging'],
-    answer:'Emerging Themes tab lists themes tagged from PPT/concall text. Open a theme to see stocks that mentioned it — for scanning ideas, not as a standalone signal.'},
-  {keys:['watchlist'],
-    answer:'Watchlist tab saves lists. In the header dropdown on scanner pages, pick a watchlist (wl:…) to filter that page to your list only.'},
-  {keys:['cost','ai agent','gemini','chatgpt'],
-    answer:'This Ask Guide is free and offline to your browser — it uses built-in help text and data already on screen. It does not call paid AI. Live Gemini is only used on the server to build Concall/PPT summaries in the background.'},
-  {keys:['buy','sell','advice','should i'],
-    answer:'PocketRS Pro is a scanner and research aid, not investment advice. Use RS, Results, Concall/PPT, and your own judgment — nothing here is a buy/sell recommendation.'},
-]
+// Help articles + Ask Guide Q&A live in src/content/helpDocs.js
+// (short blurbs for the ? modal; full newcomer docs on the Guide tab).
 
 function answerGuideQuestion(raw, {mainTab, chartSym, stocks}){
   const q = (raw||'').trim().toLowerCase()
@@ -12727,6 +12721,19 @@ function answerGuideQuestion(raw, {mainTab, chartSym, stocks}){
     const t = h.title.toLowerCase()
     if(q.includes(t) || t.split(/\s+/).every(w=>w.length<3||q.includes(w))){
       if(q.includes(t.split(' ')[0])) return {title:h.title, body:h.body.replace(/\s+/g,' ').trim()}
+    }
+  }
+
+  // Richer match against full Guide articles (newcomers + how-it-works)
+  for(const a of DOCS_ARTICLES){
+    const t = a.title.toLowerCase()
+    if(q.includes(t) || (t.length>4 && q.includes(t.split(' ')[0]) && q.includes(t.split(' ').slice(-1)[0]))){
+      const bits = [a.forNewcomers]
+      const how = (a.sections||[]).find(s=>/how it works/i.test(s.heading))
+      if(how?.bullets?.length) bits.push('How it works: '+how.bullets.slice(0,3).join(' '))
+      else if(how?.body) bits.push(how.body)
+      bits.push('Open Guide for the full article.')
+      return {title:a.title, body:bits.join('\n\n')}
     }
   }
 
@@ -15711,6 +15718,7 @@ export default function App(){
   const [expandedTileInfo,setExpandedTileInfo]=useState(null)
   const [showRowGuidance,setShowRowGuidance]=useState(false)
   const [showHelpCenter,setShowHelpCenter]=useState(false)
+  const [docsArticleId,setDocsArticleId]=useState(null)
   const [marketSubTab,setMarketSubTab]=useState('overview')
   const [patternsSubTab,setPatternsSubTab]=useState('breakouts')
   // Within Patterns → Breakouts: show one breakout type at a time ('all' = every type).
@@ -16109,7 +16117,7 @@ export default function App(){
   const rsLayoutActive=mainTab==='rs'
   // These tabs stay full-width — no Chart/Overview dock beside the page.
   const isFullWidthMainTab=tab=>['portfolio','settings','watchlist','compare','feedback',
-    'announcements','themes','bestpicks'].includes(tab)
+    'announcements','themes','bestpicks','docs'].includes(tab)
   const fullWidthTab=isFullWidthMainTab(mainTab)
   // Market is a market-wide page, not a company one: dock the chart at a
   // fixed 70/30 and suppress the company Overview entirely.
@@ -18166,6 +18174,7 @@ export default function App(){
           {id:'earnings', label:'Earnings',          short:'Earnings', Icon:BarChart3},
           {id:'themes', label:'Emerging Themes', short:'Themes', Icon:Layers},
           {id:'bestpicks', label:'AI Best Picks',    short:'AI Picks', Icon:Target},
+          {id:'docs',      label:'Guide',             short:'Guide',    Icon:BookOpen},
           {id:'feedback',  label:'User Feedback',     short:'Feedback', Icon:MessageSquare},
         ]
         const ITEM_H=52, DIVIDER_H=9 // 1px line + 4px margin top/bottom
@@ -18279,7 +18288,8 @@ export default function App(){
                  mainTab==='bestpicks'?'AI Best Picks':
                  mainTab==='portfolio'?'Portfolio Tracker':
                  mainTab==='compare'?'Stock Comparison':
-                 mainTab==='feedback'?'User Feedback':'Account'}
+                 mainTab==='feedback'?'User Feedback':
+                 mainTab==='docs'?'Guide':'Account'}
               </div>
               {!isMobile&&<div style={{fontSize:10,color:C.muted,marginTop:1,maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                 {demoMode?(historyDate?`Real data from ${historyDate} — not live`:'Loading real data…'):`${session?.user?.email} · ${scanLabel}`}
@@ -18322,7 +18332,7 @@ export default function App(){
           )}
 
           {/* Controls */}
-          {mainTab!=='settings'&&mainTab!=='feedback'&&mainTab!=='watchlist'&&mainTab!=='rotation'&&(
+          {mainTab!=='settings'&&mainTab!=='feedback'&&mainTab!=='docs'&&mainTab!=='watchlist'&&mainTab!=='rotation'&&(
             <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'nowrap',justifyContent:'flex-end',flexShrink:0}}>
 
               {/* Watchlist OR index selector — one dropdown now covers
@@ -18661,7 +18671,8 @@ export default function App(){
           mainTab==='bestpicks'?'AI Best Picks':
           mainTab==='portfolio'?'Portfolio Tracker':
           mainTab==='compare'?'Stock Comparison':
-          mainTab==='feedback'?'User Feedback':'Account'
+          mainTab==='feedback'?'User Feedback':
+          mainTab==='docs'?'Guide':'Account'
         }
         colors={C}
         floating={panelWins.screener.float}
@@ -23214,6 +23225,15 @@ export default function App(){
             onExitDemo={()=>{setDemoMode(false);setStocks([]);setAuthMode('register');setShowAuth(true)}}/>
         )}
 
+        {mainTab==='docs'&&(
+          <HelpDocsPage
+            theme={C}
+            initialArticleId={docsArticleId || 'start-overview'}
+            onOpenTab={(tab)=>{ setMainTab(tab); setDocsArticleId(null) }}
+            onOpenHelp={()=>{ setHelpCenterSection(null); setShowHelpCenter(true) }}
+          />
+        )}
+
       </div>
       </ScreenerFrame>
 
@@ -23441,26 +23461,48 @@ export default function App(){
         </div>
       )}
 
-      {/* ══ GLOBAL HELP CENTER — one place explaining every page, ══
-          instead of a separate info icon scattered on each individual
-          page. Opens with the current tab's section expanded. */}
+      {/* ══ GLOBAL HELP CENTER — short blurbs + Ask Guide; full write-ups live on Guide tab ══ */}
       {showHelpCenter&&(
         <div onClick={()=>setShowHelpCenter(false)}
           style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:100,
             display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
           <div onClick={e=>e.stopPropagation()}
             style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,
-              width:'100%',maxWidth:520,maxHeight:'80vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
-            <div style={{padding:'16px 18px',borderBottom:`1px solid ${C.border}`,
-              display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-              <div style={{fontWeight:800,fontSize:15,color:C.text}}>Help — how to use this app</div>
+              width:'100%',maxWidth:560,maxHeight:'85vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+            <div style={{padding:'14px 18px',borderBottom:`1px solid ${C.border}`,
+              display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:15,color:C.text}}>Help — how to use this app</div>
+                <div style={{fontSize:11,color:C.muted,marginTop:2}}>New here? Start with Getting started, or open the full Guide.</div>
+              </div>
               <button onClick={()=>setShowHelpCenter(false)}
                 style={{background:'transparent',border:'none',color:C.muted,fontSize:18,cursor:'pointer',padding:4}}>✕</button>
             </div>
             <div style={{overflowY:'auto',padding:'8px 10px'}}>
+              <div style={{margin:'4px 4px 12px',padding:'12px 12px',borderRadius:10,
+                border:`1px solid ${C.accent}44`,background:C.accent+'12'}}>
+                <div style={{fontSize:12,fontWeight:800,color:C.text,marginBottom:4}}>👋 Newcomers</div>
+                <div style={{fontSize:11.5,color:C.muted,lineHeight:1.6,marginBottom:10}}>
+                  Lakshmimata ranks stocks by Relative Strength, flags setups (Squeeze, patterns, Stage 2),
+                  and shows Results / Concall / PPT under Our Chart. It is a research scanner — not buy/sell advice.
+                </div>
+                <button type="button"
+                  onClick={()=>{
+                    setDocsArticleId('start-overview')
+                    setMainTab('docs')
+                    setShowHelpCenter(false)
+                  }}
+                  style={{width:'100%',padding:'9px 0',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:800,
+                    border:'none',background:C.accent,color:'#000'}}>
+                  Open full Guide →
+                </button>
+              </div>
               <GuideAskPanel mainTab={mainTab} chartSym={chartSym} stocks={stocks}/>
+              <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+                letterSpacing:'0.06em',padding:'6px 8px 4px'}}>Pages</div>
               {HELP_CONTENT.map(({id,title,body})=>{
                 const isOpen = helpCenterSection ? helpCenterSection===id : mainTab===id
+                const deep = getArticle(id) || DOCS_ARTICLES.find(a=>a.tabId===id)
                 return(
                   <div key={id} style={{borderBottom:`1px solid ${C.divider}`}}>
                     <button onClick={()=>setHelpCenterSection(isOpen?'__none__':id)}
@@ -23471,12 +23513,48 @@ export default function App(){
                     </button>
                     {isOpen&&(
                       <div style={{padding:'0 8px 14px',fontSize:11.5,color:C.muted,lineHeight:1.7,whiteSpace:'pre-line'}}>
-                        {body}
+                        {deep?.forNewcomers || body}
+                        {deep && (
+                          <button type="button"
+                            onClick={()=>{
+                              setDocsArticleId(deep.id)
+                              setMainTab('docs')
+                              setShowHelpCenter(false)
+                            }}
+                            style={{display:'block',marginTop:10,padding:'6px 0',background:'transparent',border:'none',
+                              color:C.accent,fontWeight:800,fontSize:11.5,cursor:'pointer'}}>
+                            Read full article in Guide →
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
                 )
               })}
+              <div style={{borderBottom:`1px solid ${C.divider}`}}>
+                <button onClick={()=>setHelpCenterSection(helpCenterSection==='chart-indicators'?'__none__':'chart-indicators')}
+                  style={{width:'100%',padding:'12px 8px',background:'transparent',border:'none',cursor:'pointer',
+                    display:'flex',alignItems:'center',justifyContent:'space-between',textAlign:'left'}}>
+                  <span style={{fontWeight:700,fontSize:13,color:C.text}}>Chart indicators (Lakshmi Mata…)</span>
+                  <span style={{color:C.muted,fontSize:12,transform:helpCenterSection==='chart-indicators'?'rotate(180deg)':'none',transition:'transform 0.15s'}}>▾</span>
+                </button>
+                {helpCenterSection==='chart-indicators'&&(
+                  <div style={{padding:'0 8px 14px',fontSize:11.5,color:C.muted,lineHeight:1.7}}>
+                    Our Chart packs Lakshmi Mata (EMAs, Guppy, Squeeze dots, S/R, Bollinger, Buy/Sell, UC/LC),
+                    Lakshmi Volume, and Super Cycle. Each has a “how it works” write-up in Guide.
+                    <button type="button"
+                      onClick={()=>{
+                        setDocsArticleId('ind-lakshmimata')
+                        setMainTab('docs')
+                        setShowHelpCenter(false)
+                      }}
+                      style={{display:'block',marginTop:10,padding:'6px 0',background:'transparent',border:'none',
+                        color:C.accent,fontWeight:800,fontSize:11.5,cursor:'pointer'}}>
+                      Open Chart & indicators in Guide →
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -23503,10 +23581,10 @@ export default function App(){
               style={{flex:1,padding:'8px 1px 6px',background:'transparent',border:'none',
                 cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
               <MoreHorizontal size={17} strokeWidth={1.8}
-                color={['52wl','squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders'].includes(mainTab)?C.accent:C.muted}/>
+                color={['52wl','squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders','docs'].includes(mainTab)?C.accent:C.muted}/>
               <span style={{fontSize:8,fontWeight:600,
-                color:['52wl','squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders'].includes(mainTab)?C.accent:C.muted}}>More</span>
-              {['52wl','squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders'].includes(mainTab)&&
+                color:['52wl','squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders','docs'].includes(mainTab)?C.accent:C.muted}}>More</span>
+              {['52wl','squeeze','weak','portfolio','compare','watchlist','announcements','themes','bestpicks','feedback','settings','leaders','docs'].includes(mainTab)&&
                 <div style={{width:14,height:2,background:C.accent,borderRadius:99}}/>}
             </button>
           </div>
@@ -23526,7 +23604,8 @@ export default function App(){
                     ['themes',Layers,'Themes'],['bestpicks',Target,'AI Picks'],['announcements',Megaphone,'News'],
                     ['watchlist',Star,'Watchlist'],['portfolio',Briefcase,'Portfolio'],['compare',GitCompare,'Compare'],
                     ['52wl',Award,'52WL'],['leaders',Flag,'Leaders'],['squeeze',Zap,'Squeeze'],
-                    ['weak',TrendingDown,'Weak'],['feedback',MessageSquare,'Feedback'],['settings',Settings,'Account'],
+                    ['weak',TrendingDown,'Weak'],['docs',BookOpen,'Guide'],['feedback',MessageSquare,'Feedback'],
+                    ['settings',Settings,'Account'],
                   ].map(([t,Icon,label])=>(
                     <button key={t} onClick={()=>{setMainTab(t);setShowMoreMenu(false)}}
                       style={{padding:'16px 8px',background:mainTab===t?C.accent+'18':'transparent',
