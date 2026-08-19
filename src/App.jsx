@@ -50,13 +50,14 @@ import { SECTOR_MAP, NIFTY50, MIDCAP, SMALLCAP, getSector } from './data/sectors
 import { INDEX_CONSTITUENT_SYMS } from './data/index-constituents'
 import { resolveIndustry, resolveSector, getPeerGroup, isJunkIndustry, getCompanyName, stockMatchesQuery, rankStockSuggestions } from './data/industries'
 import {
-  calcSMASeries, findSwingPoints, computeSupportResistance,
+  calcSMASeries, findSwingPoints, computePineSupportResistance,
   detectInsideBars, detectVCPContractions, detectCupAndHandle,
   detectPPDays, detectHYDays, detectHTDays, detectIBVDays, detectNearEMA9Days,
   detectBullSnortDays, aggregateToWeekly, aggregateToMonthly, aggregateToYearly,
   aggregateIntradayMinutes,
   calcRSISeries, calcMACDSeries,
-  detectLakshmiBuySellSignals, alignSeriesFromEnd, calcLakshmiSuperCycle, calcLakshmiSqueeze,
+  detectLakshmiBuySellSignals, alignSeriesFromEnd, calcLakshmiSuperCycle,
+  calcSqueezePro, SQUEEZE_PRO_LEVELS, SQUEEZE_PRO_COLORS, squeezeProMomColor,
   calcNewHighLowFlags, LAKSHMI_HILO_COLORS,
   calcLakshmiCandleBarColors, LAKSHMI_BAR_COLORS,
   calcLakshmiVolumeIndicator, LAKSHMI_VOL_COLORS,
@@ -6711,10 +6712,17 @@ const TV_TOOLBAR_BLUE = '#2962ff'
  */
 const INDICATOR_BUNDLES = {
   lakshmimata: [
-    { id: 'ma', label: 'EMA / MA lines' },
+    { id: 'ma', label: 'EMA 9 / 21 / 50 / 150 / 200' },
     { id: 'guppy', label: 'Guppy cloud (GMMA)' },
-    { id: 'squeeze', label: 'Squeeze dots (BB / KC)' },
+    { id: 'squeeze', label: 'Squeeze Pro dots (BB / 3× KC)' },
     { id: 'hilo52', label: '52-week high / low flags' },
+    { id: 'sr', label: 'Support / Resistance' },
+    { id: 'bb', label: 'Bollinger Bands' },
+    { id: 'buysell', label: 'Lakshmi Buy / Sell' },
+    { id: 'circuit', label: 'Circuit Limits (UC / LC)' },
+    { id: 'patterns', label: 'Patterns / consolidation' },
+    { id: 'barcolor', label: 'Volume candle colours' },
+    { id: 'bullsnort', label: 'Volume signal markers / Bull Snort' },
   ],
 }
 const BUNDLED_CHILD_IDS = new Set(
@@ -6800,6 +6808,32 @@ function TvFxIcon({active, muted}) {
   )
 }
 
+/**
+ * Lakshmi_Mata.pine circuit detector.
+ *
+ * A tight 2/5/10% band is trusted only when a recent Daily candle proves a
+ * genuine lock: close at the high (DCR≈100) or low (DCR≈0), with the move from
+ * the prior close matching a standard NSE band. Otherwise Pine deliberately
+ * defaults to 20% instead of guessing from an ordinary large move.
+ */
+function detectPineCircuitPct(highs, lows, closes, lookback=30, dcrTolerance=1, bandTolerance=0.5){
+  const standards=[2,5,10,20]
+  if(!Array.isArray(closes)||!Array.isArray(highs)||!Array.isArray(lows)) return 20
+  const last=closes.length-1
+  const first=Math.max(1,last-lookback+1)
+  for(let i=last;i>=first;i--){
+    const h=Number(highs[i]),l=Number(lows[i]),c=Number(closes[i]),pc=Number(closes[i-1])
+    if(![h,l,c,pc].every(Number.isFinite)||pc<=0||h===l) continue
+    const dcr=(c-l)/(h-l)*100
+    const move=dcr>=100-dcrTolerance?(h-pc)/pc*100
+      :dcr<=dcrTolerance?(pc-l)/pc*100:null
+    if(move==null) continue
+    const matched=standards.find(x=>Math.abs(move-x)<=bandTolerance)
+    if(matched!=null) return matched
+  }
+  return 20
+}
+
 function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const [data, setData] = useState(null)
   const [intradayData, setIntradayData] = useState(null)
@@ -6867,6 +6901,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const showSqueeze = indicatorVisible('squeeze')
   const showHiLo52 = indicatorVisible('hilo52')
   const showSR = indicatorVisible('sr')
+  const showBB = indicatorVisible('bb')
   const showPatterns = indicatorVisible('patterns')
   const showBullSnort = indicatorVisible('bullsnort')
   const showRSI = indicatorVisible('rsi')
@@ -6881,7 +6916,11 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const showCircuit = prefsN.indicators.circuit?.enabled === true
     && prefsN.indicators.circuit?.params?.visible !== false
   const circuitP = prefsN.indicators.circuit?.params || {}
+  const bbP = prefsN.indicators.bb?.params || {}
   const maP = prefsN.indicators.ma.params
+  // Lakshmi_Mata.pine background is relative performance over RS Period,
+  // not the 1–99 RS Rating used by the Super Cycle pane.
+  const showLakshmiRsBg = !isIndex && showMA && maP.showRsBackground !== false
   const rsiP = prefsN.indicators.rsi.params
   const macdP = prefsN.indicators.macd.params
   const scP = prefsN.indicators.supercycle.params
@@ -6895,6 +6934,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     ema9: maP.ema9Color || C.teal,
     ma20: maP.ma20Color || C.blue,
     ma50: maP.ma50Color || C.yellow,
+    ma150: maP.ma150Color || '#5b46e3',
     ma200: maP.ma200Color || C.purple,
   }
   const maShowTags = maP.showScaleTags !== false
@@ -6902,6 +6942,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     ema9: maP.showEma9 !== false,
     ma20: maP.showMa20 !== false,
     ma50: maP.showMa50 !== false,
+    ma150: maP.showMa150 !== false,
     ma200: maP.showMa200 !== false,
   }
   const guppyP = prefsN.indicators.guppy?.params || {}
@@ -6929,6 +6970,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const setShowSqueeze = v => setIndicatorOn('squeeze', v)
   const setShowHiLo52 = v => setIndicatorOn('hilo52', v)
   const setShowSR = v => setIndicatorOn('sr', v)
+  const setShowBB = v => setIndicatorOn('bb', v)
   const setShowPatterns = v => setIndicatorOn('patterns', v)
   const setShowBullSnort = v => setIndicatorOn('bullsnort', v)
   const setShowRSI = v => setIndicatorOn('rsi', v)
@@ -7352,9 +7394,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     const runPatterns = showPatterns && heavyOk
     const runGuppy = showGuppy && (!isIntraday || nBars <= 4000)
     const runHyHt = heavyOk
-    const _swings = findSwingPoints(highs, lows, intervalMeta.swing)
+    const _swings = findSwingPoints(
+      highs, lows,
+      showSR ? (srP.leftBars ?? 5) : intervalMeta.swing,
+      showSR ? (srP.rightBars ?? 5) : intervalMeta.swing,
+    )
     const ema9 = emaArr(closes, maP.ema9 ?? 9)
-    const niftyAligned = (!isIndex && (showBuySell || showSuperCycle))
+    const needRsCalculation = showSuperCycle || showLakshmiRsBg
+    const niftyAligned = (!isIndex && (showBuySell || needRsCalculation))
       ? alignSeriesFromEnd(closes.length, niftyCloses)
       : null
     const midcapAligned = (!isIndex && showSuperCycle)
@@ -7366,20 +7413,39 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     const buySell = (!isIndex && showBuySell)
       ? detectLakshmiBuySellSignals(highs, lows, closes, niftyAligned, buyP)
       : { buy: [], sell: [], trend: [] }
-    const superCycle = (!isIndex && showSuperCycle)
+    const superCycle = (!isIndex && needRsCalculation)
       ? calcLakshmiSuperCycle(highs, lows, closes, niftyAligned, {
           ...scP,
           midcapCloses: midcapAligned,
           smallcapCloses: smallcapAligned,
         })
       : null
+    // Exact Lakshmi_Mata.pine `res`:
+    // (stock / stock[period]) / (Nifty / Nifty[period]) - 1.
+    // Positive = outperforming Nifty; negative = underperforming.
+    const rsPerformance = new Array(nBars).fill(null)
+    if (showLakshmiRsBg && Array.isArray(niftyAligned) && niftyAligned.length === nBars) {
+      const period = Math.min(252, Math.max(1, Math.round(Number(maP.rsPeriod) || 65)))
+      for (let i = period; i < nBars; i++) {
+        const c0 = closes[i - period], b0 = niftyAligned[i - period]
+        const c1 = closes[i], b1 = niftyAligned[i]
+        if (c0 && b0 && c1 != null && b1 != null && b1 !== 0) {
+          rsPerformance[i] = (c1 / c0) / (b1 / b0) - 1
+        }
+      }
+    }
     // Squeeze dots live on the price pane, so they can't lean on the Super
     // Cycle result — that one is skipped on indices and when the pane is off.
+    // Squeeze Pro grades the coil against three Keltner widths and carries the
+    // TTM momentum line, so the dot row shows compression *and* direction.
     const squeeze = showSqueeze
-      ? calcLakshmiSqueeze(highs, lows, closes, {
-          length: sqP.sqLength ?? 21,
+      ? calcSqueezePro(highs, lows, closes, {
+          length: sqP.sqLength ?? 20,
           bbMult: sqP.sqBbMult ?? 2.0,
-          kcMult: sqP.sqKcMult ?? 1.5,
+          kcMultHigh: sqP.sqKcHigh ?? 1.0,
+          kcMultMid: sqP.sqKcMult ?? 1.5,
+          kcMultLow: sqP.sqKcLow ?? 2.0,
+          momLength: sqP.sqMomLength ?? 20,
         })
       : null
     const hiLo52 = showHiLo52
@@ -7396,18 +7462,44 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         seriesData.dates, opens, highs, lows, closes, volumes, volP,
       )
       : null
+    // Lakshmi_Mata.pine Bollinger Bands: SMA(source, 20) ± 2 population
+    // standard deviations. Kept separate from Squeeze Pro because Pine exposes
+    // this as an optional visible band with its own inputs and fill.
+    const bollinger = (() => {
+      if (!showBB) return { basis: [], upper: [], lower: [] }
+      const length = Math.max(1, Math.round(Number(bbP.length) || 20))
+      const mult = Math.max(0.001, Number(bbP.mult) || 2)
+      const basis = calcSMASeries(closes, length)
+      const upper = new Array(nBars).fill(null)
+      const lower = new Array(nBars).fill(null)
+      for (let i = length - 1; i < nBars; i++) {
+        let sum = 0, sum2 = 0
+        for (let j = i - length + 1; j <= i; j++) {
+          sum += closes[j]
+          sum2 += closes[j] * closes[j]
+        }
+        const mean = sum / length
+        const dev = mult * Math.sqrt(Math.max(0, sum2 / length - mean * mean))
+        upper[i] = basis[i] + dev
+        lower[i] = basis[i] - dev
+      }
+      return { basis, upper, lower }
+    })()
     const emptyFlags = () => new Array(nBars).fill(false)
     return {
-      ma20: showMA ? calcSMASeries(closes, maP.ma20 ?? 20) : [],
-      ma50: showMA ? calcSMASeries(closes, maP.ma50 ?? 50) : [],
-      ma200: showMA ? calcSMASeries(closes, maP.ma200 ?? 200) : [],
+      // Pine uses EMA for all five visible moving averages.
+      ma20: showMA ? emaArr(closes, maP.ma20 ?? 21) : [],
+      ma50: showMA ? emaArr(closes, maP.ma50 ?? 50) : [],
+      ma150: showMA ? emaArr(closes, maP.ma150 ?? 150) : [],
+      ma200: showMA ? emaArr(closes, maP.ma200 ?? 200) : [],
       ema9,
+      bollinger,
       guppyShort: runGuppy ? GUPPY_SHORT_PERIODS.map(p => emaArr(closes, p)) : [],
       guppyLong: runGuppy ? GUPPY_LONG_PERIODS.map(p => emaArr(closes, p)) : [],
       rsi: showRSI ? calcRSISeries(closes, rsiP.length ?? 14) : [],
       macd: showMACD ? calcMACDSeries(closes, macdP.fast ?? 12, macdP.slow ?? 26, macdP.signal ?? 9) : { macd: [], signal: [], hist: [] },
       swings: _swings,
-      sr: showSR ? computeSupportResistance(_swings, closes[closes.length-1]) : { r1:null,r2:null,s1:null,s2:null },
+      sr: showSR ? computePineSupportResistance(_swings, closes) : { r1:null,r2:null,s1:null,s2:null },
       insideBars: runPatterns ? detectInsideBars(highs, lows) : emptyFlags(),
       ppDays: runPatterns ? detectPPDays(closes, volumes) : emptyFlags(),
       hyDays: runHyHt ? detectHYDays(volumes) : emptyFlags(),
@@ -7419,6 +7511,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       cup: runPatterns ? detectCupAndHandle(closes, highs, lows) : null,
       buyDays: buySell.buy,
       sellDays: buySell.sell,
+      rsPerformance,
       superCycle,
       squeeze,
       hiLo52,
@@ -7426,9 +7519,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       candleBarTags: candleBar.tags,
       lakshmiVol,
     }
-  }, [seriesData, barInterval, intervalMeta, isIndex, isIntraday, showBuySell, showSuperCycle, showMA, showGuppy, showSqueeze, showHiLo52, showSR, showPatterns, showBullSnort, showRSI, showMACD, showCandleColors, showLakshmiVol, niftyCloses,
+  }, [seriesData, barInterval, intervalMeta, isIndex, isIntraday, showBuySell, showSuperCycle, showLakshmiRsBg, showMA, showGuppy, showSqueeze, showHiLo52, showSR, showBB, showPatterns, showBullSnort, showRSI, showMACD, showCandleColors, showLakshmiVol, niftyCloses,
     midcapCloses, smallcapCloses,
-    maP, rsiP, macdP, scP, sqP, hlP, buyP, barP, snortP, volP])
+    maP, rsiP, macdP, scP, sqP, hlP, srP, bbP, buyP, barP, snortP, volP])
 
   useEffect(() => {
     let cancelled = false
@@ -7470,9 +7563,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: keep warm intradayData across quiet polls
   }, [sym, isIndex, isIntraday, intradayFeatureOn])
 
-  // Index closes for Lakshmi Buy RS gate + Super Cycle multi-index RS table.
+  // Index closes for Lakshmi Mata RS background, Buy RS gate and Super Cycle.
   useEffect(() => {
-    if (isIndex || !(showBuySell || showSuperCycle)) {
+    if (isIndex || !(showBuySell || showSuperCycle || showLakshmiRsBg)) {
       setNiftyCloses(null)
       setMidcapCloses(null)
       setSmallcapCloses(null)
@@ -7504,7 +7597,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       setSmallcapCloses(null)
     }
     return () => { cancelled = true }
-  }, [isIndex, showBuySell, showSuperCycle])
+  }, [isIndex, showBuySell, showSuperCycle, showLakshmiRsBg])
 
   useEffect(()=>{
     // Switching candle size resets zoom to the current range preset in that unit.
@@ -7655,9 +7748,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     )
   }
 
-  const { ma20, ma50, ma200, ema9, guppyShort, guppyLong, rsi, macd,
+  const { ma20, ma50, ma150, ma200, ema9, bollinger, guppyShort, guppyLong, rsi, macd,
     swings, sr, insideBars, ppDays, hyDays, htDays, ibvDays, bullSnortDays, nearEma9Days, vcp, cup,
-    buyDays, sellDays, superCycle, squeeze, hiLo52, candleBarColors, candleBarTags, lakshmiVol } = analysis
+    buyDays, sellDays, rsPerformance, superCycle, squeeze, hiLo52, candleBarColors, candleBarTags, lakshmiVol } = analysis
 
   let dates = seriesData.dates
   let closes = seriesData.closes
@@ -7841,8 +7934,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     : emaArr(volumes, 20)).slice(start)
   const vMA20   = ma20.slice(start)
   const vMA50   = ma50.slice(start)
+  const vMA150  = ma150.slice(start)
   const vMA200  = ma200.slice(start)
   const vEma9line = ema9.slice(start)
+  const vBBBasis = (bollinger?.basis||[]).slice(start)
+  const vBBUpper = (bollinger?.upper||[]).slice(start)
+  const vBBLower = (bollinger?.lower||[]).slice(start)
   const vGuppyShort = (guppyShort||[]).map(s=>s.slice(start))
   const vGuppyLong = (guppyLong||[]).map(s=>s.slice(start))
   const vRSI = (rsi||[]).slice(start)
@@ -7858,6 +7955,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const vNearEma9 = nearEma9Days.slice(start)
   const vBuy = (buyDays||[]).slice(start)
   const vSell = (sellDays||[]).slice(start)
+  const vRsPerformance = (rsPerformance||[]).slice(start)
   const vScCycle = (superCycle?.cycle||[]).slice(start)
   const vScCycleUp = (superCycle?.cycleUp||[]).slice(start)
   const vScRs = (superCycle?.rsScaled||[]).slice(start)
@@ -7865,11 +7963,17 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const vScMa = (superCycle?.maScaled||[]).slice(start)
   const vScSqOn = (superCycle?.squeezeOn||[]).slice(start)
   const vScSqRel = (superCycle?.squeezeRelease||[]).slice(start)
-  const vSqOn = (squeeze?.squeezeOn||[]).slice(start)
-  const vSqRel = (squeeze?.squeezeRelease||[]).slice(start)
+  const vSqOn = (squeeze?.sqzOn||[]).slice(start)
+  const vSqRel = (squeeze?.release||[]).slice(start)
+  const vSqLevel = (squeeze?.level||[]).slice(start)
+  const vSqBars = (squeeze?.bars||[]).slice(start)
+  const vSqMom = (squeeze?.mom||[]).slice(start)
   const vNewHigh = (hiLo52?.newHigh||[]).slice(start)
   const vNewLow = (hiLo52?.newLow||[]).slice(start)
   const vScRating = (superCycle?.rsRating||[]).slice(start)
+  const vScRatingNifty = (superCycle?.rsRatingNifty||[]).slice(start)
+  const vScRatingMidcap = (superCycle?.rsRatingMidcap||[]).slice(start)
+  const vScRatingSmallcap = (superCycle?.rsRatingSmallcap||[]).slice(start)
   // Each VCP contraction spans its swing high → swing low, so the table can
   // report which bars sat inside a contraction and how deep it was.
   const vcpBands = (vcp?.contractions || []).map((c, i, arr) => ({
@@ -8123,12 +8227,32 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const drawsBars = OHLC_SERIES.includes(chartStyle)
   const visibleHighs = dHighs.filter(v=>v!=null)
   const visibleLows  = dLows.filter(v=>v!=null)
+  const circuitBand = (() => {
+    if(!showCircuit) return null
+    const dailyCloses=(data?.prices||[]).map(Number)
+    const dailyHighs=(data?.highs||data?.prices||[]).map(Number)
+    const dailyLows=(data?.lows||data?.prices||[]).map(Number)
+    const dailyChart=barInterval==='D'
+    const baseIndex=dailyChart?dailyCloses.length-2:dailyCloses.length-1
+    const base=dailyCloses[baseIndex]
+    if(!Number.isFinite(base)) return null
+    const manualPct=Math.min(20,Math.max(2,Number(circuitP.pct)||20))
+    const auto=dailyChart&&circuitP.autoDetect!==false
+    const pct=auto?detectPineCircuitPct(dailyHighs,dailyLows,dailyCloses):manualPct
+    return {
+      pct, base, source:auto?'Auto':'Manual',
+      uc:base*(1+pct/100), lc:base*(1-pct/100),
+    }
+  })()
   const guppyVals = showGuppy
     ? [...vGuppyShort, ...vGuppyLong].flat().filter(v=>v!=null)
     : []
-  const maVals = [...vMA20, ...vMA50, ...vMA200, ...vEma9line, ...guppyVals].filter(v=>v!=null)
-  let maxP = Math.max(...visibleHighs, ...maVals, sr.r1||0, sr.r2||0)
-  let minP = Math.min(...visibleLows, ...(maVals.length?maVals:[Infinity]), sr.s1||Infinity, sr.s2||Infinity)
+  const maVals = [
+    ...vMA20, ...vMA50, ...vMA150, ...vMA200, ...vEma9line, ...guppyVals,
+    ...(showBB ? [...vBBUpper, ...vBBLower] : []),
+  ].filter(v=>v!=null)
+  let maxP = Math.max(...visibleHighs, ...maVals, sr.r1||0, sr.r2||0, circuitBand?.uc*1.02||0)
+  let minP = Math.min(...visibleLows, ...(maVals.length?maVals:[Infinity]), sr.s1||Infinity, sr.s2||Infinity, circuitBand?.lc||Infinity)
   if(!isFinite(minP)) minP = Math.min(...visibleLows)
   const pad = (maxP - minP) * 0.06 || 1
   maxP += pad; minP -= pad
@@ -8519,6 +8643,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     scCycle: vScCycle[hi],
     scRating: vScRating[hi],
     scSqueeze: vScSqOn[hi] || vSqOn[hi],
+    sqLevel: vSqLevel[hi] || 0,
+    sqBars: vSqBars[hi] || 0,
+    sqMom: vSqMom[hi],
     barTag: vBarTag[hi],
     volComment: vLvComment[hi],
   } : null
@@ -8539,22 +8666,31 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const chartIndicatorsAll = [
     // Main price overlay — the parent row for the EMA lines and Guppy cloud.
     { id:'lakshmimata', group:'Overlays', label:'Lakshmi Mata', short:'Lakshmi',
-      desc:'EMA / MA lines + Guppy cloud + squeeze dots + 52-week flags on price',
-      on: indicatorEnabled('ma') || indicatorEnabled('guppy') || indicatorEnabled('squeeze') || indicatorEnabled('hilo52'),
-      visible: showMA || showGuppy || showSqueeze || showHiLo52,
+      desc:'Complete Pine study: EMA 9/21/50/150/200, GMMA, compression, S/R, Bollinger Bands, Buy/Sell, UC/LC and volume signals',
+      on: (INDICATOR_BUNDLES.lakshmimata||[]).some(x=>indicatorEnabled(x.id)),
+      visible: showMA || showGuppy || showSqueeze || showHiLo52 || showSR || showBB
+        || showBuySell || showCircuit || showPatterns || showCandleColors || showBullSnort,
       set: (v)=>{
-        const current = indicatorEnabled('ma') || indicatorEnabled('guppy') || indicatorEnabled('squeeze') || indicatorEnabled('hilo52')
+        const current = (INDICATOR_BUNDLES.lakshmimata||[]).some(x=>indicatorEnabled(x.id))
         const next = typeof v === 'function' ? v(current) : v
         setShowMA(next)
         setShowGuppy(next)
         setShowSqueeze(next)
         setShowHiLo52(next)
+        setShowSR(next)
+        setShowBB(next)
+        setShowBuySell(next)
+        setShowCircuit(next)
+        setShowPatterns(next)
+        setShowCandleColors(next)
+        setShowBullSnort(next)
       } },
     { id:'ma', group:'Overlays', label:'Moving Average', short:'MA', desc:'', on:indicatorEnabled('ma'), visible:showMA, set:setShowMA },
     { id:'guppy', group:'Overlays', label:'Guppy MMA', short:'Guppy', desc:'', on:indicatorEnabled('guppy'), visible:showGuppy, set:setShowGuppy },
-    { id:'squeeze', group:'Overlays', label:'Squeeze Dots', short:'Squeeze', desc:'', on:indicatorEnabled('squeeze'), visible:showSqueeze, set:setShowSqueeze },
+    { id:'squeeze', group:'Overlays', label:'Squeeze Pro Dots', short:'Squeeze Pro', desc:'John Carter compression tiers — high / mid / low coil + momentum bias', on:indicatorEnabled('squeeze'), visible:showSqueeze, set:setShowSqueeze },
     { id:'hilo52', group:'Overlays', label:'52-Week High / Low Flags', short:'52W', desc:'', on:indicatorEnabled('hilo52'), visible:showHiLo52, set:setShowHiLo52 },
     { id:'sr', group:'Overlays', label:'Support & Resistance', short:'S/R', desc:'', on:indicatorEnabled('sr'), visible:showSR, set:setShowSR },
+    { id:'bb', group:'Overlays', label:'Bollinger Bands', short:'BB', desc:'Lakshmi Mata Pine: SMA 20 ± 2 standard deviations', on:indicatorEnabled('bb'), visible:showBB, set:setShowBB },
     { id:'rsi', group:'Oscillators', label:'Relative Strength Index', short:'RSI', desc:'', on:indicatorEnabled('rsi'), visible:showRSI, set:setShowRSI },
     { id:'macd', group:'Oscillators', label:'MACD', short:'MACD', desc:'', on:indicatorEnabled('macd'), visible:showMACD, set:setShowMACD },
     // Always listed so it can be switched back on; on an index it has nothing
@@ -8586,22 +8722,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   })).filter(g => g.items.length)
   const activeIndicators = chartIndicators.filter(i => i.on)
   const anyIndOn = activeIndicators.length > 0
-  const legendOwnerId = id => id === 'lakshmimata' ? 'ma' : id
-  const indicatorShowsLegend = ind =>
-    indParams(indPrefs, legendOwnerId(ind.id)).showLegend !== false
-  const setIndicatorVisible = (ind, visible) => {
-    const ids = (INDICATOR_BUNDLES[ind.id] || []).map(x=>x.id)
-    const targets = ids.length ? ids : [ind.id]
-    setIndPrefs(p => targets.reduce(
-      (next,id)=>setIndicatorParam(next,id,'visible',visible), p
-    ))
-  }
-  const openIndicatorSettings = ind => {
-    setShowIndMenu(true)
-    setIndSettingsId(ind.id)
-    const fields = indSettingsFields(ind.id)
-    setIndSettingsTab(fields.some(f=>(f.tab||'inputs')==='inputs') ? 'inputs' : 'style')
-  }
 
   return (
     <div ref={chartWrapRef} style={{
@@ -9352,50 +9472,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         </span>
       </div>
 
-      {/* Active studies — TradingView-style status line. The eye only hides the
-          plot (the study remains added), gear opens its full settings modal,
-          and × removes it from the chart. */}
-      {anyIndOn && (
-        <div style={{
-          display:'flex', flexDirection:'column', gap:1, marginBottom:4,
-          flexShrink:0, alignItems:'flex-start',
-        }}>
-          {activeIndicators.filter(indicatorShowsLegend).map(ind=>(
-            <span key={ind.id} style={{
-              display:'inline-flex', alignItems:'center', gap:4,
-              padding:'2px 4px', borderRadius:3,
-              background:'transparent',
-              fontSize:10.5, fontWeight:700,
-              color:ind.visible===false?C.muted:C.text,
-              opacity:ind.visible===false?0.72:1,
-            }}>
-              <button type="button" title={ind.visible===false?`Show ${ind.label}`:`Hide ${ind.label}`}
-                onClick={()=>setIndicatorVisible(ind, ind.visible===false)}
-                style={{
-                  width:22,height:20,border:'none',borderRadius:3,
-                  background:'transparent',color:ind.visible===false?C.muted:TV_TOOLBAR_BLUE,
-                  cursor:'pointer',fontSize:13,lineHeight:1,padding:0,fontFamily:'inherit',
-                }}>{ind.visible===false?'◯':'◉'}</button>
-              <span style={{minWidth:0}}>{ind.label}</span>
-              <button type="button" title={`${ind.label} settings`}
-                onClick={()=>openIndicatorSettings(ind)}
-                style={{
-                  width:22,height:20,border:'none',borderRadius:3,
-                  background:'transparent',color:C.muted,cursor:'pointer',
-                  fontSize:13,lineHeight:1,padding:0,fontFamily:'inherit',
-                }}>⚙</button>
-              <button type="button" title={`Remove ${ind.label}`}
-                onClick={()=>ind.set(false)}
-                style={{
-                  width:20,height:20,border:'none',borderRadius:3,
-                  background:'transparent',color:C.muted,cursor:'pointer',
-                  fontSize:14,lineHeight:1,padding:0,fontFamily:'inherit',
-                }}>×</button>
-            </span>
-          ))}
-        </div>
-      )}
-
       {/* Hover readout — denser TradingView-style OHLC strip */}
       <div style={{fontSize:11,color:C.muted,marginBottom:4,minHeight:16,flexShrink:0,
         fontVariantNumeric:'tabular-nums', letterSpacing:'0.01em'}}>
@@ -9438,6 +9514,23 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               <span>{'  '}Cycle <span style={{color:hover.scCycle>=0?C.green:C.red}}>{hover.scCycle.toFixed(2)}</span>
                 {hover.scRating!=null && <> · RS <span style={{color:C.text}}>{hover.scRating}</span></>}
                 {hover.scSqueeze && <span style={{color:C.yellow}}> · Sq</span>}
+              </span>
+            )}
+            {showSqueeze && (hover.sqLevel>0 || hover.sqMom!=null) && (
+              <span>{'  '}Sqz{' '}
+                <span style={{color:hover.sqLevel>=SQUEEZE_PRO_LEVELS.HIGH?(sqP.sqHighColor||SQUEEZE_PRO_COLORS.HIGH)
+                  :hover.sqLevel===SQUEEZE_PRO_LEVELS.MID?(sqP.sqOnColor||SQUEEZE_PRO_COLORS.MID)
+                  :hover.sqLevel===SQUEEZE_PRO_LEVELS.LOW?(sqP.sqLowColor||SQUEEZE_PRO_COLORS.LOW)
+                  :C.muted}}>
+                  {hover.sqLevel>=SQUEEZE_PRO_LEVELS.HIGH?'High':hover.sqLevel===SQUEEZE_PRO_LEVELS.MID?'Mid'
+                    :hover.sqLevel===SQUEEZE_PRO_LEVELS.LOW?'Low':'Off'}
+                  {hover.sqLevel>0?` ${hover.sqBars}d`:''}
+                </span>
+                {hover.sqMom!=null && (
+                  <> · <span style={{color:hover.sqMom>=0?C.green:C.red}}>
+                    {hover.sqMom>=0?'▲':'▼'}{Math.abs(hover.sqMom).toFixed(2)}
+                  </span></>
+                )}
               </span>
             )}
             {showCandleColors && hover.barTag && (
@@ -10090,26 +10183,27 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}>
-        {/* Pine-style RS backdrop on the main price pane */}
-        {showSuperCycle && scP.showRsBg !== false && (() => {
-          const n = vScRating.length
+        {/* Lakshmi_Mata.pine RS backdrop on the main price pane.
+            IMPORTANT: this is 65-bar relative performance vs Nifty (`res`),
+            not the 1–99 RS Rating used by the Super Cycle below. */}
+        {showLakshmiRsBg && (() => {
+          const n = vRsPerformance.length
           if (!n) return null
           const step = n > 1 ? Math.max(1, idxToX(1) - idxToX(0)) : Math.max(2, candleW + 1)
-          // Clean mode halves the tint so the bands read as a hint, not a wash.
-          const o = Math.min(0.35, Math.max(0.01, (Number(scP.rsBgOpacity) || 8) / 100)) * (clean ? 0.5 : 1)
-          const cStrong = scP.rsBgStrongColor || '#00e676'
-          const cAvg = scP.rsBgAvgColor || '#ffd600'
-          const cWeak = scP.rsBgWeakColor || '#ff1744'
+          const o = Math.min(0.45, Math.max(0.02, (Number(maP.rsBackgroundOpacity) || 25) / 100))
+            * (clean ? 0.65 : 1)
+          const cPositive = maP.rsPositiveBgColor || '#b6f0ca'
+          const cNegative = maP.rsNegativeBgColor || '#f7bcbf'
           return (
             <g style={{ pointerEvents: 'none' }}>
-              {vScRating.map((r, i) => {
-                if (r == null || !Number.isFinite(r)) return null
+              {vRsPerformance.map((rs, i) => {
+                if (rs == null || !Number.isFinite(rs) || rs === 0) return null
                 const x0 = idxToX(i) - step / 2
                 const x1 = x0 + step + 0.75
                 const x = Math.max(padL, x0)
                 const w = Math.min(padL + chartW, x1) - x
                 if (w <= 0) return null
-                const fill = r > 70 ? cStrong : r >= 50 ? cAvg : cWeak
+                const fill = rs > 0 ? cPositive : cNegative
                 return <rect key={`rsbg-${i}`} x={x} y={priceTop} width={w} height={priceH} fill={fill} opacity={o} />
               })}
             </g>
@@ -10345,14 +10439,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           )
         })()}
 
-        {/* Lakshmi Mata squeeze dots — one per bar along the foot of the
-            price pane: BB inside KC = coiled, first bar back outside = fired. */}
+        {/* Squeeze Pro dots — one per bar along the foot of the price pane.
+            Colour grades the coil (high / mid / low compression), the fired
+            dot marks the first bar back outside every Keltner. */}
         {showSqueeze && vSqOn.length > 0 && (() => {
           const r = Math.min(5, Math.max(1, Number(sqP.sqDotSize) || 2.2))
           const y = priceTop + priceH - r - 3
-          const onColor = sqP.sqOnColor || LAKSHMI_CYCLE_COLORS.SQUEEZE_ON
-          const relColor = sqP.sqReleaseColor || LAKSHMI_CYCLE_COLORS.SQUEEZE_RELEASE
+          const relColor = sqP.sqReleaseColor || SQUEEZE_PRO_COLORS.NONE
           const offColor = sqP.sqOffColor || C.muted
+          const tierColor = lvl => (
+            lvl >= SQUEEZE_PRO_LEVELS.HIGH ? (sqP.sqHighColor || SQUEEZE_PRO_COLORS.HIGH)
+            : lvl === SQUEEZE_PRO_LEVELS.MID ? (sqP.sqOnColor || SQUEEZE_PRO_COLORS.MID)
+            : (sqP.sqLowColor || SQUEEZE_PRO_COLORS.LOW)
+          )
           const showOff = sqP.sqShowOff !== false
           return (
             <g>
@@ -10362,7 +10461,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                 return (
                   <circle key={`msq-${i}`} cx={idxToX(i)} cy={y}
                     r={on || fired ? r : r * 0.6}
-                    fill={fired ? relColor : on ? onColor : offColor}
+                    fill={fired ? relColor : on ? tierColor(vSqLevel[i]) : offColor}
                     opacity={on || fired ? 0.95 : 0.45}/>
                 )
               })}
@@ -10370,10 +10469,39 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           )
         })()}
 
-        {/* MA lines */}
+        {/* Lakshmi Mata Pine Bollinger Bands — SMA basis, upper/lower lines
+            and the very light blue fill from the source script. */}
+        {showBB && vBBBasis.length > 0 && (() => {
+          const offset = Math.round(Number(bbP.offset) || 0)
+          const point = (v,i) => v!=null ? `${idxToX(i+offset)},${priceToY(v)}` : null
+          const basisPts = vBBBasis.map(point).filter(Boolean)
+          const upperPts = vBBUpper.map(point).filter(Boolean)
+          const lowerPts = vBBLower.map(point).filter(Boolean)
+          const fillPts = [
+            ...vBBUpper.map((v,i)=>v!=null?point(v,i):null).filter(Boolean),
+            ...vBBLower.map((v,i)=>v!=null?point(v,i):null).filter(Boolean).reverse(),
+          ]
+          const fillOpacity = Math.min(0.5, Math.max(0, Number(bbP.fillOpacity ?? 5) / 100))
+          const width = lineW(bbP.lineWidth, 1)
+          return (
+            <g style={{pointerEvents:'none'}}>
+              {fillPts.length>3&&<polygon points={fillPts.join(' ')}
+                fill={bbP.fillColor||'#2196f3'} opacity={fillOpacity}/>}
+              {basisPts.length>1&&<polyline points={basisPts.join(' ')} fill="none"
+                stroke={bbP.basisColor||'#ff6d00'} strokeWidth={width} opacity={0.9}/>}
+              {upperPts.length>1&&<polyline points={upperPts.join(' ')} fill="none"
+                stroke={bbP.bandColor||'#2962ff'} strokeWidth={width} opacity={0.9}/>}
+              {lowerPts.length>1&&<polyline points={lowerPts.join(' ')} fill="none"
+                stroke={bbP.bandColor||'#2962ff'} strokeWidth={width} opacity={0.9}/>}
+            </g>
+          )
+        })()}
+
+        {/* Exact Pine EMA set: 9 / 21 / 50 / 150 / 200 */}
         {showMA && [
           [vMA20,  maColors.ma20,  maVisible.ma20],
           [vMA50,  maColors.ma50,  maVisible.ma50],
+          [vMA150, maColors.ma150, maVisible.ma150],
           [vMA200, maColors.ma200, maVisible.ma200],
           [vEma9line, maColors.ema9, maVisible.ema9],
         ].map(([series,color,on],k)=>{
@@ -10382,17 +10510,18 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           return pts.length>1 ? <polyline key={k} points={pts.join(' ')} fill="none" stroke={color} strokeWidth={maWidth} opacity={0.9}/> : null
         })}
 
-        {/* Circuit band — UC/LC around the previous close, labelled on the scale */}
-        {showCircuit && (() => {
-          const pct = Math.min(20, Math.max(2, Number(circuitP.pct) || 20))
-          const base = vCloses.length > 1 ? vCloses[vCloses.length - 2] : vCloses[vCloses.length - 1]
-          if (base == null || !Number.isFinite(base)) return null
+        {/* Pine circuit limits — ± effective band from the previous Daily
+            close. Tight bands are auto-detected only from genuine lock days. */}
+        {showCircuit && circuitBand && (() => {
+          const {pct,uc,lc,source}=circuitBand
           const rows = [
-            { label: 'UC', price: base * (1 + pct/100), color: circuitP.ucColor || TV_VOL_UP },
-            { label: 'LC', price: base * (1 - pct/100), color: circuitP.lcColor || TV_VOL_DN },
+            { label: 'UC', price: uc, color: circuitP.ucColor || TV_VOL_UP },
+            { label: 'LC', price: lc, color: circuitP.lcColor || TV_VOL_DN },
           ]
           return (
             <g style={{pointerEvents:'none'}}>
+              <line x1={padL} y1={priceToY(uc*1.02)} x2={padL+chartW} y2={priceToY(uc*1.02)}
+                stroke={C.muted} strokeWidth={0.8} strokeDasharray="7,4" opacity={0.35}/>
               {rows.map(r => {
                 const y = priceToY(r.price)
                 if (y < priceTop - 1 || y > priceTop + priceH + 1) return null
@@ -10405,7 +10534,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                       <text x={padL+chartW-4} y={y-3} fontSize={8.5} fontWeight={700}
                         fill={r.color} textAnchor="end" opacity={0.9}
                         style={{fontVariantNumeric:'tabular-nums'}}>
-                        {r.label} {pct}% {formatAxisPrice(r.price)}
+                        {r.label} {pct}% {formatAxisPrice(r.price)}{r.label==='UC'?` · ${source}`:''}
                       </text>
                     )}
                   </g>
@@ -10596,6 +10725,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             maVisible.ema9  ? { v: lastOf(vEma9line), color: maColors.ema9 }  : null,
             maVisible.ma20  ? { v: lastOf(vMA20),  color: maColors.ma20 }  : null,
             maVisible.ma50  ? { v: lastOf(vMA50),  color: maColors.ma50 }  : null,
+            maVisible.ma150 ? { v: lastOf(vMA150), color: maColors.ma150 } : null,
             maVisible.ma200 ? { v: lastOf(vMA200), color: maColors.ma200 } : null,
           ].filter(Boolean)
             .filter(t => t.v != null && Number.isFinite(t.v))
@@ -10976,19 +11106,24 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         {showSuperCycle && (
           <g>
             <rect x={padL} y={scTop} width={chartW} height={scH} fill={C.card} opacity={0.4}/>
-            {/* Per-bar RS rating backdrop — same >70 / 50–70 / <50 bands as
-                the price pane, so the histogram sits on RS strength. */}
-            {(() => {
-              const n = vScRating.length
+            {/* Lakshmi_Mata_Super_Cycle_merged.pine background: RS Rating
+                bands (>70 / 50–70 / <50), separate from Lakshmi Mata `res`. */}
+            {scP.showRatingBg !== false && (() => {
+              const source = String(scP.ratingBgSource || 'main')
+              const ratings = source === 'smallcap' ? vScRatingSmallcap
+                : source === 'midcap' ? vScRatingMidcap
+                : source === 'nifty' ? vScRatingNifty
+                : vScRating
+              const n = ratings.length
               if (!n) return null
               const step = n > 1 ? Math.max(1, idxToX(1) - idxToX(0)) : Math.max(2, candleW + 1)
-              const o = Math.min(0.35, Math.max(0.02, (Number(scP.rsBgOpacity) || 8) / 100))
-              const cStrong = scP.rsBgStrongColor || '#00e676'
-              const cAvg = scP.rsBgAvgColor || '#ffd600'
-              const cWeak = scP.rsBgWeakColor || '#ff1744'
+              const o = Math.min(0.35, Math.max(0.02, (Number(scP.ratingBgOpacity) || 15) / 100))
+              const cStrong = scP.ratingBgStrongColor || '#00e676'
+              const cAvg = scP.ratingBgAvgColor || '#ffd600'
+              const cWeak = scP.ratingBgWeakColor || '#ff1744'
               return (
                 <g style={{ pointerEvents: 'none' }}>
-                  {vScRating.map((r, i) => {
+                  {ratings.map((r, i) => {
                     if (r == null || !Number.isFinite(r)) return null
                     const x0 = idxToX(i) - step / 2
                     const x1 = x0 + step + 0.75
@@ -11105,10 +11240,15 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         </>}
         {showMA && <>
           {maVisible.ema9 && <span><span style={{color:maColors.ema9}}>■</span> EMA{maP.ema9 ?? 9}</span>}
-          {maVisible.ma20 && <span><span style={{color:maColors.ma20}}>■</span> MA{maP.ma20 ?? 20}</span>}
-          {maVisible.ma50 && <span><span style={{color:maColors.ma50}}>■</span> MA{maP.ma50 ?? 50}</span>}
-          {maVisible.ma200 && <span><span style={{color:maColors.ma200}}>■</span> MA{maP.ma200 ?? 200}</span>}
+          {maVisible.ma20 && <span><span style={{color:maColors.ma20}}>■</span> EMA{maP.ma20 ?? 21}</span>}
+          {maVisible.ma50 && <span><span style={{color:maColors.ma50}}>■</span> EMA{maP.ma50 ?? 50}</span>}
+          {maVisible.ma150 && <span><span style={{color:maColors.ma150}}>■</span> EMA{maP.ma150 ?? 150}</span>}
+          {maVisible.ma200 && <span><span style={{color:maColors.ma200}}>■</span> EMA{maP.ma200 ?? 200}</span>}
         </>}
+        {showBB && <span>
+          <span style={{color:bbP.basisColor||'#ff6d00'}}>—</span>
+          /<span style={{color:bbP.bandColor||'#2962ff'}}>—</span> BB {bbP.length??20}
+        </span>}
         {showGuppy && (
           <span>
             <span style={{color:guppyP.cloudUpColor || '#16a34a'}}>■</span>
@@ -11121,12 +11261,28 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             /<span style={{color:hlP.hlLowColor || LAKSHMI_HILO_COLORS.LOW}}>⚑</span> 52W break
           </span>
         )}
-        {showSqueeze && (
-          <span title="Bollinger Bands inside Keltner Channel = coiled; first bar back outside = fired">
-            <span style={{color:sqP.sqOnColor || LAKSHMI_CYCLE_COLORS.SQUEEZE_ON}}>●</span>
-            /<span style={{color:sqP.sqReleaseColor || LAKSHMI_CYCLE_COLORS.SQUEEZE_RELEASE}}>●</span> Squeeze
-          </span>
-        )}
+        {showSqueeze && (()=>{
+          const li = vSqLevel.length - 1
+          const lvl = vSqLevel[li] || 0
+          const bars = vSqBars[li] || 0
+          const mom = vSqMom[li]
+          const tier = lvl >= SQUEEZE_PRO_LEVELS.HIGH ? 'High'
+            : lvl === SQUEEZE_PRO_LEVELS.MID ? 'Mid'
+            : lvl === SQUEEZE_PRO_LEVELS.LOW ? 'Low' : 'No'
+          const momColor = squeezeProMomColor(mom, vSqMom[li-1])
+          return (
+            <span title={'Squeeze Pro — Bollinger Bands vs three Keltner widths. '
+              +'High compression = tightest coil. Momentum above zero = long bias.'}>
+              <span style={{color:sqP.sqHighColor || SQUEEZE_PRO_COLORS.HIGH}}>●</span>
+              <span style={{color:sqP.sqOnColor || SQUEEZE_PRO_COLORS.MID}}>●</span>
+              <span style={{color:sqP.sqLowColor || SQUEEZE_PRO_COLORS.LOW}}>●</span>
+              {' '}Squeeze Pro: <b style={{color:C.text}}>{tier}{lvl?` ${bars}d`:''}</b>
+              {mom != null && (
+                <> · <b style={{color:momColor}}>{mom >= 0 ? 'Long' : 'Short'}</b></>
+              )}
+            </span>
+          )
+        })()}
         {showRSI && <span><span style={{color:rsiP.lineColor || '#a78bfa'}}>—</span> RSI {rsiP.length ?? 14}</span>}
         {showMACD && <>
           <span><span style={{color:macdP.macdColor || C.blue}}>—</span> MACD</span>
@@ -11301,7 +11457,10 @@ function RsOptionalColHeader({colKey, sortBy, sortDir, handleSort, vis}){
   if(colKey==='stage'){
     return <span title="Stage: Weinstein trend stage (S1 Base/S2 Up/S3 Top/S4 Down). Vol: today's volume as % of its recent peak day, not a price." style={{textAlign:'center',color:C.muted,cursor:'help'}}>Stage/Vol</span>
   }
-  if(colKey==='squeeze') return <span style={{textAlign:'center',color:C.muted}}>Squeeze/VCP</span>
+  if(colKey==='squeeze'){
+    return <SortableHeader label="Squeeze/VCP" sortKey="sqzDays" sortBy={sortBy} sortDir={sortDir}
+      onSort={handleSort} align="center"/>
+  }
   if(colKey==='wl52') return <span style={{textAlign:'center',color:C.muted}}>52WL Signal</span>
   if(colKey==='weakrs') return <span style={{textAlign:'center',color:C.muted}}>Weak RS</span>
   if(colKey==='mcap'){
@@ -11893,6 +12052,47 @@ function LayoutTopBarMenu({
 // every breakout-style sub-table (R1, 52WH, Weekly, Cup&Handle, Guppy) can
 // share identical, consistent sort behavior instead of 5 near-duplicate
 // copies drifting apart over time.
+/**
+ * Squeeze Pro presentation helpers (John Carter).
+ *
+ * Compression tier says how hard price is coiled — Bollinger Bands inside the
+ * 1.0-ATR Keltner is a far tighter spring than inside the 2.0. The classic
+ * `in_squeeze` flag the scan has always written is the 1.5 test, i.e. the mid
+ * tier, so rows from a backend that hasn't run the Squeeze Pro pass yet still
+ * grade correctly instead of showing blank.
+ */
+const SQZ_TIER_META = {
+  high: {label:'High',  rank:3, color:'#ff9100', dot:'●', hint:'BB inside the 1.0-ATR Keltner — tightest coil'},
+  mid:  {label:'Mid',   rank:2, color:'#ff1744', dot:'●', hint:'BB inside the 1.5-ATR Keltner — the classic squeeze'},
+  low:  {label:'Low',   rank:1, color:'#b0bec5', dot:'●', hint:'BB inside the 2.0-ATR Keltner — mild compression'},
+  none: {label:'None',  rank:0, color:'#5d606b', dot:'○', hint:'Bands back outside the Keltners'},
+}
+function sqzTierKey(s){
+  const lvl=s?.squeeze?.level
+  if(lvl&&SQZ_TIER_META[lvl]) return lvl
+  return s?.squeeze?.inSqueeze?'mid':'none'
+}
+function sqzTierMeta(s){ return SQZ_TIER_META[sqzTierKey(s)] }
+function sqzTierRank(s){ return sqzTierMeta(s).rank }
+function sqzDaysOf(s){
+  const sq=s?.squeeze
+  return Number(sq?.sqzDays ?? sq?.squeezeDays ?? 0)||0
+}
+/**
+ * Long or short side of the coil. The backend's TTM momentum sign is the real
+ * answer; until it lands, price against its own 21-EMA is the honest stand-in
+ * (`exact:false` so the UI can say it is an estimate).
+ */
+function sqzBiasOf(s){
+  const dir=s?.squeeze?.bias
+  if(dir==='long'||dir==='short') return {dir, exact:true}
+  const ema21=Number(s?.nearEMA21?.ema21), last=Number(s?.last)
+  if(Number.isFinite(ema21)&&ema21>0&&Number.isFinite(last)) {
+    return {dir:last>=ema21?'long':'short', exact:false}
+  }
+  return {dir:null, exact:false}
+}
+
 function sortStocksForTable(stocks,sortBy,sortDir){
   const dir=sortDir==='asc'?1:-1
   const getVal=(s,key)=>{
@@ -11903,6 +12103,10 @@ function sortStocksForTable(stocks,sortBy,sortDir){
     if(key==='rsSector') return s.rsSector??-1
     if(key==='slope') return s.rsTrend?.slope??0
     if(key==='pp10') return s.pp?.ppCount10d??0
+    // Longest, hardest coil first: the tier outranks the streak so a 3-day
+    // high compression sorts above a 30-day low-compression drift.
+    if(key==='sqzDays') return sqzTierRank(s)*1000+Math.min(999,sqzDaysOf(s))
+    if(key==='sqzMom') return s.squeeze?.mom??-99999
     if(key==='chg') return s.chg??0
     if(key==='chgW') return s.chgW??-999
     if(key==='last') return s.last??0
@@ -11989,6 +12193,166 @@ function BreakoutTable({stocks,isMobile,visibleRsCols,onChartOpen,pageSize=25,de
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * Squeeze Pro scanner body — the tiles, filters and tables on the Squeeze page.
+ *
+ * The point of the page is answering "which stocks are coiled hardest, for the
+ * longest, and which way will they break": compression tier (John Carter's
+ * three Keltner widths), how many bars the coil has held, and the momentum
+ * side. Filters and tables keep their own state so the rest of the app doesn't
+ * re-render when you change them.
+ */
+function SqueezeProScanner({stocks, isMobile, visibleRsCols, onChartOpen, showOurChartHover, onOurChart}){
+  const [tierFilter,setTierFilter]=useState('any')   // any | midplus | high
+  const [biasFilter,setBiasFilter]=useState('long')  // all | long | short
+  const [minDays,setMinDays]=useState(0)
+  const [includeVcp,setIncludeVcp]=useState(false)
+
+  const tally=useMemo(()=>{
+    const t={high:0,mid:0,low:0,long:0,short:0,fired:0,firedLong:0,exact:0}
+    for(const s of stocks){
+      const key=sqzTierKey(s)
+      if(key!=='none'){
+        t[key]++
+        const b=sqzBiasOf(s)
+        if(b.dir==='long') t.long++
+        else if(b.dir==='short') t.short++
+        if(s.squeeze?.hasPro) t.exact++
+      }
+      if(s.squeeze?.squeezeFired||s.vcp?.vcpFired){
+        t.fired++
+        if(sqzBiasOf(s).dir==='long') t.firedLong++
+      }
+    }
+    return t
+  },[stocks])
+
+  const passes=useCallback((s)=>{
+    const rank=sqzTierRank(s)
+    if(tierFilter==='high'&&rank<SQZ_TIER_META.high.rank) return false
+    if(tierFilter==='midplus'&&rank<SQZ_TIER_META.mid.rank) return false
+    if(minDays>0&&sqzDaysOf(s)<minDays) return false
+    if(biasFilter!=='all'&&sqzBiasOf(s).dir!==biasFilter) return false
+    return true
+  },[tierFilter,biasFilter,minDays])
+
+  const coiled=useMemo(()=>stocks.filter(s=>{
+    const isCoiled=sqzTierRank(s)>0||(includeVcp&&s.vcp?.isVCP)
+    return isCoiled&&passes(s)
+  }),[stocks,passes,includeVcp])
+  const fired=useMemo(()=>stocks.filter(s=>{
+    const didFire=s.squeeze?.squeezeFired||(includeVcp&&s.vcp?.vcpFired)
+    if(!didFire) return false
+    return biasFilter==='all'||sqzBiasOf(s).dir===biasFilter
+  }),[stocks,biasFilter,includeVcp])
+
+  const seg=(active,label,onClick,color)=>(
+    <button key={label} type="button" onClick={onClick}
+      style={{padding:'5px 10px',borderRadius:7,cursor:'pointer',fontSize:11,fontWeight:700,
+        border:`1px solid ${active?(color||C.accent):C.border}`,
+        background:active?(color||C.accent)+'22':C.card,
+        color:active?(color||C.accent):C.muted}}>{label}</button>
+  )
+  const groupLabel=(text)=>(
+    <span style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',
+      letterSpacing:'0.06em',marginRight:2}}>{text}</span>
+  )
+
+  const tiles=[
+    {l:`${SQZ_TIER_META.high.dot} High compression`,v:tally.high,c:SQZ_TIER_META.high.color,
+      t:SQZ_TIER_META.high.hint},
+    {l:`${SQZ_TIER_META.mid.dot} Mid (classic)`,v:tally.mid,c:SQZ_TIER_META.mid.color,
+      t:SQZ_TIER_META.mid.hint},
+    {l:`${SQZ_TIER_META.low.dot} Low compression`,v:tally.low,c:SQZ_TIER_META.low.color,
+      t:SQZ_TIER_META.low.hint},
+    {l:'▲ Long bias',v:tally.long,c:C.green,t:'Coiled with momentum above zero — breaks tend to resolve up'},
+    {l:'🟢 Fired today',v:tally.fired,c:C.teal,t:`${tally.firedLong} of them with long bias`},
+  ]
+
+  return (
+    <>
+      <div style={{background:C.card,border:`1px solid ${C.teal}44`,borderRadius:12,padding:'14px',marginBottom:12}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8}}>
+          {tiles.map(({l,v,c,t})=>(
+            <div key={l} title={t} style={{background:C.bg,borderRadius:8,padding:'12px',
+              textAlign:'center',border:`1px solid ${C.border}`}}>
+              <div style={{fontSize:24,fontWeight:900,color:c}}>{v}</div>
+              <div style={{fontSize:10,color:C.muted,marginTop:3}}>{l}</div>
+            </div>
+          ))}
+        </div>
+        {tally.exact===0&&(tally.high+tally.mid+tally.low)>0&&(
+          <div style={{marginTop:10,fontSize:10,color:C.yellow,lineHeight:1.45}}>
+            Compression tiers and momentum direction are coming from the classic squeeze
+            flag plus a 21-EMA estimate (marked ▲? / ▼?). Once the backend scan writes the
+            Squeeze Pro columns, both become exact.
+          </div>
+        )}
+      </div>
+
+      <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:8,marginBottom:14,
+        background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'9px 11px'}}>
+        {groupLabel('Compression')}
+        {seg(tierFilter==='any','Any',()=>setTierFilter('any'))}
+        {seg(tierFilter==='midplus','Mid + High',()=>setTierFilter('midplus'),SQZ_TIER_META.mid.color)}
+        {seg(tierFilter==='high','High only',()=>setTierFilter('high'),SQZ_TIER_META.high.color)}
+        <span style={{width:8}}/>
+        {groupLabel('Direction')}
+        {seg(biasFilter==='long','▲ Long',()=>setBiasFilter('long'),C.green)}
+        {seg(biasFilter==='short','▼ Short',()=>setBiasFilter('short'),C.red)}
+        {seg(biasFilter==='all','Both',()=>setBiasFilter('all'))}
+        <span style={{width:8}}/>
+        {groupLabel('Coiled at least')}
+        {[0,5,10,20].map(d=>seg(minDays===d,d===0?'Any':`${d}d`,()=>setMinDays(d),C.blue))}
+        <span style={{flex:1}}/>
+        {seg(includeVcp,'Include VCP',()=>setIncludeVcp(v=>!v),C.purple)}
+      </div>
+
+      <div style={{marginBottom:20}}>
+        <div style={{fontWeight:800,fontSize:14,color:C.blue,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
+          🌀 In Squeeze — {biasFilter==='long'?'Long Setups':biasFilter==='short'?'Short Setups':'Coiled'}, Longest Coil First
+        </div>
+        <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+          Sorted by compression tier then bars coiled — a high-compression name that has
+          held for weeks is the tightest spring on the list. ▲ / ▼ is the momentum side.
+        </div>
+        {coiled.length===0?(
+          <EmptyPanel title="Nothing matches these filters"
+            body="Loosen the compression tier, drop the minimum days, or switch direction to Both."/>
+        ):(
+          <>
+            <TVCopyPanel stocks={coiled} label="In Squeeze"/>
+            <BreakoutTable stocks={coiled} isMobile={isMobile} defaultSortBy="sqzDays"
+              visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={onChartOpen}
+              showOurChartHover={showOurChartHover} onOurChart={onOurChart}/>
+          </>
+        )}
+      </div>
+
+      <div>
+        <div style={{fontWeight:800,fontSize:14,color:C.green,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
+          🟢 Firing Now — Breaking Out of the Squeeze
+        </div>
+        <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
+          Bands have pushed back outside the Keltner. Momentum direction on the fire bar is
+          the side the coil released.
+        </div>
+        {fired.length===0?(
+          <EmptyPanel icon="🌀" title="No squeeze fires yet"
+            body="Fires show up when bands expand after a coil. Check back after the next scan cycle."/>
+        ):(
+          <>
+            <TVCopyPanel stocks={fired} label="Squeeze Fired"/>
+            <BreakoutTable stocks={fired} isMobile={isMobile}
+              visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={onChartOpen}
+              showOurChartHover={showOurChartHover} onOurChart={onOurChart}/>
+          </>
+        )}
+      </div>
+    </>
   )
 }
 
@@ -12257,9 +12621,12 @@ const HELP_CONTENT = [
     • MA Crossovers — Guppy bullish/bearish.
     • Volume — Pocket Pivot, RS line new high.
     Each type is its own exportable list under the section chips.`},
-  {id:'squeeze', title:'Squeeze', body:`Stocks in a volatility squeeze (Bollinger Bands inside Keltner Channels) or 
-    forming a VCP (Volatility Contraction Pattern) — both precede explosive moves. Tight price action + falling 
-    volume is the setup; the breakout direction isn't predicted, only that a big move is coming.`},
+  {id:'squeeze', title:'Squeeze Pro', body:`John Carter's Squeeze Pro. Instead of one on/off squeeze, the Bollinger
+    Bands are tested against three Keltner widths, so you see how hard price is coiled: High compression (inside the
+    1.0-ATR Keltner) is the tightest spring, Mid is the classic TTM squeeze, Low is mild. Days shows how long the coil
+    has held — a long squeeze at high compression is the setup worth watching. The ▲ / ▼ arrow is TTM momentum: above
+    zero the break usually resolves long, below zero short. Filter by tier, direction and minimum days, and sort the
+    Squeeze/VCP column to put the longest, hardest coils on top.`},
   {id:'52wl', title:'52WL Crossover', body:`Stocks making new 52-week highs (potential breakouts) or sitting near 
     52-week lows (potential value or falling knives — check the trend before assuming either).`},
   {id:'weak', title:'Weak RS', body:`The inverse scanner — stocks with deteriorating relative strength, useful for 
@@ -12550,14 +12917,33 @@ function RsOptionalColCell({colKey, s, vis}){
     )
   }
   if(colKey==='squeeze'){
+    const tier=sqzTierMeta(s)
+    const days=sqzDaysOf(s)
+    const bias=sqzBiasOf(s)
+    const coiled=tier.rank>0
     return (
       <div style={{display:'flex',flexDirection:'column',gap:3,alignItems:'flex-start'}}>
-        {s.squeeze?.squeezeFired&&<div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,background:C.green+'22',color:C.green,whiteSpace:'nowrap'}}>🟢 BB Fired</div>}
+        {coiled&&(
+          <div title={`${tier.hint} · ${days} bar${days===1?'':'s'} coiled`}
+            style={{display:'flex',alignItems:'center',gap:4,padding:'2px 7px',borderRadius:5,
+              fontSize:9,fontWeight:800,whiteSpace:'nowrap',
+              background:tier.color+'22',color:tier.color,border:`1px solid ${tier.color}55`}}>
+            <span>{tier.dot}</span>
+            <span>{tier.label.toUpperCase()} {days}d</span>
+            {bias.dir&&(
+              <span title={bias.exact?'TTM momentum sign':'Estimated from price vs 21-EMA — run a scan for exact momentum'}
+                style={{color:bias.dir==='long'?C.green:C.red}}>
+                {bias.dir==='long'?'▲':'▼'}{bias.exact?'':'?'}
+              </span>
+            )}
+          </div>
+        )}
+        {s.squeeze?.squeezeFired&&<div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,background:C.green+'22',color:C.green,whiteSpace:'nowrap'}}>🟢 BB Fired{s.squeeze?.firedDir?` ${s.squeeze.firedDir==='long'?'↑ Long':'↓ Short'}`:''}</div>}
         {s.vcp?.vcpFired&&<div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,background:C.accent+'22',color:C.accent,whiteSpace:'nowrap'}}>🚀 VCP Fired</div>}
-        {s.squeeze?.inSqueeze&&<div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,background:C.blue+'22',color:C.blue,whiteSpace:'nowrap'}}>BB {s.squeeze.squeezeDays}d · {s.squeeze.bbWidthPct}%</div>}
+        {coiled&&s.squeeze?.bbWidthPct!=null&&<div style={{fontSize:8,color:C.muted,whiteSpace:'nowrap'}}>BB width {s.squeeze.bbWidthPct}%</div>}
         {s.vcp?.isVCP&&<div style={{padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,background:C.purple+'22',color:C.purple,whiteSpace:'nowrap'}}>VCP {s.vcp.vcpStage} contractions</div>}
         {s.vcp?.contractions?.length>0&&<div style={{fontSize:8,color:C.muted,whiteSpace:'nowrap'}}>{s.vcp.contractions.map(c=>`${c}%`).join(' → ')}</div>}
-        {!s.squeeze?.inSqueeze&&!s.vcp?.isVCP&&!s.squeeze?.squeezeFired&&!s.vcp?.vcpFired&&<span style={{color:C.border,fontSize:9}}>—</span>}
+        {!coiled&&!s.vcp?.isVCP&&!s.squeeze?.squeezeFired&&!s.vcp?.vcpFired&&<span style={{color:C.border,fontSize:9}}>—</span>}
       </div>
     )
   }
@@ -12698,166 +13084,66 @@ function CompanyLinkIcon({sym, onOpen, size=11}){
 }
 
 /**
- * Our Chart preview drawn straight into the symbol hover popup — candles,
- * volume and EMA9/21 off the same stored history the full chart reads, so a
- * hover answers "what does this look like" without opening the panel.
- * Cached per symbol for the session: re-hovering a row costs nothing.
+ * Hover menu on a stock symbol.
+ *
+ * With "Chart on hover" on (Settings → App Preferences), dwelling on a symbol
+ * opens Our Chart itself — the same CandlestickChart the chart panel renders,
+ * so it carries Lakshmi Mata, Lakshmi Mata Volume and Lakshmi Mata Super Cycle
+ * exactly as the user saved them — filling the window. With it off the hover
+ * stays a compact company snapshot plus chart links.
  */
-const HOVER_CHART_CACHE=new Map()
-function SymbolHoverChart({sym, bars=90, width=336, height=176}){
-  const key=String(sym||'').trim().toUpperCase()
-  const [hist,setHist]=useState(()=>HOVER_CHART_CACHE.get(key)||null)
-  const [err,setErr]=useState(null)
-  useEffect(()=>{
-    if(!key) return
-    const hit=HOVER_CHART_CACHE.get(key)
-    if(hit){ setHist(hit); setErr(null); return }
-    let cancelled=false
-    setHist(null); setErr(null)
-    fetchStockFullHistory(key).then(res=>{
-      if(cancelled) return
-      if(res?.error || !(res?.prices||[]).length){ setErr(res?.error||'No stored history yet'); return }
-      HOVER_CHART_CACHE.set(key,res)
-      setHist(res)
-    }).catch(e=>{ if(!cancelled) setErr(e?.message||'Could not load history') })
-    return ()=>{ cancelled=true }
-  },[key])
-
-  const frame=(inner)=>(
-    <div style={{width,height,display:'flex',alignItems:'center',justifyContent:'center',
-      fontSize:10,color:C.muted,padding:'0 12px',textAlign:'center',lineHeight:1.45}}>
-      {inner}
-    </div>
-  )
-  if(err) return frame(err)
-  if(!hist) return frame('Loading chart…')
-
-  const closes=(hist.prices||[]).map(Number)
-  const n=Math.min(bars, closes.length)
-  if(n<2) return frame('Not enough history to draw')
-  const cut=closes.length-n
-  const c=closes.slice(cut)
-  const o=(hist.opens||[]).slice(cut)
-  const h=(hist.highs||[]).slice(cut)
-  const l=(hist.lows||[]).slice(cut)
-  const v=(hist.volumes||[]).slice(cut).map(x=>Number(x)||0)
-  const dates=(hist.dates||[]).slice(cut)
-  // EMAs come off the full series so the leading values aren't warm-up nulls.
-  const ema9=emaArr(closes,9).slice(cut)
-  const ema21=emaArr(closes,21).slice(cut)
-
-  const padL=4, padR=46, padT=8, volH=Math.round(height*0.22), gap=6
-  const plotW=width-padL-padR
-  const priceH=height-padT-volH-gap-14
-  const at=(arr,i,fb)=>{ const x=Number(arr?.[i]); return Number.isFinite(x)?x:fb }
-  const hi=Math.max(...c.map((x,i)=>at(h,i,x)))
-  const lo=Math.min(...c.map((x,i)=>at(l,i,x)))
-  const span=(hi-lo)||1
-  const y=p=>padT+priceH-((p-lo)/span)*priceH
-  const step=plotW/n
-  const bw=Math.max(1.2, Math.min(6, step*0.62))
-  const maxVol=Math.max(...v,1)
-  const volTop=padT+priceH+gap
-  const last=c[n-1], first=c[0]
-  const up=last>=first
-  const line=(arr,color)=>{
-    const pts=[]
-    for(let i=0;i<n;i++){
-      const val=Number(arr[i])
-      if(!Number.isFinite(val)) continue
-      pts.push(`${(padL+i*step+step/2).toFixed(1)},${y(val).toFixed(1)}`)
-    }
-    return pts.length>1
-      ? <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="1.1" opacity="0.9"/>
-      : null
-  }
-  const fmtDate=(d)=>{
-    if(!d) return ''
-    const dt=new Date(d)
-    if(Number.isNaN(dt.getTime())) return ''
-    return dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})
-  }
-
-  return(
-    <div style={{width,padding:'2px 0 0'}}>
-      <svg width={width} height={height} style={{display:'block'}}>
-        {[0.25,0.5,0.75].map(f=>(
-          <line key={f} x1={padL} x2={padL+plotW} y1={padT+priceH*f} y2={padT+priceH*f}
-            stroke={C.border} strokeWidth="0.5" opacity="0.5"/>
-        ))}
-        {c.map((close,i)=>{
-          const open=at(o,i,close), high=at(h,i,Math.max(open,close)), low=at(l,i,Math.min(open,close))
-          const col=close>=open?C.green:C.red
-          const cx=padL+i*step+step/2
-          const yO=y(open), yC=y(close)
-          const top=Math.min(yO,yC)
-          const bodyH=Math.max(1,Math.abs(yC-yO))
-          return(
-            <g key={i}>
-              <line x1={cx} x2={cx} y1={y(high)} y2={y(low)} stroke={col} strokeWidth="0.8" opacity="0.85"/>
-              <rect x={cx-bw/2} y={top} width={bw} height={bodyH} fill={col} opacity="0.95"/>
-            </g>
-          )
-        })}
-        {line(ema9,C.accent)}
-        {line(ema21,C.yellow)}
-        <line x1={padL} x2={padL+plotW} y1={y(last)} y2={y(last)}
-          stroke={up?C.green:C.red} strokeWidth="0.7" strokeDasharray="3 3" opacity="0.8"/>
-        <text x={padL+plotW+4} y={y(last)+3.5} fontSize="9.5" fontWeight="700" fill={up?C.green:C.red}>
-          {last>=1000?last.toFixed(0):last.toFixed(2)}
-        </text>
-        <text x={padL+plotW+4} y={padT+8} fontSize="8.5" fill={C.muted}>{hi>=1000?hi.toFixed(0):hi.toFixed(1)}</text>
-        <text x={padL+plotW+4} y={padT+priceH} fontSize="8.5" fill={C.muted}>{lo>=1000?lo.toFixed(0):lo.toFixed(1)}</text>
-        {v.map((vol,i)=>{
-          const barH=Math.max(0.6,(vol/maxVol)*volH)
-          const close=c[i], open=at(o,i,close)
-          return <rect key={i} x={padL+i*step+step/2-bw/2} y={volTop+volH-barH} width={bw} height={barH}
-            fill={close>=open?C.green:C.red} opacity="0.4"/>
-        })}
-        <text x={padL} y={height-3} fontSize="8.5" fill={C.muted}>{fmtDate(dates[0])}</text>
-        <text x={padL+plotW} y={height-3} fontSize="8.5" fill={C.muted} textAnchor="end">{fmtDate(dates[n-1])}</text>
-      </svg>
-      <div style={{display:'flex',gap:9,padding:'0 12px 7px',fontSize:8.5,color:C.muted}}>
-        <span>{n}D</span>
-        <span><b style={{color:C.accent}}>—</b> EMA9</span>
-        <span><b style={{color:C.yellow}}>—</b> EMA21</span>
-      </div>
-    </div>
-  )
-}
-
-/** Hover menu on a stock symbol — company snapshot, then chart links. */
 function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpenChart, onCompanyPage, children}){
   const [open,setOpen]=useState(false)
-  // Chart lags the popup slightly so skimming down a table doesn't fire a
-  // history request per row.
+  // The full chart lags the hover so skimming down a table doesn't mount a
+  // chart (and fetch a history) per row.
   const [chartArmed,setChartArmed]=useState(false)
+  // Clicking inside the chart window pins it open: the chart's own popups
+  // (indicator settings, series picker) portal outside this popup, so plain
+  // mouse-out would rip the chart away mid-interaction.
+  const [pinned,setPinned]=useState(false)
   const hideTimer=useRef(null)
   const chartTimer=useRef(null)
   const layout=useContext(RsLayoutContext)
   const hoverChart=layout?.hoverChartEnabled!==false
+  const chartUserId=layout?.chartUserId||null
+  const closeAll=useCallback(()=>{
+    if(hideTimer.current) clearTimeout(hideTimer.current)
+    if(chartTimer.current){ clearTimeout(chartTimer.current); chartTimer.current=null }
+    setOpen(false); setChartArmed(false); setPinned(false)
+  },[])
   const show=()=>{
     if(hideTimer.current) clearTimeout(hideTimer.current)
     setOpen(true)
-    if(hoverChart&&!chartTimer.current) chartTimer.current=setTimeout(()=>setChartArmed(true),260)
+    if(hoverChart&&!chartTimer.current) chartTimer.current=setTimeout(()=>setChartArmed(true),300)
   }
   const scheduleHide=()=>{
+    if(pinned) return
     if(hideTimer.current) clearTimeout(hideTimer.current)
     if(chartTimer.current){ clearTimeout(chartTimer.current); chartTimer.current=null }
-    hideTimer.current=setTimeout(()=>{ setOpen(false); setChartArmed(false) },200)
+    hideTimer.current=setTimeout(()=>{ setOpen(false); setChartArmed(false) },220)
   }
   useEffect(()=>()=>{
     if(hideTimer.current) clearTimeout(hideTimer.current)
     if(chartTimer.current) clearTimeout(chartTimer.current)
   },[])
+  useEffect(()=>{
+    if(!open) return
+    const onKey=e=>{
+      if(e.key!=='Escape') return
+      // Let the chart's own modal take the first Escape.
+      if(document.querySelector('[role="dialog"]')) return
+      closeAll()
+    }
+    window.addEventListener('keydown',onKey)
+    return ()=>window.removeEventListener('keydown',onKey)
+  },[open,closeAll])
   const itemStyle={
     display:'block',width:'100%',textAlign:'left',padding:'8px 12px',border:'none',
     background:'transparent',color:C.text,fontSize:12,fontWeight:600,cursor:'pointer',
   }
   // The popup is portalled and viewport-positioned: tables scroll on both
-  // axes, which clips absolutely-positioned children — and a popup carrying a
-  // chart is tall enough that it also needs to flip above the row near the
-  // bottom of the screen.
+  // axes, which clips absolutely-positioned children — and the compact menu
+  // also needs to flip above the row near the bottom of the screen.
   const anchorRef=useRef(null)
   const menuRef=useRef(null)
   const [pos,setPos]=useState(null)
@@ -12865,15 +13151,16 @@ function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpen
     const a=anchorRef.current
     if(!a) return
     const r=a.getBoundingClientRect()
-    const mh=menuRef.current?.offsetHeight||(hoverChart?430:260)
-    const mw=menuRef.current?.offsetWidth||(hoverChart?336:232)
+    const mh=menuRef.current?.offsetHeight||260
+    const mw=menuRef.current?.offsetWidth||232
     let top=r.bottom+4
     if(top+mh>window.innerHeight-8) top=Math.max(8, r.top-mh-4)
     const left=Math.max(8, Math.min(r.left, window.innerWidth-mw-8))
     setPos({top,left})
-  },[hoverChart])
+  },[])
+  const chartWindowOpen=open&&hoverChart&&chartArmed
   useLayoutEffect(()=>{
-    if(!open){ setPos(null); return }
+    if(!open||chartWindowOpen){ setPos(null); return }
     place()
     window.addEventListener('scroll',place,true)
     window.addEventListener('resize',place)
@@ -12881,41 +13168,72 @@ function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpen
       window.removeEventListener('scroll',place,true)
       window.removeEventListener('resize',place)
     }
-  },[open,chartArmed,place])
-  return(
-    <span ref={anchorRef} style={{position:'relative',display:'inline-flex'}}
-      onMouseEnter={show} onMouseLeave={scheduleHide}>
-      {children}
-      {open&&createPortal((
-        <div role="menu" ref={menuRef}
-          onMouseEnter={show} onMouseLeave={scheduleHide}
-          style={{
-            position:'fixed',left:pos?.left??-9999,top:pos?.top??-9999,zIndex:4000,
-            minWidth:hoverChart?336:(stock?232:168),
-            visibility:pos?'visible':'hidden',
-            background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
-            boxShadow:'0 10px 28px rgba(0,0,0,0.35)',padding:'4px 0',overflow:'hidden',
-          }}>
-          {hoverChart&&(
-            <div style={{borderBottom:`1px solid ${C.divider}`,paddingBottom:2}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',
-                padding:'5px 12px 0',fontSize:9,fontWeight:700,color:C.muted,letterSpacing:'0.05em'}}>
-                <span>OUR CHART · {String(sym||'').toUpperCase()}</span>
-                {(onOurChart||onOpenChart)&&(
-                  <button type="button"
-                    onClick={e=>{e.stopPropagation(); setOpen(false); (onOurChart||onOpenChart)?.(sym)}}
-                    style={{border:'none',background:'transparent',color:C.accent,fontSize:9,
-                      fontWeight:700,cursor:'pointer',padding:0}}>
-                    Open full ↗
-                  </button>
-                )}
-              </div>
-              {chartArmed
-                ? <SymbolHoverChart sym={sym}/>
-                : <div style={{width:336,height:176,display:'flex',alignItems:'center',
-                    justifyContent:'center',fontSize:10,color:C.muted}}>Loading chart…</div>}
+  },[open,chartWindowOpen,place])
+
+  const headBtn={border:`1px solid ${C.border}`,background:C.sidebar,color:C.text,fontSize:10,
+    fontWeight:700,cursor:'pointer',padding:'3px 8px',borderRadius:6,textDecoration:'none',
+    whiteSpace:'nowrap'}
+  const chartWindow=(
+    <div role="dialog" aria-label={`Our Chart ${sym}`}
+      onMouseEnter={show} onMouseLeave={scheduleHide}
+      onMouseDown={()=>setPinned(true)}
+      style={{position:'fixed',left:16,top:16,width:'calc(100vw - 32px)',height:'calc(100vh - 32px)',
+        zIndex:4000,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
+        boxShadow:'0 18px 60px rgba(0,0,0,0.55)',display:'flex',flexDirection:'column',
+        overflow:'hidden'}}>
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'7px 10px',
+        borderBottom:`1px solid ${C.divider}`,background:C.sidebar,flexShrink:0}}>
+        <span style={{fontSize:12,fontWeight:800,color:C.text,whiteSpace:'nowrap'}}>
+          {String(sym||'').toUpperCase()}
+        </span>
+        <span style={{fontSize:10,color:C.muted,minWidth:0,overflow:'hidden',
+          textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>
+          {getCompanyName(sym)||''}
+        </span>
+        <span style={{fontSize:9,color:C.muted,whiteSpace:'nowrap'}}>
+          {pinned?'Pinned · Esc to close':'Click to pin'}
+        </span>
+        {(onOurChart||onOpenChart)&&(
+          <button type="button"
+            onClick={e=>{e.stopPropagation(); closeAll(); (onOurChart||onOpenChart)?.(sym)}}
+            style={{...headBtn,color:C.accent,borderColor:C.accent}}>Open in panel ↗</button>
+        )}
+        {onCompanyPage&&(
+          <button type="button"
+            onClick={e=>{e.stopPropagation(); closeAll(); onCompanyPage(sym)}}
+            style={headBtn}>Company ↗</button>
+        )}
+        <a href={`https://www.tradingview.com/chart/?symbol=NSE:${encodeURIComponent(sym)}`}
+          target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
+          style={headBtn}>TradingView ↗</a>
+        <a href={`https://www.screener.in/company/${encodeURIComponent(sym)}/consolidated/`}
+          target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
+          style={headBtn}>Screener ↗</a>
+        <button type="button" onClick={e=>{e.stopPropagation(); closeAll()}}
+          title="Close (Esc)" style={{...headBtn,fontSize:12,padding:'1px 7px'}}>✕</button>
+      </div>
+      <div style={{flex:1,minHeight:0,display:'flex',flexDirection:'column',position:'relative'}}>
+        <CandlestickChart key={String(sym||'').toUpperCase()} sym={sym} isMobile={false}
+          isIndex={false} chartExpanded userId={chartUserId}/>
+      </div>
+    </div>
+  )
+
+  const compactMenu=(
+    <div role="menu" ref={menuRef}
+      onMouseEnter={show} onMouseLeave={scheduleHide}
+      style={{
+        position:'fixed',left:pos?.left??-9999,top:pos?.top??-9999,zIndex:4000,
+        minWidth:stock?232:168,
+        visibility:pos?'visible':'hidden',
+        background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
+        boxShadow:'0 10px 28px rgba(0,0,0,0.35)',padding:'4px 0',overflow:'hidden',
+      }}>
+          {hoverChart?(
+            <div style={{padding:'7px 12px',fontSize:10,color:C.muted,whiteSpace:'nowrap'}}>
+              Opening Our Chart · {String(sym||'').toUpperCase()}…
             </div>
-          )}
+          ):(<>
           {stock&&(()=>{
             const rating=(layout?.resultRatingsMap||{})[String(sym||'').toUpperCase()]||null
             const mcap=fmtMarketCap(stock.marketCap)
@@ -13001,13 +13319,20 @@ function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpen
             style={{...itemStyle,textDecoration:'none'}}>
             Screener.in ↗
           </a>
-          {!showOurChart&&!hoverChart&&(
+          {!showOurChart&&(
             <div style={{padding:'6px 12px',fontSize:10,color:C.muted,lineHeight:1.4}}>
               Our Chart hidden — enable in Settings → App Preferences
             </div>
           )}
-        </div>
-      ), document.body)}
+          </>)}
+    </div>
+  )
+
+  return(
+    <span ref={anchorRef} style={{position:'relative',display:'inline-flex'}}
+      onMouseEnter={show} onMouseLeave={scheduleHide}>
+      {children}
+      {open&&createPortal(chartWindowOpen?chartWindow:compactMenu, document.body)}
     </span>
   )
 }
@@ -14783,7 +15108,7 @@ function AppPreferencesCard({
         <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
           letterSpacing:'0.07em',padding:'10px 12px 2px'}}>Symbol hover</div>
         <PrefToggleRow icon="📈" label="Chart on hover"
-          hint="Draw candles + EMA in the popup (desktop). Skip the click."
+          hint="Dwell on a symbol to open full-window Our Chart with Lakshmi Mata, Volume & Super Cycle (desktop)."
           on={!!hoverChartPreviewEnabled} onToggle={onHoverChartPreview}/>
         <PrefToggleRow icon="🔗" label="Our Chart link"
           hint="Show the Our Chart menu item next to TradingView & Screener"
@@ -17801,7 +18126,10 @@ export default function App(){
 
   return (
     <RsLayoutContext.Provider value={{colOrder:rsColOrder, visibleRsCols, resultRatingsMap, openCompanyPage,
-      hoverChartEnabled:hoverChartPreviewEnabled&&!isMobile}}>
+      hoverChartEnabled:hoverChartPreviewEnabled&&!isMobile,
+      // The hover chart is the real Our Chart, so it needs the user id to load
+      // their saved indicator prefs (Lakshmi Mata / Volume / Super Cycle).
+      chartUserId:session?.user?.id||null}}>
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:"'Inter','SF Pro Display',sans-serif",
       color:C.text,fontSize:13,display:'flex',flexDirection:'row',zoom:zoomLevel}}>
 
@@ -21426,78 +21754,18 @@ export default function App(){
                 availableDates={availableDates} isMobile={isMobile} onOpenRefresh={refreshHistoryDates}/>
             </div>
             <PageHeader
-              title="Squeeze & VCP"
+              title="Squeeze Pro"
               accent={C.teal}
-              subtitle="Bollinger squeeze (volatility contraction) plus Minervini-style VCP — coiled setups and those just expanding."
-              tip="In Squeeze = still coiled. Fired = bands expanding with activity. Sort tables by RS and open charts from any row."
+              subtitle="John Carter's three compression tiers — Bollinger Bands inside the 1.0 / 1.5 / 2.0 ATR Keltner — with how long the coil has held and which way momentum is leaning."
+              tip="High compression = tightest coil. ▲ Long means TTM momentum is above zero, so the break is more likely to resolve up. Sort by Squeeze/VCP to put the longest, hardest coils on top."
             />
             {stocks.length===0?(
               <EmptyPanel icon="🌀" title="No scan data yet"
                 body="Squeeze needs the live universe. Open RS Rating so data loads, then return here."/>
             ):(<>
-            <div style={{background:C.card,border:`1px solid ${C.teal}44`,borderRadius:12,padding:'14px',marginBottom:14}}>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8}}>
-                {[
-                  {l:'🔵 BB In Squeeze',v:stocks.filter(s=>s.squeeze?.inSqueeze).length,c:C.blue},
-                  {l:'🟢 BB Fired',v:stocks.filter(s=>s.squeeze?.squeezeFired).length,c:C.green},
-                  {l:'📐 VCP Forming',v:stocks.filter(s=>s.vcp?.isVCP).length,c:C.purple},
-                  {l:'🚀 VCP Fired',v:stocks.filter(s=>s.vcp?.vcpFired).length,c:C.accent},
-                ].map(({l,v,c})=>(
-                  <div key={l} style={{background:C.bg,borderRadius:8,padding:'12px',textAlign:'center',border:`1px solid ${C.border}`}}>
-                    <div style={{fontSize:24,fontWeight:900,color:c}}>{v}</div>
-                    <div style={{fontSize:10,color:C.muted,marginTop:3}}>{l}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Section 1: Currently in squeeze (coiled) */}
-            <div style={{marginBottom:20}}>
-              <div style={{fontWeight:800,fontSize:14,color:C.blue,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
-                🔵 In Squeeze — Coiled, Waiting to Fire
-              </div>
-              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
-                Low volatility, BB inside Keltner Channel — often precedes a big move
-              </div>
-              {(()=>{
-                const inSqueeze = stocks.filter(s=>s.squeeze?.inSqueeze || s.vcp?.isVCP).sort((a,b)=>b.rs-a.rs)
-                if(inSqueeze.length===0) return(
-                  <EmptyPanel title="No stocks currently in squeeze"
-                    body="Coiled names come and go — check Fired below, or widen your index filter."/>
-                )
-                return(
-                  <>
-                    <TVCopyPanel stocks={inSqueeze} label="In Squeeze"/>
-                    <BreakoutTable stocks={inSqueeze} isMobile={isMobile}
-                      visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
-                  </>
-                )
-              })()}
-            </div>
-
-            {/* Section 2: Just fired (breaking out) */}
-            <div>
-              <div style={{fontWeight:800,fontSize:14,color:C.green,marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
-                🟢 Firing Now — Breaking Out of Squeeze
-              </div>
-              <div style={{fontSize:11,color:C.muted,marginBottom:10}}>
-                Was in squeeze, now expanding with volume — the move is starting
-              </div>
-              {(()=>{
-                const fired = stocks.filter(s=>s.squeeze?.squeezeFired || s.vcp?.vcpFired).sort((a,b)=>b.rs-a.rs)
-                if(fired.length===0) return(
-                  <EmptyPanel icon="🌀" title="No squeeze fires yet"
-                    body="Fires show up when bands expand after a coil. Check back after the next scan cycle."/>
-                )
-                return(
-                  <>
-                    <TVCopyPanel stocks={fired} label="Squeeze Fired"/>
-                    <BreakoutTable stocks={fired} isMobile={isMobile}
-                      visibleRsCols={{...visibleRsCols,squeeze:true}} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
-                  </>
-                )
-              })()}
-            </div>
+            <SqueezeProScanner stocks={stocks} isMobile={isMobile}
+              visibleRsCols={visibleRsCols} onChartOpen={openChart}
+              showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
             </>)}
           </div>
           )

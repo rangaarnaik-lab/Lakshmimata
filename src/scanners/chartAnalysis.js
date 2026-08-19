@@ -123,6 +123,13 @@ export {
   alignSeriesFromEnd,
   calcLakshmiSuperCycle,
   calcLakshmiSqueeze,
+  calcSqueezePro,
+  squeezeProLevelColor,
+  squeezeProMomColor,
+  SQUEEZE_PRO_COLORS,
+  SQUEEZE_PRO_LEVELS,
+  SQUEEZE_PRO_LEVEL_NAMES,
+  SQUEEZE_PRO_DEFAULTS,
   calcNewHighLowFlags,
   LAKSHMI_HILO_COLORS,
 } from './lakshmiProprietary.js'
@@ -337,12 +344,14 @@ export const GUPPY_LONG_PERIODS = [30, 35, 40, 45, 50, 60]
  * Swing high/low pivot detection — a bar is a swing high if its high is
  * the max within a +/- `lookback` window, swing low similarly for lows.
  */
-export function findSwingPoints(highs, lows, lookback = 5) {
+export function findSwingPoints(highs, lows, leftBars = 5, rightBars = leftBars) {
   const pivots = []
   const n = highs.length
-  for (let i = lookback; i < n - lookback; i++) {
-    const windowH = highs.slice(i - lookback, i + lookback + 1)
-    const windowL = lows.slice(i - lookback, i + lookback + 1)
+  const left = Math.max(1, Math.round(Number(leftBars) || 5))
+  const right = Math.max(1, Math.round(Number(rightBars) || left))
+  for (let i = left; i < n - right; i++) {
+    const windowH = highs.slice(i - left, i + right + 1)
+    const windowL = lows.slice(i - left, i + right + 1)
     if (highs[i] === Math.max(...windowH)) {
       pivots.push({ idx: i, price: highs[i], type: 'H' })
     } else if (lows[i] === Math.min(...windowL)) {
@@ -368,6 +377,55 @@ export function computeSupportResistance(pivots, currentPrice) {
     s1: supports[0]?.price ?? null,
     s2: supports[1]?.price ?? null,
   }
+}
+
+/**
+ * Lakshmi_Mata.pine support/resistance state.
+ *
+ * The Pine study is not a generic "nearest two pivots" tool. It turns the
+ * confirmed 5/5 pivots into a zig-zag, classifies HH/HL/LH/LL structure, then
+ * carries the latest structural resistance/support forward until a new one is
+ * confirmed. This mirrors that state machine. Consecutive same-side pivots are
+ * collapsed to the more extreme point, which is the practical equivalent of
+ * Pine's `valuewhen` cleanup before its HH/HL/LH/LL tests.
+ */
+export function computePineSupportResistance(pivots, closes) {
+  const zigzag = []
+  for (const p of pivots || []) {
+    const last = zigzag[zigzag.length - 1]
+    if (last?.type === p.type) {
+      const moreExtreme = p.type === 'H' ? p.price > last.price : p.price < last.price
+      if (moreExtreme) zigzag[zigzag.length - 1] = p
+      continue
+    }
+    zigzag.push(p)
+  }
+
+  let resistance = null
+  let support = null
+  let trend = 0
+  for (let i = 4; i < zigzag.length; i++) {
+    const a = zigzag[i].price
+    const b = zigzag[i - 1].price
+    const c = zigzag[i - 2].price
+    const d = zigzag[i - 3].price
+    const e = zigzag[i - 4].price
+    const hh = a > b && a > c && c > b && c > d
+    const ll = a < b && a < c && c < b && c < d
+    const hl = (a >= c && b > c && b > d && d > c && d > e)
+      || (a < b && a > c && b < d)
+    const lh = (a <= c && b < c && b < d && d < c && d < e)
+      || (a > b && a < c && b > d)
+
+    if (lh) resistance = a
+    if (hl) support = a
+    const close = closes?.[zigzag[i].idx]
+    if (close != null && support != null && close < support) trend = -1
+    else if (close != null && resistance != null && close > resistance) trend = 1
+    if ((trend === 1 && hh) || (trend === -1 && lh)) resistance = a
+    if ((trend === 1 && hl) || (trend === -1 && ll)) support = a
+  }
+  return { r1: resistance, r2: null, s1: support, s2: null }
 }
 
 /** Inside Bar — this bar's full high/low range sits within the previous bar's range. */

@@ -691,6 +691,126 @@ export function calcLakshmiSqueeze(highs, lows, closes, opts = {}) {
   return { squeezeOn, squeezeRelease }
 }
 
+/**
+ * John Carter "Squeeze Pro" compression tiers.
+ *
+ * The original TTM Squeeze is one test: Bollinger Bands inside a Keltner
+ * Channel at 1.5 ATR. Squeeze Pro runs the same test against three Keltner
+ * widths so you can see *how hard* price is coiled, and reads direction off
+ * the TTM momentum line rather than guessing which way the coil will break:
+ *
+ *   inside KC 2.0 only .......... low compression   (Carter: black dot)
+ *   inside KC 1.5 ............... mid compression   (the classic squeeze, red)
+ *   inside KC 1.0 ............... high compression  (tightest coil, orange)
+ *   outside all ................. no squeeze        (green)
+ *
+ * Momentum above zero = long bias, below zero = short bias; rising vs fading
+ * splits each side into the four Squeeze Pro histogram colours.
+ */
+export const SQUEEZE_PRO_LEVELS = { NONE: 0, LOW: 1, MID: 2, HIGH: 3 }
+export const SQUEEZE_PRO_LEVEL_NAMES = ['none', 'low', 'mid', 'high']
+export const SQUEEZE_PRO_COLORS = {
+  NONE: '#00E676',   // green — bands back outside the Keltners
+  LOW: '#B0BEC5',    // Carter plots black; light grey is what reads on a dark chart
+  MID: '#FF1744',    // red — the classic TTM squeeze
+  HIGH: '#FF9100',   // orange — tightest coil
+  MOM_UP: '#00E5FF',      // cyan — above zero and rising
+  MOM_UP_FADE: '#2962FF', // blue — above zero but fading
+  MOM_DOWN: '#FF1744',    // red — below zero and falling
+  MOM_DOWN_FADE: '#FFD600', // yellow — below zero but recovering
+}
+export const SQUEEZE_PRO_DEFAULTS = {
+  length: 20, bbMult: 2.0, kcMultHigh: 1.0, kcMultMid: 1.5, kcMultLow: 2.0, momLength: 20,
+}
+
+/** Momentum histogram colour for a Squeeze Pro reading. */
+export function squeezeProMomColor(mom, prevMom) {
+  if (mom == null || Number.isNaN(mom)) return LAKSHMI_CYCLE_COLORS.GRAY
+  const rising = prevMom != null && mom > prevMom
+  if (mom >= 0) return rising ? SQUEEZE_PRO_COLORS.MOM_UP : SQUEEZE_PRO_COLORS.MOM_UP_FADE
+  return rising ? SQUEEZE_PRO_COLORS.MOM_DOWN_FADE : SQUEEZE_PRO_COLORS.MOM_DOWN
+}
+
+/** Dot colour for a compression level (0-3). */
+export function squeezeProLevelColor(level) {
+  if (level >= SQUEEZE_PRO_LEVELS.HIGH) return SQUEEZE_PRO_COLORS.HIGH
+  if (level === SQUEEZE_PRO_LEVELS.MID) return SQUEEZE_PRO_COLORS.MID
+  if (level === SQUEEZE_PRO_LEVELS.LOW) return SQUEEZE_PRO_COLORS.LOW
+  return SQUEEZE_PRO_COLORS.NONE
+}
+
+export function calcSqueezePro(highs, lows, closes, opts = {}) {
+  const length = opts.length ?? SQUEEZE_PRO_DEFAULTS.length
+  const bbMult = opts.bbMult ?? SQUEEZE_PRO_DEFAULTS.bbMult
+  const kcHigh = opts.kcMultHigh ?? SQUEEZE_PRO_DEFAULTS.kcMultHigh
+  const kcMid = opts.kcMultMid ?? SQUEEZE_PRO_DEFAULTS.kcMultMid
+  const kcLow = opts.kcMultLow ?? SQUEEZE_PRO_DEFAULTS.kcMultLow
+  const momLength = opts.momLength ?? SQUEEZE_PRO_DEFAULTS.momLength
+  const n = closes?.length || 0
+  const level = new Array(n).fill(0)
+  const sqzOn = new Array(n).fill(false)
+  const release = new Array(n).fill(false)
+  const bars = new Array(n).fill(0)
+  const barsHigh = new Array(n).fill(0)
+  const mom = new Array(n).fill(null)
+  const momUp = new Array(n).fill(false)
+  const out = { level, sqzOn, release, bars, barsHigh, mom, momUp }
+  if (n < length + 1) return out
+
+  const basis = calcSMASeries(closes, length)
+  const tr = new Array(n).fill(0)
+  for (let i = 0; i < n; i++) {
+    if (i === 0) { tr[i] = (highs[i] ?? closes[i]) - (lows[i] ?? closes[i]); continue }
+    const h = highs[i] ?? closes[i], l = lows[i] ?? closes[i], pc = closes[i - 1]
+    tr[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc))
+  }
+  // Carter's Keltner width is an EMA of true range, matching the Pine study.
+  const rangeKC = emaSeries(tr, length)
+
+  for (let i = length - 1; i < n; i++) {
+    if (basis[i] == null || rangeKC[i] == null) continue
+    let sum = 0, sum2 = 0, cnt = 0
+    for (let j = i - length + 1; j <= i; j++) {
+      if (closes[j] == null) continue
+      sum += closes[j]
+      sum2 += closes[j] * closes[j]
+      cnt++
+    }
+    if (cnt < length) continue
+    const mean = sum / length
+    const stdev = Math.sqrt(Math.max(0, sum2 / length - mean * mean))
+    const upperBB = basis[i] + bbMult * stdev
+    const lowerBB = basis[i] - bbMult * stdev
+    const inside = (kcMult) => (
+      upperBB < basis[i] + kcMult * rangeKC[i] && lowerBB > basis[i] - kcMult * rangeKC[i]
+    )
+    level[i] = inside(kcHigh) ? SQUEEZE_PRO_LEVELS.HIGH
+      : inside(kcMid) ? SQUEEZE_PRO_LEVELS.MID
+      : inside(kcLow) ? SQUEEZE_PRO_LEVELS.LOW
+      : SQUEEZE_PRO_LEVELS.NONE
+    sqzOn[i] = level[i] > SQUEEZE_PRO_LEVELS.NONE
+    release[i] = !sqzOn[i] && i > 0 && sqzOn[i - 1]
+    bars[i] = sqzOn[i] ? (bars[i - 1] || 0) + 1 : 0
+    barsHigh[i] = level[i] >= SQUEEZE_PRO_LEVELS.HIGH ? (barsHigh[i - 1] || 0) + 1 : 0
+  }
+
+  // TTM momentum: close vs the midpoint of the Donchian mid and the SMA,
+  // smoothed by a linear regression — the Squeeze Pro histogram.
+  const src = new Array(n).fill(null)
+  const smaMom = calcSMASeries(closes, momLength)
+  for (let i = momLength - 1; i < n; i++) {
+    const hh = rollingHighest(highs, i, momLength)
+    const ll = rollingLowest(lows, i, momLength)
+    if (hh == null || ll == null || smaMom[i] == null || closes[i] == null) continue
+    src[i] = closes[i] - ((hh + ll) / 2 + smaMom[i]) / 2
+  }
+  for (let i = 0; i < n; i++) {
+    mom[i] = linRegAt(src, i, momLength)
+    momUp[i] = mom[i] != null && mom[i - 1] != null && mom[i] > mom[i - 1]
+  }
+  return out
+}
+
 export function calcLakshmiSuperCycle(highs, lows, closes, niftyClosesAligned = null, opts = {}) {
   const length = opts.length ?? 21
   const rsMALength = opts.rsMALength ?? 9

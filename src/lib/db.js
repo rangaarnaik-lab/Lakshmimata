@@ -463,6 +463,18 @@ function transformStockRow(row) {
       squeezeFired: row.squeeze_fired || false,
       bbWidthPct:   row.bb_width_pct,
       squeezeDays:  row.squeeze_days || 0,
+      // Squeeze Pro (John Carter): compression tier, streak and momentum
+      // direction. Until the backend scan has populated these, fall back to
+      // the classic fields — the old in_squeeze test IS the mid tier (BB
+      // inside the 1.5-ATR Keltner), so the tier degrades honestly.
+      level:     row.sqz_level || (row.in_squeeze ? 'mid' : 'none'),
+      sqzDays:   row.sqz_days ?? row.squeeze_days ?? 0,
+      highDays:  row.sqz_high_days ?? 0,
+      mom:       row.sqz_mom ?? null,
+      momSlope:  row.sqz_mom_slope ?? null,
+      bias:      row.sqz_bias || null,
+      firedDir:  row.sqz_fired_dir || null,
+      hasPro:    row.sqz_level != null,
     },
     vcp: {
       isVCP:        row.is_vcp || false,

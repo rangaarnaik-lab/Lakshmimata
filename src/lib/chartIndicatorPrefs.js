@@ -13,7 +13,6 @@ export const BULL_SNORT_PARAM_DEFAULTS = { volMa: 50, volMult: 3, closePct: 65 }
 /** TradingView-style controls shared by every indicator. */
 export const INDICATOR_VISIBILITY_FIELDS = [
   { key: 'visible', label: 'Visible on chart', type: 'bool', tab: 'visibility' },
-  { key: 'showLegend', label: 'Show indicator name on chart', type: 'bool', tab: 'visibility' },
 ]
 
 /** Own indicator fields plus controls that every study supports. */
@@ -28,20 +27,28 @@ export function indicatorFields(id) {
  */
 export const INDICATOR_PARAM_FIELDS = {
   ma: [
-    { key: 'ema9', label: 'EMA', min: 2, max: 50, step: 1 },
-    { key: 'ma20', label: 'MA short', min: 2, max: 100, step: 1 },
-    { key: 'ma50', label: 'MA mid', min: 5, max: 200, step: 1 },
-    { key: 'ma200', label: 'MA long', min: 20, max: 400, step: 1 },
-    { key: 'ema9Color', label: 'EMA color', type: 'color', tab: 'style' },
-    { key: 'ma20Color', label: 'MA short color', type: 'color', tab: 'style' },
-    { key: 'ma50Color', label: 'MA mid color', type: 'color', tab: 'style' },
-    { key: 'ma200Color', label: 'MA long color', type: 'color', tab: 'style' },
-    { key: 'showEma9', label: 'Plot EMA', type: 'bool', tab: 'style' },
-    { key: 'showMa20', label: 'Plot MA short', type: 'bool', tab: 'style' },
-    { key: 'showMa50', label: 'Plot MA mid', type: 'bool', tab: 'style' },
-    { key: 'showMa200', label: 'Plot MA long', type: 'bool', tab: 'style' },
+    { key: 'ema9', label: 'Custom EMA 1', min: 2, max: 50, step: 1 },
+    { key: 'ma20', label: 'Custom EMA 2', min: 2, max: 100, step: 1 },
+    { key: 'ma50', label: 'EMA 50 Day / 10 Week', min: 5, max: 200, step: 1 },
+    { key: 'ma150', label: 'EMA 150 Day / 30 Week', min: 20, max: 300, step: 1 },
+    { key: 'ma200', label: 'EMA 200 Day / 40 Week', min: 20, max: 400, step: 1 },
+    { key: 'rsPeriod', label: 'RS Period', min: 1, max: 252, step: 1 },
+    { key: 'ema9Color', label: 'Custom EMA 1 color', type: 'color', tab: 'style' },
+    { key: 'ma20Color', label: 'Custom EMA 2 color', type: 'color', tab: 'style' },
+    { key: 'ma50Color', label: 'EMA 50 color', type: 'color', tab: 'style' },
+    { key: 'ma150Color', label: 'EMA 150 color', type: 'color', tab: 'style' },
+    { key: 'ma200Color', label: 'EMA 200 color', type: 'color', tab: 'style' },
+    { key: 'showEma9', label: 'Plot Custom EMA 1', type: 'bool', tab: 'style' },
+    { key: 'showMa20', label: 'Plot Custom EMA 2', type: 'bool', tab: 'style' },
+    { key: 'showMa50', label: 'Plot EMA 50', type: 'bool', tab: 'style' },
+    { key: 'showMa150', label: 'Plot EMA 150', type: 'bool', tab: 'style' },
+    { key: 'showMa200', label: 'Plot EMA 200', type: 'bool', tab: 'style' },
     { key: 'lineWidth', label: 'Line width', min: 0.5, max: 4, step: 0.1, tab: 'style' },
     { key: 'showScaleTags', label: 'Values on price scale', type: 'bool', tab: 'style' },
+    { key: 'showRsBackground', label: 'Show Relative Strength (RS) Background', type: 'bool', tab: 'style' },
+    { key: 'rsPositiveBgColor', label: 'RS > 0 background', type: 'color', tab: 'style' },
+    { key: 'rsNegativeBgColor', label: 'RS < 0 background', type: 'color', tab: 'style' },
+    { key: 'rsBackgroundOpacity', label: 'RS background opacity %', min: 2, max: 40, step: 1, tab: 'style' },
   ],
   guppy: [
     { key: 'showCloud', label: 'Cloud fill', type: 'bool', tab: 'style' },
@@ -50,10 +57,15 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'cloudOpacity', label: 'Cloud opacity %', min: 5, max: 80, step: 1, tab: 'style' },
   ],
   squeeze: [
-    { key: 'sqLength', label: 'Squeeze length', min: 5, max: 100, step: 1 },
-    { key: 'sqBbMult', label: 'Squeeze band A', min: 0.5, max: 5, step: 0.1 },
-    { key: 'sqKcMult', label: 'Squeeze band B', min: 0.5, max: 5, step: 0.1 },
-    { key: 'sqOnColor', label: 'Squeeze on dot', type: 'color', tab: 'style' },
+    { key: 'sqLength', label: 'BB / KC Length', min: 5, max: 100, step: 1 },
+    { key: 'sqBbMult', label: 'BB StdDev Mult', min: 0.5, max: 5, step: 0.1 },
+    { key: 'sqKcHigh', label: 'KC Mult — High Compression', min: 0.5, max: 5, step: 0.1 },
+    { key: 'sqKcMult', label: 'KC Mult — Mid (classic squeeze)', min: 0.5, max: 5, step: 0.1 },
+    { key: 'sqKcLow', label: 'KC Mult — Low Compression', min: 0.5, max: 5, step: 0.1 },
+    { key: 'sqMomLength', label: 'Momentum Length', min: 5, max: 100, step: 1 },
+    { key: 'sqHighColor', label: 'High compression dot', type: 'color', tab: 'style' },
+    { key: 'sqOnColor', label: 'Mid compression dot', type: 'color', tab: 'style' },
+    { key: 'sqLowColor', label: 'Low compression dot', type: 'color', tab: 'style' },
     { key: 'sqReleaseColor', label: 'Squeeze fired dot', type: 'color', tab: 'style' },
     { key: 'sqOffColor', label: 'No squeeze dot', type: 'color', tab: 'style' },
     { key: 'sqShowOff', label: 'Dot on every bar', type: 'bool', tab: 'style' },
@@ -70,6 +82,8 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'hlShowLabels', label: 'Show 52WH / 52WL text', type: 'bool', tab: 'style' },
   ],
   sr: [
+    { key: 'leftBars', label: 'Pivot Left Bars', min: 1, max: 30, step: 1 },
+    { key: 'rightBars', label: 'Pivot Right Bars', min: 1, max: 30, step: 1 },
     { key: 'resColor', label: 'Resistance', type: 'color', tab: 'style' },
     { key: 'supColor', label: 'Support', type: 'color', tab: 'style' },
     { key: 'lineWidth', label: 'Line width', min: 0.5, max: 3, step: 0.1, tab: 'style' },
@@ -82,6 +96,16 @@ export const INDICATOR_PARAM_FIELDS = {
       ],
     },
     { key: 'showLabels', label: 'Show labels', type: 'bool', tab: 'style' },
+  ],
+  bb: [
+    { key: 'length', label: 'Length', min: 1, max: 200, step: 1 },
+    { key: 'mult', label: 'StdDev', min: 0.001, max: 50, step: 0.1 },
+    { key: 'offset', label: 'Offset', min: -100, max: 100, step: 1 },
+    { key: 'basisColor', label: 'Basis', type: 'color', tab: 'style' },
+    { key: 'bandColor', label: 'Upper / Lower', type: 'color', tab: 'style' },
+    { key: 'fillColor', label: 'Background', type: 'color', tab: 'style' },
+    { key: 'fillOpacity', label: 'Background opacity %', min: 0, max: 50, step: 1, tab: 'style' },
+    { key: 'lineWidth', label: 'Line width', min: 0.5, max: 4, step: 0.1, tab: 'style' },
   ],
   patterns: [
     { key: 'insideColor', label: 'Inside bar dot', type: 'color', tab: 'style' },
@@ -129,11 +153,20 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'rsColor', label: 'RS line', type: 'color', tab: 'style' },
     { key: 'momColor', label: 'Momentum line', type: 'color', tab: 'style' },
     { key: 'rsMaColor', label: 'RS MA line', type: 'color', tab: 'style' },
-    { key: 'showRsBg', label: 'RS background (price pane)', type: 'bool', tab: 'style' },
-    { key: 'rsBgStrongColor', label: 'RS bg strong', type: 'color', tab: 'style' },
-    { key: 'rsBgAvgColor', label: 'RS bg average', type: 'color', tab: 'style' },
-    { key: 'rsBgWeakColor', label: 'RS bg weak', type: 'color', tab: 'style' },
-    { key: 'rsBgOpacity', label: 'RS bg opacity %', min: 2, max: 30, step: 1, tab: 'style' },
+    {
+      key: 'ratingBgSource', label: 'RS Rating Background Source', type: 'select', tab: 'style',
+      options: [
+        { value: 'main', label: 'Main' },
+        { value: 'nifty', label: 'Nifty' },
+        { value: 'smallcap', label: 'Smallcap' },
+        { value: 'midcap', label: 'Midcap' },
+      ],
+    },
+    { key: 'showRatingBg', label: 'Show RS Rating Background', type: 'bool', tab: 'style' },
+    { key: 'ratingBgStrongColor', label: 'RS Rating > 70', type: 'color', tab: 'style' },
+    { key: 'ratingBgAvgColor', label: 'RS Rating 50–70', type: 'color', tab: 'style' },
+    { key: 'ratingBgWeakColor', label: 'RS Rating < 50', type: 'color', tab: 'style' },
+    { key: 'ratingBgOpacity', label: 'RS Rating background opacity %', min: 2, max: 30, step: 1, tab: 'style' },
     { key: 'barOpacity', label: 'Histogram opacity %', min: 30, max: 100, step: 5, tab: 'style' },
   ],
   buysell: [
@@ -202,6 +235,7 @@ export const INDICATOR_PARAM_FIELDS = {
   ],
   circuit: [
     { key: 'pct', label: 'Band %', min: 2, max: 20, step: 1 },
+    { key: 'autoDetect', label: 'Auto-detect from genuine lock days (Daily)', type: 'bool' },
     { key: 'ucColor', label: 'Upper circuit', type: 'color', tab: 'style' },
     { key: 'lcColor', label: 'Lower circuit', type: 'color', tab: 'style' },
     { key: 'lineWidth', label: 'Line width', min: 0.5, max: 3, step: 0.1, tab: 'style' },
@@ -215,6 +249,7 @@ const DEFAULT_ENABLED = {
   squeeze: true, // Lakshmi Mata squeeze dot row under the candles
   hilo52: true, // 52-week break flags on the candles
   sr: true,
+  bb: false, // Pine default: Show Bollinger Bands is off; part of Lakshmi Mata settings.
   rsi: true, // oscillator pane on by default
   macd: false,
   supercycle: true, // Super Cycle oscillator under volume — on by default
@@ -224,22 +259,30 @@ const DEFAULT_ENABLED = {
   bullsnort: true,
   buysell: true,
   forecast: false,
-  circuit: false, // UC/LC circuit band around the previous close
+  circuit: true, // Pine default: UC/LC circuit limits are part of Lakshmi Mata.
 }
 
 const DEFAULT_PARAMS = {
   ma: {
-    ema9: 9, ma20: 20, ma50: 50, ma200: 200,
-    ema9Color: '#26c6da', ma20Color: '#42a5f5', ma50Color: '#ffca28', ma200Color: '#ab47bc',
-    showEma9: true, showMa20: true, showMa50: true, showMa200: true,
+    // Exact Lakshmi_Mata.pine defaults: custom EMA 9/21 plus EMA 50/150/200.
+    ema9: 9, ma20: 21, ma50: 50, ma150: 150, ma200: 200,
+    rsPeriod: 65,
+    ema9Color: '#ff9800', ma20Color: '#141414', ma50Color: '#0fe616',
+    ma150Color: '#5b46e3', ma200Color: '#bd4dee',
+    showEma9: true, showMa20: true, showMa50: true, showMa150: true, showMa200: true,
     lineWidth: 1.3, showScaleTags: true,
+    showRsBackground: true,
+    rsPositiveBgColor: '#b6f0ca', rsNegativeBgColor: '#f7bcbf', rsBackgroundOpacity: 25,
   },
   guppy: {
     showCloud: true, cloudUpColor: '#16a34a', cloudDnColor: '#ef4444', cloudOpacity: 20,
   },
+  // Squeeze Pro (John Carter): one BB against three Keltner widths, so the
+  // dot says how hard price is coiled instead of just on/off.
   squeeze: {
-    sqLength: 21, sqBbMult: 2.0, sqKcMult: 1.5,
-    sqOnColor: '#ff1744', sqReleaseColor: '#00e676', sqOffColor: '#5d606b',
+    sqLength: 20, sqBbMult: 2.0, sqKcHigh: 1.0, sqKcMult: 1.5, sqKcLow: 2.0, sqMomLength: 20,
+    sqHighColor: '#ff9100', sqOnColor: '#ff1744', sqLowColor: '#b0bec5',
+    sqReleaseColor: '#00e676', sqOffColor: '#5d606b',
     sqShowOff: true, sqDotSize: 2.2,
   },
   hilo52: {
@@ -249,8 +292,14 @@ const DEFAULT_PARAMS = {
     hlSize: 11, hlShowLabels: false,
   },
   sr: {
+    leftBars: 5, rightBars: 5,
     resColor: '#ef4444', supColor: '#22c55e',
-    lineWidth: 1, lineStyle: 'dashed', showLabels: true,
+    lineWidth: 3, lineStyle: 'dotted', showLabels: true,
+  },
+  bb: {
+    length: 20, mult: 2.0, offset: 0,
+    basisColor: '#ff6d00', bandColor: '#2962ff', fillColor: '#2196f3',
+    fillOpacity: 5, lineWidth: 1,
   },
   rsi: {
     length: 14, overbought: 70, oversold: 30,
@@ -264,7 +313,9 @@ const DEFAULT_PARAMS = {
   supercycle: {
     length: 21, rsMALength: 9, momLength: 21, bbMult: 2.0, kcMult: 1.5,
     showTable: true, tablePlacement: 'below', tableOpacity: 100, tableDays: 10,
-    showRsBg: true, rsBgStrongColor: '#00e676', rsBgAvgColor: '#ffd600', rsBgWeakColor: '#ff1744', rsBgOpacity: 8,
+    ratingBgSource: 'main', showRatingBg: true,
+    ratingBgStrongColor: '#00e676', ratingBgAvgColor: '#ffd600', ratingBgWeakColor: '#ff1744',
+    ratingBgOpacity: 15,
     rsColor: '#29b6f6', momColor: '#26c6da', rsMaColor: '#ffd600', barOpacity: 92,
   },
   patterns: {
@@ -291,7 +342,7 @@ const DEFAULT_PARAMS = {
     buyColor: '#22c55e', sellColor: '#ef4444', labelSize: 8, showLabels: true,
   },
   forecast: { sampleBars: 30, projPct: 0.15, lineColor: '#f0b90b', lineWidth: 1.5, showLabel: true },
-  circuit: { pct: 20, ucColor: '#26a69a', lcColor: '#ef5350', lineWidth: 0.9, showLabels: true },
+  circuit: { pct: 20, autoDetect: true, ucColor: '#26a69a', lcColor: '#ef5350', lineWidth: 0.9, showLabels: true },
 }
 
 export function defaultChartIndicatorPrefs() {
@@ -301,13 +352,12 @@ export function defaultChartIndicatorPrefs() {
       enabled: DEFAULT_ENABLED[id],
       params: {
         ...(DEFAULT_PARAMS[id] || {}),
-        // Persist explicitly so cloud restore always has Visibility toggles.
+        // Persist explicitly so cloud restore always has the Visibility toggle.
         visible: true,
-        showLegend: true,
       },
     }
   }
-  return { version: 8, indicators }
+  return { version: 11, indicators }
 }
 
 function clampNum(v, min, max, fallback) {
@@ -392,7 +442,59 @@ export function normalizeChartIndicatorPrefs(raw) {
       base.indicators.lakshmivol.params.bullSnortColor = '#E040FB'
     }
   }
-  base.version = 8
+  // v9: the two Pine backgrounds are different calculations. Lakshmi Mata
+  // uses 65-bar relative performance (RS >0 / <0); Super Cycle uses the
+  // three RS Rating bands. Seed each study with its own controls once.
+  if (prevVer < 9) {
+    Object.assign(base.indicators.ma.params, {
+      rsPeriod: 65,
+      showRsBackground: true,
+      rsPositiveBgColor: '#b6f0ca',
+      rsNegativeBgColor: '#f7bcbf',
+      rsBackgroundOpacity: 25,
+    })
+    Object.assign(base.indicators.supercycle.params, {
+      ratingBgSource: 'main',
+      showRatingBg: true,
+      ratingBgStrongColor: '#00e676',
+      ratingBgAvgColor: '#ffd600',
+      ratingBgWeakColor: '#ff1744',
+      ratingBgOpacity: 15,
+    })
+  }
+  // v10: squeeze dots became John Carter Squeeze Pro — three Keltner widths
+  // (high/mid/low compression) plus a momentum length. Saved prefs only have
+  // the single 21/2.0/1.5 pair, so seed the tier controls once.
+  if (prevVer < 10) {
+    Object.assign(base.indicators.squeeze.params, {
+      sqLength: 20,
+      sqBbMult: 2.0,
+      sqKcHigh: 1.0,
+      sqKcMult: 1.5,
+      sqKcLow: 2.0,
+      sqMomLength: 20,
+      sqHighColor: '#ff9100',
+      sqLowColor: '#b0bec5',
+    })
+  }
+  // v11: align the Lakshmi Mata parent with its Pine source. It owns the
+  // 9/21/50/150/200 EMA set, S/R, Bollinger Bands, Buy/Sell and UC/LC.
+  if (prevVer < 11) {
+    Object.assign(base.indicators.ma.params, {
+      ema9: 9, ma20: 21, ma50: 50, ma150: 150, ma200: 200,
+      showEma9: true, showMa20: true, showMa50: true, showMa150: true, showMa200: true,
+      ema9Color: '#ff9800', ma20Color: '#141414', ma50Color: '#0fe616',
+      ma150Color: '#5b46e3', ma200Color: '#bd4dee',
+    })
+    Object.assign(base.indicators.sr.params, {
+      leftBars: 5, rightBars: 5, lineWidth: 3, lineStyle: 'dotted',
+    })
+    base.indicators.sr.enabled = true
+    base.indicators.buysell.enabled = true
+    base.indicators.circuit.enabled = true
+    base.indicators.circuit.params.autoDetect = true
+  }
+  base.version = 11
   return base
 }
 
