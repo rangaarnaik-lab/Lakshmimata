@@ -13108,6 +13108,9 @@ function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpen
   // (indicator settings, series picker) portal outside this popup, so plain
   // mouse-out would rip the chart away mid-interaction.
   const [pinned,setPinned]=useState(false)
+  // Side-docked by default so the scanner table stays hoverable — you can
+  // skim rows one by one instead of closing a full-screen chart each time.
+  const [chartFull,setChartFull]=useState(false)
   const hideTimer=useRef(null)
   const chartTimer=useRef(null)
   const layout=useContext(RsLayoutContext)
@@ -13116,7 +13119,7 @@ function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpen
   const closeAll=useCallback(()=>{
     if(hideTimer.current) clearTimeout(hideTimer.current)
     if(chartTimer.current){ clearTimeout(chartTimer.current); chartTimer.current=null }
-    setOpen(false); setChartArmed(false); setPinned(false)
+    setOpen(false); setChartArmed(false); setPinned(false); setChartFull(false)
   },[])
   const show=()=>{
     if(hideTimer.current) clearTimeout(hideTimer.current)
@@ -13177,6 +13180,31 @@ function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpen
     }
   },[open,chartWindowOpen,place])
 
+  // Dock the chart on the side the row ISN'T on, so the symbol column and the
+  // rest of the table stay uncovered while hovering down the list.
+  const [chartBox,setChartBox]=useState(null)
+  const placeChart=useCallback(()=>{
+    const vw=window.innerWidth
+    const M=12
+    if(chartFull){
+      setChartBox({left:M,width:vw-M*2})
+      return
+    }
+    const r=anchorRef.current?.getBoundingClientRect()
+    const width=Math.max(360,Math.min(820,Math.round(vw*0.52)))
+    const anchorCenter=r?(r.left+r.right)/2:0
+    // Anchor on the left half → chart to the right, and vice versa.
+    const dockRight=anchorCenter < vw/2
+    const left=dockRight ? Math.max(M, vw-width-M) : M
+    setChartBox({left,width})
+  },[chartFull])
+  useLayoutEffect(()=>{
+    if(!chartWindowOpen){ return }
+    placeChart()
+    window.addEventListener('resize',placeChart)
+    return ()=>window.removeEventListener('resize',placeChart)
+  },[chartWindowOpen,placeChart])
+
   const headBtn={border:`1px solid ${C.border}`,background:C.sidebar,color:C.text,fontSize:10,
     fontWeight:700,cursor:'pointer',padding:'3px 8px',borderRadius:6,textDecoration:'none',
     whiteSpace:'nowrap'}
@@ -13184,8 +13212,10 @@ function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpen
     <div role="dialog" aria-label={`Our Chart ${sym}`}
       onMouseEnter={show} onMouseLeave={scheduleHide}
       onMouseDown={()=>setPinned(true)}
-      style={{position:'fixed',left:16,top:16,width:'calc(100vw - 32px)',height:'calc(100vh - 32px)',
-        zIndex:4000,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
+      style={{position:'fixed',left:chartBox?.left??12,top:12,
+        width:chartBox?.width??Math.round(window.innerWidth*0.52),height:'calc(100vh - 24px)',
+        visibility:chartBox?'visible':'hidden',
+        zIndex:4000,background:C.card,border:`1px solid ${pinned?C.accent:C.border}`,borderRadius:10,
         boxShadow:'0 18px 60px rgba(0,0,0,0.55)',display:'flex',flexDirection:'column',
         overflow:'hidden'}}>
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'7px 10px',
@@ -13198,8 +13228,12 @@ function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpen
           {getCompanyName(sym)||''}
         </span>
         <span style={{fontSize:9,color:C.muted,whiteSpace:'nowrap'}}>
-          {pinned?'Pinned · Esc to close':'Click to pin'}
+          {pinned?'Pinned · Esc to close':'Hover next stock to switch · click to pin'}
         </span>
+        <button type="button"
+          onClick={e=>{e.stopPropagation(); setPinned(true); setChartFull(v=>!v)}}
+          title={chartFull?'Dock to the side so the table stays visible':'Expand to full width'}
+          style={headBtn}>{chartFull?'⇤ Dock':'⤢ Full'}</button>
         {(onOurChart||onOpenChart)&&(
           <button type="button"
             onClick={e=>{e.stopPropagation(); closeAll(); (onOurChart||onOpenChart)?.(sym)}}
