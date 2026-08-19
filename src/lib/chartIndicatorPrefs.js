@@ -25,17 +25,30 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'showScaleTags', label: 'Values on price scale', type: 'bool', tab: 'style' },
   ],
   guppy: [
-    { key: 'ribbonOpacity', label: 'Ribbon opacity %', min: 20, max: 100, step: 5 },
-    { key: 'shortColor', label: 'Short ribbon', type: 'color', tab: 'style' },
-    { key: 'longColor', label: 'Long ribbon', type: 'color', tab: 'style' },
     { key: 'showCloud', label: 'Cloud fill', type: 'bool', tab: 'style' },
     { key: 'cloudUpColor', label: 'Cloud up', type: 'color', tab: 'style' },
     { key: 'cloudDnColor', label: 'Cloud down', type: 'color', tab: 'style' },
     { key: 'cloudOpacity', label: 'Cloud opacity %', min: 5, max: 80, step: 1, tab: 'style' },
-    { key: 'fastColor', label: 'EMA fast line', type: 'color', tab: 'style' },
-    { key: 'slowColor', label: 'EMA slow line', type: 'color', tab: 'style' },
-    { key: 'lineWidth', label: 'Ribbon width', min: 0.4, max: 3, step: 0.1, tab: 'style' },
-    { key: 'showHighlight', label: 'Highlight cross EMAs', type: 'bool', tab: 'style' },
+  ],
+  squeeze: [
+    { key: 'sqLength', label: 'Squeeze length', min: 5, max: 100, step: 1 },
+    { key: 'sqBbMult', label: 'Squeeze band A', min: 0.5, max: 5, step: 0.1 },
+    { key: 'sqKcMult', label: 'Squeeze band B', min: 0.5, max: 5, step: 0.1 },
+    { key: 'sqOnColor', label: 'Squeeze on dot', type: 'color', tab: 'style' },
+    { key: 'sqReleaseColor', label: 'Squeeze fired dot', type: 'color', tab: 'style' },
+    { key: 'sqOffColor', label: 'No squeeze dot', type: 'color', tab: 'style' },
+    { key: 'sqShowOff', label: 'Dot on every bar', type: 'bool', tab: 'style' },
+    { key: 'sqDotSize', label: 'Dot size', min: 1, max: 5, step: 0.2, tab: 'style' },
+  ],
+  hilo52: [
+    { key: 'hlWindowDays', label: 'Window (days)', min: 30, max: 1095, step: 5 },
+    { key: 'hlOnlyFirst', label: 'Only the first bar of a run', type: 'bool' },
+    { key: 'hlShowHigh', label: 'Flag new highs', type: 'bool', tab: 'style' },
+    { key: 'hlShowLow', label: 'Flag new lows', type: 'bool', tab: 'style' },
+    { key: 'hlHighColor', label: 'New high flag', type: 'color', tab: 'style' },
+    { key: 'hlLowColor', label: 'New low flag', type: 'color', tab: 'style' },
+    { key: 'hlSize', label: 'Flag size', min: 6, max: 18, step: 0.5, tab: 'style' },
+    { key: 'hlShowLabels', label: 'Show 52WH / 52WL text', type: 'bool', tab: 'style' },
   ],
   sr: [
     { key: 'resColor', label: 'Resistance', type: 'color', tab: 'style' },
@@ -179,6 +192,8 @@ export const INDICATOR_PARAM_FIELDS = {
 const DEFAULT_ENABLED = {
   ma: true,
   guppy: true, // part of the Lakshmi Mata overlay — cloud on by default
+  squeeze: true, // Lakshmi Mata squeeze dot row under the candles
+  hilo52: true, // 52-week break flags on the candles
   sr: true,
   rsi: true, // oscillator pane on by default
   macd: false,
@@ -200,9 +215,18 @@ const DEFAULT_PARAMS = {
     lineWidth: 1.3, showScaleTags: true,
   },
   guppy: {
-    ribbonOpacity: 85, shortColor: '#2dd4bf', longColor: '#f472b6',
     showCloud: true, cloudUpColor: '#16a34a', cloudDnColor: '#ef4444', cloudOpacity: 20,
-    fastColor: '#26c6da', slowColor: '#ab47bc', lineWidth: 0.9, showHighlight: true,
+  },
+  squeeze: {
+    sqLength: 21, sqBbMult: 2.0, sqKcMult: 1.5,
+    sqOnColor: '#ff1744', sqReleaseColor: '#00e676', sqOffColor: '#5d606b',
+    sqShowOff: true, sqDotSize: 2.2,
+  },
+  hilo52: {
+    hlWindowDays: 365, hlOnlyFirst: true,
+    hlShowHigh: true, hlShowLow: true,
+    hlHighColor: '#2962ff', hlLowColor: '#ff6d00',
+    hlSize: 11, hlShowLabels: false,
   },
   sr: {
     resColor: '#ef4444', supColor: '#22c55e',
@@ -257,7 +281,7 @@ export function defaultChartIndicatorPrefs() {
       params: { ...(DEFAULT_PARAMS[id] || {}) },
     }
   }
-  return { version: 4, indicators }
+  return { version: 6, indicators }
 }
 
 function clampNum(v, min, max, fallback) {
@@ -301,6 +325,7 @@ export function normalizeChartIndicatorPrefs(raw) {
   }
   // v2: Super Cycle + RSI; v3: Lakshmi Volume on;
   // v4: Guppy joins the Lakshmi Mata price overlay, so its cloud comes on once.
+  // v5: squeeze dots join the same overlay; v6: 52-week break flags too.
   const prevVer = Number(raw.version) || 1
   if (prevVer < 2) {
     base.indicators.supercycle.enabled = true
@@ -312,7 +337,13 @@ export function normalizeChartIndicatorPrefs(raw) {
   if (prevVer < 4) {
     base.indicators.guppy.enabled = true
   }
-  base.version = 4
+  if (prevVer < 5) {
+    base.indicators.squeeze.enabled = true
+  }
+  if (prevVer < 6) {
+    base.indicators.hilo52.enabled = true
+  }
+  base.version = 6
   return base
 }
 

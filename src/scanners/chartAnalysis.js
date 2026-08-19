@@ -114,6 +114,9 @@ export {
   detectLakshmiBuySellSignals,
   alignSeriesFromEnd,
   calcLakshmiSuperCycle,
+  calcLakshmiSqueeze,
+  calcNewHighLowFlags,
+  LAKSHMI_HILO_COLORS,
 } from './lakshmiProprietary.js'
 
 

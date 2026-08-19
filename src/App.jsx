@@ -30,6 +30,7 @@ import {
   loadLayoutPresets, persistLayoutPresets, upsertPreset, removePreset,
   PANE_MIN_PX, PANE_LABELS, PANE_KEYS, AXIS_W_MIN, AXIS_W_MAX,
 } from './lib/chartPaneSizes'
+import { loadChartDensity, persistChartDensity } from './lib/chartDensity'
 import {
   TrendingUp, BarChart3, RefreshCw, Flag, LineChart as LineChartIcon, Zap,
   TrendingDown, Briefcase, GitCompare, Star, Megaphone, Target, Award, Settings, MoreHorizontal, Layers,
@@ -53,8 +54,9 @@ import {
   detectPPDays, detectHYDays, detectHTDays, detectIBVDays, detectNearEMA9Days,
   detectBullSnortDays, aggregateToWeekly, aggregateToMonthly, aggregateToYearly,
   aggregateIntradayMinutes,
-  calcRSISeries, calcMACDSeries, detectEmaCrossoverDays,
-  detectLakshmiBuySellSignals, alignSeriesFromEnd, calcLakshmiSuperCycle,
+  calcRSISeries, calcMACDSeries,
+  detectLakshmiBuySellSignals, alignSeriesFromEnd, calcLakshmiSuperCycle, calcLakshmiSqueeze,
+  calcNewHighLowFlags, LAKSHMI_HILO_COLORS,
   calcLakshmiCandleBarColors, LAKSHMI_BAR_COLORS,
   calcLakshmiVolumeIndicator, LAKSHMI_VOL_COLORS,
   LAKSHMI_BUY_SELL_COLORS, LAKSHMI_CYCLE_COLORS, lakshmiCycleBarColor,
@@ -6651,13 +6653,15 @@ const TV_TOOLBAR_BLUE = '#2962ff'
 
 /**
  * "Lakshmi Mata" is the main price overlay, matching the Pine study: EMA
- * lines plus the Guppy cloud. They stay separate plots internally so either
- * can be switched off, but the list shows one parent with both inside.
+ * lines, the Guppy cloud and the squeeze dot row. They stay separate plots
+ * internally so any one can be switched off, but the list shows one parent.
  */
 const INDICATOR_BUNDLES = {
   lakshmimata: [
     { id: 'ma', label: 'EMA / MA lines' },
     { id: 'guppy', label: 'Guppy cloud (GMMA)' },
+    { id: 'squeeze', label: 'Squeeze dots (BB / KC)' },
+    { id: 'hilo52', label: '52-week high / low flags' },
   ],
 }
 const BUNDLED_CHILD_IDS = new Set(
@@ -6774,6 +6778,24 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [showSeriesMenu])
+  // Clean = decluttered TradingView-style chrome; Pro = the older dense look.
+  const [density, setDensity] = useState(loadChartDensity)
+  const clean = density === 'clean'
+  const toggleDensity = () => setDensity(d => {
+    const next = d === 'clean' ? 'pro' : 'clean'
+    persistChartDensity(next)
+    return next
+  })
+  const [showToolMenu, setShowToolMenu] = useState(false)
+  const toolMenuRef = useRef(null)
+  useEffect(() => {
+    if (!showToolMenu) return
+    const onDown = (e) => {
+      if (toolMenuRef.current && !toolMenuRef.current.contains(e.target)) setShowToolMenu(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [showToolMenu])
   const [indPrefs, setIndPrefs] = useState(() => loadChartIndicatorPrefs(userId))
   const [indSettingsId, setIndSettingsId] = useState(null) // which indicator settings panel is open
   const [indSettingsTab, setIndSettingsTab] = useState('inputs') // TradingView-style Inputs / Style tabs
@@ -6782,6 +6804,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const prefsN = useMemo(() => normalizeChartIndicatorPrefs(indPrefs), [indPrefs])
   const showMA = prefsN.indicators.ma.enabled
   const showGuppy = prefsN.indicators.guppy.enabled
+  const showSqueeze = prefsN.indicators.squeeze?.enabled !== false
+  const showHiLo52 = prefsN.indicators.hilo52?.enabled !== false
   const showSR = prefsN.indicators.sr.enabled
   const showPatterns = prefsN.indicators.patterns.enabled
   const showBullSnort = prefsN.indicators.bullsnort.enabled
@@ -6820,9 +6844,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     ma200: maP.showMa200 !== false,
   }
   const guppyP = prefsN.indicators.guppy?.params || {}
+  const sqP = prefsN.indicators.squeeze?.params || {}
+  const hlP = prefsN.indicators.hilo52?.params || {}
   const srP = prefsN.indicators.sr?.params || {}
   const patP = prefsN.indicators.patterns?.params || {}
   const buySellFont = Math.min(14, Math.max(6, Number(buyP.labelSize) || 8))
+  const bsFont = clean ? Math.max(6, buySellFont - 1.5) : buySellFont
+  const bsTagW = clean ? 20 : 28
+  const bsTagH = clean ? 10 : 12
   const barColorOpacity = Math.min(1, Math.max(0.4, (Number(barP.barOpacity) || 100) / 100))
   const snortMarkerSize = Math.min(16, Math.max(4, Number(snortP.markerSize) || 9))
   const pct01 = (v, fb) => Math.min(1, Math.max(0.2, (Number(v) || fb) / 100))
@@ -6831,6 +6860,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     style === 'solid' ? undefined : style === 'dotted' ? `${w},${w * 2}` : '4,3'
   const setShowMA = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'ma', typeof v === 'function' ? v(showMA) : v))
   const setShowGuppy = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'guppy', typeof v === 'function' ? v(showGuppy) : v))
+  const setShowSqueeze = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'squeeze', typeof v === 'function' ? v(showSqueeze) : v))
+  const setShowHiLo52 = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'hilo52', typeof v === 'function' ? v(showHiLo52) : v))
   const setShowSR = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'sr', typeof v === 'function' ? v(showSR) : v))
   const setShowPatterns = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'patterns', typeof v === 'function' ? v(showPatterns) : v))
   const setShowBullSnort = (v) => setIndPrefs(p => setIndicatorEnabled(p, 'bullsnort', typeof v === 'function' ? v(showBullSnort) : v))
@@ -7077,7 +7108,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       }
       if (e.key === 'ArrowRight') {
         e.preventDefault()
-        setPanOffset(p => Math.max(0, p - step))
+        setPanOffset(p => Math.max(nav.minPanOffset ?? 0, p - step))
         return
       }
       if (e.key === '+' || e.key === '=') {
@@ -7197,7 +7228,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     const runHyHt = heavyOk
     const _swings = findSwingPoints(highs, lows, intervalMeta.swing)
     const ema9 = emaArr(closes, maP.ema9 ?? 9)
-    const ema50 = emaArr(closes, 50)
     const niftyAligned = (!isIndex && (showBuySell || showSuperCycle))
       ? alignSeriesFromEnd(closes.length, niftyCloses)
       : null
@@ -7217,6 +7247,21 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           smallcapCloses: smallcapAligned,
         })
       : null
+    // Squeeze dots live on the price pane, so they can't lean on the Super
+    // Cycle result — that one is skipped on indices and when the pane is off.
+    const squeeze = showSqueeze
+      ? calcLakshmiSqueeze(highs, lows, closes, {
+          length: sqP.sqLength ?? 21,
+          bbMult: sqP.sqBbMult ?? 2.0,
+          kcMult: sqP.sqKcMult ?? 1.5,
+        })
+      : null
+    const hiLo52 = showHiLo52
+      ? calcNewHighLowFlags(seriesData.dates, highs, lows, {
+          windowDays: hlP.hlWindowDays ?? 365,
+          onlyFirst: hlP.hlOnlyFirst !== false,
+        })
+      : null
     const candleBar = showCandleColors
       ? calcLakshmiCandleBarColors(opens, highs, lows, closes, volumes, barP)
       : { colors: [], tags: [] }
@@ -7231,10 +7276,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       ma50: showMA ? calcSMASeries(closes, maP.ma50 ?? 50) : [],
       ma200: showMA ? calcSMASeries(closes, maP.ma200 ?? 200) : [],
       ema9,
-      ema50,
       guppyShort: runGuppy ? GUPPY_SHORT_PERIODS.map(p => emaArr(closes, p)) : [],
       guppyLong: runGuppy ? GUPPY_LONG_PERIODS.map(p => emaArr(closes, p)) : [],
-      guppyCross: runGuppy ? detectEmaCrossoverDays(emaArr(closes, 9), ema50) : emptyFlags(),
       rsi: showRSI ? calcRSISeries(closes, rsiP.length ?? 14) : [],
       macd: showMACD ? calcMACDSeries(closes, macdP.fast ?? 12, macdP.slow ?? 26, macdP.signal ?? 9) : { macd: [], signal: [], hist: [] },
       swings: _swings,
@@ -7251,13 +7294,15 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       buyDays: buySell.buy,
       sellDays: buySell.sell,
       superCycle,
+      squeeze,
+      hiLo52,
       candleBarColors: candleBar.colors,
       candleBarTags: candleBar.tags,
       lakshmiVol,
     }
-  }, [seriesData, barInterval, intervalMeta, isIndex, isIntraday, showBuySell, showSuperCycle, showMA, showGuppy, showSR, showPatterns, showBullSnort, showRSI, showMACD, showCandleColors, showLakshmiVol, niftyCloses,
+  }, [seriesData, barInterval, intervalMeta, isIndex, isIntraday, showBuySell, showSuperCycle, showMA, showGuppy, showSqueeze, showHiLo52, showSR, showPatterns, showBullSnort, showRSI, showMACD, showCandleColors, showLakshmiVol, niftyCloses,
     midcapCloses, smallcapCloses,
-    maP, rsiP, macdP, scP, buyP, barP, snortP, volP])
+    maP, rsiP, macdP, scP, sqP, hlP, buyP, barP, snortP, volP])
 
   useEffect(() => {
     let cancelled = false
@@ -7483,9 +7528,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     )
   }
 
-  const { ma20, ma50, ma200, ema9, ema50, guppyShort, guppyLong, guppyCross, rsi, macd,
+  const { ma20, ma50, ma200, ema9, guppyShort, guppyLong, rsi, macd,
     swings, sr, insideBars, ppDays, hyDays, htDays, ibvDays, bullSnortDays, nearEma9Days, vcp, cup,
-    buyDays, sellDays, superCycle, candleBarColors, candleBarTags, lakshmiVol } = analysis
+    buyDays, sellDays, superCycle, squeeze, hiLo52, candleBarColors, candleBarTags, lakshmiVol } = analysis
 
   let dates = seriesData.dates
   let closes = seriesData.closes
@@ -7545,14 +7590,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const volDownColor = volP.volDownColor || TV_VOL_DN
   const volBarOpacity = Math.min(1, Math.max(0.2, (Number(volP.barOpacity) || 50) / 100))
   const volShowMarkers = showLakshmiVol && volP.showMarkers !== false
-  const volTableBoxH = isMobile ? 48 : 40
+  const volTableBoxH = clean ? (isMobile ? 38 : 30) : (isMobile ? 48 : 40)
   const volTableH = volShowTable && !volTableOverlay && !volTableBelow ? volTableBoxH : 0
   const volTableFootH = volShowTable && volTableBelow ? volTableBoxH : 0
   // Marker row under the volume pane baseline: signal icons + HT/HY/HQ/M tags,
   // kept out of the bars so tall bars never clip them.
   const volMarkerH = volShowMarkers ? (isMobile ? 16 : 15) : 0
   // Reserve strip above Super Cycle for the TV-style RS rating history table.
-  const scTableBoxH = isMobile ? 132 : 122
+  const scTableBoxH = clean ? (isMobile ? 100 : 88) : (isMobile ? 132 : 122)
   const scTableH = scShowTable && !scTableOverlay && !scTableBelow ? scTableBoxH : 0
   const scTableFootH = scShowTable && scTableBelow ? scTableBoxH : 0
   const panelGaps = gapH + (showRSI ? gapH : 0) + (showMACD ? gapH : 0) + (showSuperCycle ? gapH : 0)
@@ -7563,14 +7608,21 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const usable = Math.max(160, H - padT - panelGaps - axisPad - fixedStrips)
   // When RSI/MACD/Super Cycle panes are on, shrink price/volume so everything fits.
   const extraPanes = (showRSI ? 1 : 0) + (showMACD ? 1 : 0) + (showSuperCycle ? 1 : 0)
-  const basePriceShare = extraPanes === 0 ? (chartExpanded ? 0.52 : 0.58)
-    : extraPanes === 1 ? 0.46
-    : extraPanes === 2 ? 0.38
-    : 0.34
+  // Clean mode hands the price pane a much bigger slice, the way TradingView
+  // does — the studies keep working, they just stop crowding the candles.
+  const basePriceShare = clean
+    ? (extraPanes === 0 ? (chartExpanded ? 0.66 : 0.70)
+      : extraPanes === 1 ? 0.60
+      : extraPanes === 2 ? 0.52
+      : 0.46)
+    : (extraPanes === 0 ? (chartExpanded ? 0.52 : 0.58)
+      : extraPanes === 1 ? 0.46
+      : extraPanes === 2 ? 0.38
+      : 0.34)
   const baseVolShare = extraPanes === 0 ? (1 - basePriceShare)
-    : extraPanes === 1 ? 0.22
-    : extraPanes === 2 ? 0.16
-    : 0.14
+    : extraPanes === 1 ? (clean ? 0.18 : 0.22)
+    : extraPanes === 2 ? (clean ? 0.14 : 0.16)
+    : (clean ? 0.12 : 0.14)
   const baseIndShare = extraPanes === 0 ? 0 : (1 - basePriceShare - baseVolShare) / extraPanes
   // Apply the user's dragged pane sizes on top of the responsive defaults,
   // then renormalise so the visible panes always fill `usable`.
@@ -7610,9 +7662,16 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const wheelMinZoom = intervalMeta.minZoom
   const barsToShow = Math.max(1, Math.min(zoomBars, n))
   const maxPanOffset = Math.max(0, n - barsToShow)
-  const clampedPanOffset = Math.min(panOffset, maxPanOffset)
-  const start = Math.max(0, n - barsToShow - clampedPanOffset)
-  navRef.current = { barsToShow, maxPanOffset, n, minZoom: intervalMeta.minZoom }
+  // TradingView's right margin: keep dragging past the newest bar and it
+  // slides left into empty space. A negative panOffset is that empty space,
+  // capped so at least a quarter of the window still holds bars.
+  const minPanOffset = -Math.max(0, Math.round(barsToShow * 0.75))
+  const clampedPanOffset = Math.max(minPanOffset, Math.min(panOffset, maxPanOffset))
+  const start = Math.max(0, Math.min(n - 1, n - barsToShow - clampedPanOffset))
+  // How many of the window's columns actually hold bars — fewer than
+  // barsToShow once the view is dragged into the right margin.
+  const visibleBars = Math.max(1, Math.min(barsToShow, n - start))
+  navRef.current = { barsToShow, maxPanOffset, minPanOffset, n, minZoom: intervalMeta.minZoom }
 
   // ── Zoom (wheel / pinch) and pan (drag) handlers ──
   // Defined later (after price/date geometry) so draw tools can map clicks → date/price.
@@ -7649,10 +7708,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const vMA50   = ma50.slice(start)
   const vMA200  = ma200.slice(start)
   const vEma9line = ema9.slice(start)
-  const vEma50line = (ema50||[]).slice(start)
   const vGuppyShort = (guppyShort||[]).map(s=>s.slice(start))
   const vGuppyLong = (guppyLong||[]).map(s=>s.slice(start))
-  const vGuppyCross = (guppyCross||[]).slice(start)
   const vRSI = (rsi||[]).slice(start)
   const vMacd = (macd?.macd||[]).slice(start)
   const vMacdSig = (macd?.signal||[]).slice(start)
@@ -7673,6 +7730,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const vScMa = (superCycle?.maScaled||[]).slice(start)
   const vScSqOn = (superCycle?.squeezeOn||[]).slice(start)
   const vScSqRel = (superCycle?.squeezeRelease||[]).slice(start)
+  const vSqOn = (squeeze?.squeezeOn||[]).slice(start)
+  const vSqRel = (squeeze?.squeezeRelease||[]).slice(start)
+  const vNewHigh = (hiLo52?.newHigh||[]).slice(start)
+  const vNewLow = (hiLo52?.newLow||[]).slice(start)
   const vScRating = (superCycle?.rsRating||[]).slice(start)
   // Pine RS history table uses the last N bars of the full series (not the zoom window).
   const scRsTable = (() => {
@@ -8020,7 +8081,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     const sy = (clientY - rect.top) * (H / rect.height)
     if (sy < priceTop - 2 || sy > priceTop + priceH + 2) return null
     const barF = ((sx - padL) / Math.max(1, chartW)) * totalCols - 0.5
-    const visIdx = Math.max(0, Math.min(barsToShow - 1, Math.round(barF)))
+    const visIdx = Math.max(0, Math.min(visibleBars - 1, Math.round(barF)))
     const absIdx = start + visIdx
     const date = dates[absIdx]
     const price = yToPrice(sy)
@@ -8147,9 +8208,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       const next = Math.max(wheelMinZoom, Math.min(n, Math.round(barsToShow * factor)))
       const frac = barsToShow > 1 ? visIdx / (barsToShow - 1) : 0
       const newVis = Math.max(0, Math.min(next - 1, Math.round(frac * Math.max(0, next - 1))))
-      const newStart = Math.max(0, Math.min(Math.max(0, n - next), absIdx - newVis))
+      // Anchor on the bar under the cursor; allow the result to keep sitting in
+      // the right margin so zooming there doesn't yank the view back to the last bar.
+      const newStart = Math.max(0, Math.min(n - 1, absIdx - newVis))
+      const nextMinPan = -Math.max(0, Math.round(next * 0.75))
       setZoomBars(next)
-      setPanOffset(Math.max(0, n - next - newStart))
+      setPanOffset(Math.max(nextMinPan, Math.min(Math.max(0, n - next), n - next - newStart)))
     })
   }
   handleMouseDown = (e) => {
@@ -8212,10 +8276,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       return
     }
     if (dragRef.current && dragRef.current.pinchDist == null) {
+      // Grab-and-move like TradingView: the bars follow the cursor, so
+      // dragging right walks back in time (panOffset counts bars back).
       const deltaBars = pxToBars(e.clientX - dragRef.current.startX)
       if (Math.abs(e.clientX - dragRef.current.startX) > 4) dragRef.current.moved = true
       const capturedStartPanOffset = dragRef.current.startPanOffset
-      throttle(() => setPanOffset(Math.max(0, Math.min(maxPanOffset, capturedStartPanOffset - deltaBars))))
+      throttle(() => setPanOffset(Math.max(minPanOffset, Math.min(maxPanOffset, capturedStartPanOffset + deltaBars))))
       return
     }
     if (drawTool === 'pan') {
@@ -8229,7 +8295,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         return
       }
       const barF = ((sx - padL) / Math.max(1, chartW)) * totalCols - 0.5
-      const visIdx = Math.max(0, Math.min(barsToShow - 1, Math.round(barF)))
+      const visIdx = Math.max(0, Math.min(visibleBars - 1, Math.round(barF)))
       setHoverIdx(visIdx)
       setHoverCrossY(Math.max(padT, Math.min(panesBottom, sy)))
     }
@@ -8273,7 +8339,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       const deltaBars = pxToBars(e.touches[0].clientX - dragRef.current.startX)
       if (Math.abs(e.touches[0].clientX - dragRef.current.startX) > 4) dragRef.current.moved = true
       const capturedStartPanOffset = dragRef.current.startPanOffset
-      throttle(() => setPanOffset(Math.max(0, Math.min(maxPanOffset, capturedStartPanOffset - deltaBars))))
+      throttle(() => setPanOffset(Math.max(minPanOffset, Math.min(maxPanOffset, capturedStartPanOffset + deltaBars))))
     }
   }
   handleTouchEnd = () => { dragRef.current = null }
@@ -8294,17 +8360,17 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
     xLabels.push({ i, text: isNewMonth ? MONTH_ABBR[m-1] : String(day) })
   }
 
-  const hi = pinnedIdx ?? hoverIdx
+  const hiRaw = pinnedIdx ?? hoverIdx
+  const hi = hiRaw != null && hiRaw < vCloses.length ? hiRaw : null
   const hover = hi != null ? {
     date: vDates[hi], open: vOpens[hi], high: vHighs[hi],
     low: vLows[hi], close: vCloses[hi], vol: vVol[hi],
     volEma: vVolEma[hi],
     rsi: vRSI[hi],
     macd: vMacd[hi], macdSig: vMacdSig[hi], macdHist: vMacdHist[hi],
-    guppyCross: vGuppyCross[hi],
     scCycle: vScCycle[hi],
     scRating: vScRating[hi],
-    scSqueeze: vScSqOn[hi],
+    scSqueeze: vScSqOn[hi] || vSqOn[hi],
     barTag: vBarTag[hi],
     volComment: vLvComment[hi],
   } : null
@@ -8325,15 +8391,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const chartIndicatorsAll = [
     // Main price overlay — the parent row for the EMA lines and Guppy cloud.
     { id:'lakshmimata', group:'Overlays', label:'Lakshmi Mata', short:'Lakshmi',
-      desc:'EMA / moving average lines + Guppy cloud (GMMA) on price',
-      on: showMA || showGuppy,
+      desc:'EMA / MA lines + Guppy cloud + squeeze dots + 52-week flags on price',
+      on: showMA || showGuppy || showSqueeze || showHiLo52,
       set: (v)=>{
-        const next = typeof v === 'function' ? v(showMA || showGuppy) : v
+        const next = typeof v === 'function' ? v(showMA || showGuppy || showSqueeze || showHiLo52) : v
         setShowMA(next)
         setShowGuppy(next)
+        setShowSqueeze(next)
+        setShowHiLo52(next)
       } },
     { id:'ma', group:'Overlays', label:'Moving Average', short:'MA', desc:'', on:showMA, set:setShowMA },
     { id:'guppy', group:'Overlays', label:'Guppy MMA', short:'Guppy', desc:'', on:showGuppy, set:setShowGuppy },
+    { id:'squeeze', group:'Overlays', label:'Squeeze Dots', short:'Squeeze', desc:'', on:showSqueeze, set:setShowSqueeze },
+    { id:'hilo52', group:'Overlays', label:'52-Week High / Low Flags', short:'52W', desc:'', on:showHiLo52, set:setShowHiLo52 },
     { id:'sr', group:'Overlays', label:'Support & Resistance', short:'S/R', desc:'', on:showSR, set:setShowSR },
     { id:'rsi', group:'Oscillators', label:'Relative Strength Index', short:'RSI', desc:'', on:showRSI, set:setShowRSI },
     { id:'macd', group:'Oscillators', label:'MACD', short:'MACD', desc:'', on:showMACD, set:setShowMACD },
@@ -8560,9 +8630,49 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           </div>
         </div>
         <div style={{width:1,height:18,background:C.border,margin:'0 6px'}}/>
-        {/* Drawing tools — TradingView-style; saved per symbol in localStorage */}
+        {/* Drawing tools — TradingView-style; saved per symbol in localStorage.
+            Clean mode folds them into one dropdown so the bar stays a single row. */}
         <div style={{display:'flex',alignItems:'center',gap:1,flexWrap:'wrap'}}>
-          {DRAW_TOOLS.map(t=>(
+          {clean ? (
+            <div ref={toolMenuRef} style={{position:'relative'}}>
+              <button type="button" title="Drawing tools"
+                onClick={()=>setShowToolMenu(v=>!v)}
+                style={{
+                  padding:'4px 9px', border:'none', borderRadius:3, cursor:'pointer', fontFamily:'inherit',
+                  background: showToolMenu || drawTool!=='pan' ? TV_TOOLBAR_BLUE+'18' : 'transparent',
+                  color: drawTool!=='pan' ? TV_TOOLBAR_BLUE : C.muted,
+                  fontSize:11, fontWeight: drawTool!=='pan' ? 700 : 600, lineHeight:1.2,
+                }}>
+                {(DRAW_TOOLS.find(t=>t.id===drawTool)?.label) || 'Pan'} ▾
+              </button>
+              {showToolMenu && (
+                <div style={{
+                  position:'absolute', top:'calc(100% + 4px)', left:0, zIndex:60, minWidth:150,
+                  background:C.card, border:`1px solid ${C.border}`, borderRadius:6, padding:4,
+                  boxShadow:'0 10px 28px rgba(0,0,0,0.45)',
+                }}>
+                  {DRAW_TOOLS.map(t=>(
+                    <button key={t.id} type="button" title={t.title}
+                      onClick={()=>{
+                        setDrawTool(t.id); setDrawDraft(null)
+                        if(t.id==='pan') setSelectedDrawId(null)
+                        setShowToolMenu(false)
+                      }}
+                      style={{
+                        display:'flex', alignItems:'center', gap:6, width:'100%', textAlign:'left',
+                        padding:'4px 6px', border:'none', borderRadius:3, cursor:'pointer', fontFamily:'inherit',
+                        background: drawTool===t.id ? TV_TOOLBAR_BLUE+'22' : 'transparent',
+                        color: drawTool===t.id ? TV_TOOLBAR_BLUE : C.text,
+                        fontSize:11, fontWeight: drawTool===t.id ? 700 : 500,
+                      }}>
+                      <span style={{width:9,fontSize:9}}>{drawTool===t.id?'✓':''}</span>
+                      <span style={{flex:1}}>{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : DRAW_TOOLS.map(t=>(
             <button key={t.id} type="button" title={t.title}
               onClick={()=>{ setDrawTool(t.id); setDrawDraft(null); if(t.id==='pan') setSelectedDrawId(null) }}
               style={{
@@ -8886,17 +8996,31 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             Reset
           </button>
         )}
-        <button type="button" onClick={exportPng}
-          title="Save chart image (PNG) — indicator panes and price action; overlay tables are not included"
-          style={{padding:'4px 8px',border:'none',borderRadius:3,background:'transparent',
-            color:C.muted,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
-          PNG
-        </button>
-        <button type="button" onClick={exportCsv}
-          title={`Download the ${barsToShow} visible bars as CSV`}
-          style={{padding:'4px 8px',border:'none',borderRadius:3,background:'transparent',
-            color:C.muted,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
-          CSV
+        {!clean && (
+          <button type="button" onClick={exportPng}
+            title="Save chart image (PNG) — indicator panes and price action; overlay tables are not included"
+            style={{padding:'4px 8px',border:'none',borderRadius:3,background:'transparent',
+              color:C.muted,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+            PNG
+          </button>
+        )}
+        {!clean && (
+          <button type="button" onClick={exportCsv}
+            title={`Download the ${barsToShow} visible bars as CSV`}
+            style={{padding:'4px 8px',border:'none',borderRadius:3,background:'transparent',
+              color:C.muted,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+            CSV
+          </button>
+        )}
+        <button type="button" onClick={toggleDensity}
+          title={clean
+            ? 'Clean view — one toolbar, tall price pane, compact tables. Click for the Pro (dense) view.'
+            : 'Pro view — every control and legend on screen. Click for the Clean view.'}
+          style={{padding:'4px 8px',border:'none',borderRadius:3,
+            background:clean?TV_TOOLBAR_BLUE+'18':'transparent',
+            color:clean?TV_TOOLBAR_BLUE:C.muted,
+            fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>
+          {clean ? 'Clean' : 'Pro'}
         </button>
         <div ref={layoutMenuRef} style={{position:'relative',display:'flex',alignItems:'center'}}>
           <button type="button" onClick={()=>setShowLayoutMenu(v=>!v)}
@@ -8950,6 +9074,25 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                 Drag the separators between panes, or the price scale edge, to resize.
                 Double-click either to reset.
               </div>
+              {clean && (
+                <>
+                  <div style={{height:1,background:C.border,opacity:0.6,margin:'8px 0'}}/>
+                  <div style={{fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',
+                    letterSpacing:'0.06em',marginBottom:5}}>Export</div>
+                  <div style={{display:'flex',gap:6}}>
+                    <button type="button" onClick={()=>{setShowLayoutMenu(false);exportPng()}}
+                      title="Save chart image (PNG)"
+                      style={{flex:1,padding:'4px 6px',borderRadius:3,border:`1px solid ${C.border}`,
+                        background:'transparent',color:C.text,fontSize:11,fontWeight:600,
+                        cursor:'pointer',fontFamily:'inherit'}}>PNG</button>
+                    <button type="button" onClick={()=>{setShowLayoutMenu(false);exportCsv()}}
+                      title={`Download the ${barsToShow} visible bars as CSV`}
+                      style={{flex:1,padding:'4px 6px',borderRadius:3,border:`1px solid ${C.border}`,
+                        background:'transparent',color:C.text,fontSize:11,fontWeight:600,
+                        cursor:'pointer',fontFamily:'inherit'}}>CSV</button>
+                  </div>
+                </>
+              )}
               <div style={{height:1,background:C.border,opacity:0.6,margin:'8px 0'}}/>
               <div style={{fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',
                 letterSpacing:'0.06em',marginBottom:5}}>Saved layouts</div>
@@ -9000,8 +9143,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         </span>
       </div>
 
-      {/* Active studies — TradingView-style chips with remove */}
-      {anyIndOn && (
+      {/* Active studies — TradingView-style chips with remove. Clean mode drops
+          the row; the Indicators button already shows the count and lets you
+          switch any of them off. */}
+      {anyIndOn && !clean && (
         <div style={{
           display:'flex', flexWrap:'wrap', gap:4, marginBottom:4, flexShrink:0, alignItems:'center',
         }}>
@@ -9075,11 +9220,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             )}
             {showLakshmiVol && hover.volComment && hover.volComment !== 'NA' && (
               <span style={{color:C.accent,fontWeight:700}}>{'  '}Vol {hover.volComment}</span>
-            )}
-            {showGuppy && hover.guppyCross && (
-              <span style={{color:hover.guppyCross==='bull'?C.green:C.red,fontWeight:700}}>
-                {'  '}Guppy {hover.guppyCross==='bull'?'▲ bull':'▼ bear'} cross
-              </span>
             )}
           </span>
         ) : drawTool!=='pan' ? (
@@ -9475,12 +9615,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
             border:`1px solid ${C.border}`, overflow:'hidden',
           }}>
             <div style={{
-              padding:'2px 5px', fontSize:7, fontWeight:700, color:C.muted,
+              padding: clean ? '1px 4px' : '2px 5px', fontSize: clean ? 6.5 : 7, fontWeight:700, color:C.muted,
               background:C.card, borderBottom:`1px solid ${C.border}`,
               whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
             }} title={label}>{label}</div>
             <div style={{
-              padding:'3px 5px', fontSize:9, fontWeight:700, color:C.text,
+              padding: clean ? '2px 4px' : '3px 5px', fontSize: clean ? 8 : 9, fontWeight:700, color:C.text,
               background: valueBg || C.bg, whiteSpace:'nowrap',
               overflow:'hidden', textOverflow:'ellipsis',
             }} title={String(value)}>{value}</div>
@@ -9540,24 +9680,26 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           const arrow = prev == null ? '' : curr > prev ? '↑' : curr < prev ? '↓' : '·'
           return `${curr}${arrow}`
         }
+        const cellPad = clean ? '1px 3px' : (isMobile ? '2px 3px' : '3px 5px')
+        const cellFont = clean ? 7 : (isMobile ? 7 : 8)
         const th = (txt) => (
           <div key={txt} style={{
-            padding: isMobile ? '2px 3px' : '3px 5px', fontSize: isMobile ? 7 : 8, fontWeight: 700,
+            padding: cellPad, fontSize: cellFont, fontWeight: 700,
             color: '#fff', background: COL.hdr, textAlign: 'center', whiteSpace: 'nowrap',
             borderRight: '1px solid #2A2A3E',
           }}>{txt}</div>
         )
         const lab = (txt) => (
           <div style={{
-            padding: isMobile ? '2px 4px' : '3px 6px', fontSize: isMobile ? 7 : 8, fontWeight: 700,
+            padding: cellPad, fontSize: cellFont, fontWeight: 700,
             color: '#fff', background: COL.label, whiteSpace: 'nowrap',
             borderRight: '1px solid #2A2A3E', borderTop: '1px solid #2A2A3E',
           }}>{txt}</div>
         )
         const td = (txt, color, opts={}) => (
           <div style={{
-            padding: isMobile ? '2px 3px' : '3px 4px',
-            fontSize: opts.big ? (isMobile ? 9 : 10) : (isMobile ? 7 : 8),
+            padding: cellPad,
+            fontSize: opts.big ? (clean ? 8.5 : (isMobile ? 9 : 10)) : cellFont,
             fontWeight: 800,
             color: color || COL.white, background: COL.cell, textAlign: 'center', whiteSpace: 'nowrap',
             borderRight: '1px solid #2A2A3E', borderTop: '1px solid #2A2A3E',
@@ -9624,7 +9766,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           })`}>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: `minmax(64px,auto) repeat(${scRsTable.length}, minmax(36px,1fr))`,
+              gridTemplateColumns: clean
+                ? `minmax(52px,auto) repeat(${scRsTable.length}, minmax(28px,1fr))`
+                : `minmax(64px,auto) repeat(${scRsTable.length}, minmax(36px,1fr))`,
               width: '100%',
               minWidth: isMobile ? 420 : undefined,
             }}>
@@ -9695,7 +9839,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           const n = vScRating.length
           if (!n) return null
           const step = n > 1 ? Math.max(1, idxToX(1) - idxToX(0)) : Math.max(2, candleW + 1)
-          const o = Math.min(0.35, Math.max(0.01, (Number(scP.rsBgOpacity) || 8) / 100))
+          // Clean mode halves the tint so the bands read as a hint, not a wash.
+          const o = Math.min(0.35, Math.max(0.01, (Number(scP.rsBgOpacity) || 8) / 100)) * (clean ? 0.5 : 1)
           const cStrong = scP.rsBgStrongColor || '#00e676'
           const cAvg = scP.rsBgAvgColor || '#ffd600'
           const cWeak = scP.rsBgWeakColor || '#ff1744'
@@ -9729,8 +9874,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
 
         {/* Low-contrast symbol watermark */}
         <text x={padL + chartW / 2} y={priceTop + priceH * 0.48}
-          textAnchor="middle" fontSize={Math.min(56, Math.max(28, priceH * 0.28))}
-          fontWeight={800} fill={C.text} opacity={0.06} style={{pointerEvents:'none', userSelect:'none'}}>
+          textAnchor="middle" fontSize={Math.min(56, Math.max(28, priceH * (clean ? 0.18 : 0.28)))}
+          fontWeight={800} fill={C.text} opacity={clean ? 0.035 : 0.06}
+          style={{pointerEvents:'none', userSelect:'none'}}>
           {sym}
         </text>
 
@@ -9853,10 +9999,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           ) : null
         )}
 
-        {/* Guppy MMA ribbons (short teal / long rose) + EMA9×EMA50 cross markers */}
+        {/* Lakshmi Mata Guppy cloud — Pine-style fill only, without GMMA
+            ribbon lines, highlighted EMAs, or crossover markers. */}
         {showGuppy && (
-          <g opacity={pct01(guppyP.ribbonOpacity, 85)}>
-            {/* Pine-style Guppy cloud between short and long clusters */}
+          <g>
             {guppyP.showCloud !== false && (() => {
               const segments = []
               let cur = null
@@ -9897,50 +10043,76 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
                 />
               ))
             })()}
-            {vGuppyShort.map((series,k)=>{
-              const pts = series.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
-              return pts.length>1 ? (
-                <polyline key={`gs-${k}`} points={pts.join(' ')} fill="none"
-                  stroke={guppyP.shortColor || '#2dd4bf'} strokeWidth={lineW(guppyP.lineWidth, 0.9)}
-                  opacity={0.45 + k*0.06}/>
-              ) : null
-            })}
-            {vGuppyLong.map((series,k)=>{
-              const pts = series.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
-              return pts.length>1 ? (
-                <polyline key={`gl-${k}`} points={pts.join(' ')} fill="none"
-                  stroke={guppyP.longColor || '#f472b6'} strokeWidth={lineW(guppyP.lineWidth, 0.9)}
-                  opacity={0.4 + k*0.05}/>
-              ) : null
-            })}
-            {/* Highlight EMA9 / EMA50 used for crossover */}
-            {guppyP.showHighlight !== false && (() => {
-              const e9 = vEma9line.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
-              const e50 = vEma50line.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
-              return (
-                <>
-                  {e9.length>1 && <polyline points={e9.join(' ')} fill="none" stroke={guppyP.fastColor || C.teal} strokeWidth={1.6} opacity={0.95}/>}
-                  {e50.length>1 && <polyline points={e50.join(' ')} fill="none" stroke={guppyP.slowColor || C.purple} strokeWidth={1.6} opacity={0.95}/>}
-                </>
-              )
-            })()}
-            {vGuppyCross.map((flag,i)=>{
-              if (!flag || vCloses[i]==null) return null
-              const x = idxToX(i)
-              const y = priceToY(vCloses[i])
-              const bull = flag === 'bull'
-              return (
-                <g key={`gx-${i}`}>
-                  <polygon
-                    points={bull
-                      ? `${x},${y-10} ${x-5},${y-2} ${x+5},${y-2}`
-                      : `${x},${y+10} ${x-5},${y+2} ${x+5},${y+2}`}
-                    fill={bull ? C.green : C.red} opacity={0.95}/>
-                </g>
-              )
-            })}
           </g>
         )}
+
+        {/* 52-week break flags — pennant above the bar that takes out the
+            rolling 52-week high, below the one that breaks the low. */}
+        {showHiLo52 && vNewHigh.length > 0 && (() => {
+          const size = Math.min(18, Math.max(6, Number(hlP.hlSize) || 11))
+          const pole = size * 1.05
+          const flagW = size * 0.62
+          const flagH = size * 0.46
+          const hiColor = hlP.hlHighColor || LAKSHMI_HILO_COLORS.HIGH
+          const loColor = hlP.hlLowColor || LAKSHMI_HILO_COLORS.LOW
+          const showHigh = hlP.hlShowHigh !== false
+          const showLow = hlP.hlShowLow !== false
+          const showText = hlP.hlShowLabels === true
+          const flag = (i, up) => {
+            const x = idxToX(i)
+            const color = up ? hiColor : loColor
+            // Anchor at the wick tip, then grow the pole away from the bar.
+            const tip = up ? priceToY(vHighs[i]) - 4 : priceToY(vLows[i]) + 4
+            const foot = up ? tip - pole : tip + pole
+            return (
+              <g key={`hl-${up?'h':'l'}-${i}`}>
+                <line x1={x} y1={tip} x2={x} y2={foot} stroke={color} strokeWidth={1.2}/>
+                <path
+                  d={up
+                    ? `M ${x} ${foot} L ${x + flagW} ${foot + flagH * 0.5} L ${x} ${foot + flagH} Z`
+                    : `M ${x} ${foot} L ${x + flagW} ${foot - flagH * 0.5} L ${x} ${foot - flagH} Z`}
+                  fill={color} stroke="none"/>
+                {showText && (
+                  <text x={x + flagW + 2} y={up ? foot + flagH : foot}
+                    fontSize={Math.max(6, size * 0.6)} fontWeight={800} fill={color}>
+                    {up ? '52WH' : '52WL'}
+                  </text>
+                )}
+              </g>
+            )
+          }
+          return (
+            <g style={{pointerEvents:'none'}}>
+              {vNewHigh.map((on,i)=> (on && showHigh && vHighs[i] != null) ? flag(i, true) : null)}
+              {vNewLow.map((on,i)=> (on && showLow && vLows[i] != null) ? flag(i, false) : null)}
+            </g>
+          )
+        })()}
+
+        {/* Lakshmi Mata squeeze dots — one per bar along the foot of the
+            price pane: BB inside KC = coiled, first bar back outside = fired. */}
+        {showSqueeze && vSqOn.length > 0 && (() => {
+          const r = Math.min(5, Math.max(1, Number(sqP.sqDotSize) || 2.2))
+          const y = priceTop + priceH - r - 3
+          const onColor = sqP.sqOnColor || LAKSHMI_CYCLE_COLORS.SQUEEZE_ON
+          const relColor = sqP.sqReleaseColor || LAKSHMI_CYCLE_COLORS.SQUEEZE_RELEASE
+          const offColor = sqP.sqOffColor || C.muted
+          const showOff = sqP.sqShowOff !== false
+          return (
+            <g>
+              {vSqOn.map((on,i)=>{
+                const fired = !!vSqRel[i]
+                if (!on && !fired && !showOff) return null
+                return (
+                  <circle key={`msq-${i}`} cx={idxToX(i)} cy={y}
+                    r={on || fired ? r : r * 0.6}
+                    fill={fired ? relColor : on ? onColor : offColor}
+                    opacity={on || fired ? 0.95 : 0.45}/>
+                )
+              })}
+            </g>
+          )
+        })()}
 
         {/* MA lines */}
         {showMA && [
@@ -10103,19 +10275,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               )}
               {showBuySell && vBuy[i] && (
                 <g>
-                  <rect x={x-14} y={priceToY(lo)+4} width={28} height={12} rx={2}
+                  <rect x={x-bsTagW/2} y={priceToY(lo)+4} width={bsTagW} height={bsTagH} rx={2}
                     fill={buyP.buyColor || LAKSHMI_BUY_SELL_COLORS.BUY}/>
                   {buyP.showLabels !== false && (
-                    <text x={x} y={priceToY(lo)+13} fontSize={buySellFont} fontWeight={800} fill="#fff" textAnchor="middle">Buy</text>
+                    <text x={x} y={priceToY(lo)+4+bsTagH-3} fontSize={bsFont} fontWeight={800} fill="#fff" textAnchor="middle">Buy</text>
                   )}
                 </g>
               )}
               {showBuySell && vSell[i] && (
                 <g>
-                  <rect x={x-14} y={priceToY(hi)-16} width={28} height={12} rx={2}
+                  <rect x={x-bsTagW/2} y={priceToY(hi)-4-bsTagH} width={bsTagW} height={bsTagH} rx={2}
                     fill={buyP.sellColor || LAKSHMI_BUY_SELL_COLORS.SELL}/>
                   {buyP.showLabels !== false && (
-                    <text x={x} y={priceToY(hi)-7} fontSize={buySellFont} fontWeight={800} fill="#fff" textAnchor="middle">Sell</text>
+                    <text x={x} y={priceToY(hi)-7} fontSize={bsFont} fontWeight={800} fill="#fff" textAnchor="middle">Sell</text>
                   )}
                 </g>
               )}
@@ -10259,21 +10431,24 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
               const lo = vLows[i]
               if (c==null || lo==null) return null
               const x = idxToX(i)
-              const yBelow0 = Math.min(priceTop + priceH - 4, priceToY(lo) + 11)
+              const icoSize = clean ? 7 : 10
+              const icoStep = clean ? 8 : 11
+              const yBelow0 = Math.min(priceTop + priceH - 4, priceToY(lo) + icoStep)
               const nodes = []
               let b = 0
               if (vLvIv[i]) {
-                nodes.push(<text key={`iv-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={10} fontWeight={800}
+                nodes.push(<text key={`iv-${i}`} x={x} y={yBelow0 + (b++) * icoStep} fontSize={icoSize} fontWeight={800}
                   fill={LAKSHMI_VOL_COLORS.IBV_ICON} textAnchor="middle"
-                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2.5}}>▲</text>)
+                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth: clean ? 1.6 : 2.5}}>▲</text>)
               }
               if (vLvPp[i]) {
-                nodes.push(<text key={`pp-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={10} fontWeight={800}
+                nodes.push(<text key={`pp-${i}`} x={x} y={yBelow0 + (b++) * icoStep} fontSize={icoSize} fontWeight={800}
                   fill={LAKSHMI_VOL_COLORS.PPV_ICON} textAnchor="middle"
-                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth:2.5}}>★</text>)
+                  style={{paintOrder:'stroke', stroke:'#0a0a0f', strokeWidth: clean ? 1.6 : 2.5}}>★</text>)
               }
               if (vLvSnort[i] || (showBullSnort && vSnort[i])) {
-                nodes.push(<text key={`bs-${i}`} x={x} y={yBelow0 + (b++) * 11} fontSize={snortMarkerSize}
+                nodes.push(<text key={`bs-${i}`} x={x} y={yBelow0 + (b++) * icoStep}
+                  fontSize={clean ? Math.max(6, snortMarkerSize - 3) : snortMarkerSize}
                   fill={snortP.markerColor || LAKSHMI_VOL_COLORS.BULL_SNORT_ICON} textAnchor="middle">🐂</text>)
               }
               if (!nodes.length) return null
@@ -10638,8 +10813,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         ))}
       </div>
 
-      {/* Legend — compact single row to leave more room for the chart */}
-      <div style={{display:'flex',flexWrap:'wrap',gap:8,marginTop:4,fontSize:8,color:C.muted,flexShrink:0,lineHeight:1.3}}>
+      {/* Legend — compact single row to leave more room for the chart. Clean
+          mode hides it entirely; each pane already labels itself and the
+          header line carries the price readout. */}
+      <div style={{display:clean?'none':'flex',flexWrap:'wrap',gap:8,marginTop:4,fontSize:8,color:C.muted,flexShrink:0,lineHeight:1.3}}>
         <span><span style={{color:TV_VOL_UP}}>■</span> Vol up</span>
         <span><span style={{color:TV_VOL_DN}}>■</span> Vol down</span>
         {(!showLakshmiVol || volP.showVolMA !== false) && (
@@ -10656,11 +10833,24 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           {maVisible.ma50 && <span><span style={{color:maColors.ma50}}>■</span> MA{maP.ma50 ?? 50}</span>}
           {maVisible.ma200 && <span><span style={{color:maColors.ma200}}>■</span> MA{maP.ma200 ?? 200}</span>}
         </>}
-        {showGuppy && <>
-          <span><span style={{color:guppyP.shortColor || '#2dd4bf'}}>—</span> Guppy short</span>
-          <span><span style={{color:guppyP.longColor || '#f472b6'}}>—</span> Guppy long</span>
-          <span><span style={{color:C.green}}>▲</span>/<span style={{color:C.red}}>▼</span> EMA9×50 cross</span>
-        </>}
+        {showGuppy && (
+          <span>
+            <span style={{color:guppyP.cloudUpColor || '#16a34a'}}>■</span>
+            /<span style={{color:guppyP.cloudDnColor || '#ef4444'}}>■</span> Guppy cloud
+          </span>
+        )}
+        {showHiLo52 && (
+          <span title={`New ${Math.round((hlP.hlWindowDays ?? 365)/7)}-week high / low break`}>
+            <span style={{color:hlP.hlHighColor || LAKSHMI_HILO_COLORS.HIGH}}>⚑</span>
+            /<span style={{color:hlP.hlLowColor || LAKSHMI_HILO_COLORS.LOW}}>⚑</span> 52W break
+          </span>
+        )}
+        {showSqueeze && (
+          <span title="Bollinger Bands inside Keltner Channel = coiled; first bar back outside = fired">
+            <span style={{color:sqP.sqOnColor || LAKSHMI_CYCLE_COLORS.SQUEEZE_ON}}>●</span>
+            /<span style={{color:sqP.sqReleaseColor || LAKSHMI_CYCLE_COLORS.SQUEEZE_RELEASE}}>●</span> Squeeze
+          </span>
+        )}
         {showRSI && <span><span style={{color:rsiP.lineColor || '#a78bfa'}}>—</span> RSI {rsiP.length ?? 14}</span>}
         {showMACD && <>
           <span><span style={{color:macdP.macdColor || C.blue}}>—</span> MACD</span>
@@ -10704,7 +10894,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           {cup && <span><span style={{color:C.purple}}>┊</span> Cup{cup.hasHandle?' & Handle':''}</span>}
         </>}
       </div>
-      {(showPatterns||showForecast||showBuySell||showSuperCycle||showLakshmiVol)&&(
+      {!clean&&(showPatterns||showForecast||showBuySell||showSuperCycle||showLakshmiVol)&&(
       <div style={{fontSize:7,color:C.muted,marginTop:2,flexShrink:0}}>
         Chart signals are for education only — not financial advice.
       </div>

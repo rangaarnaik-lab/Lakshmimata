@@ -578,6 +578,119 @@ function calcRSRatingVsBench(closes, benchAligned) {
   return out
 }
 
+/** Lakshmi Mata 52-week break flags. */
+export const LAKSHMI_HILO_COLORS = {
+  HIGH: '#2962FF',
+  LOW: '#FF6D00',
+}
+
+/**
+ * New 52-week high / low per bar.
+ *
+ * The window is measured in calendar days off the bar dates rather than a
+ * fixed bar count, so the same 52 weeks apply on daily, weekly and intraday
+ * series. Rolling extremes come from monotonic deques (O(n)).
+ *
+ * `onlyFirst` marks just the bar that opens a run of new highs — otherwise a
+ * trending stock earns a flag every single session.
+ */
+export function calcNewHighLowFlags(dates, highs, lows, opts = {}) {
+  const windowDays = opts.windowDays ?? 365
+  const minBars = opts.minBars ?? 20
+  const onlyFirst = opts.onlyFirst !== false
+  const n = highs?.length || 0
+  const isHigh = new Array(n).fill(false)
+  const isLow = new Array(n).fill(false)
+  const newHigh = new Array(n).fill(false)
+  const newLow = new Array(n).fill(false)
+  if (n < minBars + 1) return { newHigh, newLow, isHigh, isLow }
+
+  const ts = new Array(n)
+  for (let i = 0; i < n; i++) {
+    const t = Date.parse(dates?.[i])
+    ts[i] = Number.isFinite(t) ? t : null
+  }
+  const spanMs = windowDays * 86400000
+  // Deques hold indices of candidate extremes in [left, i-1], decreasing highs
+  // and increasing lows, so the front is always the window's extreme.
+  const hq = []
+  const lq = []
+  let left = 0
+  for (let i = 0; i < n; i++) {
+    if (ts[i] != null) {
+      while (left < i && ts[left] != null && ts[i] - ts[left] > spanMs) left++
+    }
+    while (hq.length && hq[0] < left) hq.shift()
+    while (lq.length && lq[0] < left) lq.shift()
+    const h = highs[i], l = lows[i]
+    const priorBars = i - left
+    if (h != null && Number.isFinite(h) && priorBars >= minBars && hq.length) {
+      isHigh[i] = h > highs[hq[0]]
+    }
+    if (l != null && Number.isFinite(l) && priorBars >= minBars && lq.length) {
+      isLow[i] = l < lows[lq[0]]
+    }
+    if (h != null && Number.isFinite(h)) {
+      while (hq.length && highs[hq[hq.length - 1]] <= h) hq.pop()
+      hq.push(i)
+    }
+    if (l != null && Number.isFinite(l)) {
+      while (lq.length && lows[lq[lq.length - 1]] >= l) lq.pop()
+      lq.push(i)
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    newHigh[i] = isHigh[i] && (!onlyFirst || !isHigh[i - 1])
+    newLow[i] = isLow[i] && (!onlyFirst || !isLow[i - 1])
+  }
+  return { newHigh, newLow, isHigh, isLow }
+}
+
+/**
+ * Squeeze state per bar — Bollinger Bands wholly inside the Keltner Channel,
+ * the same test the Super Cycle study uses. Split out so the price-pane dot
+ * row can be drawn without computing the whole RS/cycle stack.
+ */
+export function calcLakshmiSqueeze(highs, lows, closes, opts = {}) {
+  const length = opts.length ?? 21
+  const bbMult = opts.bbMult ?? 2.0
+  const kcMult = opts.kcMult ?? 1.5
+  const n = closes?.length || 0
+  const squeezeOn = new Array(n).fill(false)
+  const squeezeRelease = new Array(n).fill(false)
+  if (n < length + 1) return { squeezeOn, squeezeRelease }
+
+  const basis = calcSMASeries(closes, length)
+  const tr = new Array(n).fill(0)
+  for (let i = 0; i < n; i++) {
+    if (i === 0) { tr[i] = (highs[i] ?? closes[i]) - (lows[i] ?? closes[i]); continue }
+    const h = highs[i] ?? closes[i], l = lows[i] ?? closes[i], pc = closes[i - 1]
+    tr[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc))
+  }
+  const rangeKC = emaSeries(tr, length)
+  for (let i = length - 1; i < n; i++) {
+    if (basis[i] == null || rangeKC[i] == null) continue
+    // Pine ta.stdev — population stdev over `length` bars
+    let sum = 0, sum2 = 0, cnt = 0
+    for (let j = i - length + 1; j <= i; j++) {
+      if (closes[j] == null) continue
+      sum += closes[j]
+      sum2 += closes[j] * closes[j]
+      cnt++
+    }
+    if (cnt < length) continue
+    const mean = sum / length
+    const stdev = Math.sqrt(Math.max(0, sum2 / length - mean * mean))
+    const upperBB = basis[i] + bbMult * stdev
+    const lowerBB = basis[i] - bbMult * stdev
+    const upperKC = basis[i] + kcMult * rangeKC[i]
+    const lowerKC = basis[i] - kcMult * rangeKC[i]
+    squeezeOn[i] = lowerBB > lowerKC && upperBB < upperKC
+    squeezeRelease[i] = !squeezeOn[i] && i > 0 && squeezeOn[i - 1]
+  }
+  return { squeezeOn, squeezeRelease }
+}
+
 export function calcLakshmiSuperCycle(highs, lows, closes, niftyClosesAligned = null, opts = {}) {
   const length = opts.length ?? 21
   const rsMALength = opts.rsMALength ?? 9
@@ -624,37 +737,7 @@ export function calcLakshmiSuperCycle(highs, lows, closes, niftyClosesAligned = 
     cycleDown[i] = cycle[i] < cycle[i - 1]
   }
 
-  // Squeeze: BB inside KC
-  const basis = calcSMASeries(closes, length)
-  const squeezeOn = new Array(n).fill(false)
-  const squeezeRelease = new Array(n).fill(false)
-  const tr = new Array(n).fill(0)
-  for (let i = 0; i < n; i++) {
-    if (i === 0) { tr[i] = (highs[i] ?? closes[i]) - (lows[i] ?? closes[i]); continue }
-    const h = highs[i] ?? closes[i], l = lows[i] ?? closes[i], pc = closes[i - 1]
-    tr[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc))
-  }
-  const rangeKC = emaSeries(tr, length)
-  for (let i = length - 1; i < n; i++) {
-    if (basis[i] == null || rangeKC[i] == null) continue
-    // Pine ta.stdev — population stdev over `length` bars
-    let sum = 0, sum2 = 0, cnt = 0
-    for (let j = i - length + 1; j <= i; j++) {
-      if (closes[j] == null) continue
-      sum += closes[j]
-      sum2 += closes[j] * closes[j]
-      cnt++
-    }
-    if (cnt < length) continue
-    const mean = sum / length
-    const stdev = Math.sqrt(Math.max(0, sum2 / length - mean * mean))
-    const upperBB = basis[i] + bbMult * stdev
-    const lowerBB = basis[i] - bbMult * stdev
-    const upperKC = basis[i] + kcMult * rangeKC[i]
-    const lowerKC = basis[i] - kcMult * rangeKC[i]
-    squeezeOn[i] = lowerBB > lowerKC && upperBB < upperKC
-    squeezeRelease[i] = !squeezeOn[i] && i > 0 && squeezeOn[i - 1]
-  }
+  const { squeezeOn, squeezeRelease } = calcLakshmiSqueeze(highs, lows, closes, { length, bbMult, kcMult })
 
   const rsLine = new Array(n).fill(null)
   const niftyOk = Array.isArray(niftyClosesAligned) && niftyClosesAligned.length === n
