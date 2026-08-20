@@ -18378,16 +18378,41 @@ export default function App(){
     return scoreMarketGroups(raw)
   },[sectorData,stocks])
 
-  const scoredIndexData=useMemo(()=>scoreMarketGroups(indexData.map(idx=>({
-    ...idx,
-    strength:idx.rsTv,
-    advD:idx.advancesD,
-    advW:idx.advancesW,
-    advM:idx.advancesM,
-    rankChange:idx.rankWChange,
-    improvingPct:null,
-    thrustPct:null,
-  }))).map(r=>r.advancesW==null?{...r,heat:null,marketState:'Stable'}:r),[indexData])
+  const scoredIndexData=useMemo(()=>{
+    const rows=indexData.map(idx=>{
+      const members=getIndexConstituents(idx.name,stocks)
+      const usable=members?.length>=3?members:null
+      const advPct=field=>{
+        if(!usable) return null
+        const values=usable.map(s=>s[field]).filter(v=>v!=null)
+        return values.length?values.filter(v=>v>0).length/values.length*100:null
+      }
+      const improvingCount=usable
+        ? usable.filter(s=>s.rsTrend?.trend==='improving').length
+        : 0
+      const thrustCount=usable?usable.filter(isMarketThrustStock).length:0
+      const memberAvgRs=usable
+        ? usable.reduce((sum,s)=>sum+(s.rs||0),0)/usable.length
+        : null
+      return {
+        ...idx,
+        members:usable||[],
+        // Nifty 50 deliberately has no self-relative rsTv. Its constituent
+        // average is an honest fallback for the Leadership input.
+        strength:idx.rsTv??memberAvgRs,
+        advD:idx.advancesD??advPct('chg'),
+        advW:idx.advancesW??advPct('chgW'),
+        advM:idx.advancesM??advPct('chgM'),
+        rankChange:idx.rankWChange,
+        improvingPct:usable?improvingCount/usable.length*100:null,
+        thrustPct:usable?thrustCount/usable.length*100:null,
+        thrustCount,
+      }
+    })
+    return scoreMarketGroups(rows).map(r=>
+      r.advW==null?{...r,heat:null,marketState:'Stable'}:r
+    )
+  },[indexData,stocks])
 
   // Industries table aggregation — was previously an inline IIFE directly
   // in JSX (Indices tab render), recomputing this O(n) groupby + sort over
@@ -20275,11 +20300,11 @@ export default function App(){
                           </div>
                           <div style={cellStyle} title="Heat: weekly rank and breadth acceleration. Only shown when constituent breadth exists.">
                             <div style={{fontWeight:800,fontSize:12,color:(idx.heat??0)>=65?C.accent:C.muted}}>
-                              {idx.advancesW!=null?(idx.heat??'—'):'—'}
+                              {idx.advW!=null?(idx.heat??'—'):'—'}
                             </div>
                           </div>
                           <div style={cellStyle}>
-                            {idx.advancesW!=null?(()=>{
+                            {idx.advW!=null?(()=>{
                               const meta=MARKET_STATE_META[idx.marketState]||MARKET_STATE_META.Stable
                               const col=meta.color()
                               return <span title={meta.desc} style={{fontSize:9,fontWeight:800,color:col,
