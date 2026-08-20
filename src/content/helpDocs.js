@@ -909,6 +909,10 @@ export const DOCS_ARTICLES = [
           'Types follow the header 🔔 menu. Pause with Delivery ON/paused.',
         ],
       },
+      {
+        heading: 'What each person receives',
+        body: 'Digests are built per person, not broadcast. Your signal-type toggles and “Watchlist only” both apply, so your messages cover your own list rather than the whole market. One Telegram chat belongs to one account: linking a chat that already belongs to another account moves it, so alerts never go to two places at once.',
+      },
     ],
   },
 ]

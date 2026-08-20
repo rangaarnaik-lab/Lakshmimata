@@ -1887,6 +1887,10 @@ const ALERT_PREF_KEY='lakshmimata-alert-prefs'
 const DEFAULT_ALERT_PREFS={
   hy:true, ht:true, pp:true, bullsnort:true, squeeze:true, stage2:true, guppy:true, rs70:true, announcements:true,
   watchlistOnly:false,
+  // Mirror of this browser's watchlist symbols. Watchlists live in
+  // localStorage, so the scanner needs a copy to apply "Watchlist only" to
+  // Telegram digests instead of sending everyone the same market-wide list.
+  watchlistSyms:[],
   soundEnabled:true,
   soundId:'ping',
   soundVolume:0.7,
@@ -1953,6 +1957,10 @@ function normalizeAlertPrefs(raw){
     ? [...new Set(next.scannerAlertIds.map(String))]
     : []
   next.telegramEnabled=next.telegramEnabled!==false
+  next.watchlistOnly=next.watchlistOnly===true
+  next.watchlistSyms=Array.isArray(next.watchlistSyms)
+    ? [...new Set(next.watchlistSyms.map(s=>String(s).toUpperCase()))].slice(0,600)
+    : []
   return next
 }
 
@@ -16782,6 +16790,17 @@ export default function App(){
       })
     }, 350)
   },[session?.user?.id, demoMode])
+  // Keep the cloud copy of the watchlist in step with this browser, so a
+  // Telegram digest reflects the user's own list rather than the whole market.
+  useEffect(()=>{
+    if(!session?.user?.id || demoMode) return
+    const syms=[...watchlistAlertSymsRef.current].sort()
+    const saved=Array.isArray(alertPrefs.watchlistSyms)?[...alertPrefs.watchlistSyms].sort():[]
+    if(syms.join(',')===saved.join(',')) return
+    const next=normalizeAlertPrefs({...alertPrefs, watchlistSyms:syms})
+    setAlertPrefs(next)
+    persistUserAlertPrefs(next)
+  },[watchlists, alertPrefs, session?.user?.id, demoMode, persistUserAlertPrefs])
   // Load this user's cloud prefs when session is ready (falls back to local cache).
   useEffect(()=>{
     const uid=session?.user?.id
