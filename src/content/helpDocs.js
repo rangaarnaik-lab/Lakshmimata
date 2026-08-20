@@ -914,6 +914,19 @@ export const DOCS_ARTICLES = [
         heading: 'What each person receives',
         body: 'Digests are built per person, not broadcast. Your signal-type toggles and “Watchlist only” both apply, so your messages cover your own list rather than the whole market. One Telegram chat belongs to one account: linking a chat that already belongs to another account moves it, so alerts never go to two places at once.',
       },
+      {
+        heading: 'Why you do not get the same name twice',
+        bullets: [
+          'ETFs and index funds never alert. They sit in the scanner, but a stock pattern on a silver or index fund is not a tradable signal.',
+          'The same stock and signal repeat at most once every 2 hours, so a flag that flickers off and on between scans cannot spam you.',
+          'RS alerts use a band: they fire above 72 and only re-arm below 68, instead of firing every time a stock wobbles across 70.',
+          'Stocks below RS 50 stay in the scanner but do not alert. The one exception is a short-biased squeeze, where weakness is the point.',
+        ],
+      },
+      {
+        heading: 'How often, and only what matters',
+        body: 'Account → Telegram alerts sets your own pace once the bot is linked: every minute, every 5 minutes, hourly, or a single summary after the close. Batched messages lead with the strongest RS names, so a shortlist is still the useful part of the day. You can also pick up to two signals to send to Telegram — Bull Snort and PP, say — and everything else keeps appearing in the app without buzzing your phone. Picking nothing keeps Telegram in step with your 🔔 types.',
+      },
     ],
   },
 ]

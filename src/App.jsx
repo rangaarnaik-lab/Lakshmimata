@@ -1901,6 +1901,11 @@ const DEFAULT_ALERT_PREFS={
   scannerAlerts:true,
   scannerAlertIds:[],
   telegramEnabled:true,
+  // Telegram delivery: how often digests are sent, and (optionally) up to
+  // TELEGRAM_MAX_TYPES signals to narrow Telegram to. Empty means Telegram
+  // follows the 🔔 types, which is what every existing user has.
+  telegramCadence:'live',
+  telegramTypes:[],
 }
 const ALERT_PREF_OPTIONS=[
   {key:'watchlistOnly', label:'Watchlist only', icon:'📋'},
@@ -1914,6 +1919,21 @@ const ALERT_PREF_OPTIONS=[
   {key:'rs70', label:'RS Rating > 70', icon:'⭐'},
   {key:'announcements', label:'Announcements', icon:'📢'},
 ]
+/**
+ * Telegram-only delivery controls. The in-app 🔔 menu still decides which
+ * signals exist for you; these decide how often they leave the server and,
+ * optionally, narrow Telegram to a couple of signals worth a phone buzz.
+ */
+const TELEGRAM_MAX_TYPES=2
+const TELEGRAM_CADENCES=[
+  {id:'live', label:'Every minute', hint:'The moment a signal fires'},
+  {id:'5m', label:'Every 5 min', hint:'Batched into one message'},
+  {id:'1h', label:'Hourly', hint:'One round-up an hour'},
+  {id:'eod', label:'End of day', hint:'One summary after the close'},
+]
+const TELEGRAM_TYPE_OPTIONS=ALERT_PREF_OPTIONS.filter(
+  o=>o.key!=='watchlistOnly'&&o.key!=='announcements'
+)
 /** TradingView-style alert sounds — synthesized with Web Audio (no asset files). */
 const ALERT_SOUND_OPTIONS=[
   {id:'ping', label:'Ping'},
@@ -1957,6 +1977,14 @@ function normalizeAlertPrefs(raw){
     ? [...new Set(next.scannerAlertIds.map(String))]
     : []
   next.telegramEnabled=next.telegramEnabled!==false
+  next.telegramCadence=TELEGRAM_CADENCES.some(c=>c.id===next.telegramCadence)
+    ? next.telegramCadence
+    : DEFAULT_ALERT_PREFS.telegramCadence
+  next.telegramTypes=Array.isArray(next.telegramTypes)
+    ? [...new Set(next.telegramTypes.map(String))]
+        .filter(k=>TELEGRAM_TYPE_OPTIONS.some(o=>o.key===k))
+        .slice(0,TELEGRAM_MAX_TYPES)
+    : []
   next.watchlistOnly=next.watchlistOnly===true
   next.watchlistSyms=Array.isArray(next.watchlistSyms)
     ? [...new Set(next.watchlistSyms.map(s=>String(s).toUpperCase()))].slice(0,600)
@@ -15483,6 +15511,21 @@ function TelegramAlertsCard({session, alertPrefs, onAlertPrefs}){
 
   const startUrl=bot&&pendingCode?`https://t.me/${bot}?start=${pendingCode}`:''
 
+  const cadence=alertPrefs?.telegramCadence||'live'
+  const tgTypes=Array.isArray(alertPrefs?.telegramTypes)?alertPrefs.telegramTypes:[]
+  const setCadence=id=>onAlertPrefs?.({...alertPrefs, telegramCadence:id})
+  const toggleTgType=key=>{
+    if(!onAlertPrefs) return
+    if(tgTypes.includes(key)){
+      onAlertPrefs({...alertPrefs, telegramTypes:tgTypes.filter(k=>k!==key)})
+      return
+    }
+    // Oldest pick drops out at the cap, so a third tap swaps instead of
+    // silently doing nothing.
+    const next=[...tgTypes, key].slice(-TELEGRAM_MAX_TYPES)
+    onAlertPrefs({...alertPrefs, telegramTypes:next})
+  }
+
   const statusText=!bot?'Unavailable':connected?(telegramOn?'Live':'Paused'):'Not linked'
   const statusCol=!bot?C.muted:connected?(telegramOn?C.green:C.yellow):C.muted
 
@@ -15505,7 +15548,8 @@ function TelegramAlertsCard({session, alertPrefs, onAlertPrefs}){
 
       <div style={{marginTop:12,fontSize:11.5,color:C.muted,lineHeight:1.55}}>
         Alerts arrive labeled by type (Squeeze, HY, Stage 2, …) and follow the same 🔔 preferences
-        from the header. Free — you just tap Start once in Telegram.
+        from the header. Free — you just tap Start once in Telegram. Once linked, you choose how
+        often they arrive and can narrow Telegram to a couple of signals.
       </div>
 
       {!scannerLive&&!connected&&bot&&(
@@ -15533,7 +15577,60 @@ function TelegramAlertsCard({session, alertPrefs, onAlertPrefs}){
             Re-link
           </button>
         </div>
-      ):(
+      ):null}
+
+      {connected&&(
+        <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${C.divider}`}}>
+          <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+            letterSpacing:'0.07em'}}>How often</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(112px,1fr))',gap:6,marginTop:8}}>
+            {TELEGRAM_CADENCES.map(({id,label,hint})=>{
+              const on=cadence===id
+              return(
+                <button key={id} type="button" onClick={()=>setCadence(id)}
+                  style={{padding:'8px 10px',borderRadius:9,cursor:'pointer',textAlign:'left',
+                    border:`1px solid ${on?C.accent:C.border}`,
+                    background:on?C.accent+'18':C.bg}}>
+                  <div style={{fontSize:11.5,fontWeight:800,color:on?C.accent:C.text}}>{label}</div>
+                  <div style={{fontSize:9.5,color:C.muted,marginTop:2,lineHeight:1.35}}>{hint}</div>
+                </button>
+              )
+            })}
+          </div>
+
+          <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
+            letterSpacing:'0.07em',marginTop:16}}>
+            Telegram only these · pick up to {TELEGRAM_MAX_TYPES}
+          </div>
+          <div style={{fontSize:10.5,color:C.muted,marginTop:4,lineHeight:1.45}}>
+            {tgTypes.length
+              ? 'Everything else still shows in the app — only these reach your phone.'
+              : `Nothing picked, so Telegram follows your 🔔 types. Pick 1–${TELEGRAM_MAX_TYPES} to make it quieter.`}
+          </div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:8}}>
+            {TELEGRAM_TYPE_OPTIONS.map(({key,label,icon})=>{
+              const on=tgTypes.includes(key)
+              return(
+                <button key={key} type="button" onClick={()=>toggleTgType(key)}
+                  style={{padding:'6px 10px',borderRadius:999,cursor:'pointer',fontSize:11,fontWeight:700,
+                    border:`1px solid ${on?C.accent:C.border}`,
+                    background:on?C.accent+'18':C.bg,color:on?C.accent:C.muted}}>
+                  {icon} {label}
+                </button>
+              )
+            })}
+            {tgTypes.length>0&&(
+              <button type="button" onClick={()=>onAlertPrefs?.({...alertPrefs, telegramTypes:[]})}
+                style={{padding:'6px 10px',borderRadius:999,cursor:'pointer',fontSize:11,fontWeight:600,
+                  border:`1px dashed ${C.border}`,background:'transparent',color:C.muted}}>
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!bot||connected?null:(
         <div style={{marginTop:14}}>
           {!startUrl?(
             <button type="button" disabled={busy} onClick={connect}
