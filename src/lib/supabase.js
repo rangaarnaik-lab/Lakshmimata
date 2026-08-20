@@ -23,6 +23,31 @@ async function resolvedAuthSession(session) {
   return data?.session || null
 }
 
+const DEVICE_ID_KEY = 'lakshmimata-device-id'
+
+/** Stable per-browser uuid, so this works even without a session_id claim. */
+function localDeviceId() {
+  try {
+    let id = localStorage.getItem(DEVICE_ID_KEY)
+    if (!id) {
+      id = crypto.randomUUID()
+      localStorage.setItem(DEVICE_ID_KEY, id)
+    }
+    return id
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Who owns the account right now. Not every GoTrue version puts session_id
+ * in the access token, and treating its absence as "someone replaced me"
+ * signed people out on a device nothing had replaced — hence the fallback.
+ */
+function deviceIdentity(session) {
+  return authSessionId(session) || localDeviceId()
+}
+
 /**
  * Mark this browser as the account's one active device. A newer login
  * overwrites the row, which lets an already-open older browser detect that
@@ -30,7 +55,7 @@ async function resolvedAuthSession(session) {
  */
 export async function claimCurrentDevice(session) {
   const current = await resolvedAuthSession(session)
-  const sessionId = authSessionId(current)
+  const sessionId = deviceIdentity(current)
   const userId = current?.user?.id
   if (!sessionId || !userId) return { ok: false, unavailable: true }
   const { error } = await supabase.from('user_active_sessions').upsert({
@@ -47,14 +72,18 @@ export async function claimCurrentDevice(session) {
 
 /**
  * Check whether this browser still owns the user's active-session row.
- * Missing rows are claimed once to migrate users who were already signed in
- * when single-device enforcement was introduced.
+ *
+ * Only a row that exists AND names a different device counts as invalid.
+ * Every other outcome — unknown identity, read error, missing row, failed
+ * claim — reports valid, because none of them is evidence that another
+ * device took the account, and signing someone out on a guess is worse
+ * than briefly failing to enforce.
  */
 export async function verifyCurrentDevice(session) {
   const current = await resolvedAuthSession(session)
-  const sessionId = authSessionId(current)
+  const sessionId = deviceIdentity(current)
   const userId = current?.user?.id
-  if (!sessionId || !userId) return { valid: false }
+  if (!sessionId || !userId) return { valid: true, unavailable: true }
   const { data, error } = await supabase
     .from('user_active_sessions')
     .select('session_id')
@@ -67,18 +96,12 @@ export async function verifyCurrentDevice(session) {
     return { valid: true, unavailable: true }
   }
   if (!data) {
+    // No row means nobody else holds the account, so claim it and stay
+    // signed in even if that write fails; the next check retries.
     const claimed = await claimCurrentDevice(current)
-    return { valid: claimed.ok, unavailable: claimed.unavailable }
+    return { valid: true, unavailable: !claimed.ok }
   }
   return { valid: data.session_id === sessionId, userId, sessionId }
-}
-
-export async function currentDeviceIdentity(session) {
-  const current = await resolvedAuthSession(session)
-  return {
-    userId: current?.user?.id || null,
-    sessionId: authSessionId(current),
-  }
 }
 
 /**

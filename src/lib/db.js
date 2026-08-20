@@ -1461,22 +1461,45 @@ export async function logPageView() {
 
 /**
  * Aggregated usage stats for the landing page: all-time unique visitors,
- * all-time total views, and a day-by-day breakdown of both for the last
- * `days` days. Aggregated client-side from raw rows — fine at this
- * scale (a handful of visitors/day), would need a proper Postgres view/
- * RPC if this ever grew into the millions of rows.
+ * all-time total views (from the first logged row), repeat visitors in
+ * the last 7 days, and a day-by-day breakdown for the last `days` days.
+ *
+ * PostgREST caps a single select at 1,000 rows, so this pages through
+ * the table. Fine at this scale; a Postgres view/RPC would be needed in
+ * the millions of rows.
  */
 export async function fetchUsageStats(days = 14) {
-  const { data, error } = await supabase
-    .from('page_views')
-    .select('visitor_id,viewed_date')
-  if (error || !data) return { uniqueUsers: null, totalViews: null, dailyTrend: [] }
+  const empty = { uniqueUsers: null, totalViews: null, frequentUsers: null, dailyTrend: [] }
+  const PAGE = 1000
+  const rows = []
+  for (let from = 0; from < 50000; from += PAGE) {
+    const { data, error } = await supabase
+      .from('page_views')
+      .select('visitor_id,viewed_date')
+      .range(from, from + PAGE - 1)
+    if (error) return empty
+    if (data?.length) rows.push(...data)
+    if (!data || data.length < PAGE) break
+  }
+  if (!rows.length) return { uniqueUsers: 0, totalViews: 0, frequentUsers: 0, dailyTrend: [] }
 
-  const uniqueUsers = new Set(data.map(r => r.visitor_id)).size
-  const totalViews = data.length
+  const uniqueUsers = new Set(rows.map(r => r.visitor_id)).size
+  const totalViews = rows.length
+
+  const weekAgo = new Date()
+  weekAgo.setDate(weekAgo.getDate() - 6)
+  const weekStart = weekAgo.toISOString().split('T')[0]
+  const weekVisits = {}
+  for (const row of rows) {
+    if (row.viewed_date >= weekStart) {
+      weekVisits[row.visitor_id] = (weekVisits[row.visitor_id] || 0) + 1
+    }
+  }
+  // "Frequent" means they came back — two or more visits in the last 7 days.
+  const frequentUsers = Object.values(weekVisits).filter(n => n >= 2).length
 
   const byDate = {} // date -> { views, visitorIds: Set }
-  for (const row of data) {
+  for (const row of rows) {
     if (!byDate[row.viewed_date]) byDate[row.viewed_date] = { views: 0, visitorIds: new Set() }
     byDate[row.viewed_date].views += 1
     byDate[row.viewed_date].visitorIds.add(row.visitor_id)
@@ -1492,7 +1515,7 @@ export async function fetchUsageStats(days = 14) {
     dailyTrend.push({ date: key, views: day?.views || 0, uniqueUsers: day?.visitorIds.size || 0 })
   }
 
-  return { uniqueUsers, totalViews, dailyTrend }
+  return { uniqueUsers, totalViews, frequentUsers, dailyTrend }
 }
 
 /**

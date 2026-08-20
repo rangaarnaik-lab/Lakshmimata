@@ -50,7 +50,7 @@ import {
 import * as XLSX from 'xlsx'
 import {
   supabase, fetchOwnerToken, revokeOtherSessions,
-  claimCurrentDevice, verifyCurrentDevice, currentDeviceIdentity,
+  claimCurrentDevice, verifyCurrentDevice,
 } from './lib/supabase'
 import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchUserWatchlists, saveUserWatchlists, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
@@ -13920,7 +13920,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
   const [paused,setPaused]=useState(false)
   const [topGainers,setTopGainers]=useState([])
   const [landingIndices,setLandingIndices]=useState([])
-  const [usageStats,setUsageStats]=useState(null) // {uniqueUsers, dailyTrend} | null while loading
+  const [usageStats,setUsageStats]=useState(null) // {uniqueUsers,totalViews,frequentUsers,dailyTrend} | null while loading
   const [publicFeedback,setPublicFeedback]=useState([])
   const [feedbackStats,setFeedbackStats]=useState(null)
   const slideCount=5
@@ -14044,9 +14044,16 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
                 <span style={{fontSize:11.5,color:goldSoft,...mono,letterSpacing:'0.03em'}}>
                   {usageStats.uniqueUsers.toLocaleString('en-IN')} UNIQUE TRADERS
                 </span>
-                <span style={{fontSize:11.5,color:C.muted,...mono,letterSpacing:'0.03em'}}>
-                  {usageStats.totalViews.toLocaleString('en-IN')} TOTAL VISITS
+                <span title="Every landing-page open since the first logged visit"
+                  style={{fontSize:11.5,color:C.muted,...mono,letterSpacing:'0.03em'}}>
+                  {usageStats.totalViews.toLocaleString('en-IN')} TOTAL VISITS · FROM DAY ONE
                 </span>
+                {usageStats.frequentUsers!=null&&(
+                  <span title="Browsers that opened the site 2 or more times in the last 7 days"
+                    style={{fontSize:11.5,color:C.muted,...mono,letterSpacing:'0.03em'}}>
+                    {usageStats.frequentUsers.toLocaleString('en-IN')} FREQUENT LAST 7 DAYS
+                  </span>
+                )}
               </div>
               {usageStats.dailyTrend.length>1&&(()=>{
                 const maxViews=Math.max(1,...usageStats.dailyTrend.map(d=>d.views))
@@ -16531,7 +16538,6 @@ export default function App(){
     const uid=session?.user?.id
     if(!uid||demoMode) return
     let replaced=false
-    let ownSessionId=null
     const endSession=async()=>{
       if(replaced) return
       replaced=true
@@ -16546,15 +16552,16 @@ export default function App(){
       const{valid}=await verifyCurrentDevice()
       if(!valid) await endSession()
     }
-    currentDeviceIdentity().then(({sessionId})=>{ ownSessionId=sessionId })
     const channel=supabase
       .channel(`active-session-${uid}`)
       .on('postgres_changes',{
         event:'*',schema:'public',table:'user_active_sessions',
         filter:`user_id=eq.${uid}`,
-      },payload=>{
-        const claimed=payload.new?.session_id
-        if(ownSessionId&&claimed&&claimed!==ownSessionId) endSession()
+      },()=>{
+        // Re-read the stored session rather than comparing against an id
+        // captured when this effect mounted: signing in again in another
+        // tab replaces that id, and the stale copy logged this tab out.
+        check()
       })
       .subscribe()
     const timer=setInterval(check,60000)
