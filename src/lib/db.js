@@ -746,6 +746,75 @@ export async function saveUserAlertPrefs(userId, prefs) {
   return { data }
 }
 
+export async function fetchAppSetting(key) {
+  if (!key) return ''
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', key)
+    .maybeSingle()
+  if (error) {
+    console.error('fetchAppSetting error:', error.message)
+    return ''
+  }
+  return (data?.value || '').trim()
+}
+
+export async function fetchUserTelegram(userId) {
+  if (!userId) return null
+  const { data, error } = await supabase
+    .from('user_telegram')
+    .select('chat_id,telegram_username,enabled,link_code,link_code_expires_at,linked_at,updated_at')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) {
+    console.error('fetchUserTelegram error:', error.message)
+    return null
+  }
+  return data || null
+}
+
+function randomTelegramLinkCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const buf = new Uint8Array(8)
+  crypto.getRandomValues(buf)
+  return [...buf].map(b => chars[b % chars.length]).join('')
+}
+
+/** Create a short-lived /start code so the scanner can bind this user to a Telegram chat. */
+export async function startTelegramLink(userId) {
+  if (!userId) return { error: 'Sign in to connect Telegram.' }
+  const code = randomTelegramLinkCode()
+  const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString()
+  const payload = {
+    user_id: userId,
+    enabled: true,
+    link_code: code,
+    link_code_expires_at: expires,
+    updated_at: new Date().toISOString(),
+  }
+  const { data, error } = await supabase
+    .from('user_telegram')
+    .upsert(payload, { onConflict: 'user_id' })
+    .select('chat_id,telegram_username,enabled,link_code,link_code_expires_at,linked_at')
+    .single()
+  if (error) {
+    console.error('startTelegramLink error:', error.message)
+    return { error: error.message || 'Could not start Telegram link. Run add_user_telegram.sql in Supabase.' }
+  }
+  return { data, code }
+}
+
+export async function setTelegramAlertsEnabled(userId, enabled) {
+  if (!userId) return { error: 'Sign in first.' }
+  const { error } = await supabase
+    .from('user_telegram')
+    .update({ enabled: !!enabled, updated_at: new Date().toISOString() })
+    .eq('user_id', userId)
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
 /** Load per-user Our Chart indicator params.
  *  Returns { prefs, error }. prefs is null when none saved yet or on error. */
 export async function fetchUserChartIndicatorPrefs(userId) {

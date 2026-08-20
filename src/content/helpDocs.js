@@ -730,11 +730,115 @@ export const DOCS_ARTICLES = [
           'Hover chart / Our Chart — preview without leaving the scanner.',
           'Ticker — market strip on/off.',
           'Plans & billing — upgrade when your trial ends.',
+          'Telegram — Account → Telegram alerts. Operator: BotFather + TELEGRAM_SETUP.md, then Connect Telegram.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'telegram',
+    title: 'Telegram alerts',
+    category: 'workspace',
+    tabId: 'settings',
+    summary:
+      'Personal bot messages labeled by Squeeze / HY / Stage 2 / etc., using the same 🔔 preferences. Free. You must Start the bot once.',
+    forNewcomers:
+      'This is not posting into your private chats with friends. You get a 1:1 chat with the Lakshmimata bot. The operator creates the bot once; each user taps Connect Telegram on Account.',
+    sections: [
+      {
+        heading: 'Operator setup',
+        bullets: [
+          'Create a bot with @BotFather, copy the token and username.',
+          'Run add_user_telegram.sql in Supabase.',
+          'Set TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_USERNAME on the live-scan Railway service. Optional TELEGRAM_CHAT_ID for your EOD digest.',
+          'Redeploy the scanner. Full checklist: TELEGRAM_SETUP.md',
+        ],
+      },
+      {
+        heading: 'How users connect',
+        bullets: [
+          'Account → Telegram alerts → Connect Telegram → Open the bot and tap Start.',
+          'Types follow the header 🔔 menu. Pause with Delivery ON/paused.',
         ],
       },
     ],
   },
 ]
+
+/**
+ * Diagrams shown inside each article. `id` must exist in components/HelpVisuals.jsx.
+ * These are drawn in code (not screenshots) so they follow the theme and never
+ * drift out of date when the UI moves.
+ */
+export const ARTICLE_VISUALS = {
+  'start-overview': [
+    { id: 'nav', caption: 'Every tool is a tab: scanners on the left rail (desktop) or bottom tabs (mobile).' },
+    { id: 'chart-anatomy', caption: 'Tap any stock and you get its chart with Results / Concall / PPT underneath.' },
+  ],
+  'start-navigation': [
+    { id: 'nav', caption: 'Desktop: icon rail on the left, header on top. Mobile: the same tabs sit at the bottom with the rest under More.' },
+  ],
+  'start-glossary': [
+    { id: 'stage', caption: 'Weinstein stages — S1 base, S2 uptrend, S3 top, S4 downtrend.' },
+    { id: 'squeeze-bands', caption: 'A “squeeze” is Bollinger Bands sitting inside the Keltner Channels.' },
+  ],
+  rs: [
+    { id: 'signal-chips', caption: 'Signal chips above the table filter it to one event type.' },
+    { id: 'hover-chart', caption: 'With chart-on-hover on, the chart docks beside the table so you can hover names one by one.' },
+  ],
+  squeeze: [
+    { id: 'squeeze-bands', caption: 'High / Mid / Low compression = Bollinger Bands inside the 1.0 / 1.5 / 2.0 × ATR Keltner widths.' },
+    { id: 'squeeze-tiles', caption: 'Every summary tile is a filter — click BB In Squeeze, VCP Fired, etc. to list only those stocks, then click again to clear.' },
+  ],
+  patterns: [
+    { id: 'vcp', caption: 'VCP: each pullback is shallower than the last while volume dries up.' },
+  ],
+  leaders: [{ id: 'stage', caption: 'Leaders usually cluster in Stage 2 — rising above a rising 150/200 EMA.' }],
+  '52wl': [{ id: 'sr', caption: 'A 52-week high is price clearing the highest resistance on the chart.' }],
+  announcements: [
+    { id: 'chart-anatomy', caption: 'Filings live in tabs under the chart; a green badge means the summary is ready.' },
+  ],
+  weak: [{ id: 'stage', caption: 'Weak names sit in Stage 4 — below falling long EMAs.' }],
+  market: [{ id: 'breadth', caption: 'Breadth compares advancing vs declining stocks; a rising A/D line means the move is broad.' }],
+  rotation: [
+    { id: 'rrg', caption: 'RRG quadrants. X = RS-Ratio, Y = RS-Momentum, both centered at 100. The idealized path travels clockwise.' },
+  ],
+  chart: [
+    { id: 'chart-anatomy', caption: 'Chart on top, filings tabs below. A green badge means a summary is already on file.' },
+    { id: 'hover-chart', caption: 'Hover preview docks next to the list instead of covering it; click to pin.' },
+  ],
+  'ind-lakshmimata': [{ id: 'ema-guppy', caption: 'The EMA ribbon is the backbone of the pack — compressed then fanning out is the classic trend start.' }],
+  'ind-ema-guppy': [{ id: 'ema-guppy', caption: 'EMA 9 / 21 / 50 / 150 / 200. Stacked and rising = trend intact.' }],
+  'ind-bb': [{ id: 'bollinger', caption: 'SMA 20 with ±2σ envelope. Narrow = quiet, wide = volatile.' }],
+  'ind-sr': [{ id: 'sr', caption: 'Lines come from confirmed swing pivots; breaks matter more with volume.' }],
+  'ind-circuit': [{ id: 'circuit', caption: 'Sketched UC / LC zones from detected lock percentages.' }],
+  'ind-volume': [{ id: 'volume', caption: 'Orange = unusual volume, faded = dry-up. Scanner chips like HY / IBV use the same idea.' }],
+  'ind-supercycle': [{ id: 'supercycle', caption: 'RS-vs-index oscillator: above zero = relative strength warming, below = cooling.' }],
+  'ind-signals-glossary': [{ id: 'signal-chips', caption: 'The same chips appear on scanners and in the chart signal breakdown.' }],
+  settings: [
+    { id: 'layout-chart-left', caption: 'Workspace layout “Chart | Scanner” — chart takes 75% on the left.' },
+    { id: 'layout-chart-right', caption: '“Scanner | Chart” flips the sides, keeping the chart at 75%.' },
+  ],
+  telegram: [
+    { id: 'telegram', caption: 'Three steps to link, then alerts arrive in a 1:1 bot chat, labeled by type.' },
+  ],
+}
+
+/**
+ * Optional real screenshots per article, rendered under the diagrams.
+ * Drop PNG/JPG files in `public/docs/` and reference them as `/docs/<file>`:
+ *   rs: [{ src: '/docs/rs-table.png', caption: 'RS Rating table', alt: 'RS table' }]
+ * Diagrams above already cover the flows, so screenshots are purely additive.
+ */
+export const ARTICLE_IMAGES = {}
+
+/** Diagrams + screenshots for one article. */
+export function mediaForArticle(id) {
+  return {
+    visuals: ARTICLE_VISUALS[id] || [],
+    images: ARTICLE_IMAGES[id] || [],
+  }
+}
 
 /** Short accordion entries for the Help modal (and Ask Guide fallbacks). */
 export const HELP_CONTENT = DOCS_ARTICLES.filter(
@@ -765,6 +869,7 @@ const HELP_ORDER = [
   'bestpicks',
   'feedback',
   'settings',
+  'telegram',
   'chart',
 ]
 export const HELP_CONTENT_ORDERED = HELP_ORDER.map((id) => HELP_CONTENT.find((h) => h.id === id)).filter(Boolean)
@@ -884,6 +989,11 @@ export const GUIDE_QA = [
     keys: ['watchlist'],
     answer:
       'Watchlist tab saves lists. In the header dropdown on scanner pages, pick a watchlist (wl:…) to filter that page to your list only.',
+  },
+  {
+    keys: ['telegram', 'telegram bot', 'connect telegram'],
+    answer:
+      'Account → Telegram alerts. The operator creates a bot with BotFather, runs add_user_telegram.sql, and sets TELEGRAM_BOT_TOKEN plus TELEGRAM_BOT_USERNAME on the live scanner. Then tap Connect Telegram and Start. Alerts use your 🔔 types and are labeled (Squeeze, HY, Stage 2, …). Not investment advice.',
   },
   {
     keys: ['guide', 'docs', 'help page', 'documentation', 'newcomer', 'beginner'],

@@ -5,7 +5,9 @@ import {
   getArticle,
   articlesForCategory,
   searchArticles,
+  mediaForArticle,
 } from '../content/helpDocs'
+import HelpVisual from './HelpVisuals'
 
 /**
  * Full-page Guide — beginner overview + how each component works.
@@ -20,6 +22,7 @@ export default function HelpDocsPage({
   const [category, setCategory] = useState('start')
   const [articleId, setArticleId] = useState(initialArticleId || 'start-overview')
   const [query, setQuery] = useState('')
+  const [zoom, setZoom] = useState(null)
 
   useEffect(() => {
     if (initialArticleId && getArticle(initialArticleId)) {
@@ -36,6 +39,14 @@ export default function HelpDocsPage({
   }, [category, query, searching])
 
   const article = getArticle(articleId) || list[0] || DOCS_ARTICLES[0]
+  const media = mediaForArticle(article?.id)
+
+  useEffect(() => {
+    if (!zoom) return
+    const onKey = (e) => e.key === 'Escape' && setZoom(null)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [zoom])
 
   const openArticle = (id) => {
     const a = getArticle(id)
@@ -280,6 +291,25 @@ export default function HelpDocsPage({
                 <div style={{ fontSize: 13, color: C.text, lineHeight: 1.65 }}>{article.forNewcomers}</div>
               </div>
 
+              {media.visuals.length > 0 && (
+                <div style={{ marginTop: 18 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 2 }}>
+                    Picture it
+                  </div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: media.visuals.length > 1 ? 'repeat(auto-fit, minmax(240px, 1fr))' : '1fr',
+                      gap: 14,
+                    }}
+                  >
+                    {media.visuals.map((v) => (
+                      <HelpVisual key={v.id + (v.caption || '')} id={v.id} caption={v.caption} theme={C} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {(article.sections || []).map((sec) => (
                 <div key={sec.heading} style={{ marginTop: 18 }}>
                   <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 8 }}>{sec.heading}</div>
@@ -303,6 +333,53 @@ export default function HelpDocsPage({
                 </div>
               ))}
 
+              {media.images.length > 0 && (
+                <div style={{ marginTop: 20 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 8 }}>
+                    Screenshots
+                  </div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                      gap: 12,
+                    }}
+                  >
+                    {media.images.map((img) => (
+                      <figure key={img.src} style={{ margin: 0 }}>
+                        <button
+                          type="button"
+                          onClick={() => setZoom(img)}
+                          title="Click to enlarge"
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            padding: 0,
+                            border: `1px solid ${C.border}`,
+                            borderRadius: 8,
+                            background: C.bg,
+                            cursor: 'zoom-in',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <img
+                            src={img.src}
+                            alt={img.alt || img.caption || article.title}
+                            loading="lazy"
+                            style={{ display: 'block', width: '100%', height: 'auto' }}
+                          />
+                        </button>
+                        {img.caption && (
+                          <figcaption style={{ fontSize: 10.5, color: C.muted, marginTop: 6, lineHeight: 1.5 }}>
+                            {img.caption}
+                          </figcaption>
+                        )}
+                      </figure>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div
                 style={{
                   marginTop: 22,
@@ -320,6 +397,34 @@ export default function HelpDocsPage({
           )}
         </div>
       </div>
+
+      {zoom && (
+        <div
+          onClick={() => setZoom(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9000,
+            background: 'rgba(0,0,0,0.78)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+            cursor: 'zoom-out',
+          }}
+        >
+          <div style={{ maxWidth: '92vw', maxHeight: '88vh' }}>
+            <img
+              src={zoom.src}
+              alt={zoom.alt || zoom.caption || 'Screenshot'}
+              style={{ maxWidth: '92vw', maxHeight: '80vh', borderRadius: 10, border: `1px solid ${C.border}` }}
+            />
+            {zoom.caption && (
+              <div style={{ color: '#e2e8f0', fontSize: 12, marginTop: 10, textAlign: 'center' }}>{zoom.caption}</div>
+            )}
+          </div>
+        </div>
+      )}
 
       <style>{`
         @media (max-width: 800px) {

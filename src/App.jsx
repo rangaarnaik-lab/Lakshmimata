@@ -4,12 +4,14 @@ import PanelWindow, { PanelTaskbar, ScreenerFrame } from './components/PanelWind
 import EarningsTracker from './components/EarningsTracker'
 import PaymentPage from './components/PaymentPage'
 import HelpDocsPage from './components/HelpDocsPage'
+import HelpVisual from './components/HelpVisuals'
 import {
   HELP_CONTENT_ORDERED as HELP_CONTENT,
   GUIDE_SUGGESTIONS,
   GUIDE_QA,
   DOCS_ARTICLES,
   getArticle,
+  mediaForArticle,
 } from './content/helpDocs'
 import { SUBSCRIPTION_PLANS } from './lib/plans'
 import {
@@ -47,7 +49,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchMissedAiFilings } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -1759,6 +1761,7 @@ const DEFAULT_ALERT_PREFS={
   // result set. scannerAlertIds holds the ids the user opted in to.
   scannerAlerts:true,
   scannerAlertIds:[],
+  telegramEnabled:true,
 }
 const ALERT_PREF_OPTIONS=[
   {key:'watchlistOnly', label:'Watchlist only', icon:'📋'},
@@ -1814,6 +1817,7 @@ function normalizeAlertPrefs(raw){
   next.scannerAlertIds=Array.isArray(next.scannerAlertIds)
     ? [...new Set(next.scannerAlertIds.map(String))]
     : []
+  next.telegramEnabled=next.telegramEnabled!==false
   return next
 }
 
@@ -11629,66 +11633,29 @@ function buildLayoutChartSectionsPayload({ order, hidden, dock, detailOpen }){
 /** Main workspace tiles: RS table (screener), Chart, Overview/Details. */
 const DOCK_TILE_IDS = ['screener', 'chart', 'detail']
 const DOCK_TILE_LABELS = { screener:'RS / Table', chart:'Chart', detail:'Fundamentals' }
-/** Product default workspace: three full-height columns — a wide Chart on
- *  the left, the RS table beside it, and the company Overview on the right,
- *  so picking a symbol shows its chart and its fundamentals together. */
-const DEFAULT_DOCK_LAYOUT = { mode:'columns', solo:'chart', order:['chart','screener','detail'] }
-const DEFAULT_CHART_WIDE = 2      // index into [35,50,75] — the chart column %
-const DEFAULT_DETAIL_OPEN = true  // Overview rides along with the chart
+/** Product default: Chart 75% · scanner 25%. */
+const DEFAULT_DOCK_LAYOUT = { mode:'side', solo:'chart', order:['chart','screener','detail'] }
+const DEFAULT_CHART_WIDE = 2      // index into [35,50,75] — 75% chart column
+const DEFAULT_DETAIL_OPEN = false  // scanner + chart only
 const DOCK_LAYOUT_KEY = 'lakshmimata-dock-layout'
 
-/** TradingView-style layout presets — swap RS table / Chart / Fundamentals.
- *  First preset is the product default: Chart 75% left · RS 25% right.
- *  `solo` (side only): which tile gets a full-height column — others stack opposite.
- *  `columns`: three full-height panes side by side (RS | Chart | Fund).
- *  `detailOpen:false` keeps Fundamentals out of the way for 2-pane presets. */
+/** Only two workspace splits: Chart 75% and scanner 25%, left or right. */
 const DOCK_LAYOUT_PRESETS = [
   {
-    id: 'columns-chart-rs-fund',
-    label: 'Default',
-    hint: 'Wide Chart · RS · Overview',
-    layout: { mode: 'columns', order: ['chart', 'screener', 'detail'] },
-    detailOpen: true,
-  },
-  {
-    id: 'side-chart-rs',
-    label: 'Chart | RS',
-    hint: 'Chart 75% left · RS 25% right',
+    id: 'chart-75-left',
+    label: 'Chart | Scanner',
+    hint: 'Chart 75% left · table 25% right',
     layout: { mode: 'side', solo: 'chart', order: ['chart', 'screener', 'detail'] },
-    chartWide: 2, // 75% chart column
+    chartWide: 2,
     detailOpen: false,
   },
   {
-    id: 'side-rs-chart',
-    label: 'RS | Chart',
-    hint: 'RS left · Chart over Overview',
-    layout: { mode: 'side', solo: 'screener', order: ['screener', 'chart', 'detail'] },
-    chartWide: 1, // ~50% right column
-  },
-  {
-    id: 'columns-rs-chart-fund',
-    label: 'RS | Chart | Fund',
-    hint: 'Three columns side by side',
-    layout: { mode: 'columns', order: ['screener', 'chart', 'detail'] },
-  },
-  {
-    id: 'side-rs-overview',
-    label: 'RS | Overview',
-    hint: 'Table left · Overview above Chart',
-    layout: { mode: 'side', solo: 'screener', order: ['screener', 'detail', 'chart'] },
-    chartWide: 1,
-  },
-  {
-    id: 'stack-rs-chart-ov',
-    label: 'Stack RS→Chart',
-    hint: 'RS table → Chart → Overview',
-    layout: { mode: 'stack', order: ['screener', 'chart', 'detail'] },
-  },
-  {
-    id: 'stack-chart-rs-ov',
-    label: 'Stack Chart→RS',
-    hint: 'Chart → RS table → Overview',
-    layout: { mode: 'stack', order: ['chart', 'screener', 'detail'] },
+    id: 'chart-75-right',
+    label: 'Scanner | Chart',
+    hint: 'Table 25% left · Chart 75% right',
+    layout: { mode: 'side', solo: 'chart', order: ['screener', 'chart', 'detail'] },
+    chartWide: 2,
+    detailOpen: false,
   },
 ]
 
@@ -11706,7 +11673,7 @@ function dockLayoutMatches(a, b){
 
 /** Mini schematic of RS / Chart / Overview arrangement (TradingView-style). */
 function DockLayoutThumb({ mode, order, solo, active, colors: C }){
-  const cells = (order || DOCK_TILE_IDS).map(id => ({
+  const cells = (order || DOCK_TILE_IDS).filter(id => id !== 'detail').map(id => ({
     id,
     letter: id === 'screener' ? 'RS' : id === 'chart' ? 'C' : 'F',
     fill: id === 'screener' ? (C.accent || '#3b82f6')
@@ -11757,9 +11724,10 @@ function DockLayoutThumb({ mode, order, solo, active, colors: C }){
               )
             }
             if(!block) return null
+            const isChart = block.id === 'chart'
             return (
               <div key={block.id} title={DOCK_TILE_LABELS[block.id]} style={{
-                flex: 1.15, borderRadius:3, background:block.fill+'55',
+                flex: isChart ? 3 : 1, borderRadius:3, background:block.fill+'55',
                 display:'flex', alignItems:'center', justifyContent:'center',
                 fontSize:8, fontWeight:800, color:block.fill,
               }}>{block.letter}</div>
@@ -11788,7 +11756,7 @@ function normalizeDockLayout(raw){
   const solo = mode === 'side' && raw?.solo === 'chart' ? 'chart' : 'screener'
   return { mode, order, solo }
 }
-const DOCK_DEFAULT_VER = '4' // v4: wide Chart · RS · Overview, all three visible
+const DOCK_DEFAULT_VER = '5' // v5: only Chart 75% / scanner 25%
 function loadDockLayout(){
   try{
     const ver=localStorage.getItem('lakshmimata-dock-default-ver')
@@ -15203,11 +15171,126 @@ function AppPreferencesCard({
   )
 }
 
+function TelegramAlertsCard({session, alertPrefs, onAlertPrefs}){
+  const userId=session?.user?.id
+  const [bot,setBot]=useState('')
+  const [row,setRow]=useState(null)
+  const [busy,setBusy]=useState(false)
+  const [err,setErr]=useState('')
+  const [pendingCode,setPendingCode]=useState('')
+
+  const refresh=useCallback(async()=>{
+    if(!userId) return
+    const [name, data]=await Promise.all([
+      fetchAppSetting('telegram_bot_username'),
+      fetchUserTelegram(userId),
+    ])
+    const envName=(import.meta.env.VITE_TELEGRAM_BOT_USERNAME||'').toString().replace(/^@/,'').trim()
+    setBot((name||envName).replace(/^@/,''))
+    setRow(data)
+    if(data?.chat_id) setPendingCode('')
+  },[userId])
+
+  useEffect(()=>{ refresh() },[refresh])
+  useEffect(()=>{
+    if(!pendingCode||!userId) return
+    const t=setInterval(refresh, 2500)
+    return ()=>clearInterval(t)
+  },[pendingCode,userId,refresh])
+
+  const connected=!!(row?.chat_id)
+  const telegramOn=alertPrefs?.telegramEnabled!==false && row?.enabled!==false
+
+  const connect=async()=>{
+    setErr(''); setBusy(true)
+    const res=await startTelegramLink(userId)
+    setBusy(false)
+    if(res.error){ setErr(res.error); return }
+    setPendingCode(res.code||res.data?.link_code||'')
+    setRow(res.data||row)
+    if(onAlertPrefs && alertPrefs?.telegramEnabled===false){
+      onAlertPrefs({...alertPrefs, telegramEnabled:true})
+    }
+  }
+
+  const toggleDelivery=async()=>{
+    if(!connected) return
+    const next=!(row.enabled!==false && telegramOn)
+    await setTelegramAlertsEnabled(userId, next)
+    if(onAlertPrefs) onAlertPrefs({...alertPrefs, telegramEnabled:next})
+    setRow(r=>({...(r||{}), enabled:next}))
+  }
+
+  const startUrl=bot&&pendingCode?`https://t.me/${bot}?start=${pendingCode}`:''
+
+  return(
+    <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:20,marginBottom:16}}>
+      <div style={{fontWeight:800,fontSize:16}}>Telegram alerts</div>
+      <div style={{color:C.muted,fontSize:11.5,marginTop:4,lineHeight:1.5}}>
+        Personal 1:1 messages from the Lakshmimata bot, labeled by type (Squeeze, HY, Stage 2, …)
+        using the same 🔔 preferences. Free — you must tap Start once.
+      </div>
+
+      {!bot?(
+        <div style={{marginTop:12,padding:12,borderRadius:10,background:C.bg,border:`1px solid ${C.border}`,
+          fontSize:11.5,color:C.muted,lineHeight:1.6}}>
+          <div style={{fontWeight:800,color:C.text,marginBottom:6}}>Operator setup (you)</div>
+          1. Telegram → <b>@BotFather</b> → <code>/newbot</code> → copy token and username.<br/>
+          2. Run <code>add_user_telegram.sql</code> in Supabase.<br/>
+          3. Railway live-scan env: <code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_BOT_USERNAME</code>
+          (no @). Optional <code>TELEGRAM_CHAT_ID</code> for your EOD digest.<br/>
+          4. Redeploy the scanner. This card unlocks Connect after the bot username is published.
+          Full notes: <code>TELEGRAM_SETUP.md</code> in lakshmimata-server.
+        </div>
+      ):connected?(
+        <div style={{marginTop:14}}>
+          <div style={{fontSize:12,color:C.green,fontWeight:700}}>
+            Connected{row.telegram_username?` @${row.telegram_username}`:''}
+          </div>
+          <div style={{fontSize:11,color:C.muted,marginTop:4}}>
+            Types follow the header 🔔 menu. Pause delivery anytime.
+          </div>
+          <button type="button" onClick={toggleDelivery}
+            style={{marginTop:10,padding:'8px 14px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:700,
+              border:`1px solid ${telegramOn?C.green:C.border}`,
+              background:telegramOn?C.green+'18':C.bg,color:telegramOn?C.green:C.muted}}>
+            {telegramOn?'Delivery ON':'Delivery paused'}
+          </button>
+          <button type="button" onClick={connect}
+            style={{marginLeft:8,padding:'8px 14px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
+              border:`1px solid ${C.border}`,background:C.bg,color:C.muted}}>
+            Re-link
+          </button>
+        </div>
+      ):(
+        <div style={{marginTop:14}}>
+          <button type="button" disabled={busy} onClick={connect}
+            style={{padding:'9px 16px',borderRadius:8,cursor:busy?'default':'pointer',fontSize:12,fontWeight:800,
+              border:'none',background:C.accent,color:'#000'}}>
+            {busy?'Working…':'Connect Telegram'}
+          </button>
+          {startUrl&&(
+            <div style={{marginTop:12,fontSize:12,color:C.text,lineHeight:1.55}}>
+              <a href={startUrl} target="_blank" rel="noopener noreferrer"
+                style={{color:C.accent,fontWeight:800}}>Open @{bot} and tap Start</a>
+              <div style={{fontSize:11,color:C.muted,marginTop:6}}>
+                Code {pendingCode} expires in 15 minutes. Keep this page open — it updates when linked.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {err&&<div style={{marginTop:10,fontSize:11,color:C.red}}>{err}</div>}
+    </div>
+  )
+}
+
 function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchTheme,ambient,userSubscription,onOpenPayment,
   hoverChartPreviewEnabled,onHoverChartPreview,
   hoverOurChartEnabled,onHoverOurChart,
   tickerEnabled,onTicker,
-  detailPanelPref,onDetailPanel}){
+  detailPanelPref,onDetailPanel,
+  alertPrefs,onAlertPrefs}){
 
   // Demo mode: session is deliberately null — still show App Preferences
   // (they don't need an account). Account / billing stay behind Sign Up.
@@ -15250,6 +15333,8 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
         tickerEnabled={tickerEnabled} onTicker={onTicker}
         detailPanelPref={detailPanelPref} onDetailPanel={onDetailPanel}
         ambient={ambient} themeKey={themeKey} switchTheme={switchTheme}/>
+
+      <TelegramAlertsCard session={session} alertPrefs={alertPrefs} onAlertPrefs={onAlertPrefs}/>
 
       <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:24}}>
         <div style={{fontWeight:800,fontSize:18,marginBottom:4}}>Account</div>
@@ -18517,7 +18602,7 @@ export default function App(){
               {/* Layout: TradingView-style presets — RS Rating page only */}
               {!isMobile&&mainTab==='rs'&&(
                 <div style={{position:'relative'}}>
-                  <button type="button" title="Workspace layout — arrange RS table, Chart, Overview"
+                  <button type="button" title="Workspace layout — Chart 75% and scanner 25%"
                     onClick={()=>setDockLayoutMenuOpen(v=>!v)}
                     style={{padding:'5px 10px',borderRadius:6,display:'inline-flex',alignItems:'center',gap:5,
                       border:`1px solid ${dockLayoutMenuOpen||dockStack||dockColumns||dockSoloChartRequested?C.accent:C.border}`,
@@ -18535,34 +18620,27 @@ export default function App(){
                   {dockLayoutMenuOpen&&(
                     <>
                       <div onClick={()=>setDockLayoutMenuOpen(false)} style={{position:'fixed',inset:0,zIndex:80}}/>
-                      <div style={{position:'absolute',top:34,right:0,zIndex:81,width:320,
+                      <div style={{position:'absolute',top:34,right:0,zIndex:81,width:280,
                         background:C.card,border:`1px solid ${C.border}`,borderRadius:10,
                         padding:12,boxShadow:'0 12px 32px rgba(0,0,0,0.45)'}}>
                         <div style={{fontSize:11,fontWeight:800,color:C.text,marginBottom:2}}>Workspace layout</div>
                         <div style={{fontSize:10,color:C.muted,marginBottom:10,lineHeight:1.4}}>
-                          Swap <span style={{color:C.accent,fontWeight:700}}>RS</span> table,
-                          {' '}<span style={{color:C.teal,fontWeight:700}}>C</span>hart &amp;
-                          {' '}<span style={{color:C.green,fontWeight:700}}>F</span>undamentals — like TradingView layouts.
-                          Default is two panes: Chart 75% left, RS 25% right. Pick a preset with
-                          {' '}<span style={{color:C.green,fontWeight:700}}>F</span> to bring Fundamentals back.
+                          Two panes only: <b style={{color:C.teal}}>Chart 75%</b> and
+                          {' '}<b style={{color:C.accent}}>scanner 25%</b>. Pick which side the chart sits on.
                         </div>
-                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
+                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:4}}>
                           {DOCK_LAYOUT_PRESETS.map(p=>{
                             const active=dockLayoutMatches(dockLayout, p.layout)
                             return (
                               <button key={p.id} type="button"
                                 onClick={()=>{
                                   applyDockLayout(p.layout)
-                                  if(p.chartWide!=null&&[0,1,2].includes(p.chartWide)){
-                                    setChartWide(p.chartWide)
-                                    setChartPanelPct(null)
-                                    persistChartPanelAutoSave(p.chartWide,null)
-                                  }
+                                  setChartWide(2)
+                                  setChartPanelPct(null)
+                                  persistChartPanelAutoSave(2,null)
                                   patchPanel('screener',{open:true,minimized:false,float:null})
                                   patchPanel('chart',{open:true,minimized:false,float:null})
-                                  // Two-pane presets say so explicitly; the rest bring Fundamentals back.
-                                  patchDetailPanel({open:p.detailOpen!==false,minimized:false,float:null})
-                                  if(p.layout?.mode==='columns') setChartDetailTabHint('fundamentals')
+                                  patchDetailPanel({open:false,minimized:false,float:null})
                                   setDockLayoutMenuOpen(false)
                                 }}
                                 style={{
@@ -18579,30 +18657,13 @@ export default function App(){
                             )
                           })}
                         </div>
-                        <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
-                          letterSpacing:'0.05em',marginBottom:6}}>Fine-tune order</div>
-                        {dockLayout.order.map((id,i)=>(
-                          <div key={id} style={{display:'flex',alignItems:'center',gap:6,padding:'4px 2px'}}>
-                            <span style={{fontSize:10,color:C.muted,width:14}}>{i+1}.</span>
-                            <span style={{flex:1,fontSize:11,fontWeight:700,color:C.text}}>{DOCK_TILE_LABELS[id]}</span>
-                            <button type="button" disabled={i===0}
-                              onClick={()=>moveTile(id,-1)}
-                              style={{width:24,height:22,borderRadius:4,border:`1px solid ${C.border}`,
-                                background:'transparent',color:C.muted,cursor:i===0?'default':'pointer',opacity:i===0?0.35:1}}>▲</button>
-                            <button type="button" disabled={i===dockLayout.order.length-1}
-                              onClick={()=>moveTile(id,1)}
-                              style={{width:24,height:22,borderRadius:4,border:`1px solid ${C.border}`,
-                                background:'transparent',color:C.muted,cursor:i===dockLayout.order.length-1?'default':'pointer',
-                                opacity:i===dockLayout.order.length-1?0.35:1}}>▼</button>
-                          </div>
-                        ))}
                         <button type="button"
                           onClick={()=>{ restoreWorkspace(); setDockLayoutMenuOpen(false) }}
-                          title="Reopen every panel, bring back the ticker, unhide every block below the chart and restore the default arrangement"
+                          title="Chart 75% left, scanner 25% right"
                           style={{marginTop:10,width:'100%',padding:'7px 8px',borderRadius:6,
                             border:`1px solid ${C.border}`,background:'transparent',color:C.muted,
                             fontSize:10,fontWeight:600,cursor:'pointer'}}>
-                          Restore everything (Chart | RS | Overview)
+                          Restore default (Chart 75% | Scanner 25%)
                         </button>
                       </div>
                     </>
@@ -23251,7 +23312,9 @@ export default function App(){
             tickerEnabled={tickerEnabled}
             onTicker={persistTickerPref}
             detailPanelPref={detailPanelPref}
-            onDetailPanel={(open)=>patchDetailPanel({open:!!open, minimized:false})}/>
+            onDetailPanel={(open)=>patchDetailPanel({open:!!open, minimized:false})}
+            alertPrefs={alertPrefs}
+            onAlertPrefs={(next)=>{ const n=normalizeAlertPrefs(next); setAlertPrefs(n); persistUserAlertPrefs(n) }}/>
         )}
 
         {mainTab==='feedback'&&(
@@ -23548,6 +23611,9 @@ export default function App(){
                     {isOpen&&(
                       <div style={{padding:'0 8px 14px',fontSize:11.5,color:C.muted,lineHeight:1.7,whiteSpace:'pre-line'}}>
                         {deep?.forNewcomers || body}
+                        {deep && mediaForArticle(deep.id).visuals.slice(0,1).map(v=>(
+                          <HelpVisual key={v.id} id={v.id} caption={v.caption} theme={C}/>
+                        ))}
                         {deep && (
                           <button type="button"
                             onClick={()=>{
@@ -23576,6 +23642,8 @@ export default function App(){
                   <div style={{padding:'0 8px 14px',fontSize:11.5,color:C.muted,lineHeight:1.7}}>
                     Our Chart packs Lakshmi Mata (EMAs, Guppy, Squeeze dots, S/R, Bollinger, Buy/Sell, UC/LC),
                     Lakshmi Volume, and Super Cycle. Each has a “how it works” write-up in Guide.
+                    <HelpVisual id="chart-anatomy" theme={C}
+                      caption="Chart on top, filings tabs below. Indicators live under fx."/>
                     <button type="button"
                       onClick={()=>{
                         setDocsArticleId('ind-lakshmimata')
