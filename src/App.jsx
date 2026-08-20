@@ -11971,6 +11971,9 @@ const DEFAULT_CHART_WIDE = 2      // index into [35,50,75] — 75% chart column
 const DEFAULT_DETAIL_OPEN = false  // scanner + chart only
 const DOCK_LAYOUT_KEY = 'lakshmimata-dock-layout'
 
+/** Tabs whose list docks beside Our Chart under the workspace Layout presets. */
+const LAYOUT_DOCK_TABS = ['rs', 'bestpicks', 'themes']
+
 /** Chart 75% + scanner 25%, or Chart 75% / scanner 15% / About 10% — either side. */
 const DOCK_LAYOUT_PRESETS = [
   {
@@ -16914,11 +16917,17 @@ export default function App(){
     })
   }
   const detailFirst=dockLayout.order.indexOf('detail') < dockLayout.order.indexOf('chart')
-  // Workspace Layout presets (columns / Chart|RS / stack) apply on RS Rating only.
-  const rsLayoutActive=mainTab==='rs'
+  // Pages that dock Our Chart beside their list and obey the workspace Layout
+  // presets: the RS scanner plus the two AI research lists, where you read a
+  // name's chart while working down the list.
+  const rsLayoutActive=LAYOUT_DOCK_TABS.includes(mainTab)
+  // What the 25% pane holds on this page, for the Layout menu's wording.
+  const dockListLabel=mainTab==='bestpicks'?'AI Picks'
+    :mainTab==='themes'?'Themes'
+    :'scanner'
   // These tabs stay full-width — no Chart/Overview dock beside the page.
   const isFullWidthMainTab=tab=>['portfolio','settings','watchlist','compare','feedback',
-    'announcements','themes','bestpicks','docs'].includes(tab)
+    'announcements','docs'].includes(tab)
   const fullWidthTab=isFullWidthMainTab(mainTab)
   // Market is a market-wide page, not a company one: dock the chart at a
   // fixed 70/30 and suppress the company Overview entirely.
@@ -18497,7 +18506,7 @@ export default function App(){
   },[stocks,chartSym,mainTab])
 
   // Full-width pages (Portfolio, etc.): hide Chart/Overview.
-  // Entering RS: restore docks if a symbol is selected.
+  // Entering RS / AI Picks / Themes: restore docks if a symbol is selected.
   // Market / Patterns / etc.: keep normal click-to-open chart (no Layout presets).
   const prevMainTabForPanelsRef=useRef(mainTab)
   useEffect(()=>{
@@ -18506,7 +18515,7 @@ export default function App(){
     if(isMobile) return
     const prevFullWidth=isFullWidthMainTab(prev)
     if(fullWidthTab){
-      if(prev!==mainTab || prev==='rs'){
+      if(prev!==mainTab || LAYOUT_DOCK_TABS.includes(prev)){
         setDockLayoutMenuOpen(false)
         setPanelWins(w=>({
           ...w,
@@ -18514,14 +18523,14 @@ export default function App(){
           detail:{open:false,minimized:false,float:null},
         }))
       }
-    } else if(mainTab==='rs' && prev!=='rs' && chartSym){
+    } else if(rsLayoutActive && !LAYOUT_DOCK_TABS.includes(prev) && chartSym){
       const wantDetail = !chartIsIndex && detailPanelPrefRef.current
       setPanelWins(w=>({
         ...w,
         chart:{...w.chart,open:true,minimized:false},
         detail: {...w.detail,open:wantDetail,minimized:false},
       }))
-    } else if(prevFullWidth && !fullWidthTab && mainTab!=='rs'){
+    } else if(prevFullWidth && !fullWidthTab && !rsLayoutActive){
       // Left a full-width tab for Market/Patterns/etc. — leave panels closed
       // until the user clicks a symbol (openChart).
       setPanelWins(w=>({
@@ -18530,7 +18539,7 @@ export default function App(){
         detail:{open:false,minimized:false,float:null},
       }))
     }
-  },[mainTab,isMobile,chartSym,chartIsIndex,fullWidthTab])
+  },[mainTab,isMobile,chartSym,chartIsIndex,fullWidthTab,rsLayoutActive])
 
   // Load from DB on mount, whenever the selected history date changes,
   // and whenever the scope dropdown (index / watchlist) changes — the
@@ -19369,11 +19378,11 @@ export default function App(){
                 </button>
               )}
 
-              {/* Layout: TradingView-style presets — RS Rating page only */}
-              {!isMobile&&mainTab==='rs'&&(
+              {/* Layout: TradingView-style presets — pages that dock the chart */}
+              {!isMobile&&rsLayoutActive&&(
                 <div style={{position:'relative'}}>
                   <button type="button"
-                    title="Workspace layout — Chart 75% with scanner 25%, or scanner 15% + About 10%"
+                    title={`Workspace layout — Chart 75% with ${dockListLabel} 25%, or ${dockListLabel} 15% + About 10%`}
                     onClick={()=>setDockLayoutMenuOpen(v=>!v)}
                     style={{padding:'5px 10px',borderRadius:6,display:'inline-flex',alignItems:'center',gap:5,
                       border:`1px solid ${dockLayoutMenuOpen||dockStack||dockColumns||dockSoloChartRequested?C.accent:C.border}`,
@@ -19397,7 +19406,7 @@ export default function App(){
                         <div style={{fontSize:11,fontWeight:800,color:C.text,marginBottom:2}}>Workspace layout</div>
                         <div style={{fontSize:10,color:C.muted,marginBottom:10,lineHeight:1.4}}>
                           Two panes — <b style={{color:C.teal}}>Chart 75%</b> and
-                          {' '}<b style={{color:C.accent}}>scanner 25%</b> — or three, adding the
+                          {' '}<b style={{color:C.accent}}>{dockListLabel} 25%</b> — or three, adding the
                           {' '}<b style={{color:C.green}}>About / Fundamentals</b> column at 10%.
                           Pick which side the chart sits on.
                         </div>

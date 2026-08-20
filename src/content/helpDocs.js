@@ -519,6 +519,13 @@ export const DOCS_ARTICLES = [
         heading: 'How it works',
         body: 'Server-side tagging of filing text into theme buckets. Mentions ≠ endorsement; companies name many topics.',
       },
+      {
+        heading: 'Reading a theme beside its chart',
+        bullets: [
+          'Click any row to dock Our Chart next to the theme list, so you can work down the names without leaving the page.',
+          'The blue workspace Layout button chooses the split — Chart 75% with the list at 25%, on either side, or the three-pane version that adds the About / Fundamentals column.',
+        ],
+      },
     ],
   },
   {
@@ -536,6 +543,7 @@ export const DOCS_ARTICLES = [
         bullets: [
           'Review the list after market scans refresh.',
           'Reject names that fail your Stage / RS / Result rules.',
+          'Click a pick to dock Our Chart beside the list. The blue workspace Layout button sets the split — Chart 75% with AI Picks at 25% on either side, or the three-pane version that adds the About / Fundamentals column.',
         ],
       },
     ],
