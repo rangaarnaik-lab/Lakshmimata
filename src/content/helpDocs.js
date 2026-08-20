@@ -803,6 +803,7 @@ export const DOCS_ARTICLES = [
           'Create and edit lists on the Watchlist tab.',
           'Header select → Watchlists group → pick wl:… to filter.',
           'Clear by choosing an index or All stocks again.',
+          'Signed-in lists save to your account, not just this browser, so phone and laptop stay in sync. Demo mode stays local.',
         ],
       },
     ],

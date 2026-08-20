@@ -52,7 +52,7 @@ import {
   supabase, fetchOwnerToken, revokeOtherSessions,
   claimCurrentDevice, verifyCurrentDevice, currentDeviceIdentity,
 } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchMissedAiFilings } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchUserWatchlists, saveUserWatchlists, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -15813,8 +15813,18 @@ const DEMO=[
 
 // ── WATCHLIST STORAGE (localStorage) ─────────────────────────────────
 const WL_KEY='pocketrs_watchlists'
+const WL_ACTIVE_KEY='pocketrs_watchlist_active'
 function loadWatchlists(){try{return JSON.parse(localStorage.getItem(WL_KEY)||'[]')}catch{return[]}}
-function saveWatchlists(wls){localStorage.setItem(WL_KEY,JSON.stringify(wls))}
+function loadActiveWatchlistId(){
+  try{ return localStorage.getItem(WL_ACTIVE_KEY)||null }catch{ return null }
+}
+function saveWatchlists(wls, activeId){
+  try{ localStorage.setItem(WL_KEY, JSON.stringify(wls||[])) }catch{/* ignore */}
+  try{
+    if(activeId) localStorage.setItem(WL_ACTIVE_KEY, String(activeId))
+    else localStorage.removeItem(WL_ACTIVE_KEY)
+  }catch{/* ignore */}
+}
 
 // ── Alert sounds (TradingView-style options via Web Audio) ───────────
 // No audio files — synthesized tones. AudioContext is created lazily;
@@ -16543,21 +16553,73 @@ export default function App(){
   const [indexFilter,setIndexFilter]=useState('all')
   const refreshTimer=useRef(null)
 
-  // Watchlist state
+  // Watchlist state — local cache first, then hydrate from the user's row.
   const [watchlists,setWatchlists]=useState(()=>loadWatchlists())
-  const [activeWl,setActiveWl]=useState(null) // null = use index filter, else watchlist id
+  const [activeWl,setActiveWl]=useState(()=>loadActiveWatchlistId()) // null = all stocks, else list id
+  const watchlistsSkipCloudSaveRef=useRef(true)
+  const watchlistsSaveTimer=useRef(null)
+  const watchlistsCloudUidRef=useRef(null)
+  const watchlistUid=session?.user?.id||null
+  if(watchlistsCloudUidRef.current!==watchlistUid){
+    watchlistsCloudUidRef.current=watchlistUid
+    watchlistsSkipCloudSaveRef.current=true
+  }
 
   const saveWL=wl=>{
     setWatchlists(prev=>{
       const exists=prev.find(w=>w.id===wl.id)
-      const next=exists?prev.map(w=>w.id===wl.id?wl:w):[...prev,wl]
-      saveWatchlists(next);return next
+      return exists?prev.map(w=>w.id===wl.id?wl:w):[...prev,wl]
     })
   }
   const deleteWL=id=>{
-    setWatchlists(prev=>{const next=prev.filter(w=>w.id!==id);saveWatchlists(next);return next})
+    setWatchlists(prev=>prev.filter(w=>w.id!==id))
     if(activeWl===id)setActiveWl(null)
   }
+
+  useEffect(()=>{
+    saveWatchlists(watchlists, activeWl)
+    if(watchlistsSkipCloudSaveRef.current) return
+    const uid=session?.user?.id
+    if(!uid || demoMode) return
+    if(watchlistsSaveTimer.current) clearTimeout(watchlistsSaveTimer.current)
+    watchlistsSaveTimer.current=setTimeout(()=>{
+      saveUserWatchlists(uid, {watchlists, activeId:activeWl}).then(res=>{
+        if(res?.error) console.warn('Watchlist save failed:', res.error)
+      })
+    }, 400)
+    return ()=>{ if(watchlistsSaveTimer.current) clearTimeout(watchlistsSaveTimer.current) }
+  },[watchlists, activeWl, session?.user?.id, demoMode])
+
+  useEffect(()=>{
+    const uid=session?.user?.id
+    if(!uid || demoMode){
+      watchlistsSkipCloudSaveRef.current=false
+      return
+    }
+    let cancelled=false
+    watchlistsSkipCloudSaveRef.current=true
+    const local=loadWatchlists()
+    const localActive=loadActiveWatchlistId()
+    fetchUserWatchlists(uid).then(async cloud=>{
+      if(cancelled) return
+      if(cloud && Array.isArray(cloud.watchlists) && cloud.watchlists.length){
+        setWatchlists(cloud.watchlists)
+        setActiveWl(cloud.activeId||null)
+        saveWatchlists(cloud.watchlists, cloud.activeId||null)
+      }else if(local.length){
+        await saveUserWatchlists(uid, {watchlists:local, activeId:localActive})
+        if(cancelled) return
+        setWatchlists(local)
+        setActiveWl(localActive)
+      }
+      if(!cancelled) watchlistsSkipCloudSaveRef.current=false
+    }).catch(err=>{
+      console.warn('Watchlist cloud load failed:', err?.message||err)
+      if(!cancelled) watchlistsSkipCloudSaveRef.current=false
+    })
+    return ()=>{ cancelled=true }
+  },[session?.user?.id, demoMode])
+
 
   // PP filters per tab
   const [chartSym,setChartSym]=useState(null)

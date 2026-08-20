@@ -904,6 +904,70 @@ export async function fetchUserPortfolios(userId) {
 }
 
 /** Upsert family portfolios + active tab for a signed-in user. */
+export const MAX_USER_WATCHLISTS = 20
+export const MAX_WATCHLIST_SYMS = 400
+
+function normalizeWatchlistsPayload(raw, activeId) {
+  const lists = (Array.isArray(raw) ? raw : [])
+    .slice(0, MAX_USER_WATCHLISTS)
+    .map((w, i) => {
+      const stocks = [...new Set(
+        (Array.isArray(w?.stocks) ? w.stocks : [])
+          .map(s => String(s || '').trim().toUpperCase())
+          .filter(Boolean)
+      )].slice(0, MAX_WATCHLIST_SYMS)
+      return {
+        id: String(w?.id || `wl_${i}_${Date.now()}`).slice(0, 64),
+        name: String(w?.name || 'Watchlist').trim().slice(0, 40) || 'Watchlist',
+        stocks,
+      }
+    })
+  let aid = activeId || null
+  if (aid && !lists.some(w => w.id === aid)) aid = null
+  return { watchlists: lists, activeId: aid }
+}
+
+/** Load this user's watchlists (null if none saved yet). */
+export async function fetchUserWatchlists(userId) {
+  if (!userId) return null
+  const { data, error } = await supabase
+    .from('user_watchlists')
+    .select('watchlists,active_id,updated_at')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) {
+    console.error('fetchUserWatchlists error:', error.message)
+    return null
+  }
+  if (!data) return null
+  return {
+    ...normalizeWatchlistsPayload(data.watchlists, data.active_id),
+    updatedAt: data.updated_at || null,
+  }
+}
+
+/** Upsert this user's watchlists + last selected list. */
+export async function saveUserWatchlists(userId, { watchlists, activeId } = {}) {
+  if (!userId) return { error: 'Sign in to save watchlists.' }
+  const { watchlists: lists, activeId: aid } = normalizeWatchlistsPayload(watchlists, activeId)
+  const payload = {
+    user_id: userId,
+    watchlists: lists,
+    active_id: aid,
+    updated_at: new Date().toISOString(),
+  }
+  const { data, error } = await supabase
+    .from('user_watchlists')
+    .upsert(payload, { onConflict: 'user_id' })
+    .select('watchlists,active_id,updated_at')
+    .single()
+  if (error) {
+    console.error('saveUserWatchlists error:', error.message)
+    return { error: error.message || 'Could not save watchlists' }
+  }
+  return { data }
+}
+
 export async function saveUserPortfolios(userId, { portfolios, activeId } = {}) {
   if (!userId) return { error: 'Sign in to save portfolios.' }
   const list = (Array.isArray(portfolios) ? portfolios : [])
