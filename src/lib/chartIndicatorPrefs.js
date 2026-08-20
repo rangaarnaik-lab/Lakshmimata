@@ -174,10 +174,10 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'multiplier', label: 'Mult', min: 0.5, max: 10, step: 0.1 },
     { key: 'emaFast', label: 'Fast', min: 3, max: 30, step: 1 },
     { key: 'emaMid', label: 'Mid', min: 5, max: 50, step: 1 },
-    { key: 'emaSlow', label: 'Slow', min: 10, max: 100, step: 1 },
-    { key: 'emaLong', label: 'Long', min: 50, max: 300, step: 1 },
-    { key: 'rsMin', label: 'Gate A', min: 1, max: 99, step: 1 },
-    { key: 'rsRise', label: 'Gate B', min: 1, max: 40, step: 1 },
+    // Slow/Long EMA and both RS gates are fixed by the Pine study — see
+    // BUY_SELL_* in scanners/lakshmiProprietary.js. Leaving them out here
+    // also drops any value older saved prefs still carry, since normalize
+    // only copies params that still have a field.
     { key: 'buyColor', label: 'Buy label', type: 'color', tab: 'style' },
     { key: 'sellColor', label: 'Sell label', type: 'color', tab: 'style' },
     { key: 'labelSize', label: 'Label size', min: 6, max: 14, step: 0.5, tab: 'style' },
@@ -337,8 +337,7 @@ const DEFAULT_PARAMS = {
   bullsnort: { ...BULL_SNORT_PARAM_DEFAULTS, markerColor: '#E040FB', markerSize: 9 },
   buysell: {
     atrPeriod: 10, multiplier: 2.0,
-    emaFast: 9, emaMid: 21, emaSlow: 50, emaLong: 200,
-    rsMin: 50, rsRise: 10,
+    emaFast: 9, emaMid: 21,
     buyColor: '#22c55e', sellColor: '#ef4444', labelSize: 8, showLabels: true,
   },
   forecast: { sampleBars: 30, projPct: 0.15, lineColor: '#f0b90b', lineWidth: 1.5, showLabel: true },

@@ -690,6 +690,7 @@ export const DOCS_ARTICLES = [
         bullets: [
           'Enable under Lakshmi Mata / Signals.',
           'Confirm with RS, Stage, Squeeze state, and your risk plan before acting.',
+          'Settings expose only the ATR period, multiplier and the 9/21 EMA pair. The 50/200 EMA trend filter and the RS gate are fixed by the Pine study, so your markers always mean the same thing as the scanner’s.',
         ],
       },
     ],

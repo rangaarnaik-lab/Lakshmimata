@@ -361,6 +361,16 @@ export function calcLakshmiCandleBarColors(opens, highs, lows, closes, volumes, 
   return { colors, tags }
 }
 
+// Fixed by Lakshmi_Mata.pine: the trend filter is the 50/200 EMA pair, and
+// the RS gate is a rating above 50 or a 10-point rise over 21 bars. They
+// define what the study IS, so they are not exposed as user inputs — a
+// chart with a 30-bar "long" EMA is a different indicator wearing the same
+// name, and the markers stop matching the scanner.
+const BUY_SELL_EMA_SLOW = 50
+const BUY_SELL_EMA_LONG = 200
+const BUY_SELL_RS_MIN = 50
+const BUY_SELL_RS_RISE = 10
+
 export function detectLakshmiBuySellSignals(highs, lows, closes, niftyClosesAligned = null, opts = {}) {
   const n = closes.length
   const buy = new Array(n).fill(false)
@@ -372,10 +382,10 @@ export function detectLakshmiBuySellSignals(highs, lows, closes, niftyClosesAlig
   const multiplier = opts.multiplier ?? 2.0
   const emaFastLen = opts.emaFast ?? 9
   const emaMidLen = opts.emaMid ?? 21
-  const emaSlowLen = opts.emaSlow ?? 50
-  const emaLongLen = opts.emaLong ?? 200
-  const rsMin = opts.rsMin ?? 50
-  const rsRise = opts.rsRise ?? 10
+  const emaSlowLen = BUY_SELL_EMA_SLOW
+  const emaLongLen = BUY_SELL_EMA_LONG
+  const rsMin = BUY_SELL_RS_MIN
+  const rsRise = BUY_SELL_RS_RISE
   const ema9 = emaSeries(closes, emaFastLen)
   const ema21 = emaSeries(closes, emaMidLen)
   const ema50 = emaSeries(closes, emaSlowLen)
