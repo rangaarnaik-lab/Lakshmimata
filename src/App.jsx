@@ -5424,8 +5424,10 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
   // Three-column mode: RS | Chart | Fundamentals as equal-height columns.
   const columnsTileStyle=(order, pct)=>({
     position:'relative',
-    flex: `0 0 ${pct}%`,
-    minWidth:160,
+    // Shrinkable: three columns plus their drag handles add up to slightly
+    // more than 100%, and without shrink the last one was clipped instead.
+    flex: `0 1 ${pct}%`,
+    minWidth:120,
     minHeight:0,
     height:'100%',
     alignSelf:'stretch',
@@ -11969,7 +11971,7 @@ const DEFAULT_CHART_WIDE = 2      // index into [35,50,75] — 75% chart column
 const DEFAULT_DETAIL_OPEN = false  // scanner + chart only
 const DOCK_LAYOUT_KEY = 'lakshmimata-dock-layout'
 
-/** Only two workspace splits: Chart 75% and scanner 25%, left or right. */
+/** Chart 75% + scanner 25%, or Chart 75% / scanner 15% / About 10% — either side. */
 const DOCK_LAYOUT_PRESETS = [
   {
     id: 'chart-75-left',
@@ -11987,6 +11989,24 @@ const DOCK_LAYOUT_PRESETS = [
     chartWide: 2,
     detailOpen: false,
   },
+  {
+    id: 'chart-75-cols-left',
+    label: 'Chart | Scanner | About',
+    hint: 'Chart 75% · scanner 15% · About 10%',
+    layout: { mode: 'columns', solo: 'screener', order: ['chart', 'screener', 'detail'] },
+    chartWide: 2,
+    detailOpen: true,
+    colWidths: { chart: 75, screener: 15, detail: 10 },
+  },
+  {
+    id: 'chart-75-cols-right',
+    label: 'About | Scanner | Chart',
+    hint: 'About 10% · scanner 15% · Chart 75%',
+    layout: { mode: 'columns', solo: 'screener', order: ['detail', 'screener', 'chart'] },
+    chartWide: 2,
+    detailOpen: true,
+    colWidths: { chart: 75, screener: 15, detail: 10 },
+  },
 ]
 
 function dockLayoutMatches(a, b){
@@ -12002,8 +12022,8 @@ function dockLayoutMatches(a, b){
 }
 
 /** Mini schematic of RS / Chart / Overview arrangement (TradingView-style). */
-function DockLayoutThumb({ mode, order, solo, active, colors: C }){
-  const cells = (order || DOCK_TILE_IDS).filter(id => id !== 'detail').map(id => ({
+function DockLayoutThumb({ mode, order, solo, active, colors: C, showDetail = false, widths = null }){
+  const cells = (order || DOCK_TILE_IDS).filter(id => showDetail || id !== 'detail').map(id => ({
     id,
     letter: id === 'screener' ? 'RS' : id === 'chart' ? 'C' : 'F',
     fill: id === 'screener' ? (C.accent || '#3b82f6')
@@ -12032,9 +12052,11 @@ function DockLayoutThumb({ mode, order, solo, active, colors: C }){
       {isColumns ? (
         cells.map(c => (
           <div key={c.id} title={DOCK_TILE_LABELS[c.id]} style={{
-            flex:1, borderRadius:3, background:c.fill+'55',
+            flex: widths?.[c.id] != null ? `${widths[c.id]} 0 0` : 1,
+            minWidth: 0,
+            borderRadius:3, background:c.fill+'55',
             display:'flex', alignItems:'center', justifyContent:'center',
-            fontSize:7, fontWeight:800, color:c.fill,
+            fontSize:7, fontWeight:800, color:c.fill, overflow:'hidden',
           }}>{c.letter}</div>
         ))
       ) : isSide ? (
@@ -12153,14 +12175,19 @@ const COL_WIDTHS_KEY = 'lakshmimata-col-widths'
 const DEFAULT_COL_WIDTHS = { screener: 19, chart: 55, detail: 26 }
 const COL_WIDTHS_VER_KEY = 'lakshmimata-col-widths-ver'
 const COL_WIDTHS_VER = '2' // v2: wide chart column by default
+// Floor for one column, shared by the stored widths and the drag handles. Low
+// enough for the Chart 75 / Scanner 15 / About 10 preset to survive a round
+// trip through normalizeColWidths.
+const COL_MIN_PCT = 10
+const COL_MAX_PCT = 80
 function normalizeColWidths(raw){
   let s = Number(raw?.screener), c = Number(raw?.chart), d = Number(raw?.detail)
   if(!Number.isFinite(s)) s = DEFAULT_COL_WIDTHS.screener
   if(!Number.isFinite(c)) c = DEFAULT_COL_WIDTHS.chart
   if(!Number.isFinite(d)) d = DEFAULT_COL_WIDTHS.detail
-  s = Math.min(70, Math.max(15, s))
-  c = Math.min(70, Math.max(15, c))
-  d = Math.min(70, Math.max(15, d))
+  s = Math.min(COL_MAX_PCT, Math.max(COL_MIN_PCT, s))
+  c = Math.min(COL_MAX_PCT, Math.max(COL_MIN_PCT, c))
+  d = Math.min(COL_MAX_PCT, Math.max(COL_MIN_PCT, d))
   const sum = s + c + d || 1
   return {
     screener: +(s / sum * 100).toFixed(2),
@@ -17470,7 +17497,7 @@ export default function App(){
       setColWidths(w=>{
         const left=w[leftId]??33, right=w[rightId]??33
         const pair=left+right
-        const MIN=15
+        const MIN=COL_MIN_PCT
         let nl=left+dPct
         nl=Math.max(MIN, Math.min(pair-MIN, nl))
         return {...w, [leftId]:nl, [rightId]:pair-nl}
@@ -19345,7 +19372,8 @@ export default function App(){
               {/* Layout: TradingView-style presets — RS Rating page only */}
               {!isMobile&&mainTab==='rs'&&(
                 <div style={{position:'relative'}}>
-                  <button type="button" title="Workspace layout — Chart 75% and scanner 25%"
+                  <button type="button"
+                    title="Workspace layout — Chart 75% with scanner 25%, or scanner 15% + About 10%"
                     onClick={()=>setDockLayoutMenuOpen(v=>!v)}
                     style={{padding:'5px 10px',borderRadius:6,display:'inline-flex',alignItems:'center',gap:5,
                       border:`1px solid ${dockLayoutMenuOpen||dockStack||dockColumns||dockSoloChartRequested?C.accent:C.border}`,
@@ -19368,22 +19396,31 @@ export default function App(){
                         padding:12,boxShadow:'0 12px 32px rgba(0,0,0,0.45)'}}>
                         <div style={{fontSize:11,fontWeight:800,color:C.text,marginBottom:2}}>Workspace layout</div>
                         <div style={{fontSize:10,color:C.muted,marginBottom:10,lineHeight:1.4}}>
-                          Two panes only: <b style={{color:C.teal}}>Chart 75%</b> and
-                          {' '}<b style={{color:C.accent}}>scanner 25%</b>. Pick which side the chart sits on.
+                          Two panes — <b style={{color:C.teal}}>Chart 75%</b> and
+                          {' '}<b style={{color:C.accent}}>scanner 25%</b> — or three, adding the
+                          {' '}<b style={{color:C.green}}>About / Fundamentals</b> column at 10%.
+                          Pick which side the chart sits on.
                         </div>
                         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:4}}>
                           {DOCK_LAYOUT_PRESETS.map(p=>{
+                            const wantDetail=p.detailOpen===true
                             const active=dockLayoutMatches(dockLayout, p.layout)
+                              && wantDetail===detailPanelPref
                             return (
                               <button key={p.id} type="button"
                                 onClick={()=>{
                                   applyDockLayout(p.layout)
-                                  setChartWide(2)
+                                  setChartWide(p.chartWide ?? 2)
                                   setChartPanelPct(null)
-                                  persistChartPanelAutoSave(2,null)
+                                  persistChartPanelAutoSave(p.chartWide ?? 2,null)
+                                  if(p.colWidths){
+                                    const next=normalizeColWidths(p.colWidths)
+                                    setColWidths(next)
+                                    persistColWidths(next)
+                                  }
                                   patchPanel('screener',{open:true,minimized:false,float:null})
                                   patchPanel('chart',{open:true,minimized:false,float:null})
-                                  patchDetailPanel({open:false,minimized:false,float:null})
+                                  patchDetailPanel({open:wantDetail,minimized:false,float:null})
                                   setDockLayoutMenuOpen(false)
                                 }}
                                 style={{
@@ -19393,7 +19430,8 @@ export default function App(){
                                   background:active?C.accent+'14':'transparent',
                                 }}>
                                 <DockLayoutThumb mode={p.layout.mode} order={p.layout.order}
-                                  solo={p.layout.solo} active={active} colors={C}/>
+                                  solo={p.layout.solo} active={active} colors={C}
+                                  showDetail={wantDetail} widths={p.colWidths}/>
                                 <div style={{fontSize:10,fontWeight:800,color:active?C.accent:C.text}}>{p.label}</div>
                                 <div style={{fontSize:9,color:C.muted,textAlign:'center',lineHeight:1.25}}>{p.hint}</div>
                               </button>
@@ -19531,9 +19569,9 @@ export default function App(){
           flex:(chartSym&&!isMobile&&!panelWins.screener.float
             &&((panelWins.chart.open&&!panelWins.chart.minimized&&!panelWins.chart.float)
               ||(panelWins.detail.open&&!panelWins.detail.minimized&&!panelWins.detail.float)))
-            ? `0 0 ${colWidths.screener}%` : 1,
+            ? `0 1 ${colWidths.screener}%` : 1,
           height:'100%',
-          minWidth:160,
+          minWidth:140,
           minHeight:0,
           borderRight:'none',
         }:{

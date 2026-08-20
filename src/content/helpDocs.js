@@ -195,7 +195,7 @@ export const DOCS_ARTICLES = [
         heading: 'Two different Layout buttons',
         bullets: [
           'Top saved Layout — stores the broader page/table setup.',
-          'Blue workspace Layout — chooses Chart 75% | Scanner 25% or Scanner 25% | Chart 75%.',
+          'Blue workspace Layout — four presets. Two panes: Chart 75% | Scanner 25%, or Scanner 25% | Chart 75%. Three panes: Chart 75% | Scanner 15% | About 10%, or About 10% | Scanner 15% | Chart 75% — the third column is the company About / Fundamentals panel, so you can read the business beside the tape without opening another page. Drag the handles between columns to fine-tune any of these widths.',
           'Chart toolbar Layout — changes only the panes inside Our Chart.',
           'If the page becomes confusing, use the blue workspace Layout → Restore default (Chart 75% | Scanner 25%).',
         ],
