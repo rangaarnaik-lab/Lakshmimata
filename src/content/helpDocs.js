@@ -412,7 +412,7 @@ export const DOCS_ARTICLES = [
       {
         heading: 'Sub-pages',
         bullets: [
-          'Overview — verdict, today’s breadth stats, A/D and EMA breadth history.',
+          'Overview — verdict, today’s breadth stats, Weinstein Stage Mix (today’s pie + stage-share trend), A/D and EMA breadth history.',
           'Indices / Sectors / Industries — tables you can drill into.',
           'Gaps — opens of about 2% or more.',
           'Smart Money — daily FII/DII cash + quarterly sector holdings + PP/IBV momentum context.',
@@ -420,7 +420,7 @@ export const DOCS_ARTICLES = [
       },
       {
         heading: 'How it works',
-        body: 'Breadth measures how many names participate in a move. A rising index on thin breadth is more fragile than one with broad advances. Tile “i” icons explain each metric.',
+        body: 'Breadth measures how many names participate in a move. A rising index on thin breadth is more fragile than one with broad advances. Tile “i” icons explain each metric. Weinstein Stage Mix shows today’s S1–S4 split on the pie; the chart beside it is the same split over 1M–1Y. Until S1/S3/S4 history is archived, the trend falls back to Stage 2 share.',
       },
       {
         heading: 'Leadership vs Emerging Heat',
@@ -876,6 +876,10 @@ export const DOCS_ARTICLES = [
           'Plans & billing — upgrade when your trial ends.',
           'Telegram — Account → Telegram alerts. Operator: BotFather + TELEGRAM_SETUP.md, then Connect Telegram.',
         ],
+      },
+      {
+        heading: 'One device at a time',
+        body: 'An account can be signed in on one device at a time. Signing in somewhere new closes the older session, and that device shows “signed in on another device” the next time it checks. Switching between your own phone and laptop is fine — you just sign in again on whichever one you pick up.',
       },
     ],
   },

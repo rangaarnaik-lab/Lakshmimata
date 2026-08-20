@@ -48,9 +48,12 @@ import {
   ThumbsUp, ThumbsDown, MessageSquare, RotateCcw, BookOpen
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
-import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
+import {
+  supabase, fetchOwnerToken, revokeOtherSessions,
+  claimCurrentDevice, verifyCurrentDevice, currentDeviceIdentity,
+} from './lib/supabase'
 import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchMissedAiFilings } from './lib/db'
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
   detectPP, calcHY, calcHT, calcNearEMA5, calcNearEMA9, emaArr,
@@ -3760,13 +3763,14 @@ function SectorLeadersLaggards({sectorData, onViewAll}) {
   )
 }
 
-function StageDistributionBar({stocks}) {
+function StageDistributionBar({stocks, history}) {
+  const [range,setRange]=useState('3M')
   if (!stocks?.length) return null
   const stages = [
-    {n:1, label:'S1 Base', color:C.yellow},
-    {n:2, label:'S2 Up', color:C.green},
-    {n:3, label:'S3 Top', color:C.orange},
-    {n:4, label:'S4 Down', color:C.red},
+    {n:1, key:'s1', label:'S1 Base', color:C.yellow},
+    {n:2, key:'s2', label:'S2 Up', color:C.green},
+    {n:3, key:'s3', label:'S3 Top', color:C.orange},
+    {n:4, key:'s4', label:'S4 Down', color:C.red},
   ]
   const counts = stages.map(s => ({
     ...s,
@@ -3775,58 +3779,152 @@ function StageDistributionBar({stocks}) {
   }))
   const tot = stocks.length
   const pieData = counts.filter(s => s.value > 0)
+  const todayStr = new Date().toISOString().slice(0,10)
+  const todayRow = {
+    date: todayStr,
+    stage1_count: counts[0].value,
+    stage2_count: counts[1].value,
+    stage3_count: counts[2].value,
+    stage4_count: counts[3].value,
+    total: tot,
+  }
+  const byDate = new Map()
+  for (const d of (history||[])) {
+    if (!d?.date) continue
+    byDate.set(d.date, d)
+  }
+  byDate.set(todayStr, {...(byDate.get(todayStr)||{}), ...todayRow})
+  const days = {'1M':21,'3M':63,'6M':126,'1Y':252}[range] || 63
+  const slice = [...byDate.values()]
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||''))
+    .slice(-days)
+  const pctOf = (n,t) => t ? +(Math.round(n/t*1000)/10) : null
+  const chartRows = slice.map(d=>{
+    const t = d.total || 0
+    const s1 = d.stage1_count, s2 = d.stage2_count, s3 = d.stage3_count, s4 = d.stage4_count
+    const complete = t>0 && s1!=null && s2!=null && s3!=null && s4!=null
+    return {
+      date: d.date,
+      label: d.date?.slice(5),
+      s1: complete ? pctOf(s1,t) : null,
+      s2: t && s2!=null ? pctOf(s2,t) : null,
+      s3: complete ? pctOf(s3,t) : null,
+      s4: complete ? pctOf(s4,t) : null,
+      complete,
+    }
+  })
+  const stackedRows = chartRows.filter(d=>d.complete)
+  const useStack = stackedRows.length>=2
+  const trendData = useStack ? stackedRows : chartRows.filter(d=>d.s2!=null)
+  const tipStyle = {
+    background:C.card, border:`1px solid ${C.border}`, borderRadius:8,
+    fontSize:11, color:C.text,
+  }
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',marginBottom:10}}>
       <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:8,flexWrap:'wrap'}}>
         <div style={{fontWeight:700,fontSize:12,color:C.text}}>Weinstein Stage Mix</div>
-        <div style={{fontSize:10,color:C.muted}}>{tot} stocks</div>
-      </div>
-      <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
-        <div style={{width:148,height:148,flexShrink:0}}>
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={pieData}
-                dataKey="value"
-                nameKey="name"
-                cx="50%"
-                cy="50%"
-                innerRadius={38}
-                outerRadius={66}
-                paddingAngle={1.5}
-                stroke={C.card}
-                strokeWidth={1}
-              >
-                {pieData.map(s => (
-                  <Cell key={s.n} fill={s.color}/>
-                ))}
-              </Pie>
-              <Tooltip
-                formatter={(value, name) => [
-                  `${value} (${tot ? ((value / tot) * 100).toFixed(1) : 0}%)`,
-                  name,
-                ]}
-                contentStyle={{
-                  background:C.card, border:`1px solid ${C.border}`, borderRadius:8,
-                  fontSize:11, color:C.text,
-                }}
-                itemStyle={{color:C.text}}
-                labelStyle={{color:C.muted}}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        <div style={{display:'flex',flexDirection:'column',gap:6,minWidth:140,flex:1}}>
-          {counts.map(s => (
-            <div key={s.n} style={{display:'flex',alignItems:'center',gap:6,fontSize:10}}>
-              <span style={{width:8,height:8,borderRadius:2,background:s.color,flexShrink:0}}/>
-              <span style={{color:C.muted,fontWeight:600,flex:1}}>{s.label}</span>
-              <span style={{color:C.text,fontWeight:800}}>{s.value}</span>
-              <span style={{color:C.muted,minWidth:36,textAlign:'right'}}>
-                ({tot ? ((s.value / tot) * 100).toFixed(0) : 0}%)
-              </span>
-            </div>
+        <div style={{fontSize:10,color:C.muted}}>{tot} stocks · today vs trend</div>
+        <div style={{marginLeft:'auto',display:'flex',gap:4,flexWrap:'wrap'}}>
+          {['1M','3M','6M','1Y'].map(label=>(
+            <button key={label} onClick={()=>setRange(label)}
+              style={{padding:'3px 8px',borderRadius:12,cursor:'pointer',fontSize:10,fontWeight:700,
+                border:`1px solid ${range===label?C.accent:C.border}`,
+                background:range===label?C.accent+'18':'transparent',
+                color:range===label?C.accent:C.muted}}>
+              {label}
+            </button>
           ))}
+        </div>
+      </div>
+      <div style={{display:'flex',alignItems:'stretch',gap:14,flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap',flex:'0 0 auto'}}>
+          <div style={{width:148,height:148,flexShrink:0}}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={38}
+                  outerRadius={66}
+                  paddingAngle={1.5}
+                  stroke={C.card}
+                  strokeWidth={1}
+                >
+                  {pieData.map(s => (
+                    <Cell key={s.n} fill={s.color}/>
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value, name) => [
+                    `${value} (${tot ? ((value / tot) * 100).toFixed(1) : 0}%)`,
+                    name,
+                  ]}
+                  contentStyle={tipStyle}
+                  itemStyle={{color:C.text}}
+                  labelStyle={{color:C.muted}}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:6,minWidth:132}}>
+            {counts.map(s => (
+              <div key={s.n} style={{display:'flex',alignItems:'center',gap:6,fontSize:10}}>
+                <span style={{width:8,height:8,borderRadius:2,background:s.color,flexShrink:0}}/>
+                <span style={{color:C.muted,fontWeight:600,flex:1}}>{s.label}</span>
+                <span style={{color:C.text,fontWeight:800}}>{s.value}</span>
+                <span style={{color:C.muted,minWidth:36,textAlign:'right'}}>
+                  ({tot ? ((s.value / tot) * 100).toFixed(0) : 0}%)
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{flex:'1 1 280px',minWidth:240,minHeight:148}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:4}}>
+            {useStack ? 'Share of stocks in each stage' : 'Stage 2 share of the universe'}
+          </div>
+          {trendData.length<2 ? (
+            <div style={{fontSize:11,color:C.muted,padding:'28px 0'}}>
+              Trend fills in after daily archives. Today&apos;s mix is on the left.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={148}>
+              {useStack ? (
+                <AreaChart data={trendData} margin={{top:4,right:6,left:-18,bottom:0}}>
+                  <XAxis dataKey="label" tick={{fontSize:9,fill:C.muted}} interval="preserveStartEnd" minTickGap={24}/>
+                  <YAxis domain={[0,100]} tick={{fontSize:9,fill:C.muted}} tickFormatter={v=>`${v}%`} width={36}/>
+                  <Tooltip
+                    formatter={(value, name) => [`${value}%`, name]}
+                    contentStyle={tipStyle}
+                    itemStyle={{color:C.text}}
+                    labelStyle={{color:C.muted}}
+                  />
+                  {stages.map(s=>(
+                    <Area key={s.key} type="monotone" dataKey={s.key} name={s.label}
+                      stackId="mix" stroke={s.color} fill={s.color} fillOpacity={0.78}
+                      strokeWidth={1} isAnimationActive={false}/>
+                  ))}
+                </AreaChart>
+              ) : (
+                <LineChart data={trendData} margin={{top:4,right:6,left:-18,bottom:0}}>
+                  <XAxis dataKey="label" tick={{fontSize:9,fill:C.muted}} interval="preserveStartEnd" minTickGap={24}/>
+                  <YAxis domain={[0,100]} tick={{fontSize:9,fill:C.muted}} tickFormatter={v=>`${v}%`} width={36}/>
+                  <Tooltip
+                    formatter={(value, name) => [value==null?'—':`${value}%`, name]}
+                    contentStyle={tipStyle}
+                    itemStyle={{color:C.text}}
+                    labelStyle={{color:C.muted}}
+                  />
+                  <Line type="monotone" dataKey="s2" name="S2 Up" stroke={C.green}
+                    strokeWidth={2} dot={false} connectNulls isAnimationActive={false}/>
+                </LineChart>
+              )}
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
     </div>
@@ -14398,7 +14496,7 @@ function reqLabel(text){
 }
 
 // ── Auth Screen ──────────────────────────────────────────────────────
-function AuthScreen({onLogin,initialMode='login',onBack}){
+function AuthScreen({onLogin,initialMode='login',notice='',onBack}){
   const [mode,setMode]=useState(initialMode) // login | register | forgot
   const [email,setEmail]=useState('')
   const [password,setPassword]=useState('')
@@ -14456,7 +14554,9 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
         if(!password) throw new Error('Password is required.')
         const{data,error:e}=await supabase.auth.signInWithPassword({email,password})
         if(e)throw e
-        // New login wins — kick sessions on other phones/browsers.
+        // New login wins. The active-session row closes an already-open
+        // older browser; Supabase also revokes its refresh token.
+        await claimCurrentDevice(data.session)
         await revokeOtherSessions()
         const{data:decryptedToken}=await supabase.rpc('get_upstox_token')
         onLogin({user:data.user,token:decryptedToken||OWNER_TOKEN})
@@ -14591,6 +14691,12 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
           )}
 
           {/* Alerts */}
+          {notice&&!error&&(
+            <div style={{background:C.yellow+'18',border:`1px solid ${C.yellow}44`,borderRadius:8,
+              padding:'10px 12px',marginBottom:14,fontSize:12,color:C.yellow,fontWeight:600,lineHeight:1.5}}>
+              {notice}
+            </div>
+          )}
           {error&&(
             <div style={{background:C.red+'18',border:`1px solid ${C.red}44`,borderRadius:8,
               padding:'10px 12px',marginBottom:14,fontSize:12,color:C.red,fontWeight:600}}>
@@ -15314,6 +15420,11 @@ function TelegramAlertsCard({session, alertPrefs, onAlertPrefs}){
   const [busy,setBusy]=useState(false)
   const [err,setErr]=useState('')
   const [pendingCode,setPendingCode]=useState('')
+  // The scanner publishes its username from inside the same routine that polls
+  // for /start, so a missing setting means linking cannot complete no matter
+  // how healthy this card looks from the env fallback.
+  const [scannerLive,setScannerLive]=useState(true)
+  const [waitedFor,setWaitedFor]=useState(0)
 
   const refresh=useCallback(async()=>{
     if(!userId) return
@@ -15323,14 +15434,18 @@ function TelegramAlertsCard({session, alertPrefs, onAlertPrefs}){
     ])
     const envName=(import.meta.env.VITE_TELEGRAM_BOT_USERNAME||'LakshmiMata_bot').toString().replace(/^@/,'').trim()
     setBot((name||envName).replace(/^@/,''))
+    setScannerLive(!!name)
     setRow(data)
-    if(data?.chat_id) setPendingCode('')
+    if(data?.chat_id){ setPendingCode(''); setWaitedFor(0) }
   },[userId])
 
   useEffect(()=>{ refresh() },[refresh])
   useEffect(()=>{
     if(!pendingCode||!userId) return
-    const t=setInterval(refresh, 2500)
+    const t=setInterval(()=>{
+      setWaitedFor(s=>s+2.5)
+      refresh()
+    }, 2500)
     return ()=>clearInterval(t)
   },[pendingCode,userId,refresh])
 
@@ -15343,6 +15458,7 @@ function TelegramAlertsCard({session, alertPrefs, onAlertPrefs}){
     setBusy(false)
     if(res.error){ setErr(res.error); return }
     setPendingCode(res.code||res.data?.link_code||'')
+    setWaitedFor(0)
     setRow(res.data||row)
     if(onAlertPrefs && alertPrefs?.telegramEnabled===false){
       onAlertPrefs({...alertPrefs, telegramEnabled:true})
@@ -15384,6 +15500,13 @@ function TelegramAlertsCard({session, alertPrefs, onAlertPrefs}){
         from the header. Free — you just tap Start once in Telegram.
       </div>
 
+      {!scannerLive&&!connected&&bot&&(
+        <div style={{marginTop:12,padding:'9px 11px',borderRadius:9,lineHeight:1.5,
+          fontSize:11,color:C.yellow,background:C.yellow+'14',border:`1px solid ${C.yellow}33`}}>
+          The alert service has not registered its bot yet, so linking may not complete.
+        </div>
+      )}
+
       {!bot?(
         <div style={{marginTop:12,fontSize:11.5,color:C.muted,lineHeight:1.55}}>
           Telegram linking is not available yet. Try again after the next scanner refresh.
@@ -15424,6 +15547,12 @@ function TelegramAlertsCard({session, alertPrefs, onAlertPrefs}){
               <div style={{marginTop:8,fontSize:10.5,color:C.muted,lineHeight:1.5}}>
                 Expires in 15 minutes. Keep this page open — it flips to Live the moment you tap Start.
               </div>
+              {waitedFor>=40&&(
+                <div style={{marginTop:8,fontSize:10.5,color:C.yellow,lineHeight:1.5}}>
+                  Still waiting. If you already tapped Start, the alert service is not
+                  receiving Telegram messages — ask the operator to check it.
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -16034,6 +16163,7 @@ export default function App(){
   const [showRealtimeUpsell,setShowRealtimeUpsell]=useState(false)
   const [showAuth,setShowAuth]=useState(false)
   const [authMode,setAuthMode]=useState('login')
+  const [authNotice,setAuthNotice]=useState('')
   // True while the user arrived via the email password-reset link and
   // still needs to pick a new password (before entering the app).
   const [passwordRecovery,setPasswordRecovery]=useState(()=>{
@@ -16203,6 +16333,18 @@ export default function App(){
 
     supabase.auth.getSession().then(async({data:{session:s}})=>{
       if(s){
+        // A stored session can still be usable after a login elsewhere,
+        // because revoking a refresh token does not expire the access token
+        // this browser already holds.
+        const device=await verifyCurrentDevice(s)
+        if(!device.valid){
+          await supabase.auth.signOut({scope:'local'})
+          setAuthNotice('This account was signed in on another device. Sign in again to use it here.')
+          setShowAuth(true)
+          setAuthMode('login')
+          setAuthLoading(false)
+          return
+        }
         const{data:td}=await supabase.from('user_tokens').select('upstox_token').eq('user_id',s.user.id).single()
         setSession({user:s.user,token:td?.upstox_token||OWNER_TOKEN})
         // Recovery links land with a session already established — keep
@@ -16240,7 +16382,9 @@ export default function App(){
       // Fresh login (email, Google OAuth, email confirm) — not token refresh
       // or INITIAL_SESSION — so other devices are logged out right away.
       if(event==='SIGNED_IN'){
+        await claimCurrentDevice(s)
         await revokeOtherSessions()
+        setAuthNotice('')
       }
       // Handle Google OAuth callback, email confirmation, and token refresh
       if(event==='SIGNED_IN'||event==='TOKEN_REFRESHED'){
@@ -16262,6 +16406,53 @@ export default function App(){
 
     return()=>{ subscription.unsubscribe() }
   },[])
+
+  // Close this tab's session when the account is claimed by a newer login.
+  // Supabase revokes the old refresh token, but its access token stays valid
+  // until expiry, which is what let two devices keep working at once.
+  // Realtime handles the common case; the interval and focus checks cover
+  // tabs where the socket never connects.
+  useEffect(()=>{
+    const uid=session?.user?.id
+    if(!uid||demoMode) return
+    let replaced=false
+    let ownSessionId=null
+    const endSession=async()=>{
+      if(replaced) return
+      replaced=true
+      setAuthNotice('This account was signed in on another device. Sign in again to continue here.')
+      setShowAuth(true)
+      setAuthMode('login')
+      setSession(null)
+      await supabase.auth.signOut({scope:'local'})
+    }
+    const check=async()=>{
+      if(replaced) return
+      const{valid}=await verifyCurrentDevice()
+      if(!valid) await endSession()
+    }
+    currentDeviceIdentity().then(({sessionId})=>{ ownSessionId=sessionId })
+    const channel=supabase
+      .channel(`active-session-${uid}`)
+      .on('postgres_changes',{
+        event:'*',schema:'public',table:'user_active_sessions',
+        filter:`user_id=eq.${uid}`,
+      },payload=>{
+        const claimed=payload.new?.session_id
+        if(ownSessionId&&claimed&&claimed!==ownSessionId) endSession()
+      })
+      .subscribe()
+    const timer=setInterval(check,60000)
+    const onWake=()=>{ if(document.visibilityState!=='hidden') check() }
+    window.addEventListener('focus',onWake)
+    document.addEventListener('visibilitychange',onWake)
+    return()=>{
+      clearInterval(timer)
+      window.removeEventListener('focus',onWake)
+      document.removeEventListener('visibilitychange',onWake)
+      supabase.removeChannel(channel)
+    }
+  },[session?.user?.id,demoMode])
 
   useEffect(()=>{
     if(!session){ setSubscriptionLoading(false); return }
@@ -18506,7 +18697,8 @@ export default function App(){
       onSignIn={()=>{setAuthMode('login');setShowAuth(true)}}
       onDemo={()=>setDemoMode(true)}
     />)
-    return (<AuthScreen onLogin={s=>setSession(s)} initialMode={authMode} onBack={()=>setShowAuth(false)}/>)
+    return (<AuthScreen onLogin={s=>setSession(s)} initialMode={authMode} notice={authNotice}
+      onBack={()=>{setShowAuth(false);setAuthNotice('')}}/>)
   }
 
   // Name + phone are mandatory. Google (and older email accounts) may
@@ -20059,7 +20251,7 @@ export default function App(){
                     </div>
                   )}
 
-                  <StageDistributionBar stocks={stocks}/>
+                  <StageDistributionBar stocks={stocks} history={emaBreadthHistory}/>
 
                   {/* Breadth header + A/D ratio on one line */}
                   <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:8,flexWrap:'wrap'}}>
