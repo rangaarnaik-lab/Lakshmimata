@@ -8,6 +8,7 @@ import {
   mediaForArticle,
 } from '../content/helpDocs'
 import HelpVisual from './HelpVisuals'
+import HelpScreenTour from './HelpScreenTour'
 
 /**
  * Full-page Guide — beginner overview + how each component works.
@@ -290,6 +291,8 @@ export default function HelpDocsPage({
                 </div>
                 <div style={{ fontSize: 13, color: C.text, lineHeight: 1.65 }}>{article.forNewcomers}</div>
               </div>
+
+              {article.id === 'start-screen-tour' && <HelpScreenTour theme={C} />}
 
               {media.visuals.length > 0 && (
                 <div style={{ marginTop: 18 }}>

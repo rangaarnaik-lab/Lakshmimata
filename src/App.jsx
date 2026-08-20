@@ -49,7 +49,7 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase, fetchOwnerToken, revokeOtherSessions } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchMissedAiFilings } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -90,6 +90,15 @@ let OWNER_TOKEN = import.meta.env.VITE_OWNER_UPSTOX_TOKEN || ''
 // are now swappable. applyTheme() mutates C in place; components pick
 // up the new colors on their next render, triggered by bumping the
 // themeVersion state at the top of App (see below).
+// Beyond the base surface/accent colors, every theme also carries:
+//   onAccent  — text on an accent-filled button (black reads on the light
+//               blues of the dark themes, white on light's deeper blue)
+//   shadow / shadowLg — elevation. Dark themes separate surfaces with
+//               borders, light needs real shadows or cards look flat.
+//   gold / goldSoft   — the landing page's brand pair, which has to darken
+//               on white or the headings disappear.
+//   tvTheme / chartBg — passed to the TradingView embed so it stops
+//               rendering a dark panel inside a light page.
 const THEMES = {
   dark: {
     bg:'#0a0d12',card:'#0e1117',border:'#1c2333',
@@ -99,15 +108,29 @@ const THEMES = {
     pink:'#ec4899',lime:'#84cc16',teal:'#14b8a6',
     sidebar:'#080b10',divider:'#161b27',
     rowHover:'#121824',active:'#1a2035',
+    onAccent:'#04070d',
+    shadow:'0 1px 2px rgba(0,0,0,0.45)',
+    shadowLg:'0 12px 32px rgba(0,0,0,0.55)',
+    inputBg:'#0a0d12',
+    gold:'#C9A227',goldSoft:'#E8D28A',
+    tvTheme:'dark',chartBg:'#0e1117',
   },
   light: {
-    bg:'#f8fafc',card:'#ffffff',border:'#e2e8f0',
-    accent:'#2563eb',text:'#0f172a',muted:'#64748b',
-    green:'#16a34a',red:'#dc2626',yellow:'#ca8a04',
-    purple:'#9333ea',orange:'#ea580c',blue:'#2563eb',
-    pink:'#db2777',lime:'#65a30d',teal:'#0d9488',
-    sidebar:'#f1f5f9',divider:'#e2e8f0',
-    rowHover:'#f1f5f9',active:'#dbeafe',
+    // TradingView-light surfaces: a cool grey page so pure-white cards
+    // actually read as raised, with borders dark enough to see.
+    bg:'#f0f3fa',card:'#ffffff',border:'#d1d4dc',
+    accent:'#2962ff',text:'#131722',muted:'#5b6070',
+    green:'#0b8f6f',red:'#e02f42',yellow:'#a16207',
+    purple:'#7c3aed',orange:'#d9560b',blue:'#2962ff',
+    pink:'#c2185b',lime:'#4d7c0f',teal:'#0f766e',
+    sidebar:'#f7f8fc',divider:'#e3e6ef',
+    rowHover:'#f2f5fd',active:'#e3ebff',
+    onAccent:'#ffffff',
+    shadow:'0 1px 2px rgba(19,23,34,0.06), 0 1px 3px rgba(19,23,34,0.10)',
+    shadowLg:'0 12px 32px rgba(19,23,34,0.16)',
+    inputBg:'#ffffff',
+    gold:'#8a6a12',goldSoft:'#6f5410',
+    tvTheme:'light',chartBg:'#ffffff',
   },
   midnight: {
     bg:'#0b1220',card:'#0f1830',border:'#1e2a4a',
@@ -117,14 +140,50 @@ const THEMES = {
     pink:'#f472b6',lime:'#a3e635',teal:'#2dd4bf',
     sidebar:'#080e1c',divider:'#182544',
     rowHover:'#141f3d',active:'#1c2b52',
+    onAccent:'#06101f',
+    shadow:'0 1px 2px rgba(0,0,0,0.4)',
+    shadowLg:'0 12px 32px rgba(2,6,20,0.6)',
+    inputBg:'#0b1220',
+    gold:'#D8B33F',goldSoft:'#EEDC9A',
+    tvTheme:'dark',chartBg:'#0f1830',
   },
 }
 const C = {...THEMES.dark}
+/** Theme-driven global chrome that inline styles can't reach. */
+function applyThemeGlobalCss(t, key){
+  const id = 'lm-theme-globals'
+  let tag = document.getElementById(id)
+  if(!tag){
+    tag = document.createElement('style')
+    tag.id = id
+    document.head.appendChild(tag)
+  }
+  const track = key === 'light' ? '#e6e9f2' : t.bg
+  const thumb  = key === 'light' ? '#b8bdcc' : t.border
+  const thumbHover = key === 'light' ? '#9aa1b4' : t.muted
+  tag.textContent = `
+    html,body{background:${t.bg};color:${t.text};}
+    ::selection{background:${t.accent}33;color:${t.text};}
+    *{scrollbar-color:${thumb} ${track};}
+    ::-webkit-scrollbar{width:11px;height:11px;}
+    ::-webkit-scrollbar-track{background:${track};}
+    ::-webkit-scrollbar-thumb{background:${thumb};border-radius:6px;border:2px solid ${track};}
+    ::-webkit-scrollbar-thumb:hover{background:${thumbHover};}
+    input,select,textarea{color:${t.text};background:${t.inputBg};caret-color:${t.accent};}
+    input::placeholder,textarea::placeholder{color:${t.muted};opacity:1;}
+    :focus-visible{outline:2px solid ${t.accent}88;outline-offset:1px;}
+    input[type=range]{accent-color:${t.accent};}
+    input[type=checkbox],input[type=radio]{accent-color:${t.accent};}
+    option{background:${t.card};color:${t.text};}
+  `
+}
 function applyTheme(key){
   const t = THEMES[key] || THEMES.dark
   Object.assign(C, t)
   document.body.style.background = t.bg
   document.body.style.color = t.text
+  document.documentElement.style.colorScheme = key === 'light' ? 'light' : 'dark'
+  applyThemeGlobalCss(t, key)
   try{ localStorage.setItem('lakshmimata-theme', key) }catch(e){}
 }
 
@@ -476,7 +535,7 @@ const PRESETS = [
   {id:'hyema9',    label:'HY/HT/IBV→EMA', icon:'🔥', desc:'Recent HY/HT/IBV, sold on low volume, bounce from EMA5, EMA9, or EMA21'},
   {id:'ibv',       label:'IBV',          icon:'🏛️', desc:'Institutional-style buying activity detected'},
   {id:'pp',        label:'PP Today',     icon:'🔥', desc:'Pocket Pivot today'},
-  {id:'bullsnort', label:'Bull Snort',   icon:'🐂', desc:'Bullish volume climax — up close, 2× vol vs 20d avg, close in upper 30% of range'},
+  {id:'bullsnort', label:'Bull Snort',   icon:'🐂', desc:'Bullish volume climax — close above prior close, volume ≥ 3× the 50-bar average, DCR ≥ 65%'},
   {id:'ema5',      label:'EMA5',         icon:'⚡', desc:'RS 90+ near 5-day EMA'},
   {id:'ema9',      label:'EMA9',         icon:'⚡', desc:'RS 90+ near 9-day EMA'},
   {id:'hy',        label:'HY Vol',       icon:'📊', desc:'Today volume > 52W max volume'},
@@ -582,7 +641,7 @@ const SIGNAL_TOOLTIPS = {
   hy: 'High Yield (volume) — today\'s volume is near the highest it\'s been in the last 52 weeks, on an up day.',
   ht: 'High Turnover — today\'s volume is near the highest it\'s ever been for this stock, on an up day.',
   ibv: 'Institutional-style Buying Volume — heavy volume + strong close within the day\'s range, suggesting large buying.',
-  bullsnort: 'Bullish volume climax — up close, volume ≥ 2× the 20-day average, and close in the upper 30% of the day\'s range.',
+  bullsnort: 'Bullish volume climax — close above the prior close, volume ≥ 3× the 50-bar average, and DCR ≥ 65% (close in the top 35% of the bar).',
   ema5: 'Price has pulled back to within 3% of its 5-day average, on a top-10%-RS stock.',
   ema9: 'Price has pulled back to within 3% of its 9-day average, on a top-10%-RS stock.',
   r1: 'Price just crossed above a significant resistance level it had been held under for a while.',
@@ -606,6 +665,9 @@ const IDX_COLUMN_TOOLTIPS = {
   chgM: '% change over the last month, with rank vs other indices.',
   chgQ: '% change over the last 3 months.',
   chgY: '% change over the last year.',
+  leadership: 'Established leadership score (0–100): RS, medium-term breadth and trend stage.',
+  heat: 'Emerging-move score (0–100): weekly rank and breadth acceleration. Requires constituent breadth.',
+  marketState: 'Leading, Emerging, Narrow, Fading, Weak or Stable based on Leadership + Heat evidence.',
 }
 
 // Tooltips for the Sectors table's column headers.
@@ -620,6 +682,85 @@ const SEC_COLUMN_TOOLTIPS = {
   advancesD: '% of this sector\'s stocks that are up today.',
   advancesW: '% of this sector\'s stocks that are up over the last week.',
   advancesM: '% of this sector\'s stocks that are up over the last month.',
+  leadership: 'Established leadership score (0–100): average RS plus broad weekly/monthly participation.',
+  heat: 'Emerging-move score (0–100): rank movement, breadth acceleration, improving members and fresh thrust signals.',
+  marketState: 'Leading, Emerging, Narrow, Fading, Weak or Stable based on Leadership + Heat evidence.',
+}
+
+// ── Market group scoring ──────────────────────────────────────────────
+// RS answers "who has already led?". Heat answers "where is participation
+// accelerating now?". Inputs are converted to cross-sectional percentiles
+// before weighting, so unlike raw counts a 150-stock sector cannot beat an
+// 8-stock industry merely because it has more members.
+function marketPercentile(value, values){
+  if(value==null || !Number.isFinite(Number(value))) return null
+  const valid=values.map(Number).filter(Number.isFinite).sort((a,b)=>a-b)
+  if(valid.length<2) return valid.length?50:null
+  const v=Number(value)
+  const below=valid.filter(x=>x<v).length
+  const equal=valid.filter(x=>x===v).length
+  return ((below + Math.max(0,equal-1)/2) / (valid.length-1))*100
+}
+function weightedMarketScore(parts){
+  const usable=parts.filter(([v,w])=>v!=null&&Number.isFinite(v)&&w>0)
+  const total=usable.reduce((a,[,w])=>a+w,0)
+  if(!total) return null
+  return Math.round(usable.reduce((a,[v,w])=>a+v*w,0)/total)
+}
+function isMarketThrustStock(s){
+  return !!(s?.pp?.isPP || s?.isBullSnort || s?.hy?.isHY || s?.ht?.isHT ||
+    s?.ibvSignal || s?.isS2NewEntry || s?.squeeze?.squeezeFired ||
+    s?.vcp?.vcpFired || s?.isResistanceBreakout || s?.isCupHandleBreakout)
+}
+function scoreMarketGroups(rows){
+  const vals=key=>rows.map(r=>r[key]).filter(v=>v!=null&&Number.isFinite(Number(v)))
+  const strengthVals=vals('strength')
+  const advWVals=vals('advW')
+  const advMVals=vals('advM')
+  const improveVals=vals('improvingPct')
+  const thrustVals=vals('thrustPct')
+  const rankMoveVals=vals('rankChange')
+  const accelVals=rows.map(r=>
+    r.advW!=null&&r.advM!=null ? r.advW-r.advM : null
+  ).filter(v=>v!=null&&Number.isFinite(v))
+  return rows.map(r=>{
+    const strengthP=marketPercentile(r.strength,strengthVals)
+    const advWP=marketPercentile(r.advW,advWVals)
+    const advMP=marketPercentile(r.advM,advMVals)
+    const improvingP=marketPercentile(r.improvingPct,improveVals)
+    const thrustP=marketPercentile(r.thrustPct,thrustVals)
+    const rankMoveP=marketPercentile(r.rankChange,rankMoveVals)
+    const acceleration=r.advW!=null&&r.advM!=null?r.advW-r.advM:null
+    const accelerationP=marketPercentile(acceleration,accelVals)
+    const stageScore={1:50,2:100,3:35,4:0}[r.stage]??null
+    const leadership=weightedMarketScore([
+      [strengthP,.40],[advMP,.20],[advWP,.15],[improvingP,.15],[stageScore,.10],
+    ])
+    const heat=weightedMarketScore([
+      [rankMoveP,.25],[advWP,.20],[accelerationP,.15],[improvingP,.20],[thrustP,.20],
+    ])
+    let marketState='Stable'
+    if(leadership!=null&&leadership>=55&&((r.rankChange??0)<=-3||(r.advW??100)<40)) marketState='Fading'
+    else if(leadership!=null&&leadership>=65&&(r.advW??100)<45) marketState='Narrow'
+    else if(leadership!=null&&leadership>=70&&(r.advW??0)>=50) marketState='Leading'
+    else if(heat!=null&&heat>=65&&leadership<75&&(r.advW??0)>=50) marketState='Emerging'
+    else if((leadership??50)<35&&(heat??50)<45) marketState='Weak'
+    return {...r,leadership,heat,marketState,breadthAcceleration:acceleration}
+  })
+}
+const MARKET_STATE_META={
+  Leading:{color:()=>C.green,desc:'Established strength with healthy participation.'},
+  Emerging:{color:()=>C.accent,desc:'Breadth, rank and fresh signals are improving before RS fully catches up.'},
+  Narrow:{color:()=>C.orange,desc:'Strong headline score, but too few members are participating.'},
+  Fading:{color:()=>C.red,desc:'Historical strength remains, but breadth or rank is rolling over.'},
+  Weak:{color:()=>C.muted,desc:'Low leadership and no convincing participation thrust.'},
+  Stable:{color:()=>C.yellow,desc:'Mixed evidence — neither a fresh rotation nor a clear leader.'},
+}
+function marketLensMatches(row,lens){
+  if(lens==='leadership') return row.marketState==='Leading'||row.marketState==='Narrow'
+  if(lens==='emerging') return row.marketState==='Emerging'
+  if(lens==='fading') return row.marketState==='Fading'||row.marketState==='Weak'
+  return true
 }
 
 const SIGNAL_GLOSSARY = [
@@ -627,7 +768,7 @@ const SIGNAL_GLOSSARY = [
   ['📊 HY', 'High Yield (volume) — today\'s volume is near the highest it\'s been in the last 52 weeks, on an up day.'],
   ['🏛️ IBV', 'Institutional-style Buying Volume — unusually heavy volume combined with the price closing strong within the day\'s range, suggesting large/institutional buying rather than retail noise.'],
   ['🔥 PP', 'Pocket Pivot — an up day where volume beats every down day in the past 10 days, while price stays near its short-term average. A classic early-accumulation signal.'],
-  ['🐂 Bull Snort', 'Bullish volume climax — up close, volume ≥ 2× the 20-day average, and close in the upper 30% of the day\'s range. Same rule as the chart overlay.'],
+  ['🐂 Bull Snort', 'Bullish volume climax — close above the prior close, volume ≥ 3× the 50-bar average, and DCR ≥ 65% (top 35% of the bar). Scanner, chart, and alerts use this rule.'],
   ['🔥 PP 2x Consecutive', 'At least two Pocket Pivot days back-to-back within the last 10 days — sustained accumulation, not a one-off.'],
   ['🔥 PP >2 in 10d', 'More than two Pocket Pivot days total within the last 10 days (don\'t need to be consecutive) — repeated accumulation interest.'],
   ['⚡ EMA5 / EMA9 / EMA21 / EMA50', 'Price has pulled back to within 3% of its 5/9/21/50-day average — a common "buy the dip in an uptrend" zone, shown only for stocks already ranked in the top 10% by RS.'],
@@ -1051,17 +1192,14 @@ function useCopy(){
 }
 
 // ── TV Copy Panel ─────────────────────────────────────────────────────
-// shows two copy buttons: plain symbol list (for TradingView's
-// watchlist-import box) + NSE:SYM format (for its symbol search)
+// Copies NSE:SYM,… for TradingView watchlist import.
 function TVCopyPanel({stocks,label,compact}){
   // compact=true → single "Export to TradingView" button style (for top bar)
   const {copy,copied}=useCopy()
   if(!stocks||stocks.length===0)return null
   const syms=stocks.map(s=>s.sym)
   const symbolList=syms.map(s=>`NSE:${s}`).join(',')
-  const alertStr=syms.map(s=>`NSE:${s}`).join('\n')
-  // Compact buttons for toolbars — count lives on the Copy button (no separate "TV (n)" row).
-    return(
+  return(
     <div style={{display:'inline-flex',alignItems:'center',gap:4,flexShrink:0}}>
       <button onClick={()=>copy(symbolList,'symlist')}
         title={`Copy ${syms.length} symbols for TradingView watchlist import (NSE:SYM,…)`}
@@ -1069,12 +1207,6 @@ function TVCopyPanel({stocks,label,compact}){
           background:copied==='symlist'?C.teal+'33':'transparent',
           color:copied==='symlist'?C.teal:C.muted,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
         {copied==='symlist'?'✅ Copied':`📋 TV · ${syms.length}`}
-        </button>
-      <button onClick={()=>copy(alertStr,'alert')} title="One symbol per line for TradingView alert wizard"
-        style={{padding:compact?'5px 10px':'6px 10px',borderRadius:8,border:`1px solid ${C.border}`,cursor:'pointer',
-          background:copied==='alert'?C.teal+'22':'transparent',
-          color:copied==='alert'?C.teal:C.muted,fontSize:11,fontWeight:600,whiteSpace:'nowrap'}}>
-        {copied==='alert'?'✅ Copied':'🔔 Alerts'}
       </button>
     </div>
   )
@@ -2798,7 +2930,7 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
               <div style={{display:'flex',gap:8}}>
                 <button onClick={saveEdit}
                   style={{padding:'6px 14px',borderRadius:7,border:'none',cursor:'pointer',
-                    background:C.accent,color:'#000',fontWeight:700,fontSize:12}}>
+                    background:C.accent,color:C.onAccent,fontWeight:700,fontSize:12}}>
                   {isDraft?'✓ Create':'💾 Save'}
                 </button>
                 <button onClick={()=>{setEditId(null);setEditStocks([]);setWlName('')}}
@@ -2835,7 +2967,7 @@ function WatchlistManager({watchlists,activeWl,setActiveWl,onSave,onDelete,allKn
                     borderRadius:8,color:C.text,fontSize:13,outline:'none'}}/>
                 <button onClick={addManual}
                   style={{padding:'8px 14px',borderRadius:8,border:'none',cursor:'pointer',
-                    background:C.accent,color:'#000',fontWeight:700,fontSize:13}}>Add</button>
+                    background:C.accent,color:C.onAccent,fontWeight:700,fontSize:13}}>Add</button>
               </div>
               {showSuggest&&suggestions.length>0&&(
                 <div style={{position:'absolute',top:'100%',left:0,right:70,marginTop:4,zIndex:20,
@@ -5024,11 +5156,11 @@ function TradingViewDailyChart({symbol, exchange, onReady}){
       symbol: `${exchange}:${symbol}`,
       interval: '1D',
       timezone: 'Asia/Kolkata',
-      theme: 'dark',
+      theme: C.tvTheme,
       style: '1',
       locale: 'en',
-      backgroundColor: '#0e1117',
-      toolbar_bg: '#0e1117',
+      backgroundColor: C.chartBg,
+      toolbar_bg: C.chartBg,
       enable_publishing: false,
       hide_top_toolbar: false,
       hide_legend: false,
@@ -5282,7 +5414,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
               </div>
             )}
             <TradingViewDailyChart
-              key={`BSE:${sym}:1D`}
+              key={`BSE:${sym}:1D:${C.tvTheme}`}
               symbol={sym}
               exchange="BSE"
               onReady={()=>setLoaded(true)}
@@ -6280,7 +6412,7 @@ function SectionFeedback({symbol, contentType, sectionKey, sectionLabel}){
               <button type="button" disabled={sending}
                 onClick={()=>send('down', comment)}
                 style={{flex:1,padding:'10px 0',borderRadius:9,border:'none',cursor:'pointer',
-                  background:C.accent,color:'#000',fontWeight:700,fontSize:13,
+                  background:C.accent,color:C.onAccent,fontWeight:700,fontSize:13,
                   opacity:sending?0.7:1}}>
                 {sending?'Sending…':'Submit issue'}
               </button>
@@ -12766,7 +12898,7 @@ function GuideAskPanel({mainTab, chartSym, stocks}){
             background:C.bg,color:C.text,fontSize:12,outline:'none'}}/>
         <button type="button" onClick={()=>ask(query)}
           style={{padding:'8px 12px',borderRadius:8,border:'none',background:C.accent,
-            color:'#000',fontWeight:800,fontSize:11,cursor:'pointer'}}>Ask</button>
+            color:C.onAccent,fontWeight:800,fontSize:11,cursor:'pointer'}}>Ask</button>
       </div>
       <div style={{display:'flex',flexWrap:'wrap',gap:5,marginBottom:answer?10:0}}>
         {suggestions.map(s=>(
@@ -13673,7 +13805,11 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
     fetchUserFeedbackRatingStats().then(setFeedbackStats)
   },[])
 
-  const gold='#C9A227', goldSoft='#E8D28A'
+  // Brand pair and copy colors come from the theme: the original fixed
+  // gold + #fff/#9aa0b0 set was built for the dark page and turns
+  // invisible the moment the background is white.
+  const gold=C.gold, goldSoft=C.goldSoft
+  const ink=C.text, dim=C.muted
   const mono={fontFamily:"'IBM Plex Mono',monospace"}
   const serif={fontFamily:"'Playfair Display',serif"}
   const badge=(bg,fg,label)=>(
@@ -13725,7 +13861,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
           <div style={{display:'flex',alignItems:'center',gap:11}}>
             <div style={{width:36,height:36,border:`1px solid ${gold}`,borderRadius:'50%',display:'flex',
               alignItems:'center',justifyContent:'center',...serif,color:gold,fontSize:16,fontStyle:'italic'}}>L</div>
-            <div style={{...serif,fontSize:20,color:'#fff'}}>Lakshmi<em style={{color:gold,fontStyle:'italic'}}>mata</em></div>
+            <div style={{...serif,fontSize:20,color:ink}}>Lakshmi<em style={{color:gold,fontStyle:'italic'}}>mata</em></div>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <button onClick={onDemo} title="Browse with real data from ~1 week ago — no signup"
@@ -13743,12 +13879,12 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
         <section style={{padding:'76px 0 52px',textAlign:'center'}}>
           {smallcaps('NSE Relative-Strength & Signal Terminal',true)}
           <h1 style={{...serif,fontWeight:600,fontSize:'clamp(34px,4.8vw,56px)',lineHeight:1.14,
-            maxWidth:800,margin:'0 auto',color:'#fff'}}>
+            maxWidth:800,margin:'0 auto',color:ink}}>
             See which stocks are<br/>
             <em style={{color:goldSoft,fontStyle:'italic'}}>gathering strength</em><br/>
             before the crowd does.
           </h1>
-          <p style={{maxWidth:560,margin:'24px auto 0',fontSize:16,color:'#aab0c0',lineHeight:1.7}}>
+          <p style={{maxWidth:560,margin:'24px auto 0',fontSize:16,color:dim,lineHeight:1.7}}>
             Live RS rankings, volume climaxes, EMA pullback entries, breakouts, squeezes, market breadth,
             filings &amp; AI digests, portfolios and watchlists — across 2,300+ NSE stocks in one terminal.
           </p>
@@ -13827,7 +13963,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
               {slide===0 && (
                 <div>
                   <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:16}}>
-                    <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>RS Rating</h4>
+                    <h4 style={{...serif,fontSize:17,color:ink,fontWeight:600}}>RS Rating</h4>
                     <span style={{fontSize:11,color:C.muted,...mono}}>Relative strength, ranked 1–99</span>
                   </div>
                   <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -13863,7 +13999,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
               {slide===1 && (
                 <div>
                   <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:16}}>
-                    <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>Vol→EMA · Entries</h4>
+                    <h4 style={{...serif,fontSize:17,color:ink,fontWeight:600}}>Vol→EMA · Entries</h4>
                     <span style={{fontSize:11,color:C.muted,...mono}}>HY/HT/IBV then pullback near EMA5/9/21/50</span>
                   </div>
                   <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -13895,7 +14031,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
               {slide===2 && (
                 <div>
                   <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:16}}>
-                    <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>Patterns · Breakouts</h4>
+                    <h4 style={{...serif,fontSize:17,color:ink,fontWeight:600}}>Patterns · Breakouts</h4>
                     <span style={{fontSize:11,color:C.muted,...mono}}>R1, cup, Guppy, Stage 2, squeeze &amp; VCP</span>
                   </div>
                   <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -13928,7 +14064,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
               {slide===3 && (
                 <div>
                   <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:16}}>
-                    <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>Sector Rotation</h4>
+                    <h4 style={{...serif,fontSize:17,color:ink,fontWeight:600}}>Sector Rotation</h4>
                     <span style={{fontSize:11,color:C.muted,...mono}}>Where money is actually moving this week</span>
                   </div>
                   <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -13965,7 +14101,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
               {slide===4 && (
                 <div>
                   <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:16}}>
-                    <h4 style={{...serif,fontSize:17,color:'#fff',fontWeight:600}}>Filings · AI digests</h4>
+                    <h4 style={{...serif,fontSize:17,color:ink,fontWeight:600}}>Filings · AI digests</h4>
                     <span style={{fontSize:11,color:C.muted,...mono}}>Results, PPT, concalls — rated &amp; searchable</span>
                   </div>
                   <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -13985,7 +14121,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
                         <tr key={sym}>
                           <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{sym}</td>
                           <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{filing}</td>
-                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine,color:'#aab0c0'}}>{take}</td>
+                          <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine,color:dim}}>{take}</td>
                           <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine}}>{rating}</td>
                           <td style={{padding:'11px 10px',fontSize:12.5,...rulesLine,color:C.muted}}>{when}</td>
                         </tr>
@@ -14023,10 +14159,10 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
         <section style={{padding:'72px 0 24px'}}>
           <div style={{maxWidth:640,margin:'0 auto 40px',textAlign:'center'}}>
             {smallcaps('Inside the terminal',true)}
-            <h2 style={{...serif,fontWeight:600,fontSize:'clamp(26px,3.2vw,36px)',color:'#fff'}}>
+            <h2 style={{...serif,fontWeight:600,fontSize:'clamp(26px,3.2vw,36px)',color:ink}}>
               Everything the app actually does.
             </h2>
-            <p style={{color:'#9aa0b0',fontSize:14.5,marginTop:12,lineHeight:1.7}}>
+            <p style={{color:dim,fontSize:14.5,marginTop:12,lineHeight:1.7}}>
               Not just an RS table — scanners, market context, filings AI, and your own book in one place.
             </p>
           </div>
@@ -14035,8 +14171,8 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
               <div key={m.title} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:8,
                 padding:'22px 20px'}}>
                 <div style={{fontSize:22,marginBottom:10}}>{m.icon}</div>
-                <h3 style={{fontSize:16,fontWeight:700,color:'#fff',marginBottom:8}}>{m.title}</h3>
-                <p style={{fontSize:13.5,color:'#9aa0b0',lineHeight:1.65,margin:0}}>{m.desc}</p>
+                <h3 style={{fontSize:16,fontWeight:700,color:ink,marginBottom:8}}>{m.title}</h3>
+                <p style={{fontSize:13.5,color:dim,lineHeight:1.65,margin:0}}>{m.desc}</p>
               </div>
             ))}
           </div>
@@ -14046,7 +14182,7 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
         <section style={{padding:'72px 0 88px'}}>
           <div style={{maxWidth:600,margin:'0 auto 52px',textAlign:'center'}}>
             {smallcaps('How It Works',true)}
-            <h2 style={{...serif,fontWeight:600,fontSize:'clamp(26px,3.2vw,36px)',color:'#fff'}}>
+            <h2 style={{...serif,fontWeight:600,fontSize:'clamp(26px,3.2vw,36px)',color:ink}}>
               Six layers. One workflow.
             </h2>
           </div>
@@ -14056,8 +14192,8 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
                 borderBottom:`1px solid ${C.divider}`}}>
                 <div style={{...serif,fontStyle:'italic',color:gold,fontSize:20}}>{num}</div>
                 <div>
-                  <h3 style={{fontSize:18,marginBottom:7,fontWeight:600,color:'#fff'}}>{title}</h3>
-                  <p style={{color:'#9aa0b0',fontSize:14,maxWidth:520}}>{desc}</p>
+                  <h3 style={{fontSize:18,marginBottom:7,fontWeight:600,color:ink}}>{title}</h3>
+                  <p style={{color:dim,fontSize:14,maxWidth:520}}>{desc}</p>
                 </div>
               </div>
             ))}
@@ -14071,13 +14207,13 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
             <h3 style={{fontSize:18,marginBottom:14,fontStyle:'italic',color:goldSoft,...serif,fontWeight:600}}>
               Before you rely on this
             </h3>
-            <p style={{color:'#9aa0b0',fontSize:13.5,lineHeight:1.8}}>
+            <p style={{color:dim,fontSize:13.5,lineHeight:1.8}}>
               Lakshmimata is a data and screening tool. It surfaces relative-strength rankings and technical
               signals computed from public market data — it does not constitute investment advice, a
               recommendation to buy or sell any security, or a research report under SEBI (Research Analysts)
               Regulations, 2014.
             </p>
-            <p style={{color:'#9aa0b0',fontSize:13.5,lineHeight:1.8,marginTop:12}}>
+            <p style={{color:dim,fontSize:13.5,lineHeight:1.8,marginTop:12}}>
               Past performance and technical signals are not indicative of future results. Please consult a
               SEBI-registered investment adviser or research analyst before making investment decisions, and
               review NSE/BSE data independently before trading.
@@ -14089,10 +14225,10 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
         <section id="user-feedback" style={{padding:'0 0 72px'}}>
           {smallcaps('Trader feedback',true)}
           <h2 style={{...serif,fontWeight:600,fontSize:'clamp(22px,2.8vw,30px)',textAlign:'center',
-            maxWidth:520,margin:'0 auto 10px',color:'#fff'}}>
+            maxWidth:520,margin:'0 auto 10px',color:ink}}>
             What users are saying
           </h2>
-          <p style={{color:'#9aa0b0',maxWidth:480,margin:'0 auto 28px',fontSize:14,textAlign:'center',lineHeight:1.65}}>
+          <p style={{color:dim,maxWidth:480,margin:'0 auto 28px',fontSize:14,textAlign:'center',lineHeight:1.65}}>
             Real feedback from traders using Lakshmimata — rate us and sign in to share yours.
           </p>
           {feedbackStats&&feedbackStats.total>0&&(
@@ -14124,10 +14260,10 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
         <section style={{padding:'0 0 88px',textAlign:'center'}}>
           {smallcaps('Pricing',true)}
           <h2 style={{...serif,fontWeight:600,fontSize:'clamp(24px,3vw,32px)',maxWidth:520,
-            margin:'0 auto 12px',color:'#fff'}}>
+            margin:'0 auto 12px',color:ink}}>
             30 days free. Stay if it's useful.
           </h2>
-          <p style={{color:'#9aa0b0',maxWidth:440,margin:'0 auto 40px',fontSize:14}}>
+          <p style={{color:dim,maxWidth:440,margin:'0 auto 40px',fontSize:14}}>
             No card required to start. Cancel anytime during your trial, no questions asked.
           </p>
           <div style={{display:'flex',gap:16,justifyContent:'center',flexWrap:'wrap',maxWidth:820,margin:'0 auto'}}>
@@ -14137,10 +14273,10 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
                 {p.badge&&<div style={{position:'absolute',top:-11,left:'50%',transform:'translateX(-50%)',
                   background:gold,color:'#0a0d12',fontSize:10,fontWeight:700,padding:'3px 10px',
                   borderRadius:99,whiteSpace:'nowrap'}}>{p.badge}</div>}
-                <div style={{fontSize:12,color:'#9aa0b0',fontWeight:600,marginBottom:10,
+                <div style={{fontSize:12,color:dim,fontWeight:600,marginBottom:10,
                   textTransform:'uppercase',letterSpacing:'0.06em'}}>{p.label}</div>
-                <div style={{...serif,fontSize:32,fontWeight:700,color:'#fff',marginBottom:2}}>₹{p.price}</div>
-                <div style={{fontSize:12,color:'#9aa0b0'}}>₹{p.perMonth}/month equivalent</div>
+                <div style={{...serif,fontSize:32,fontWeight:700,color:ink,marginBottom:2}}>₹{p.price}</div>
+                <div style={{fontSize:12,color:dim}}>₹{p.perMonth}/month equivalent</div>
               </div>
             ))}
           </div>
@@ -14149,10 +14285,10 @@ function LandingPage({onEnroll,onSignIn,onDemo}){
         {/* Enroll */}
         <section style={{textAlign:'center',padding:'96px 0 84px'}}>
           {smallcaps('Get Started',true)}
-          <h2 style={{...serif,fontWeight:600,fontSize:'clamp(28px,3.6vw,40px)',maxWidth:600,margin:'0 auto 16px',color:'#fff'}}>
+          <h2 style={{...serif,fontWeight:600,fontSize:'clamp(28px,3.6vw,40px)',maxWidth:600,margin:'0 auto 16px',color:ink}}>
             Your watchlist is already moving. Go see it.
           </h2>
-          <p style={{color:'#9aa0b0',maxWidth:480,margin:'0 auto 30px',fontSize:15}}>
+          <p style={{color:dim,maxWidth:480,margin:'0 auto 30px',fontSize:15}}>
             Create a free account for today&apos;s RS scan, Vol→EMA entries, filings AI, and your watchlists.
           </p>
           <button onClick={onEnroll} style={{background:gold,color:'#0a0d12',padding:'14px 32px',fontWeight:700,
@@ -14383,7 +14519,7 @@ function AuthScreen({onLogin,initialMode='login',onBack}){
         <div style={{textAlign:'center',marginBottom:28}}>
           <div style={{width:60,height:60,background:`linear-gradient(135deg,${C.accent},${C.purple})`,
             borderRadius:18,display:'inline-flex',alignItems:'center',justifyContent:'center',
-            fontWeight:900,color:'#000',fontSize:30,marginBottom:14,
+            fontWeight:900,color:C.onAccent,fontSize:30,marginBottom:14,
             boxShadow:`0 8px 32px ${C.accent}44`}}>L</div>
           <div style={{fontWeight:800,fontSize:26,letterSpacing:'-0.03em'}}>Lakshmimata</div>
           <div style={{color:C.muted,fontSize:13,marginTop:4}}>NSE Stock Scanner</div>
@@ -14976,7 +15112,7 @@ function UserFeedbackPanel({session,onExitDemo}){
           {onExitDemo&&(
             <button onClick={onExitDemo}
               style={{padding:'10px 24px',borderRadius:8,border:'none',cursor:'pointer',
-                background:C.accent,color:'#000',fontWeight:700,fontSize:13}}>
+                background:C.accent,color:C.onAccent,fontWeight:700,fontSize:13}}>
               Sign Up
             </button>
           )}
@@ -15021,7 +15157,7 @@ function UserFeedbackPanel({session,onExitDemo}){
         {info&&<div style={{color:C.green,fontSize:12,marginBottom:10}}>{info}</div>}
         <button type="button" onClick={handleSubmit} disabled={loading||!canSubmit}
           style={{padding:'11px 22px',borderRadius:9,border:'none',cursor:loading?'wait':'pointer',
-            background:C.accent,color:'#000',fontWeight:700,fontSize:13,
+            background:C.accent,color:C.onAccent,fontWeight:700,fontSize:13,
             opacity:loading||!canSubmit?0.55:1}}>
           {loading?'Saving…':'Submit feedback'}
         </button>
@@ -15185,7 +15321,7 @@ function TelegramAlertsCard({session, alertPrefs, onAlertPrefs}){
       fetchAppSetting('telegram_bot_username'),
       fetchUserTelegram(userId),
     ])
-    const envName=(import.meta.env.VITE_TELEGRAM_BOT_USERNAME||'').toString().replace(/^@/,'').trim()
+    const envName=(import.meta.env.VITE_TELEGRAM_BOT_USERNAME||'LakshmiMata_bot').toString().replace(/^@/,'').trim()
     setBot((name||envName).replace(/^@/,''))
     setRow(data)
     if(data?.chat_id) setPendingCode('')
@@ -15223,58 +15359,70 @@ function TelegramAlertsCard({session, alertPrefs, onAlertPrefs}){
 
   const startUrl=bot&&pendingCode?`https://t.me/${bot}?start=${pendingCode}`:''
 
+  const statusText=!bot?'Unavailable':connected?(telegramOn?'Live':'Paused'):'Not linked'
+  const statusCol=!bot?C.muted:connected?(telegramOn?C.green:C.yellow):C.muted
+
   return(
-    <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:20,marginBottom:16}}>
-      <div style={{fontWeight:800,fontSize:16}}>Telegram alerts</div>
-      <div style={{color:C.muted,fontSize:11.5,marginTop:4,lineHeight:1.5}}>
-        Personal 1:1 messages from the Lakshmimata bot, labeled by type (Squeeze, HY, Stage 2, …)
-        using the same 🔔 preferences. Free — you must tap Start once.
+    <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:18,marginBottom:16}}>
+      <div style={{display:'flex',alignItems:'center',gap:11}}>
+        <div style={{width:36,height:36,borderRadius:11,flexShrink:0,fontSize:17,
+          background:C.blue+'1f',border:`1px solid ${C.blue}44`,
+          display:'flex',alignItems:'center',justifyContent:'center'}}>✈️</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontWeight:800,fontSize:15}}>Telegram alerts</div>
+          <div style={{fontSize:11,color:C.muted,marginTop:2}}>
+            {connected?`@${row.telegram_username||bot}`:'Personal 1:1 messages from the bot'}
+          </div>
+        </div>
+        <span style={{fontSize:10,fontWeight:800,letterSpacing:'0.04em',whiteSpace:'nowrap',
+          color:statusCol,background:statusCol+'18',border:`1px solid ${statusCol}44`,
+          borderRadius:999,padding:'4px 10px'}}>{statusText.toUpperCase()}</span>
+      </div>
+
+      <div style={{marginTop:12,fontSize:11.5,color:C.muted,lineHeight:1.55}}>
+        Alerts arrive labeled by type (Squeeze, HY, Stage 2, …) and follow the same 🔔 preferences
+        from the header. Free — you just tap Start once in Telegram.
       </div>
 
       {!bot?(
-        <div style={{marginTop:12,padding:12,borderRadius:10,background:C.bg,border:`1px solid ${C.border}`,
-          fontSize:11.5,color:C.muted,lineHeight:1.6}}>
-          <div style={{fontWeight:800,color:C.text,marginBottom:6}}>Operator setup (you)</div>
-          1. Telegram → <b>@BotFather</b> → <code>/newbot</code> → copy token and username.<br/>
-          2. Run <code>add_user_telegram.sql</code> in Supabase.<br/>
-          3. Railway live-scan env: <code>TELEGRAM_BOT_TOKEN</code>, <code>TELEGRAM_BOT_USERNAME</code>
-          (no @). Optional <code>TELEGRAM_CHAT_ID</code> for your EOD digest.<br/>
-          4. Redeploy the scanner. This card unlocks Connect after the bot username is published.
-          Full notes: <code>TELEGRAM_SETUP.md</code> in lakshmimata-server.
+        <div style={{marginTop:12,fontSize:11.5,color:C.muted,lineHeight:1.55}}>
+          Telegram linking is not available yet. Try again after the next scanner refresh.
         </div>
       ):connected?(
-        <div style={{marginTop:14}}>
-          <div style={{fontSize:12,color:C.green,fontWeight:700}}>
-            Connected{row.telegram_username?` @${row.telegram_username}`:''}
-          </div>
-          <div style={{fontSize:11,color:C.muted,marginTop:4}}>
-            Types follow the header 🔔 menu. Pause delivery anytime.
-          </div>
+        <div style={{marginTop:14,display:'flex',gap:8,flexWrap:'wrap'}}>
           <button type="button" onClick={toggleDelivery}
-            style={{marginTop:10,padding:'8px 14px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:700,
+            style={{flex:'1 1 150px',padding:'10px 14px',borderRadius:9,cursor:'pointer',fontSize:12,fontWeight:700,
               border:`1px solid ${telegramOn?C.green:C.border}`,
               background:telegramOn?C.green+'18':C.bg,color:telegramOn?C.green:C.muted}}>
-            {telegramOn?'Delivery ON':'Delivery paused'}
+            {telegramOn?'Pause delivery':'Resume delivery'}
           </button>
           <button type="button" onClick={connect}
-            style={{marginLeft:8,padding:'8px 14px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
+            style={{flex:'0 0 auto',padding:'10px 14px',borderRadius:9,cursor:'pointer',fontSize:12,fontWeight:600,
               border:`1px solid ${C.border}`,background:C.bg,color:C.muted}}>
             Re-link
           </button>
         </div>
       ):(
         <div style={{marginTop:14}}>
-          <button type="button" disabled={busy} onClick={connect}
-            style={{padding:'9px 16px',borderRadius:8,cursor:busy?'default':'pointer',fontSize:12,fontWeight:800,
-              border:'none',background:C.accent,color:'#000'}}>
-            {busy?'Working…':'Connect Telegram'}
-          </button>
-          {startUrl&&(
-            <div style={{marginTop:12,fontSize:12,color:C.text,lineHeight:1.55}}>
+          {!startUrl?(
+            <button type="button" disabled={busy} onClick={connect}
+              style={{width:'100%',padding:'11px 16px',borderRadius:9,cursor:busy?'default':'pointer',
+                fontSize:12.5,fontWeight:800,border:'none',background:C.accent,color:C.onAccent}}>
+              {busy?'Working…':'Connect Telegram'}
+            </button>
+          ):(
+            <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:11,padding:14}}>
               <a href={startUrl} target="_blank" rel="noopener noreferrer"
-                style={{color:C.accent,fontWeight:800}}>Open @{bot} and tap Start</a>
-              <div style={{fontSize:11,color:C.muted,marginTop:6}}>
-                Code {pendingCode} expires in 15 minutes. Keep this page open — it updates when linked.
+                style={{display:'block',textAlign:'center',padding:'10px 14px',borderRadius:9,
+                  background:C.accent,color:C.onAccent,fontWeight:800,fontSize:12.5,textDecoration:'none'}}>
+                Open @{bot} and tap Start
+              </a>
+              <div style={{marginTop:10,display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
+                <span style={{fontSize:11,color:C.muted}}>Link code</span>
+                <code style={{fontSize:12,fontWeight:800,color:C.text,letterSpacing:'0.08em'}}>{pendingCode}</code>
+              </div>
+              <div style={{marginTop:8,fontSize:10.5,color:C.muted,lineHeight:1.5}}>
+                Expires in 15 minutes. Keep this page open — it flips to Live the moment you tap Start.
               </div>
             </div>
           )}
@@ -15285,6 +15433,143 @@ function TelegramAlertsCard({session, alertPrefs, onAlertPrefs}){
   )
 }
 
+const SUB_STATUS_LABELS={trialing:'Free Trial',active:'Active',past_due:'Payment Issue',cancelled:'Cancelled'}
+function subStatusColor(status){
+  return {trialing:C.yellow,active:C.green,past_due:C.red,cancelled:C.muted}[status]||C.muted
+}
+
+/** Page-wide section shell so every Account card shares one rhythm. */
+function AccountCard({title,hint,children,pad=18}){
+  return(
+    <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,marginBottom:16,overflow:'hidden'}}>
+      {(title||hint)&&(
+        <div style={{padding:`${pad}px ${pad}px 10px`}}>
+          {title&&<div style={{fontWeight:800,fontSize:15,color:C.text}}>{title}</div>}
+          {hint&&<div style={{color:C.muted,fontSize:11.5,marginTop:3,lineHeight:1.5}}>{hint}</div>}
+        </div>
+      )}
+      <div style={{padding:`0 ${pad}px ${pad}px`}}>{children}</div>
+    </div>
+  )
+}
+
+function AccountHero({session,userSubscription,onOpenPayment,onLogout}){
+  const meta=session.user.user_metadata||{}
+  const name=(meta.full_name||meta.name||'').trim()
+  const email=session.user.email||''
+  const status=userSubscription?.status
+  const statusLabel=status?(SUB_STATUS_LABELS[status]||status):'No plan yet'
+  const statusCol=subStatusColor(status)
+  const initial=(name||email||'?').charAt(0).toUpperCase()
+  return(
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:18,marginBottom:16,
+      display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+      <div style={{width:54,height:54,borderRadius:'50%',flexShrink:0,
+        background:`linear-gradient(135deg,${C.accent},${C.purple})`,
+        display:'flex',alignItems:'center',justifyContent:'center',
+        color:'#fff',fontWeight:900,fontSize:22}}>{initial}</div>
+      <div style={{flex:1,minWidth:180}}>
+        <div style={{fontWeight:800,fontSize:17,color:C.text,lineHeight:1.2}}>{name||'Your account'}</div>
+        <div style={{fontSize:12,color:C.muted,marginTop:3,wordBreak:'break-all'}}>{email}</div>
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+        <span style={{fontSize:11,fontWeight:800,color:statusCol,background:statusCol+'18',
+          border:`1px solid ${statusCol}44`,borderRadius:999,padding:'5px 12px',whiteSpace:'nowrap'}}>
+          {statusLabel}
+        </span>
+        {onOpenPayment&&(
+          <button type="button" onClick={onOpenPayment}
+            style={{padding:'8px 14px',borderRadius:9,border:'none',cursor:'pointer',
+              background:C.accent,color:C.onAccent,fontWeight:800,fontSize:12,whiteSpace:'nowrap'}}>
+            {status==='active'?'Manage plan':'View plans'}
+          </button>
+        )}
+        <button type="button" onClick={onLogout}
+          style={{padding:'8px 14px',borderRadius:9,cursor:'pointer',whiteSpace:'nowrap',
+            border:`1px solid ${C.red}44`,background:'transparent',color:C.red,fontWeight:700,fontSize:12}}>
+          Sign out
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function SubscriptionCard({userSubscription,onOpenPayment}){
+  if(!userSubscription){
+    return(
+      <AccountCard title="Subscription" hint="Plan details appear here once a plan is active.">
+        {onOpenPayment&&(
+          <button type="button" onClick={onOpenPayment}
+            style={{width:'100%',padding:'11px 12px',borderRadius:9,border:'none',
+              background:C.accent,color:C.onAccent,fontWeight:800,fontSize:13,cursor:'pointer'}}>
+            View plans &amp; payment
+          </button>
+        )}
+      </AccountCard>
+    )
+  }
+  const status=userSubscription.status
+  const isTrialing=status==='trialing'
+  const daysLeft=isTrialing
+    ? Math.max(0,Math.ceil((new Date(userSubscription.trial_end)-new Date())/86400000))
+    : null
+  const statusCol=subStatusColor(status)
+  const rows=[
+    ['Status',SUB_STATUS_LABELS[status]||status,statusCol],
+    isTrialing&&['Trial',daysLeft>0?`${daysLeft} day${daysLeft===1?'':'s'} left`:'Ends today',C.text],
+    userSubscription.plan_cycle&&['Billing cycle',
+      userSubscription.plan_cycle.charAt(0).toUpperCase()+userSubscription.plan_cycle.slice(1),C.text],
+    status==='active'&&userSubscription.current_period_end&&['Renews',
+      new Date(userSubscription.current_period_end).toLocaleDateString('en-IN',
+        {day:'2-digit',month:'short',year:'numeric'}),C.text],
+  ].filter(Boolean)
+  return(
+    <AccountCard title="Subscription" hint="Your current plan and billing state.">
+      <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+        {rows.map(([label,value,col],i)=>(
+          <div key={label} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,
+            padding:'10px 12px',borderTop:i?`1px solid ${C.divider}`:'none'}}>
+            <span style={{fontSize:11.5,color:C.muted}}>{label}</span>
+            <span style={{fontSize:12,fontWeight:700,color:col}}>{value}</span>
+          </div>
+        ))}
+      </div>
+      {onOpenPayment&&(
+        <button type="button" onClick={onOpenPayment}
+          style={{marginTop:12,width:'100%',padding:'10px 12px',borderRadius:9,cursor:'pointer',
+            border:status==='active'?`1px solid ${C.border}`:'none',
+            background:status==='active'?'transparent':C.accent,
+            color:status==='active'?C.muted:'#000',
+            fontWeight:status==='active'?600:800,fontSize:12.5}}>
+          {status==='active'?'Change / renew plan':'Choose a plan & pay'}
+        </button>
+      )}
+    </AccountCard>
+  )
+}
+
+function ProfileCard({session}){
+  const meta=session.user.user_metadata||{}
+  const rows=[
+    ['Email',session.user.email||'—'],
+    (meta.full_name||meta.name)&&['Name',String(meta.full_name||meta.name).trim()],
+    meta.phone&&['Phone',String(meta.phone).trim()],
+  ].filter(Boolean)
+  return(
+    <AccountCard title="Profile" hint="Details from your sign-in provider.">
+      <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+        {rows.map(([label,value],i)=>(
+          <div key={label} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,
+            padding:'10px 12px',borderTop:i?`1px solid ${C.divider}`:'none'}}>
+            <span style={{fontSize:11.5,color:C.muted}}>{label}</span>
+            <span style={{fontSize:12,fontWeight:600,color:C.text,wordBreak:'break-all',textAlign:'right'}}>{value}</span>
+          </div>
+        ))}
+      </div>
+    </AccountCard>
+  )
+}
+
 function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchTheme,ambient,userSubscription,onOpenPayment,
   hoverChartPreviewEnabled,onHoverChartPreview,
   hoverOurChartEnabled,onHoverOurChart,
@@ -15292,123 +15577,63 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
   detailPanelPref,onDetailPanel,
   alertPrefs,onAlertPrefs}){
 
+  const prefsCard=(
+    <AppPreferencesCard
+      hoverChartPreviewEnabled={hoverChartPreviewEnabled} onHoverChartPreview={onHoverChartPreview}
+      hoverOurChartEnabled={hoverOurChartEnabled} onHoverOurChart={onHoverOurChart}
+      tickerEnabled={tickerEnabled} onTicker={onTicker}
+      detailPanelPref={detailPanelPref} onDetailPanel={onDetailPanel}
+      ambient={ambient} themeKey={themeKey} switchTheme={switchTheme}/>
+  )
+  const gridStyle={display:'grid',gridTemplateColumns:'minmax(0,1fr) minmax(0,1fr)',
+    gap:16,alignItems:'start'}
+  const responsive=(
+    <style>{`@media (max-width: 900px){ .account-grid{ grid-template-columns:1fr !important; } }`}</style>
+  )
+
   // Demo mode: session is deliberately null — still show App Preferences
   // (they don't need an account). Account / billing stay behind Sign Up.
   if(!session){
     return (
-      <div style={{maxWidth:520,margin:'32px auto',padding:'0 16px'}}>
-        <AppPreferencesCard
-          hoverChartPreviewEnabled={hoverChartPreviewEnabled} onHoverChartPreview={onHoverChartPreview}
-          hoverOurChartEnabled={hoverOurChartEnabled} onHoverOurChart={onHoverOurChart}
-          tickerEnabled={tickerEnabled} onTicker={onTicker}
-          detailPanelPref={detailPanelPref} onDetailPanel={onDetailPanel}
-          ambient={ambient} themeKey={themeKey} switchTheme={switchTheme}/>
-        <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:24,textAlign:'center'}}>
-          <div style={{fontSize:32,marginBottom:10}}>👁</div>
-          <div style={{fontWeight:800,fontSize:16,marginBottom:6}}>You're in Demo Mode</div>
-          <div style={{color:C.muted,fontSize:12,marginBottom:20,lineHeight:1.6}}>
-            Account settings and saved scanners need a real account.
-            Sign up to unlock these — it's free to start.
+      <div style={{maxWidth:1060,margin:'0 auto',padding:'6px 4px 32px'}}>
+        <div className="account-grid" style={gridStyle}>
+          <div>{prefsCard}</div>
+          <div>
+            <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,
+              padding:24,textAlign:'center'}}>
+              <div style={{fontSize:32,marginBottom:10}}>👁</div>
+              <div style={{fontWeight:800,fontSize:16,marginBottom:6}}>You're in Demo Mode</div>
+              <div style={{color:C.muted,fontSize:12,marginBottom:20,lineHeight:1.6}}>
+                Account settings and saved scanners need a real account.
+                Sign up to unlock these — it's free to start.
+              </div>
+              <button onClick={onExitDemo}
+                style={{padding:'10px 24px',borderRadius:8,border:'none',cursor:'pointer',
+                  background:C.accent,color:C.onAccent,fontWeight:700,fontSize:13}}>
+                Sign Up
+              </button>
+            </div>
           </div>
-          <button onClick={onExitDemo}
-            style={{padding:'10px 24px',borderRadius:8,border:'none',cursor:'pointer',
-              background:C.accent,color:'#000',fontWeight:700,fontSize:13}}>
-            Sign Up
-          </button>
         </div>
+        {responsive}
       </div>
     )
   }
 
-  const handleLogout=async()=>{ await onLogout() }
-  const meta=session.user.user_metadata||{}
-  const displayPhone=meta.phone?String(meta.phone).trim():''
-  const displayName=(meta.full_name||meta.name||'').trim()
-
   return(
-    <div style={{maxWidth:520,margin:'32px auto',padding:'0 16px'}}>
-      <AppPreferencesCard
-        hoverChartPreviewEnabled={hoverChartPreviewEnabled} onHoverChartPreview={onHoverChartPreview}
-        hoverOurChartEnabled={hoverOurChartEnabled} onHoverOurChart={onHoverOurChart}
-        tickerEnabled={tickerEnabled} onTicker={onTicker}
-        detailPanelPref={detailPanelPref} onDetailPanel={onDetailPanel}
-        ambient={ambient} themeKey={themeKey} switchTheme={switchTheme}/>
+    <div style={{maxWidth:1060,margin:'0 auto',padding:'6px 4px 32px'}}>
+      <AccountHero session={session} userSubscription={userSubscription}
+        onOpenPayment={onOpenPayment} onLogout={()=>onLogout()}/>
 
-      <TelegramAlertsCard session={session} alertPrefs={alertPrefs} onAlertPrefs={onAlertPrefs}/>
-
-      <div style={{background:C.card,borderRadius:14,border:`1px solid ${C.border}`,padding:24}}>
-        <div style={{fontWeight:800,fontSize:18,marginBottom:4}}>Account</div>
-        <div style={{color:C.muted,fontSize:12,marginBottom:12,lineHeight:1.5}}>
-          Signed in as <strong style={{color:C.accent}}>{session.user.email}</strong>
+      <div className="account-grid" style={gridStyle}>
+        <div>
+          <SubscriptionCard userSubscription={userSubscription} onOpenPayment={onOpenPayment}/>
+          <ProfileCard session={session}/>
+          <TelegramAlertsCard session={session} alertPrefs={alertPrefs} onAlertPrefs={onAlertPrefs}/>
         </div>
-        {(displayName||displayPhone)&&(
-          <div style={{marginBottom:16,background:C.bg,border:`1px solid ${C.border}`,
-            borderRadius:10,padding:14,fontSize:12,color:C.muted,lineHeight:1.7}}>
-            {displayName&&<div><strong style={{color:C.text}}>Name:</strong> {displayName}</div>}
-            {displayPhone&&<div><strong style={{color:C.text}}>Phone:</strong> {displayPhone}</div>}
-          </div>
-        )}
-
-        {/* My Subscription — status only for now (payment integration
-            is separate, still pending Razorpay approval). Shows
-            nothing if userSubscription is null (still loading, or a
-            pre-existing account from before this feature existed —
-            deliberately fails silent/open here rather than showing a
-            confusing blank or error state). */}
-        {userSubscription&&(()=>{
-          const isTrialing=userSubscription.status==='trialing'
-          const daysLeft=isTrialing?Math.max(0,Math.ceil((new Date(userSubscription.trial_end)-new Date())/86400000)):null
-          const statusLabel={trialing:'Free Trial',active:'Active',past_due:'Payment Issue',cancelled:'Cancelled'}[userSubscription.status]||userSubscription.status
-          const statusColor={trialing:C.yellow,active:C.green,past_due:C.red,cancelled:C.muted}[userSubscription.status]||C.muted
-          return (
-            <div style={{marginBottom:20,background:C.bg,border:`1px solid ${C.border}`,borderRadius:10,padding:14}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:isTrialing?6:0}}>
-                <div style={{fontWeight:700,fontSize:13}}>My Subscription</div>
-                <div style={{fontSize:11,fontWeight:700,color:statusColor,background:statusColor+'18',
-                  borderRadius:8,padding:'2px 9px'}}>{statusLabel}</div>
-              </div>
-              {isTrialing&&(
-                <div style={{fontSize:12,color:C.muted}}>
-                  {daysLeft>0?`${daysLeft} day${daysLeft===1?'':'s'} left in your free trial`:'Your trial ends today'}
-                </div>
-              )}
-              {userSubscription.status==='active'&&userSubscription.plan_cycle&&(
-                <div style={{fontSize:12,color:C.muted}}>
-                  {userSubscription.plan_cycle.charAt(0).toUpperCase()+userSubscription.plan_cycle.slice(1)} plan
-                  {userSubscription.current_period_end&&` · renews ${new Date(userSubscription.current_period_end).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`}
-                </div>
-              )}
-              {onOpenPayment&&userSubscription.status!=='active'&&(
-                <button type="button" onClick={onOpenPayment}
-                  style={{marginTop:12,width:'100%',padding:'10px 12px',borderRadius:8,border:'none',
-                    background:C.accent,color:'#000',fontWeight:800,fontSize:13,cursor:'pointer'}}>
-                  Choose a plan &amp; pay
-                </button>
-              )}
-              {onOpenPayment&&userSubscription.status==='active'&&(
-                <button type="button" onClick={onOpenPayment}
-                  style={{marginTop:12,width:'100%',padding:'9px 12px',borderRadius:8,
-                    border:`1px solid ${C.border}`,background:'transparent',color:C.muted,
-                    fontWeight:600,fontSize:12,cursor:'pointer'}}>
-                  Change / renew plan
-                </button>
-              )}
-            </div>
-          )
-        })()}
-        {!userSubscription&&onOpenPayment&&(
-          <button type="button" onClick={onOpenPayment}
-            style={{marginBottom:20,width:'100%',padding:'11px 12px',borderRadius:8,border:'none',
-              background:C.accent,color:'#000',fontWeight:800,fontSize:13,cursor:'pointer'}}>
-            View plans &amp; payment
-          </button>
-        )}
-        <button onClick={handleLogout}
-          style={{width:'100%',padding:'11px',background:'transparent',color:C.red,
-            border:`1px solid ${C.red}44`,borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer'}}>
-          🚪 Sign Out
-        </button>
+        <div>{prefsCard}</div>
       </div>
+      {responsive}
     </div>
   )
 }
@@ -16049,6 +16274,7 @@ export default function App(){
   // Scanner state
   const [stocks,setStocks]=useState([])
   const [sectorData,setSectorData]=useState([])
+  const [industryData,setIndustryData]=useState([])
   const [loading,setLoading]=useState(false)
   const [progress,setProgress]=useState(0)
   const [progressMsg,setProgressMsg]=useState('')
@@ -17523,6 +17749,8 @@ export default function App(){
   const [idxConstituentFilters,setIdxConstituentFilters]=useState({industry:null,rsMin:0})
   const [idxSort,setIdxSort]=useState({key:'rsTv',dir:-1})
   const [secSort,setSecSort]=useState({key:'avgRS',dir:-1})
+  const [indSort,setIndSort]=useState({key:'heat',dir:-1})
+  const [marketLens,setMarketLens]=useState('all') // all | leadership | emerging | fading
   const [breadthData,setBreadthData]=useState(null)
   const [rotationData,setRotationData]=useState(null)
   const [loadingRotation,setLoadingRotation]=useState(false)
@@ -17662,13 +17890,15 @@ export default function App(){
     try{
       const activeWlObj=watchlists.find(w=>w.id===activeWl)
       const syms=activeWlObj?.stocks||null
-      const [dbStocks,dbSectors,meta]=await Promise.all([
+      const [dbStocks,dbSectors,dbIndustries,meta]=await Promise.all([
         fetchStocksFromDB({indexFilter,watchlistSyms:syms,historyDate}),
         fetchSectorsFromDB(historyDate),
+        historyDate?Promise.resolve([]):fetchIndustriesFromDB(),
         historyDate?Promise.resolve(null):fetchScanMeta(),
       ])
       setStocks(dbStocks)
       setSectorData(dbSectors)
+      setIndustryData(dbIndustries)
       setScanMeta(meta)
       setLastRefresh(Date.now())
       setProgress(100);setProgressMsg('Done!')
@@ -18125,6 +18355,40 @@ export default function App(){
     return computeRolledRotationData(constituentRotationData, new Set(), null, rotationWindow)
   },[constituentRotationData,rotationWindow])
 
+  const scoredSectorData=useMemo(()=>{
+    const raw=sectorData.map(sec=>{
+      const members=getSectorMemberStocks(sec.sector,stocks,sec)
+      const count=members.length||sec.count||0
+      const improvingCount=members.length
+        ? members.filter(s=>s.rsTrend?.trend==='improving').length
+        : (sec.improving||0)
+      const thrustCount=members.filter(isMarketThrustStock).length
+      return {
+        ...sec,
+        members,
+        strength:sec.avgRS,
+        advD:sec.advancesD,
+        advW:sec.advancesW,
+        advM:sec.advancesM,
+        improvingPct:count?improvingCount/count*100:null,
+        thrustPct:members.length?thrustCount/members.length*100:null,
+        thrustCount,
+      }
+    })
+    return scoreMarketGroups(raw)
+  },[sectorData,stocks])
+
+  const scoredIndexData=useMemo(()=>scoreMarketGroups(indexData.map(idx=>({
+    ...idx,
+    strength:idx.rsTv,
+    advD:idx.advancesD,
+    advW:idx.advancesW,
+    advM:idx.advancesM,
+    rankChange:idx.rankWChange,
+    improvingPct:null,
+    thrustPct:null,
+  }))).map(r=>r.advancesW==null?{...r,heat:null,marketState:'Stable'}:r),[indexData])
+
   // Industries table aggregation — was previously an inline IIFE directly
   // in JSX (Indices tab render), recomputing this O(n) groupby + sort over
   // the full ~2400-stock array on EVERY re-render of that tab, not just
@@ -18140,6 +18404,7 @@ export default function App(){
       if(!s.industry) continue
       ;(groups[s.industry] = groups[s.industry] || []).push(s)
     }
+    const persistedByName=new Map(industryData.map(r=>[r.name,r]))
     const allRows = Object.entries(groups).map(([name,members])=>{
       const advPct = f => {
         const vals = members.map(m=>m[f]).filter(v=>v!=null)
@@ -18149,18 +18414,30 @@ export default function App(){
       const secCounts = {}
       for(const m of members){ if(m.sector) secCounts[m.sector]=(secCounts[m.sector]||0)+1 }
       const parentSector = Object.entries(secCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || null
+      const persisted=persistedByName.get(name)
+      const improving=members.filter(m=>m.rsTrend?.trend==='improving').length
+      const thrustCount=members.filter(isMarketThrustStock).length
       return {
         name, count: members.length, parentSector,
         avgRS: Math.round(members.reduce((a,m)=>a+(m.rs||0),0)/members.length),
         ppCount: members.filter(m=>m.pp?.isPP).length,
-        improving: members.filter(m=>m.rsTrend?.trend==='improving').length,
+        improving,
         advD: advPct('chg'), advW: advPct('chgW'), advM: advPct('chgM'),
+        rank:persisted?.rank,
+        rankChange:persisted?.rankChange,
+        strength:Math.round(members.reduce((a,m)=>a+(m.rs||0),0)/members.length),
+        improvingPct:members.length?improving/members.length*100:null,
+        thrustPct:members.length?thrustCount/members.length*100:null,
+        thrustCount,
         members,
       }
-    }).sort((a,b)=>b.avgRS-a.avgRS)
-    const rows = allRows.filter(r=>r.count>=MIN_INDUSTRY_STOCKS)
+    })
+    const eligible=allRows.filter(r=>r.count>=MIN_INDUSTRY_STOCKS)
+      .sort((a,b)=>b.avgRS-a.avgRS)
+      .map((r,i)=>({...r,rank:r.rank??i+1}))
+    const rows = scoreMarketGroups(eligible).sort((a,b)=>(b.heat??-1)-(a.heat??-1))
     return { rows, hiddenCount: allRows.length - rows.length }
-  },[stocks])
+  },[stocks,industryData])
 
   const wlBase=scopedStocks.filter(s=>s.scanner52wl.near52wLow&&stockMatchesQuery(s,wlSearch)&&(!wlSigOnly||s.scanner52wl.isSignal)).sort((a,b)=>a.scanner52wl.pctFrom52wLow-b.scanner52wl.pctFrom52wLow)
   const displayed52WL=applyPP(wlBase,ppFilter52WL)
@@ -18387,7 +18664,7 @@ export default function App(){
           <div style={{display:'flex',alignItems:'center',gap:8,minWidth:0,flexShrink:0}}>
             {isMobile&&(
               <div style={{width:28,height:28,background:C.accent,borderRadius:7,display:'flex',
-                alignItems:'center',justifyContent:'center',fontWeight:900,color:'#000',fontSize:13,flexShrink:0}}>L</div>
+                alignItems:'center',justifyContent:'center',fontWeight:900,color:C.onAccent,fontSize:13,flexShrink:0}}>L</div>
             )}
             <div style={{minWidth:0}}>
               <div style={{fontWeight:600,fontSize:14,color:C.text,lineHeight:1}}>
@@ -18422,7 +18699,7 @@ export default function App(){
                 </span>
                 <button onClick={()=>{setDemoMode(false);setStocks([]);setAuthMode('register');setShowAuth(true)}}
                   style={{fontSize:10,fontWeight:700,padding:'3px 9px',borderRadius:20,cursor:'pointer',
-                    background:C.accent,color:'#000',border:'none',whiteSpace:'nowrap'}}>
+                    background:C.accent,color:C.onAccent,border:'none',whiteSpace:'nowrap'}}>
                   Sign Up
                 </button>
               </div>
@@ -19841,6 +20118,21 @@ export default function App(){
             </div>
             )}
 
+            <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',marginBottom:14}}>
+              {[['all','All groups'],['leadership','Leadership'],['emerging','Emerging'],['fading','Fading / Weak']].map(([id,label])=>(
+                <button key={id} type="button" onClick={()=>setMarketLens(id)}
+                  style={{padding:'7px 12px',borderRadius:18,cursor:'pointer',fontSize:11,fontWeight:700,
+                    border:`1px solid ${marketLens===id?C.accent:C.border}`,
+                    background:marketLens===id?C.accent+'18':C.card,
+                    color:marketLens===id?C.accent:C.muted}}>
+                  {label}
+                </button>
+              ))}
+              <span style={{fontSize:10.5,color:C.muted,lineHeight:1.4}}>
+                Leadership = established strength · Heat = rank, breadth and fresh-signal acceleration
+              </span>
+            </div>
+
             {marketSubTab==='indices'&&indexData.length===0?(
               <div style={{textAlign:'center',padding:'60px 0',color:C.muted}}>
                 <div style={{fontSize:36,marginBottom:10}}>🗂</div>
@@ -19907,13 +20199,14 @@ export default function App(){
                   overflowY: idxExpanded ? 'visible' : 'auto',
                   maxHeight: idxExpanded ? 'none' : 520,
                   border:`1px solid ${C.border}`,borderRadius:12}}>
-                  <div style={{minWidth:820}}>
+                  <div style={{minWidth:1050}}>
                     {/* Header row — click to sort */}
                     <div style={{display:'grid',
-                      gridTemplateColumns:'150px 90px 60px 90px 70px 70px 70px 60px 60px',
+                      gridTemplateColumns:'150px 90px 60px 68px 58px 86px 90px 70px 70px 70px 60px 60px',
                       gap:4,padding:'10px 12px',background:C.bg,
                       borderBottom:`1px solid ${C.border}`,position:'sticky',top:0}}>
-                      {[['Index','name'],['Price','lastPrice'],['RS rating','rsTv'],['Stage','stage'],
+                      {[['Index','name'],['Price','lastPrice'],['RS rating','rsTv'],
+                        ['Lead','leadership'],['Heat','heat'],['State','marketState'],['Stage','stage'],
                         ['1D','chgD'],['1W','chgW'],['1M','chgM'],['3M','chgQ'],['1Y','chgY']].map(([h,key],hi)=>(
                         <div key={h} onClick={()=>setIdxSort(s=>({key,dir:s.key===key?-s.dir:-1}))}
                           title={IDX_COLUMN_TOOLTIPS[key]}
@@ -19925,10 +20218,10 @@ export default function App(){
                       ))}
                     </div>
                     {(()=>{
-                      const maxAbs = f => Math.max(...indexData.map(x=>Math.abs(x[f]??0)), 0.01)
+                      const maxAbs = f => Math.max(...scoredIndexData.map(x=>Math.abs(x[f]??0)), 0.01)
                       const colMax = {d:maxAbs('chgD'), w:maxAbs('chgW'), m:maxAbs('chgM'), q:maxAbs('chgQ'), y:maxAbs('chgY')}
                       const sortVal = x => idxSort.key==='name'?(x.name||''):(x[idxSort.key]??-Infinity)
-                      const sorted = [...indexData].sort((a,b)=>{
+                      const sorted = scoredIndexData.filter(x=>marketLensMatches(x,marketLens)).sort((a,b)=>{
                         const av=sortVal(a), bv=sortVal(b)
                         return (typeof av==='string' ? av.localeCompare(bv) : av-bv) * -idxSort.dir * -1
                       })
@@ -19950,7 +20243,7 @@ export default function App(){
                             }
                           }}
                           style={{display:'grid',
-                          gridTemplateColumns:'150px 90px 60px 90px 70px 70px 70px 60px 60px',
+                          gridTemplateColumns:'150px 90px 60px 68px 58px 86px 90px 70px 70px 70px 60px 60px',
                           gap:4,padding:'10px 12px',alignItems:'center',cursor:'pointer',
                           background:isExpanded?C.active:(i%2===0?'transparent':C.bg+'55'),
                           borderBottom:`1px solid ${C.border}33`}}>
@@ -19974,6 +20267,25 @@ export default function App(){
                           </div>
                           <div style={cellStyle}>
                             <div style={{fontWeight:800,fontSize:13,color:rsc}}>{idx.rsTv??'—'}</div>
+                          </div>
+                          <div style={cellStyle} title="Leadership: established RS, breadth and trend quality">
+                            <div style={{fontWeight:800,fontSize:12,color:(idx.leadership??0)>=70?C.green:C.text}}>
+                              {idx.leadership??'—'}
+                            </div>
+                          </div>
+                          <div style={cellStyle} title="Heat: weekly rank and breadth acceleration. Only shown when constituent breadth exists.">
+                            <div style={{fontWeight:800,fontSize:12,color:(idx.heat??0)>=65?C.accent:C.muted}}>
+                              {idx.advancesW!=null?(idx.heat??'—'):'—'}
+                            </div>
+                          </div>
+                          <div style={cellStyle}>
+                            {idx.advancesW!=null?(()=>{
+                              const meta=MARKET_STATE_META[idx.marketState]||MARKET_STATE_META.Stable
+                              const col=meta.color()
+                              return <span title={meta.desc} style={{fontSize:9,fontWeight:800,color:col,
+                                background:col+'18',border:`1px solid ${col}33`,borderRadius:8,
+                                padding:'2px 6px',width:'fit-content'}}>{idx.marketState}</span>
+                            })():<span style={{fontSize:9,color:C.muted}} title="Constituent breadth is unavailable for this index">N/A</span>}
                           </div>
                           <div style={cellStyle}>
                             <div style={{display:'inline-block',padding:'2px 6px',borderRadius:5,fontSize:9,fontWeight:700,
@@ -20133,7 +20445,7 @@ export default function App(){
                 {/* Sectors table — Market → Sectors only */}
                 {marketSubTab==='sectors'&&(
                 <div>
-                {sectorData.length>0?(
+                {scoredSectorData.length>0?(
                   <>
                     <div ref={secTableDrag.ref} {...secTableDrag.handlers} style={{
                       ...secTableDrag.style,
@@ -20141,12 +20453,13 @@ export default function App(){
                       overflowY: String(expandedIndex||'').startsWith('sector:') ? 'visible' : 'auto',
                       maxHeight: String(expandedIndex||'').startsWith('sector:') ? 'none' : 520,
                       border:`1px solid ${C.border}`,borderRadius:12}}>
-                      <div style={{minWidth:880}}>
+                      <div style={{minWidth:1120}}>
                         <div style={{display:'grid',
-                          gridTemplateColumns:'170px 70px 60px 55px 120px 70px 70px 90px 90px 90px',
+                          gridTemplateColumns:'170px 70px 60px 62px 55px 88px 55px 120px 70px 70px 90px 90px 90px',
                           gap:4,padding:'10px 12px',background:C.bg,
                           borderBottom:`1px solid ${C.border}`,position:'sticky',top:0,zIndex:1}}>
-                          {[['Sector','sector'],['Rank','rank'],['Avg RS','avgRS'],['Stocks','count'],
+                          {[['Sector','sector'],['Rank','rank'],['Avg RS','avgRS'],
+                            ['Lead','leadership'],['Heat','heat'],['State','marketState'],['Stocks','count'],
                             ['Results','resultsEx'],
                             ['PP Today','ppCount'],['Improving','improving'],
                             ['Adv 1D','advancesD'],['Adv 1W','advancesW'],['Adv 1M','advancesM']].map(([h,key],hi)=>(
@@ -20180,7 +20493,7 @@ export default function App(){
                             return x[secSort.key]??-Infinity
                           }
                           const dir = secSort.key==='rank' ? -secSort.dir : secSort.dir
-                          return [...sectorData].sort((a,b)=>{
+                          return scoredSectorData.filter(x=>marketLensMatches(x,marketLens)).sort((a,b)=>{
                             const av=sortVal(a), bv=sortVal(b)
                             return (typeof av==='string' ? av.localeCompare(bv) : av-bv) * dir
                           }).map((sec,i)=>{
@@ -20213,7 +20526,7 @@ export default function App(){
                                   }
                                 }}
                                 style={{display:'grid',
-                                gridTemplateColumns:'170px 70px 60px 55px 120px 70px 70px 90px 90px 90px',
+                                gridTemplateColumns:'170px 70px 60px 62px 55px 88px 55px 120px 70px 70px 90px 90px 90px',
                                 gap:4,padding:'10px 12px',alignItems:'center',cursor:'pointer',
                                 background:isExp?C.active:(i%2===0?'transparent':C.bg+'55'),
                                 borderBottom:`1px solid ${C.border}33`}}>
@@ -20231,6 +20544,21 @@ export default function App(){
                                 </div>
                                 <div style={cellStyle}>
                                   <div style={{fontWeight:800,fontSize:13,color:rsColor(sec.avgRS)}}>{sec.avgRS}</div>
+                                </div>
+                                <div style={cellStyle} title="Leadership combines established RS and broad participation">
+                                  <div style={{fontWeight:800,fontSize:12,color:sec.leadership>=70?C.green:C.text}}>{sec.leadership??'—'}</div>
+                                </div>
+                                <div style={cellStyle} title={`Heat: rank movement, breadth acceleration, improving members and fresh thrust signals (${sec.thrustCount||0})`}>
+                                  <div style={{fontWeight:800,fontSize:12,color:sec.heat>=65?C.accent:C.muted}}>{sec.heat??'—'}</div>
+                                </div>
+                                <div style={cellStyle}>
+                                  {(()=>{
+                                    const meta=MARKET_STATE_META[sec.marketState]||MARKET_STATE_META.Stable
+                                    const col=meta.color()
+                                    return <span title={meta.desc} style={{fontSize:9,fontWeight:800,color:col,
+                                      background:col+'18',border:`1px solid ${col}33`,borderRadius:8,
+                                      padding:'2px 6px',width:'fit-content'}}>{sec.marketState}</span>
+                                  })()}
                                 </div>
                                 <div style={cellStyle}>
                                   <div style={{fontSize:11,color:C.muted}}>{sec.count}</div>
@@ -20365,6 +20693,14 @@ export default function App(){
                 {/* Industries table — Market → Industries only */}
                 {marketSubTab==='industries'&&(()=>{
                   const { rows, hiddenCount } = industriesRows
+                  const industrySortValue=(x)=>{
+                    if(indSort.key==='name') return x.name||''
+                    return x[indSort.key]??-Infinity
+                  }
+                  const displayedRows=rows.filter(x=>marketLensMatches(x,marketLens)).sort((a,b)=>{
+                    const av=industrySortValue(a),bv=industrySortValue(b)
+                    return (typeof av==='string'?av.localeCompare(bv):av-bv)*indSort.dir
+                  })
                   if(rows.length===0){
                     return (
                       <div style={{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:13}}>
@@ -20385,18 +20721,24 @@ export default function App(){
                         overflowY: String(expandedIndex||'').startsWith('industry:') ? 'visible' : 'auto',
                         maxHeight: String(expandedIndex||'').startsWith('industry:') ? 'none' : 520,
                         border:`1px solid ${C.border}`,borderRadius:12}}>
-                        <div style={{minWidth:760}}>
+                        <div style={{minWidth:1010}}>
                           <div style={{display:'grid',
-                            gridTemplateColumns:'220px 60px 60px 60px 70px 70px 90px 90px 90px',
+                            gridTemplateColumns:'220px 60px 60px 62px 55px 88px 60px 70px 70px 90px 90px 90px',
                             gap:4,padding:'10px 12px',background:C.bg,
                             borderBottom:`1px solid ${C.border}`,position:'sticky',top:0,zIndex:1}}>
-                            {['Industry','Rank','Avg RS','Stocks','PP Today','Improving','Adv 1D','Adv 1W','Adv 1M'].map((h,hi)=>(
-                              <div key={h} title={SEC_COLUMN_TOOLTIPS[{Industry:'sector',Rank:'rank','Avg RS':'avgRS',Stocks:'count','PP Today':'ppCount',Improving:'improving','Adv 1D':'advancesD','Adv 1W':'advancesW','Adv 1M':'advancesM'}[h]]}
-                                style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
-                                  ...(hi===0?{position:'sticky',left:0,background:C.bg,zIndex:2,paddingRight:8}:{})}}>{h}</div>
+                            {[['Industry','name'],['Rank','rank'],['Avg RS','avgRS'],['Lead','leadership'],
+                              ['Heat','heat'],['State','marketState'],['Stocks','count'],['PP Today','ppCount'],
+                              ['Improving','improving'],['Adv 1D','advD'],['Adv 1W','advW'],['Adv 1M','advM']].map(([h,key],hi)=>(
+                              <div key={h} onClick={()=>setIndSort(s=>({key,dir:s.key===key?-s.dir:-1}))}
+                                title={SEC_COLUMN_TOOLTIPS[{name:'sector',rank:'rank',avgRS:'avgRS',count:'count',ppCount:'ppCount',improving:'improving',advD:'advancesD',advW:'advancesW',advM:'advancesM'}[key]]}
+                                style={{fontSize:10,fontWeight:700,cursor:'pointer',
+                                  color:indSort.key===key?C.accent:C.muted,textTransform:'uppercase',
+                                  ...(hi===0?{position:'sticky',left:0,background:C.bg,zIndex:2,paddingRight:8}:{})}}>
+                                {h}{indSort.key===key?(indSort.dir===-1?' ↓':' ↑'):''}
+                              </div>
                             ))}
                           </div>
-                          {rows.map((ind,i)=>{
+                          {displayedRows.map((ind,i)=>{
                             const isExp = expandedIndex==='industry:'+ind.name
                             const cellStyle = {display:'flex',flexDirection:'column',justifyContent:'center'}
                             const advCell = (val)=>(
@@ -20425,7 +20767,7 @@ export default function App(){
                                     }
                                   }}
                                   style={{display:'grid',
-                                  gridTemplateColumns:'220px 60px 60px 60px 70px 70px 90px 90px 90px',
+                                  gridTemplateColumns:'220px 60px 60px 62px 55px 88px 60px 70px 70px 90px 90px 90px',
                                   gap:4,padding:'9px 12px',alignItems:'center',cursor:'pointer',
                                   background:isExp?C.active:(i%2===0?'transparent':C.bg+'55'),
                                   borderBottom:`1px solid ${C.border}33`}}>
@@ -20436,8 +20778,30 @@ export default function App(){
                                       <div style={{fontSize:9,color:C.muted,marginTop:1}}>in {ind.parentSector}</div>
                                     )}
                                   </div>
-                                  <div style={cellStyle}><div style={{fontWeight:700,fontSize:11,color:C.muted}}>#{i+1}</div></div>
+                                  <div style={cellStyle}>
+                                    <div style={{fontWeight:700,fontSize:11,color:C.muted}}>#{ind.rank??i+1}</div>
+                                    {ind.rankChange!=null&&ind.rankChange!==0&&(
+                                      <div style={{fontSize:8,fontWeight:700,color:ind.rankChange>0?C.green:C.red}}>
+                                        {ind.rankChange>0?'▲':'▼'}{Math.abs(ind.rankChange)} wk
+                                      </div>
+                                    )}
+                                  </div>
                                   <div style={cellStyle}><div style={{fontWeight:800,fontSize:12,color:rsColor(ind.avgRS)}}>{ind.avgRS}</div></div>
+                                  <div style={cellStyle} title="Leadership combines established RS and broad participation">
+                                    <div style={{fontWeight:800,fontSize:12,color:ind.leadership>=70?C.green:C.text}}>{ind.leadership??'—'}</div>
+                                  </div>
+                                  <div style={cellStyle} title={`Heat includes breadth, rank movement and ${ind.thrustCount||0} fresh thrust names`}>
+                                    <div style={{fontWeight:800,fontSize:12,color:ind.heat>=65?C.accent:C.muted}}>{ind.heat??'—'}</div>
+                                  </div>
+                                  <div style={cellStyle}>
+                                    {(()=>{
+                                      const meta=MARKET_STATE_META[ind.marketState]||MARKET_STATE_META.Stable
+                                      const col=meta.color()
+                                      return <span title={meta.desc} style={{fontSize:9,fontWeight:800,color:col,
+                                        background:col+'18',border:`1px solid ${col}33`,borderRadius:8,
+                                        padding:'2px 6px',width:'fit-content'}}>{ind.marketState}</span>
+                                    })()}
+                                  </div>
                                   <div style={cellStyle}><div style={{fontSize:11,color:C.muted}}>{ind.count}</div></div>
                                   <div style={cellStyle}>
                                     <div style={{fontSize:11,color:ind.ppCount>0?C.orange:C.muted,fontWeight:700}}>
@@ -21438,7 +21802,7 @@ export default function App(){
                 </div>
                 <div style={{display:'flex',gap:10,justifyContent:'center',flexWrap:'wrap',marginTop:16}}>
                   <label style={{padding:'10px 16px',borderRadius:8,border:`1px solid ${C.accent}`,
-                    background:C.accent,color:'#000',fontWeight:800,fontSize:12,cursor:'pointer'}}>
+                    background:C.accent,color:C.onAccent,fontWeight:800,fontSize:12,cursor:'pointer'}}>
                     📤 Import CSV / XLSX
                     <input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
                       onChange={async e=>{
@@ -23546,7 +23910,7 @@ export default function App(){
             </div>
             <button onClick={()=>{setShowRealtimeUpsell(false);setDemoMode(false);setStocks([]);setAuthMode('register');setShowAuth(true)}}
               style={{width:'100%',padding:'12px 0',borderRadius:9,border:'none',cursor:'pointer',
-                background:C.accent,color:'#000',fontWeight:700,fontSize:14,marginBottom:10}}>
+                background:C.accent,color:C.onAccent,fontWeight:700,fontSize:14,marginBottom:10}}>
               Sign Up Free
             </button>
             <button onClick={()=>setShowRealtimeUpsell(false)}
@@ -23590,7 +23954,7 @@ export default function App(){
                     setShowHelpCenter(false)
                   }}
                   style={{width:'100%',padding:'9px 0',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:800,
-                    border:'none',background:C.accent,color:'#000'}}>
+                    border:'none',background:C.accent,color:C.onAccent}}>
                   Open full Guide →
                 </button>
               </div>

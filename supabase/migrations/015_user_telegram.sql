@@ -1,5 +1,8 @@
--- Per-user Telegram bot chats + a public bot username the app can read.
--- Run in Supabase SQL editor, then set Railway env (see TELEGRAM_SETUP.md).
+-- Same as lakshmimata-server/add_user_telegram.sql
+-- Run BLOCK 1, then 2, then 3 as separate queries if the editor deadlocks.
+
+set lock_timeout = '8s';
+set statement_timeout = '60s';
 
 create table if not exists public.app_settings (
   key         text primary key,
@@ -7,15 +10,8 @@ create table if not exists public.app_settings (
   updated_at  timestamptz not null default now()
 );
 
-alter table public.app_settings enable row level security;
-
-drop policy if exists "anyone can read app settings" on public.app_settings;
-create policy "anyone can read app settings"
-  on public.app_settings for select
-  using (true);
-
 create table if not exists public.user_telegram (
-  user_id              uuid primary key references auth.users(id) on delete cascade,
+  user_id              uuid primary key,
   chat_id              text,
   telegram_username    text,
   enabled              boolean not null default true,
@@ -33,7 +29,13 @@ create unique index if not exists user_telegram_link_code_uidx
   on public.user_telegram (link_code)
   where link_code is not null;
 
+alter table public.app_settings enable row level security;
 alter table public.user_telegram enable row level security;
+
+drop policy if exists "anyone can read app settings" on public.app_settings;
+create policy "anyone can read app settings"
+  on public.app_settings for select
+  using (true);
 
 drop policy if exists "users read own telegram" on public.user_telegram;
 create policy "users read own telegram"
@@ -50,8 +52,6 @@ create policy "users update own telegram"
   on public.user_telegram for update
   using (auth.uid() = user_id);
 
--- Authenticated users may rotate the link code / toggle enabled.
--- They must not overwrite chat_id (that is set by the scanner after /start).
 create or replace function public.protect_user_telegram_chat()
 returns trigger
 language plpgsql
@@ -77,5 +77,24 @@ drop trigger if exists trg_protect_user_telegram_chat on public.user_telegram;
 create trigger trg_protect_user_telegram_chat
   before insert or update on public.user_telegram
   for each row execute procedure public.protect_user_telegram_chat();
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'user_telegram_user_id_fkey'
+      and conrelid = 'public.user_telegram'::regclass
+  ) then
+    alter table public.user_telegram
+      add constraint user_telegram_user_id_fkey
+      foreign key (user_id) references auth.users(id) on delete cascade
+      not valid;
+    alter table public.user_telegram validate constraint user_telegram_user_id_fkey;
+  end if;
+exception
+  when deadlock_detected or lock_not_available then
+    raise notice 'FK skipped (deadlock/lock timeout). Safe to continue.';
+end;
+$$;
 
 notify pgrst, 'reload schema';

@@ -100,6 +100,119 @@ export const DOCS_ARTICLES = [
     ],
   },
   {
+    id: 'start-screen-tour',
+    title: 'RS Rating screen tour — every control',
+    category: 'start',
+    tabId: 'rs',
+    summary:
+      'A numbered walkthrough of the RS Rating screenshot: ticker banner, live/auto controls, alerts, workspace layout, chart toolbar, every indicator group, scanner tiles, filters and columns.',
+    forNewcomers:
+      'This is the best place to start if the screen feels crowded. The left side of the screenshot is Our Chart and the right side is the RS scanner. Use the numbered picture first, then the lists below when you want the exact enable/disable path.',
+    sections: [
+      {
+        heading: 'Enable or hide the scrolling banner',
+        bullets: [
+          'Quick hide — click × at the far-right edge of the moving ticker.',
+          'Quick restore — a small “Show ticker” button remains below the header; click it.',
+          'Permanent preference — Account (AC) → App Preferences → Scrolling ticker → ON or OFF.',
+          'Hover the ticker to pause it. Click an index or stock inside it to open that chart.',
+        ],
+      },
+      {
+        heading: 'Turn alerts on, off, or silent',
+        bullets: [
+          'Open the 🔔 Alerts menu in the top header. “Alerts Off” means browser notification permission is not active.',
+          'First-time enable — click “Turn on notifications” and choose Allow in the browser prompt.',
+          'Disable every alert type — Settings → All off. Re-enable everything with All on.',
+          'Disable only one type — untick HY, HT, Pocket Pivot, Bull Snort, Squeeze/VCP, Stage 2, announcements, etc.',
+          'Silence alerts but keep them recorded — untick “Play sound on alert”. You can also select a sound, change volume, and press Test.',
+          'Watchlist only — tick this when you want alerts only for symbols saved in any watchlist.',
+          'Saved-scanner alerts and chart price alerts have separate controls lower in the same menu.',
+          'If the browser says Blocked: address-bar padlock → Notifications → Allow, then reload.',
+        ],
+      },
+      {
+        heading: 'Add, remove, and configure chart indicators',
+        bullets: [
+          'Open a stock → click fx Indicators in the chart toolbar.',
+          'Click the checkbox beside an indicator to plot it; click again to remove it.',
+          'Use Search to find RSI, MACD, Guppy, Squeeze, Volume, etc.',
+          'Click ⚙ beside an indicator for Inputs, Style and Visibility. Inputs change periods/formulas; Style changes colors and lines; Visibility hides selected parts.',
+          'Lakshmi Mata is a bundle. Its ⚙ panel lets you switch its child studies individually rather than accepting the whole pack.',
+          'Restore defaults at the bottom resets every indicator. “Reset defaults” inside one ⚙ dialog resets only that study.',
+          'Signed-in users sync indicator settings to their account; guests keep them on that device.',
+        ],
+      },
+      {
+        heading: 'What every indicator means',
+        bullets: [
+          'Lakshmi Mata — parent chart pack containing the main trend, squeeze, support/resistance and signal studies.',
+          'Moving Average — EMA 9 / 21 / 50 / 150 / 200; stacking and slope summarize trend structure.',
+          'Guppy MMA — fast and slow EMA ribbons; compression suggests indecision and expansion suggests a trend asserting.',
+          'Squeeze Pro Dots — High/Mid/Low volatility compression plus momentum bias; a coil is not a guaranteed breakout.',
+          '52-Week High / Low Flags — marks fresh yearly extremes.',
+          'Support & Resistance — levels from confirmed swing pivots; inspect volume when price breaks them.',
+          'Bollinger Bands — SMA 20 ± 2 standard deviations; narrow bands mean quieter volatility.',
+          'RSI — momentum oscillator for strength and overbought/oversold context, not a standalone reversal signal.',
+          'MACD — trend/momentum line, signal line and histogram.',
+          'Lakshmi Super Cycle — stock RS versus its index; available for stocks, not index charts.',
+          'Patterns — chart markers aligned with scanner detections.',
+          'Lakshmi Volume — unusual volume, climax and dry-up context.',
+          'Volume Candle Colors — colors candles by volume character.',
+          'Bull Snort — bullish volume climax with heavy up-volume and a strong close.',
+          'Lakshmi Buy/Sell — rule-based inspection markers; they are not automatic orders or advice.',
+          'Forecast — forward projection overlay for research only.',
+          'Circuit Band (UC/LC) — estimated upper/lower circuit zones from detected lock percentages.',
+        ],
+      },
+      {
+        heading: 'Chart toolbar icons from left to right',
+        bullets: [
+          'LIVE — today’s candle is being refreshed from the live-price feed.',
+          '1 / 3 / 5 / 15 / 1H / 1D / 1W / 1M — candle duration. Use ▾ and ★ to choose favorites shown on the toolbar.',
+          'Candlestick / line — changes price-series style. The adjacent ▾ also offers series type and linear/log/percent price scale.',
+          'Pan / drawing tools — move the chart or add trend line, horizontal line, text and an alert level. Return to Pan after drawing.',
+          'fx Indicators — add/remove studies and open ⚙ settings.',
+          'Clean / Pro — Clean gives more chart space; Pro exposes denser controls and legends.',
+          'Layout — reorder indicator panes, resize price-scale width, export PNG/CSV, and save a chart layout.',
+          'Drag chart pane separators to resize; double-click a separator to restore its default size.',
+        ],
+      },
+      {
+        heading: 'Scanner controls on the right',
+        bullets: [
+          'Summary tiles — counts for All, HT, HY, IBV, Pocket Pivot, Bull Snort, volume-to-EMA, EMA5/9, R1 and RS Improving. Click a tile to focus its stocks; click All to restore the complete list.',
+          'Search — type a symbol or company name.',
+          'Filters — combine technical/fundamental conditions to reduce the list. The nearby ↺ button clears every active RS filter.',
+          'Columns — enable or disable table fields when the scanner feels too wide.',
+          'TV — copies the current symbol list in TradingView watchlist format.',
+          'Row labels — show technical events, Stage/Volume, fundamental Rating and latest Result quality. They are research clues, not buy/sell calls.',
+          'Click a symbol to dock Our Chart. Account → Chart on hover controls whether simply hovering also opens a preview.',
+          'Small window icons in each panel header dock/undock, minimize, maximize or close that panel.',
+        ],
+      },
+      {
+        heading: 'Two different Layout buttons',
+        bullets: [
+          'Top saved Layout — stores the broader page/table setup.',
+          'Blue workspace Layout — chooses Chart 75% | Scanner 25% or Scanner 25% | Chart 75%.',
+          'Chart toolbar Layout — changes only the panes inside Our Chart.',
+          'If the page becomes confusing, use the blue workspace Layout → Restore default (Chart 75% | Scanner 25%).',
+        ],
+      },
+      {
+        heading: 'Controls that look similar but do different jobs',
+        bullets: [
+          'Header 🔔 Alerts — controls Lakshmimata browser, sound, scanner, announcement and Telegram alert preferences.',
+          'Chart 🔔 — a price-level drawing tool; Alt+A also selects it. Existing price alerts can be deleted from the header Alerts menu.',
+          'Header Auto — pauses/resumes scanner polling. It does not disable notifications or Telegram delivery.',
+          'Header Demo while signed out — uses older real database data for learning. The separate “Demo” action runs the small built-in sample scan.',
+          'Header saved Layout, blue workspace Layout, and chart toolbar Layout each control a different layer of the screen.',
+        ],
+      },
+    ],
+  },
+  {
     id: 'start-glossary',
     title: 'Beginner glossary',
     category: 'start',
@@ -308,6 +421,37 @@ export const DOCS_ARTICLES = [
       {
         heading: 'How it works',
         body: 'Breadth measures how many names participate in a move. A rising index on thin breadth is more fragile than one with broad advances. Tile “i” icons explain each metric.',
+      },
+      {
+        heading: 'Leadership vs Emerging Heat',
+        body:
+          'RS is deliberately not the only ranking. Leadership describes established strength; Heat looks for participation accelerating before average RS fully catches up. Every input is converted to a 0–100 percentile against the other groups first, so large sectors do not win merely because they contain more stocks.',
+        bullets: [
+          'Leadership (slow): 40% relative-strength percentile, 20% monthly breadth, 15% weekly breadth, 15% improving-member percentile and 10% trend stage when available.',
+          'Heat (fast): 25% weekly rank movement, 20% weekly breadth, 15% breadth acceleration, 20% improving-member percentage and 20% fresh-thrust percentage. Missing inputs are omitted and the remaining weights are normalized.',
+          'Fresh thrust means the percentage of members with PP, Bull Snort, HY/HT, IBV, new Stage 2, Squeeze/VCP fire, R1 break or cup breakout.',
+          'Official indices only receive Heat when constituent breadth is available. Otherwise the table shows N/A rather than inventing confidence.',
+        ],
+      },
+      {
+        heading: 'States and page filters',
+        bullets: [
+          'Leading — established strength with healthy breadth.',
+          'Emerging — Heat is strong and participation is broadening before Leadership becomes extended.',
+          'Narrow — headline strength is high but fewer than roughly 45% of members participate weekly.',
+          'Fading — previous leadership remains visible, but weekly rank or breadth is deteriorating.',
+          'Weak / Stable — little evidence of leadership, or mixed evidence without a clean rotation.',
+          'Use All groups, Leadership, Emerging and Fading / Weak above the tables. Click any row to inspect the stocks responsible for the score.',
+        ],
+      },
+      {
+        heading: 'Practical workflow',
+        bullets: [
+          'Start with Industries → Emerging: narrow groups often turn before their broad parent sector.',
+          'Confirm the move in Sectors using weekly breadth and the Improving count.',
+          'Check the related official Index for Stage, 1W/1M return and institutional cap-weighted confirmation.',
+          'Scores are research prioritizers, not buy signals. Validate the individual stock setup, liquidity, results and risk before acting.',
+        ],
       },
     ],
   },
@@ -627,7 +771,7 @@ export const DOCS_ARTICLES = [
           'HY — High Yield volume: volume near 52-week highs on an up day.',
           'IBV — Institutional-style Buying Volume: heavy volume + strong close in the day’s range.',
           'PP — Pocket Pivot: up day volume beats every down day in ~10 days while price stays constructive.',
-          'Bull Snort — up close, volume ≥ 2× 20-day average, close in upper ~30% of the range.',
+          'Bull Snort — close above the prior close, volume ≥ 3× the 50-bar average, and DCR ≥ 65% (close in the top 35% of the bar).',
         ],
       },
       {
@@ -877,13 +1021,23 @@ export const HELP_CONTENT_ORDERED = HELP_ORDER.map((id) => HELP_CONTENT.find((h)
 export const GUIDE_SUGGESTIONS = {
   _default: [
     'How do I use this page?',
+    'How do I disable alerts?',
+    'How do I add a chart indicator?',
+    'How do I hide or show the ticker?',
     'What is RS rating?',
     'How do I open a stock chart?',
     'Where are Concall and PPT?',
     'What is Squeeze Pro?',
     'What is Lakshmi Mata?',
   ],
-  rs: ['How do I use RS Rating?', 'What do the signal chips mean?', 'How do I filter by sector?'],
+  rs: [
+    'Show me the RS Rating screen tour',
+    'How do I add a chart indicator?',
+    'How do I disable alerts?',
+    'How do I hide or show the ticker?',
+    'What do the signal chips mean?',
+    'How do I filter by sector?',
+  ],
   market: ['How do I read Market verdict?', 'What is Smart Money?'],
   rotation: ['How do I read the rotation chart?', 'What is Leading vs Improving?'],
   announcements: ['Where are Results / Concall / PPT?', 'What does the green badge mean?'],
@@ -901,6 +1055,26 @@ export const GUIDE_SUGGESTIONS = {
 }
 
 export const GUIDE_QA = [
+  {
+    keys: ['disable alerts', 'turn off alerts', 'alerts off', 'stop alerts', 'enable alerts', 'turn on alerts'],
+    answer:
+      'Open 🔔 Alerts in the top header → Settings. Use “All off” to disable every alert type, or untick only the types you do not want. To keep alert history but stop noise, untick “Play sound on alert”. To enable browser popups, click “Turn on notifications” and allow them in the browser.',
+  },
+  {
+    keys: ['add indicator', 'enable indicator', 'disable indicator', 'remove indicator', 'indicator settings', 'fx indicators'],
+    answer:
+      'Open a stock chart → fx Indicators. Click an indicator checkbox to plot it; click again to remove it. Use ⚙ for Inputs, Style and Visibility. “Restore defaults” at the bottom resets all indicators. Guide → Getting started → RS Rating screen tour explains every chart-toolbar icon.',
+  },
+  {
+    keys: ['ticker', 'banner', 'scrolling banner', 'hide banner', 'show banner', 'enable banner'],
+    answer:
+      'Hide the rolling ticker with × at its far-right edge. Restore it with the small “Show ticker” button below the header, or go to Account (AC) → App Preferences → Scrolling ticker → ON. Hovering pauses the banner; clicking a name opens its chart.',
+  },
+  {
+    keys: ['screen tour', 'every control', 'every icon', 'rs screen', 'rs rating screen'],
+    answer:
+      'Open Guide → Getting started → “RS Rating screen tour — every control”. It uses a numbered real screenshot to explain the ticker, alerts, layouts, chart toolbar, Indicators, tiles, filters, columns and table rows.',
+  },
   {
     keys: ['rs rating', 'relative strength', 'what is rs', 'how do i use rs'],
     answer:

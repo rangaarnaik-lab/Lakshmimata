@@ -563,6 +563,34 @@ export async function fetchSectorsFromDB(historyDate = null) {
   }))
 }
 
+/** Persistent industry rank movement and group metrics from the live scanner. */
+export async function fetchIndustriesFromDB() {
+  const { data, error } = await supabase
+    .from('industries')
+    .select('*')
+    .order('rank', { ascending: true })
+  if (error) {
+    // Migration may not be deployed yet; the Market page can still calculate
+    // today's rows from stocks, only weekly rank movement will be unavailable.
+    console.warn('Could not fetch industries:', error.message)
+    return []
+  }
+  return (data || []).map(row => ({
+    name: row.industry,
+    parentSector: row.parent_sector,
+    rank: row.rank,
+    rankChange: row.rank_change,
+    avgRS: row.avg_rs,
+    count: row.count,
+    ppCount: row.pp_count,
+    improving: row.improving,
+    advancesD: row.advances_d,
+    advancesW: row.advances_w,
+    advancesM: row.advances_m,
+    lastUpdated: row.last_updated,
+  }))
+}
+
 /**
  * Fetch the list of trading dates that have a complete EOD snapshot
  * archived in stock_history — used to populate the date picker.
@@ -1179,6 +1207,9 @@ export async function fetchIndexDashboard() {
     high52w:       row.high_52w,
     low52w:        row.low_52w,
     pctFromHigh:   row.pct_from_high,
+    advancesD:     row.advances_d,
+    advancesW:     row.advances_w,
+    advancesM:     row.advances_m,
     topStocks:     typeof row.top_stocks === 'string' ? JSON.parse(row.top_stocks||'[]') : (row.top_stocks||[]),
     botStocks:     typeof row.bot_stocks === 'string' ? JSON.parse(row.bot_stocks||'[]') : (row.bot_stocks||[]),
     lastUpdated:   row.last_updated,
