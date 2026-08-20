@@ -7056,6 +7056,15 @@ const VOL_SIGNAL_ICONS = {
   IBV: '▲', PPV: '★', SNORT: '🐂', LOW: '·',
 }
 
+// Pine `position.*` values for the volume metrics table. Anything in here
+// floats as a compact card over the chart instead of stretching across it as
+// a strip, so the candles keep the height the strip used to reserve.
+const VOL_TABLE_CARD_POSITIONS = new Set([
+  'top_left', 'top_center', 'top_right',
+  'middle_left', 'middle_center', 'middle_right',
+  'bottom_left', 'bottom_center', 'bottom_right',
+])
+
 function TvCandleIcon({active, muted}) {
   const c = active ? TV_TOOLBAR_BLUE : muted
   return (
@@ -8079,6 +8088,11 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   // they belong to, TradingView style, giving the chart the space back.
   const volTableOverlay = volP.tablePlacement === 'overlay'
   const volTableBelow = volP.tablePlacement === 'below'
+  // Pine-style card: anchored to a corner/edge of the chart, sized to its own
+  // rows rather than the full width.
+  const volTableCard = VOL_TABLE_CARD_POSITIONS.has(volP.tablePlacement)
+    ? volP.tablePlacement
+    : null
   const volTableAlpha = Math.min(1, Math.max(0.3, (Number(volP.tableOpacity) || 100) / 100))
   const scShowTable = showSuperCycle && scP.showTable !== false
   const scTableOverlay = scP.tablePlacement === 'overlay'
@@ -8089,8 +8103,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   const volBarOpacity = Math.min(1, Math.max(0.2, (Number(volP.barOpacity) || 50) / 100))
   const volShowMarkers = showLakshmiVol && volP.showMarkers !== false
   const volTableBoxH = clean ? (isMobile ? 38 : 30) : (isMobile ? 48 : 40)
-  const volTableH = volShowTable && !volTableOverlay && !volTableBelow ? volTableBoxH : 0
-  const volTableFootH = volShowTable && volTableBelow ? volTableBoxH : 0
+  const volTableH = volShowTable && !volTableOverlay && !volTableBelow && !volTableCard ? volTableBoxH : 0
+  const volTableFootH = volShowTable && volTableBelow && !volTableCard ? volTableBoxH : 0
   // Marker row under the volume pane baseline: signal icons + HT/HY/HQ/M tags,
   // kept out of the bars so tall bars never clip them.
   const volMarkerH = volShowMarkers ? (isMobile ? 16 : 15) : 0
@@ -10207,6 +10221,64 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
         const dcrBg = dcr == null ? undefined : dcr >= 65 ? C.green+'55' : dcr >= 50 ? C.green+'33' : C.red+'44'
         const chg = m.changePct
         const chgBg = chg == null ? undefined : chg >= 0 ? C.green+'44' : C.red+'44'
+        // One list, two shapes: a wide strip across the chart, or a Pine-style
+        // card in a corner. Both read the same numbers.
+        const metrics = [
+          { label: '📊 Volume', value: m.volume != null ? Number(m.volume).toLocaleString('en-IN') : '—' },
+          { label: `〰 ${m.lookbackAvg || 50} Bar Avg.Vol`, value: m.avgVol != null ? fmtVol(m.avgVol) : '—' },
+          { label: `⚡ ${m.lookbackAvg || 50} Bar Rel.Vol`, value: rel != null ? `${Math.round(rel)}%` : '—', bg: relBg },
+          { label: `⚖ ${m.lookbackUD || 50} Bar Up/Down`, value: ud != null ? ud.toFixed(2) : '—', bg: udBg },
+          { label: '🎯 DCR%', value: dcr != null ? `${Number(dcr).toFixed(1)}%` : '—', bg: dcrBg },
+          { label: `${chg != null && chg < 0 ? '📉' : '📈'} Change%`, value: chg != null ? `${Number(chg).toFixed(1)}%` : '—', bg: chgBg },
+          {
+            label: `${VOL_SIGNAL_ICONS.PPV} PPV & ${VOL_SIGNAL_ICONS.IBV} IBV (${m.lookbackPP || 20})`,
+            value: `${VOL_SIGNAL_ICONS.PPV}-${m.ppvCount ?? 0}  ${VOL_SIGNAL_ICONS.IBV}-${m.ibvCount ?? 0}`,
+          },
+          { label: '💬 Comments', value: commentFull, bg: commentFull !== 'NA' ? C.green+'33' : undefined },
+        ]
+        if (volTableCard) {
+          const [vert, horiz] = volTableCard.split('_')
+          const pos = {}
+          if (horiz === 'left') pos.left = padL + 6
+          else if (horiz === 'right') pos.right = padR + 6
+          else pos.left = padL + chartW / 2
+          if (vert === 'top') pos.top = (Math.max(2, priceTop + 4) / H) * 100 + '%'
+          else if (vert === 'bottom') pos.bottom = (Math.max(2, H - panesBottom + 4) / H) * 100 + '%'
+          else pos.top = '50%'
+          const shift = [
+            horiz === 'center' ? 'translateX(-50%)' : '',
+            vert === 'middle' ? 'translateY(-50%)' : '',
+          ].filter(Boolean).join(' ')
+          return (
+            <div style={{
+              position:'absolute', ...pos, zIndex:3,
+              ...(shift ? { transform: shift } : {}),
+              maxWidth: isMobile ? 168 : 196,
+              boxSizing:'border-box',
+              border:`1px solid ${C.border}`, borderRadius:4,
+              background: C.bg, opacity: volTableAlpha,
+              overflow:'hidden', pointerEvents:'none',
+            }}>
+              {metrics.map((row, i) => (
+                <div key={row.label} style={{
+                  display:'flex', alignItems:'center', justifyContent:'space-between', gap:8,
+                  padding: clean ? '1px 5px' : '2px 6px',
+                  borderTop: i ? `1px solid ${C.border}` : 'none',
+                  background: row.bg || 'transparent',
+                }}>
+                  <span style={{
+                    fontSize: clean ? 6.5 : 7, fontWeight:700, color:C.muted,
+                    whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+                  }}>{row.label}</span>
+                  <span style={{
+                    fontSize: clean ? 8 : 9, fontWeight:800, color:C.text,
+                    whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flexShrink:0,
+                  }}>{row.value}</span>
+                </div>
+              ))}
+            </div>
+          )
+        }
         const cell = (label, value, valueBg) => (
           <div key={label} style={{
             minWidth: isMobile ? 64 : 80, flex: '1 1 72px',
@@ -10242,15 +10314,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
           }} title={`Lakshmi Volume metrics (${
             volTableOverlay ? 'overlapping the volume pane' : volTableBelow ? 'below the volume pane' : 'above the volume pane'
           })`}>
-            {cell('📊 Volume', m.volume != null ? Number(m.volume).toLocaleString('en-IN') : '—')}
-            {cell(`〰 ${m.lookbackAvg || 50} Bar Avg.Vol`, m.avgVol != null ? fmtVol(m.avgVol) : '—')}
-            {cell(`⚡ ${m.lookbackAvg || 50} Bar Rel.Vol`, rel != null ? `${Math.round(rel)}%` : '—', relBg)}
-            {cell(`⚖ ${m.lookbackUD || 50} Bar Up/Down`, ud != null ? ud.toFixed(2) : '—', udBg)}
-            {cell('🎯 DCR%', dcr != null ? `${Number(dcr).toFixed(1)}%` : '—', dcrBg)}
-            {cell(`${chg != null && chg < 0 ? '📉' : '📈'} Change%`, chg != null ? `${Number(chg).toFixed(1)}%` : '—', chgBg)}
-            {cell(`${VOL_SIGNAL_ICONS.PPV} PPV & ${VOL_SIGNAL_ICONS.IBV} IBV (${m.lookbackPP || 20})`,
-              `${VOL_SIGNAL_ICONS.PPV}-${m.ppvCount ?? 0}  ${VOL_SIGNAL_ICONS.IBV}-${m.ibvCount ?? 0}`)}
-            {cell('💬 Comments', commentFull, commentFull !== 'NA' ? C.green+'33' : undefined)}
+            {metrics.map(row => cell(row.label, row.value, row.bg))}
           </div>
         )
       })()}

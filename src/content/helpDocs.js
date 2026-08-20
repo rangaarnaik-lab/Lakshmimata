@@ -728,6 +728,7 @@ export const DOCS_ARTICLES = [
           'Enable Lakshmi Volume as its own study (separate from the parent when listed alone).',
           'Compare today’s bar to recent average — HY/HT/IBV/Bull Snort on scanners use related ideas.',
           'Rising price on falling volume into resistance is a caution; expansion on rising volume is healthier for momentum.',
+          'If the metrics row eats too much chart, open the study’s ⚙ Style tab → Table placement and pick a “Card” position (top / middle / bottom × left / center / right, the same nine spots Pine offers). A card floats over the chart in the corner you choose and gives its reserved strip back to the candles. “Strip” keeps the old full-width row above, below or over the volume pane. Table opacity % applies to floating cards too, and Metrics table off hides it entirely.',
         ],
       },
     ],

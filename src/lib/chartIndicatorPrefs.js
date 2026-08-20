@@ -203,11 +203,23 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'relVolHigh', label: 'Rel.Vol high %', min: 100, max: 500, step: 10 },
     { key: 'showTable', label: 'Metrics table', type: 'bool', tab: 'style' },
     {
+      // The first three keep the wide strip that spans the chart. The Pine
+      // position.* values park a compact card over the chart instead, which
+      // also hands the reserved strip back to the candles.
       key: 'tablePlacement', label: 'Table placement', type: 'select', tab: 'style',
       options: [
-        { value: 'reserve', label: 'Above the pane' },
-        { value: 'below', label: 'Below the pane' },
-        { value: 'overlay', label: 'Overlap the pane' },
+        { value: 'reserve', label: 'Strip — above the pane' },
+        { value: 'below', label: 'Strip — below the pane' },
+        { value: 'overlay', label: 'Strip — over the pane' },
+        { value: 'top_left', label: 'Card — top left' },
+        { value: 'top_center', label: 'Card — top center' },
+        { value: 'top_right', label: 'Card — top right' },
+        { value: 'middle_left', label: 'Card — middle left' },
+        { value: 'middle_center', label: 'Card — middle center' },
+        { value: 'middle_right', label: 'Card — middle right' },
+        { value: 'bottom_left', label: 'Card — bottom left' },
+        { value: 'bottom_center', label: 'Card — bottom center' },
+        { value: 'bottom_right', label: 'Card — bottom right' },
       ],
     },
     { key: 'tableOpacity', label: 'Table opacity %', min: 30, max: 100, step: 5, tab: 'style' },
