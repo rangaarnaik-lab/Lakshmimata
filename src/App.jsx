@@ -15236,13 +15236,27 @@ function CompleteProfileScreen({session,onDone,onLogout}){
 // ── Paywall — full payment page (Razorpay when key is configured)
 function PaywallScreen({reason, session, onLogout, onPaid}){
   return (
-    <PaymentPage
-      session={session}
-      reason={reason}
-      onLogout={onLogout}
-      onPaid={onPaid}
-      theme={C}
-    />
+    <div style={{
+      position:'fixed',inset:0,zIndex:5000,overflow:'auto',
+      background:'rgba(6,8,12,0.78)',
+      display:'flex',alignItems:'flex-start',justifyContent:'center',
+      padding:'min(4vh,28px) 16px 32px',
+    }}>
+      <div style={{
+        width:'100%',maxWidth:920,margin:'0 auto',
+        borderRadius:18,overflow:'hidden',
+        border:`1px solid ${C.border}`,background:C.bg,
+      }}>
+        <PaymentPage
+          session={session}
+          reason={reason}
+          onLogout={onLogout}
+          onPaid={onPaid}
+          theme={C}
+          modal
+        />
+      </div>
+    </div>
   )
 }
 
@@ -15845,6 +15859,21 @@ function TelegramAlertsCard({session, alertPrefs, onAlertPrefs}){
 const SUB_STATUS_LABELS={trialing:'Free Trial',active:'Active',past_due:'Payment Issue',cancelled:'Cancelled'}
 function subStatusColor(status){
   return {trialing:C.yellow,active:C.green,past_due:C.red,cancelled:C.muted}[status]||C.muted
+}
+/** Matches public.has_active_subscription() — trial is live until trial_end. */
+function isLiveSubscription(sub){
+  if(!sub) return false
+  const now=Date.now()
+  if(sub.status==='trialing' && sub.trial_end && new Date(sub.trial_end).getTime()>now) return true
+  if(sub.status==='active' && sub.current_period_end && new Date(sub.current_period_end).getTime()>now) return true
+  return false
+}
+function paywallReasonFor(sub){
+  if(!sub) return 'no_plan'
+  if(sub.status==='trialing') return 'trial_expired'
+  if(sub.status==='past_due') return 'past_due'
+  if(sub.status==='cancelled') return 'cancelled'
+  return 'upgrade'
 }
 
 /** Page-wide section shell so every Account card shares one rhythm. */
@@ -19076,15 +19105,11 @@ export default function App(){
     </div>
   )
 
-  if(session && !demoMode && userSubscription){
-    const trialExpired = userSubscription.status==='trialing' && new Date(userSubscription.trial_end) < new Date()
-    const inactive = ['cancelled','past_due'].includes(userSubscription.status)
-    if(trialExpired || inactive){
-      return (<PaywallScreen reason={trialExpired?'trial_expired':userSubscription.status}
-        session={session}
-        onLogout={async()=>{await supabase.auth.signOut();setSession(null)}}
-        onPaid={row=>{ setUserSubscription(prev=>({...(prev||{}),...row,status:'active'})); setShowPayment(false) }}/>)
-    }
+  if(session && !demoMode && !isLiveSubscription(userSubscription)){
+    return (<PaywallScreen reason={paywallReasonFor(userSubscription)}
+      session={session}
+      onLogout={async()=>{await supabase.auth.signOut();setSession(null)}}
+      onPaid={row=>{ setUserSubscription(prev=>({...(prev||{}),...row,status:'active'})); setShowPayment(false) }}/>)
   }
 
   if(session && !demoMode && showPayment){

@@ -49,6 +49,7 @@ export default function PaymentPage({
   onLogout,
   onClose,
   theme,
+  modal = false,
 }) {
   const C = theme || {
     bg: '#0b0f14', card: '#121821', border: '#1e2a3a', text: '#e8eef7',
@@ -69,7 +70,11 @@ export default function PaymentPage({
   const messages = {
     trial_expired: {
       title: 'Your free trial has ended',
-      body: 'Choose a plan to keep your RS terminal, filings AI, and watchlists.',
+      body: 'Subscribe to keep using the terminal — scanners, charts, filings, and alerts stay locked until a plan is active.',
+    },
+    no_plan: {
+      title: 'Subscribe to continue',
+      body: 'An account login plus a live trial or paid plan is required to use Lakshmimata.',
     },
     cancelled: {
       title: 'Subscription cancelled',
@@ -173,7 +178,7 @@ export default function PaymentPage({
 
   if (done) {
     return (
-      <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center',
+      <div style={{ minHeight: modal ? 280 : '100vh', background: C.bg, display: 'flex', alignItems: 'center',
         justifyContent: 'center', padding: 24, color: C.text, fontFamily: "'Inter',sans-serif" }}>
         <div style={{ width: '100%', maxWidth: 420, textAlign: 'center',
           background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '36px 28px' }}>
@@ -193,8 +198,8 @@ export default function PaymentPage({
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, color: C.text,
-      fontFamily: "'Inter',sans-serif", padding: '28px 20px 48px' }}>
+    <div style={{ minHeight: modal ? 0 : '100vh', background: C.bg, color: C.text,
+      fontFamily: "'Inter',sans-serif", padding: modal ? '22px 20px 28px' : '28px 20px 48px' }}>
       <div style={{ maxWidth: 880, margin: '0 auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
           gap: 12, marginBottom: 28, flexWrap: 'wrap' }}>
