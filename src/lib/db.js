@@ -1980,14 +1980,54 @@ export async function submitUserFeedback({ message, rating, isPublic = true, dis
   return { feedback: data }
 }
 
-export async function submitStockAiAsk(symbol, question, askMode = 'filings') {
+export async function compressChartImage(file) {
+  if (!file || !String(file.type || '').startsWith('image/')) {
+    return { error: 'Attach a chart screenshot (PNG or JPG).' }
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    return { error: 'Image is too large (max 8 MB). Crop to the chart and try again.' }
+  }
+  try {
+    const bmp = await createImageBitmap(file)
+    const maxW = 1280
+    const scale = Math.min(1, maxW / Math.max(1, bmp.width))
+    const w = Math.max(1, Math.round(bmp.width * scale))
+    const h = Math.max(1, Math.round(bmp.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(bmp, 0, 0, w, h)
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.72))
+    if (!blob) return { error: 'Could not compress the chart image.' }
+    const buf = await blob.arrayBuffer()
+    const bytes = new Uint8Array(buf)
+    let binary = ''
+    const chunk = 0x8000
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk))
+    }
+    const b64 = btoa(binary)
+    if (b64.length > 700000) {
+      return { error: 'Chart image is still too large. Crop closer to the candles and retry.' }
+    }
+    return { mime: 'image/jpeg', b64, previewUrl: URL.createObjectURL(blob) }
+  } catch (e) {
+    return { error: e.message || 'Could not read that image.' }
+  }
+}
+
+export async function submitStockAiAsk(symbol, question, askMode = 'filings', chartImage = null) {
   // Queue a free-form diligence question; fundamentals worker answers via Gemini.
   // askMode: 'filings' (PPT/concall on file only) | 'web' (Google Search + filings)
-  const q = (question || '').trim()
+  // chartImage: optional { mime, b64 } compressed screenshot for vision.
+  let q = (question || '').trim()
+  const hasChart = !!(chartImage?.b64 && chartImage.b64.length >= 800)
+  if (hasChart && q.length < 8) q = 'Read this chart and explain what it shows.'
   const sym = (symbol || '').trim().toUpperCase()
   const mode = askMode === 'web' ? 'web' : 'filings'
   if (!sym || q.length < 8 || q.length > 400) {
-    return { error: 'Ask a clear question (8–400 characters).' }
+    return { error: 'Ask a clear question (8–400 characters), or attach a chart image.' }
   }
   const { data: { user } } = await supabase.auth.getUser()
   const payload = {
@@ -1998,14 +2038,23 @@ export async function submitStockAiAsk(symbol, question, askMode = 'filings') {
     visitor_id: getVisitorId(),
     user_id: user?.id || null,
   }
+  if (hasChart) {
+    payload.chart_image = chartImage.b64
+    payload.chart_image_mime = chartImage.mime || 'image/jpeg'
+  }
   let { data, error } = await supabase
     .from('stock_ai_asks')
     .insert(payload)
     .select('id,symbol,question,status,ask_mode,created_at')
     .single()
-  // Older DBs may lack ask_mode — retry without it (worker defaults to filings)
-  if (error && /ask_mode/i.test(error.message || '')) {
+  // Older DBs may lack ask_mode / chart_image — retry without them
+  if (error && /ask_mode|chart_image/i.test(error.message || '')) {
+    if (/chart_image/i.test(error.message || '') && hasChart) {
+      return { error: 'Chart images need a one-time SQL update (add_ask_ai_chart_image.sql). Ask without the picture until that runs.' }
+    }
     delete payload.ask_mode
+    delete payload.chart_image
+    delete payload.chart_image_mime
     ;({ data, error } = await supabase
       .from('stock_ai_asks')
       .insert(payload)

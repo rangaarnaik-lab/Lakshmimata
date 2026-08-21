@@ -52,7 +52,7 @@ import {
   supabase, fetchOwnerToken, revokeOtherSessions,
   claimCurrentDevice, verifyCurrentDevice,
 } from './lib/supabase'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchUserWatchlists, saveUserWatchlists, fetchMissedAiFilings } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, compressChartImage, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchUserWatchlists, saveUserWatchlists, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -4314,9 +4314,15 @@ const ASK_AI_SUGGESTIONS = [
   'Any red flags in recent filings or concalls?',
   'Do they deliver on growth / capex promises?',
 ]
+const ASK_AI_CHART_SUGGESTIONS = [
+  'What does this chart show?',
+  'Is this a healthy setup or a trap?',
+  'What do the indicators on this chart say?',
+]
 
-function AskAiAgent({symbol, isMobile}){
-  // Inline control in the detail tab row — never a floating FAB over tabs.
+function AskAiAgent({symbol, isMobile, variant='inline'}){
+  // 'inline' = pill in the detail tab row. 'rail' = thin tab pinned to the
+  // right edge of the viewport so the agent is reachable from any tab.
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
@@ -4324,10 +4330,14 @@ function AskAiAgent({symbol, isMobile}){
   const [recent, setRecent] = useState([])
   const [err, setErr] = useState(null)
   const [askMode, setAskMode] = useState('filings') // 'filings' | 'web'
+  const [chartImg, setChartImg] = useState(null) // { mime, b64, previewUrl }
+  const [railHover, setRailHover] = useState(false)
+  const fileRef = useRef(null)
 
   useEffect(()=>{
     let cancelled=false
     setActive(null); setQ(''); setErr(null); setOpen(false)
+    setChartImg(prev=>{ if(prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl); return null })
     if(!symbol){ setRecent([]); return }
     fetchRecentStockAiAsks(symbol).then(rows=>{ if(!cancelled) setRecent(rows||[]) })
     return()=>{cancelled=true}
@@ -4354,13 +4364,25 @@ function AskAiAgent({symbol, isMobile}){
 
   if(!symbol) return null
 
+  const attachChart = async (file)=>{
+    if(!file || busy) return
+    setErr(null)
+    const res = await compressChartImage(file)
+    if(res.error){ setErr(res.error); return }
+    setChartImg(prev=>{
+      if(prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl)
+      return res
+    })
+  }
+
   const submit = async (text)=>{
     const question = (text||q||'').trim()
-    if(busy || question.length<8) return
+    if(busy) return
+    if(!chartImg && question.length<8) return
     setErr(null)
     setBusy(true)
-    setActive({status:'pending', question, ask_mode: askMode})
-    const res = await submitStockAiAsk(symbol, question, askMode)
+    setActive({status:'pending', question: question || 'Read this chart and explain what it shows.', ask_mode: askMode})
+    const res = await submitStockAiAsk(symbol, question, askMode, chartImg)
     if(res.error){
       setErr(res.error)
       setBusy(false)
@@ -4368,12 +4390,32 @@ function AskAiAgent({symbol, isMobile}){
       return
     }
     setQ('')
+    setChartImg(prev=>{ if(prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl); return null })
     setActive(res.ask)
   }
 
   return (
     <>
-      {!open&&(
+      {!open&&variant==='rail'&&(
+        <button type="button" onClick={()=>setOpen(true)} title={`Ask AI about ${symbol}`}
+          onMouseEnter={()=>setRailHover(true)} onMouseLeave={()=>setRailHover(false)}
+          style={{
+            position:'fixed',right:0,top:'50%',transform:'translateY(-50%)',zIndex:1500,
+            display:'flex',alignItems:'center',justifyContent:'center',gap:7,
+            writingMode:'vertical-rl',
+            padding:'13px 6px',borderRadius:'12px 0 0 12px',cursor:'pointer',
+            border:`1px solid ${C.accent}66`,borderRight:'none',
+            background:`linear-gradient(180deg, ${C.accent}, ${C.teal||C.accent})`,
+            color:'#0a0e14',fontSize:11,fontWeight:900,letterSpacing:'0.08em',
+            opacity:railHover?1:0.72,
+            boxShadow:railHover?'0 6px 20px rgba(0,0,0,0.35)':'none',
+            transition:'opacity 0.15s',
+          }}>
+          <span style={{fontSize:13,writingMode:'horizontal-tb'}}>✦</span>ASK AI
+        </button>
+      )}
+
+      {!open&&variant==='inline'&&(
         <button type="button" onClick={()=>setOpen(true)} title="Ask AI agent"
           style={{
             flexShrink:0,
@@ -4399,6 +4441,13 @@ function AskAiAgent({symbol, isMobile}){
         }}
           onClick={()=>!busy&&setOpen(false)}>
           <div onClick={e=>e.stopPropagation()}
+            onPaste={e=>{
+              const item = [...(e.clipboardData?.items||[])].find(i=>i.type.startsWith('image/'))
+              if(!item) return
+              e.preventDefault()
+              const f = item.getAsFile()
+              if(f) attachChart(f)
+            }}
             style={{
               width:isMobile?'100%':'min(420px, 100%)',
               maxWidth:'100%',
@@ -4426,7 +4475,7 @@ function AskAiAgent({symbol, isMobile}){
                   Ask AI agent
                 </div>
                 <div style={{fontSize:10,color:C.muted,marginTop:2}}>
-                  {symbol} · Filings or Web · not investment advice
+                  {symbol} · Filings, Web, or a chart screenshot · not investment advice
                 </div>
               </div>
               <button type="button" onClick={()=>setOpen(false)}
@@ -4459,7 +4508,7 @@ function AskAiAgent({symbol, isMobile}){
               <MgmtFlagsCard symbol={symbol} compact/>
 
               <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
-                {ASK_AI_SUGGESTIONS.map(s=>(
+                {(chartImg ? ASK_AI_CHART_SUGGESTIONS : ASK_AI_SUGGESTIONS).map(s=>(
                   <button key={s} type="button" disabled={busy} onClick={()=>submit(s)}
                     style={{
                       fontSize:10,fontWeight:700,cursor:busy?'default':'pointer',
@@ -4551,12 +4600,37 @@ function AskAiAgent({symbol, isMobile}){
             </div>
 
             <div style={{padding:'10px 12px',borderTop:`1px solid ${C.border}`,flexShrink:0,background:C.card}}>
+              {chartImg?.previewUrl&&(
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+                  <img src={chartImg.previewUrl} alt="Chart attach"
+                    style={{height:44,width:72,objectFit:'cover',borderRadius:6,border:`1px solid ${C.border}`}}/>
+                  <div style={{flex:1,minWidth:0,fontSize:10,color:C.muted,fontWeight:700}}>
+                    Chart attached — Ask will read the picture
+                  </div>
+                  <button type="button" disabled={busy}
+                    onClick={()=>setChartImg(prev=>{ if(prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl); return null })}
+                    style={{background:'transparent',border:`1px solid ${C.border}`,color:C.muted,
+                      borderRadius:6,padding:'4px 8px',cursor:'pointer',fontSize:10,fontWeight:700}}>
+                    Remove
+                  </button>
+                </div>
+              )}
               <div style={{display:'flex',gap:8,alignItems:'stretch'}}>
+                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif"
+                  hidden onChange={e=>{ const f=e.target.files?.[0]; e.target.value=''; if(f) attachChart(f) }}/>
+                <button type="button" disabled={busy} onClick={()=>fileRef.current?.click()}
+                  title="Attach a chart screenshot (or paste Ctrl+V)"
+                  style={{
+                    width:42,flexShrink:0,borderRadius:10,cursor:busy?'default':'pointer',
+                    border:`1px solid ${chartImg?C.accent:C.border}`,
+                    background:chartImg?C.accent+'22':C.bg,color:chartImg?C.accent:C.muted,
+                    fontSize:16,fontWeight:800,
+                  }}>📎</button>
                 <input
                   value={q}
                   onChange={e=>setQ(e.target.value)}
                   onKeyDown={e=>{ if(e.key==='Enter') submit() }}
-                  placeholder={`Ask about ${symbol}…`}
+                  placeholder={chartImg?`Ask about this ${symbol} chart…`:`Ask about ${symbol}…`}
                   disabled={busy}
                   maxLength={400}
                   autoFocus
@@ -4565,11 +4639,11 @@ function AskAiAgent({symbol, isMobile}){
                     background:C.bg,color:C.text,fontSize:12,outline:'none',
                   }}
                 />
-                <button type="button" onClick={()=>submit()} disabled={busy || q.trim().length<8}
+                <button type="button" onClick={()=>submit()} disabled={busy || (!chartImg && q.trim().length<8)}
                   style={{
                     padding:'10px 14px',borderRadius:10,fontSize:12,fontWeight:900,cursor:busy?'default':'pointer',
                     border:'none',background:C.accent,color:'#0a0e14',
-                    opacity:(busy || q.trim().length<8)?0.5:1,
+                    opacity:(busy || (!chartImg && q.trim().length<8))?0.5:1,
                   }}>
                   {busy?'…':'Ask'}
                 </button>
@@ -24400,6 +24474,12 @@ export default function App(){
             }]:[]),
           ]}
         />
+      )}
+
+      {/* Ask AI rail — pinned to the right edge so the agent is one click away
+          from any market page, not just the Fundamentals tab row. */}
+      {!isMobile&&chartSym&&!fullWidthTab&&!(chartIsIndex||indexData.some(idx=>idx.name===chartSym))&&(
+        <AskAiAgent symbol={chartSym} isMobile={false} variant="rail"/>
       )}
 
       {/* Real-time data upsell — shown when a demo user tries to Scan or

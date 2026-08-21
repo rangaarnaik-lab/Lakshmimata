@@ -884,6 +884,7 @@ export const DOCS_ARTICLES = [
         bullets: [
           'Hover chart / Our Chart — preview without leaving the scanner.',
           'Ticker — market strip on/off.',
+          'Ask AI — the ✦ ASK AI tab on the extreme right edge of the screen opens the agent for whichever stock is on the chart (the same button also sits in the Fundamentals tab row). Type a question, or attach / paste a chart screenshot: the agent reads the picture plus filings (or web). It is research commentary, not a buy/sell call.',
           'Plans & billing — upgrade when your trial ends.',
           'Telegram — Account → Telegram alerts. Operator: BotFather + TELEGRAM_SETUP.md, then Connect Telegram.',
         ],
