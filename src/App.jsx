@@ -52,6 +52,11 @@ import {
   supabase, fetchOwnerToken, revokeOtherSessions,
   claimCurrentDevice, verifyCurrentDevice,
 } from './lib/supabase'
+import { isPersonalUpstoxToken, fetchUpstoxQuotes, applyQuoteToStock } from './lib/upstoxQuotes'
+import {
+  upstoxOAuthConfigured, startUpstoxOAuth, readUpstoxOAuthCallback, clearUpstoxOAuthParams,
+  exchangeUpstoxAuthCode, UPSTOX_OAUTH_STATE_KEY,
+} from './lib/upstoxOAuth'
 import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, compressChartImage, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchUserWatchlists, saveUserWatchlists, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
@@ -80,9 +85,9 @@ import {
 import { resolveIntradayChartEnabled, resolveIntradayIntervals } from './lib/intradayChart'
 
 // ─────────────────────────────────────────────────────────────────────
-// 🔑 YOUR UPSTOX TOKEN — set this so users don't need to enter anything
-// Leave empty string "" to require users to enter their own token
-// ─────────────────────────────────────────────────────────────────────
+// 🔑 Owner Upstox token is for the Railway scanner only.
+// Live LTP / % change in the browser uses each user's own token (Account).
+// Do not fall back to this for other people's live quotes.
 let OWNER_TOKEN = import.meta.env.VITE_OWNER_UPSTOX_TOKEN || ''
 
 // ── Colors ────────────────────────────────────────────────────────────
@@ -2597,6 +2602,7 @@ function AlertPrefsMenu({prefs, setPrefs, onPersist, notifPermission, onRequestP
 }
 
 function LastUpdatedBar({scanMeta,lastRefresh,loading,autoRefresh,setAutoRefresh,refreshInterval,setRefreshInterval,onRefresh,inline=false,hideAuto=false}){
+  const layout=useContext(RsLayoutContext)
   const [now,setNow]=useState(Date.now())
   useEffect(()=>{const t=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(t)},[])
 
@@ -2630,7 +2636,7 @@ function LastUpdatedBar({scanMeta,lastRefresh,loading,autoRefresh,setAutoRefresh
           boxShadow:`0 0 5px ${loading?C.yellow:marketOpen?C.green:C.muted}`,
           animation:loading?'pulse 1s infinite':'none'}}/>
         <span style={{fontWeight:700,color:C.text,whiteSpace:'nowrap'}}>
-          {loading?'Updating…':marketOpen?'Live':'Closed'}
+          {loading?'Updating…':marketOpen?(layout?.liveFeedConnected?'Live · your Upstox':'Live · scanners') :'Closed'}
         </span>
       </div>
       <span style={{color:C.muted,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{lastScanStr}</span>
@@ -5397,7 +5403,7 @@ function TradingViewDailyChart({symbol, exchange, onReady}){
   )
 }
 
-function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, chartSectionHidden=[], onChartSectionOrderChange, onChartSectionHiddenChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, chartTabHint=null, onConsumeChartTabHint, detailFirst=false, onMoveTile, stackLayout=false, columnsLayout=false, chartColPct=36, detailColPct=32, sideSoloChart=false, chartCellStyle=null, detailCellStyle=null, chartStackOrder=2, detailStackOrder=4, userId=null}){
+function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, chartSectionHidden=[], onChartSectionOrderChange, onChartSectionHiddenChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, chartTabHint=null, onConsumeChartTabHint, detailFirst=false, onMoveTile, stackLayout=false, columnsLayout=false, chartColPct=36, detailColPct=32, sideSoloChart=false, chartCellStyle=null, detailCellStyle=null, chartStackOrder=2, detailStackOrder=4, userId=null, upstoxToken=null}){
   const [loaded, setLoaded] = useState(false)
   // Stocks open on TradingView (1D); indices only have Our Chart.
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart first (Super Cycle, drawings, …)
@@ -5631,7 +5637,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
             />
           </>
         ):(
-          <CandlestickChart sym={sym} isMobile={isMobile} isIndex={isIndex} chartExpanded={chartExpanded} userId={userId}/>
+          <CandlestickChart sym={sym} isMobile={isMobile} isIndex={isIndex} chartExpanded={chartExpanded} userId={userId} upstoxToken={upstoxToken}/>
         )}
       </div>
     </div>
@@ -7197,7 +7203,7 @@ function detectPineCircuitPct(highs, lows, closes, lookback=30, dcrTolerance=1, 
   return 20
 }
 
-function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
+function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, upstoxToken=null}){
   const [data, setData] = useState(null)
   const [intradayData, setIntradayData] = useState(null)
   const [intradayLoading, setIntradayLoading] = useState(false)
@@ -8001,6 +8007,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
   useEffect(() => {
     setLiveOverlay(null); setIsLiveUpdating(false)
     if (isIndex) return
+    if (!upstoxToken) return
     if (!isMarketOpen()) return
     let cancelled = false
     const n = (v) => {
@@ -8008,7 +8015,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       return Number.isFinite(x) && x > 0 ? x : null
     }
     const poll = () => {
-      fetchLiveStockPrice(sym).then(live => {
+      fetchLiveStockPrice(sym, upstoxToken).then(live => {
         if (cancelled || !live || live.price == null) return
         const px = n(live.price)
         if (px == null) return
@@ -8054,7 +8061,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null}){
       LIVE_POLLED_SYMS.delete(key)
       setIsLiveUpdating(false)
     }
-  }, [sym, isIndex])
+  }, [sym, isIndex, upstoxToken])
 
   // Price alerts on the open chart get checked at the live poll's cadence;
   // everything else is covered by the app-wide check on each scan refresh.
@@ -13657,7 +13664,7 @@ function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpen
       </div>
       <div style={{flex:1,minHeight:0,display:'flex',flexDirection:'column',position:'relative'}}>
         <CandlestickChart key={String(sym||'').toUpperCase()} sym={sym} isMobile={false}
-          isIndex={false} chartExpanded userId={chartUserId}/>
+          isIndex={false} chartExpanded userId={chartUserId} upstoxToken={layout?.upstoxToken||null}/>
       </div>
     </div>
   )
@@ -14770,7 +14777,7 @@ function AuthScreen({onLogin,initialMode='login',notice='',onBack}){
         await claimCurrentDevice(data.session)
         await revokeOtherSessions()
         const{data:decryptedToken}=await supabase.rpc('get_upstox_token')
-        onLogin({user:data.user,token:decryptedToken||OWNER_TOKEN})
+        onLogin({user:data.user,token:decryptedToken||null})
       } else {
         // Register — name, phone (with country), email, password all required.
         const profile=validateProfile(name,phone,phoneCountry)
@@ -14792,10 +14799,12 @@ function AuthScreen({onLogin,initialMode='login',notice='',onBack}){
         })
         if(e)throw e
         if(data.user){
-          // Start the 30-day free trial. ignoreDuplicates so this is
-          // safe to call even if it somehow runs twice for the same
-          // user (won't reset an already-started trial's clock).
-          const trialEnd=new Date(Date.now()+30*24*60*60*1000).toISOString()
+          // Start the free trial. ignoreDuplicates so this is safe to call
+          // even if it somehow runs twice for the same user (won't reset an
+          // already-started trial's clock). With email confirmation on there
+          // is no session yet, so RLS can drop this — App re-creates it on
+          // first signed-in load.
+          const trialEnd=new Date(Date.now()+TRIAL_DAYS*86400000).toISOString()
           await supabase.from('subscriptions').upsert(
             {user_id:data.user.id,status:'trialing',trial_end:trialEnd},
             {onConflict:'user_id',ignoreDuplicates:true}
@@ -15172,7 +15181,7 @@ function CompleteProfileScreen({session,onDone,onLogout}){
       if(e) throw e
       // Google-first users never went through email register — start trial here.
       if(data.user){
-        const trialEnd=new Date(Date.now()+30*24*60*60*1000).toISOString()
+        const trialEnd=new Date(Date.now()+TRIAL_DAYS*86400000).toISOString()
         await supabase.from('subscriptions').upsert(
           {user_id:data.user.id,status:'trialing',trial_end:trialEnd},
           {onConflict:'user_id',ignoreDuplicates:true}
@@ -15856,6 +15865,7 @@ function TelegramAlertsCard({session, alertPrefs, onAlertPrefs}){
   )
 }
 
+const TRIAL_DAYS=30
 const SUB_STATUS_LABELS={trialing:'Free Trial',active:'Active',past_due:'Payment Issue',cancelled:'Cancelled'}
 function subStatusColor(status){
   return {trialing:C.yellow,active:C.green,past_due:C.red,cancelled:C.muted}[status]||C.muted
@@ -16008,6 +16018,97 @@ function ProfileCard({session}){
   )
 }
 
+function UpstoxLiveFeedCard({session,onUpdate}){
+  const connected=isPersonalUpstoxToken(session?.token, OWNER_TOKEN)
+  const oauthOn=upstoxOAuthConfigured()
+  const [token,setToken]=useState('')
+  const [showPaste,setShowPaste]=useState(false)
+  const [busy,setBusy]=useState(false)
+  const [err,setErr]=useState('')
+  const [info,setInfo]=useState('')
+  const connectOAuth=()=>{
+    setErr('');setInfo('')
+    try{ startUpstoxOAuth() }
+    catch(e){ setErr(e?.message||'Could not start Upstox login') }
+  }
+  const savePaste=async()=>{
+    setErr('');setInfo('');setBusy(true)
+    try{
+      const t=token.trim()
+      if(!t) throw new Error('Paste your Upstox access token.')
+      const {error:rpcErr}=await supabase.rpc('save_upstox_token',{token:t})
+      if(rpcErr){
+        const {error:upErr}=await supabase.from('user_tokens').upsert(
+          {user_id:session.user.id,upstox_token:t},{onConflict:'user_id'})
+        if(upErr) throw upErr
+      }
+      onUpdate?.({...session,token:t})
+      setToken('')
+      setInfo('Connected via pasted token. Prefer Connect Upstox (OAuth) when it is configured.')
+    }catch(e){
+      setErr(e?.message||'Could not save token')
+    }finally{ setBusy(false) }
+  }
+  const disconnect=async()=>{
+    setErr('');setInfo('');setBusy(true)
+    try{
+      await supabase.from('user_tokens').delete().eq('user_id',session.user.id)
+      onUpdate?.({...session,token:null})
+      setInfo('Disconnected. Scanners still run; live LTP needs Upstox again.')
+    }catch(e){
+      setErr(e?.message||'Could not disconnect')
+    }finally{ setBusy(false) }
+  }
+  return(
+    <AccountCard title="Live prices (your Upstox)"
+      hint="You log in on Upstox’s site. Lakshmimata never sees your Upstox password. Live LTP / % change use your account; RS and scanners stay on our scan.">
+      <div style={{fontSize:11.5,color:C.muted,lineHeight:1.5,marginBottom:10}}>
+        {connected
+          ? 'Live LTP is using your Upstox account. Tokens expire at 3:30 AM IST — reconnect the next trading day.'
+          : 'Connect Upstox to show live last price and % change on scanners and charts.'}
+      </div>
+      {err&&<div style={{fontSize:12,color:C.red,marginBottom:8}}>{err}</div>}
+      {info&&<div style={{fontSize:12,color:C.green,marginBottom:8}}>{info}</div>}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+        <button type="button" onClick={connectOAuth} disabled={!oauthOn||busy}
+          style={{flex:1,minWidth:160,padding:'10px 12px',borderRadius:8,border:'none',cursor:oauthOn?'pointer':'not-allowed',
+            background:C.accent,color:C.onAccent,fontWeight:800,fontSize:12,opacity:oauthOn?1:0.55}}>
+          Connect Upstox
+        </button>
+        {connected&&(
+          <button type="button" onClick={disconnect} disabled={busy}
+            style={{padding:'10px 12px',borderRadius:8,cursor:'pointer',
+              border:`1px solid ${C.border}`,background:'transparent',color:C.muted,fontWeight:700,fontSize:12}}>
+            Disconnect
+          </button>
+        )}
+      </div>
+      {!oauthOn&&(
+        <div style={{fontSize:11,color:C.yellow,marginTop:10,lineHeight:1.45}}>
+          OAuth is not configured yet (VITE_UPSTOX_CLIENT_ID + server UPSTOX_CLIENT_SECRET). Until then you can paste a token below.
+        </div>
+      )}
+      <button type="button" onClick={()=>setShowPaste(v=>!v)}
+        style={{marginTop:12,background:'none',border:'none',color:C.muted,fontSize:11,cursor:'pointer',padding:0,textDecoration:'underline'}}>
+        {showPaste?'Hide token paste':'Advanced: paste access token'}
+      </button>
+      {showPaste&&(
+        <div style={{marginTop:8}}>
+          <input type="password" value={token} onChange={e=>setToken(e.target.value)}
+            placeholder="Upstox access token"
+            style={{width:'100%',padding:'9px 10px',borderRadius:8,border:`1px solid ${C.border}`,
+              background:C.inputBg,color:C.text,fontSize:12,marginBottom:8}}/>
+          <button type="button" onClick={savePaste} disabled={busy}
+            style={{padding:'8px 12px',borderRadius:8,border:`1px solid ${C.border}`,cursor:'pointer',
+              background:'transparent',color:C.text,fontWeight:700,fontSize:12}}>
+            {busy?'Saving…':'Save pasted token'}
+          </button>
+        </div>
+      )}
+    </AccountCard>
+  )
+}
+
 function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchTheme,ambient,userSubscription,onOpenPayment,
   hoverChartPreviewEnabled,onHoverChartPreview,
   hoverOurChartEnabled,onHoverOurChart,
@@ -16067,6 +16168,7 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
         <div>
           <SubscriptionCard userSubscription={userSubscription} onOpenPayment={onOpenPayment}/>
           <ProfileCard session={session}/>
+          <UpstoxLiveFeedCard session={session} onUpdate={onUpdate}/>
           <TelegramAlertsCard session={session} alertPrefs={alertPrefs} onAlertPrefs={onAlertPrefs}/>
         </div>
         <div>{prefsCard}</div>
@@ -16644,6 +16746,8 @@ export default function App(){
   const [authLoading,setAuthLoading]=useState(true)
   const [userSubscription,setUserSubscription]=useState(null) // {status, trial_end, current_period_end} or null (not yet loaded)
   const [subscriptionLoading,setSubscriptionLoading]=useState(true)
+  // Plan could not be read/created (network, RLS, missing table) — fail open.
+  const [subscriptionUnavailable,setSubscriptionUnavailable]=useState(false)
   const [showPayment,setShowPayment]=useState(false)
 
   useEffect(()=>{
@@ -16665,7 +16769,7 @@ export default function App(){
           return
         }
         const{data:td}=await supabase.from('user_tokens').select('upstox_token').eq('user_id',s.user.id).single()
-        setSession({user:s.user,token:td?.upstox_token||OWNER_TOKEN})
+        setSession({user:s.user,token:td?.upstox_token||null})
         // Recovery links land with a session already established — keep
         // the update-password gate open if ?reset= is present.
         try{
@@ -16685,7 +16789,7 @@ export default function App(){
           const ownerTok = await fetchOwnerToken()
           if(ownerTok) OWNER_TOKEN = ownerTok
           const{data:td}=await supabase.from('user_tokens').select('upstox_token').eq('user_id',s.user.id).single()
-          setSession({user:s.user,token:td?.upstox_token||OWNER_TOKEN})
+          setSession({user:s.user,token:td?.upstox_token||null})
         }
         setAuthLoading(false)
         return
@@ -16712,7 +16816,7 @@ export default function App(){
         if(ownerTok) OWNER_TOKEN = ownerTok
         // Load user's custom token if any
         const{data:td}=await supabase.from('user_tokens').select('upstox_token').eq('user_id',s.user.id).single()
-        setSession({user:s.user,token:td?.upstox_token||OWNER_TOKEN})
+        setSession({user:s.user,token:td?.upstox_token||null})
         // If the redirect carried ?reset=, keep the update-password screen
         // even when Supabase emits SIGNED_IN instead of PASSWORD_RECOVERY.
         try{
@@ -16773,12 +16877,94 @@ export default function App(){
     }
   },[session?.user?.id,demoMode])
 
+  const upstoxOauthOnce=useRef(false)
+  useEffect(()=>{
+    if(authLoading) return
+    const cb=readUpstoxOAuthCallback()
+    if(!cb) return
+    if(cb.error){
+      if(!upstoxOauthOnce.current){
+        upstoxOauthOnce.current=true
+        setAuthNotice(cb.errorDescription||cb.error||'Upstox login was cancelled.')
+        setMainTab('settings')
+        clearUpstoxOAuthParams()
+      }
+      return
+    }
+    if(!cb.code) return
+    let expected=''
+    try{ expected=sessionStorage.getItem(UPSTOX_OAUTH_STATE_KEY)||'' }catch(_){}
+    if(!cb.state||!expected||cb.state!==expected){
+      upstoxOauthOnce.current=true
+      setAuthNotice('Upstox login could not be verified. Click Connect Upstox and try again.')
+      setMainTab('settings')
+      clearUpstoxOAuthParams()
+      return
+    }
+    if(!session?.user){
+      setAuthNotice('Sign in to Lakshmimata first, then connect Upstox.')
+      setShowAuth(true)
+      return
+    }
+    if(upstoxOauthOnce.current) return
+    upstoxOauthOnce.current=true
+    ;(async()=>{
+      try{
+        const { data: { session: s } } = await supabase.auth.getSession()
+        const jwt=s?.access_token
+        if(!jwt) throw new Error('Not signed in')
+        const data=await exchangeUpstoxAuthCode(jwt, cb.code)
+        try{ sessionStorage.removeItem(UPSTOX_OAUTH_STATE_KEY) }catch(_){}
+        setSession(prev=>({ user:(prev&&prev.user)||session.user, token:data.access_token }))
+        setMainTab('settings')
+        setAuthNotice('Upstox connected. Live last price and % change now use your account.')
+      }catch(e){
+        upstoxOauthOnce.current=false
+        setMainTab('settings')
+        setAuthNotice(e?.message||'Upstox connect failed')
+      }finally{
+        clearUpstoxOAuthParams()
+      }
+    })()
+  },[authLoading, session?.user?.id])
+
   useEffect(()=>{
     if(!session){ setSubscriptionLoading(false); return }
+    let cancelled=false
+    const cols='status,trial_end,current_period_end,plan_cycle,razorpay_payment_id'
+    const readRow=()=>supabase.from('subscriptions').select(cols)
+      .eq('user_id',session.user.id).maybeSingle()
     setSubscriptionLoading(true)
-    supabase.from('subscriptions').select('status,trial_end,current_period_end,plan_cycle,razorpay_payment_id')
-      .eq('user_id',session.user.id).single()
-      .then(({data})=>{ setUserSubscription(data||null); setSubscriptionLoading(false) })
+    ;(async()=>{
+      const {data,error}=await readRow()
+      if(cancelled) return
+      if(error){
+        // Blocking a paying user because their plan could not be READ is worse
+        // than briefly not enforcing, so an unreadable row never paywalls.
+        setSubscriptionUnavailable(true); setUserSubscription(null); setSubscriptionLoading(false); return
+      }
+      if(data){
+        setSubscriptionUnavailable(false); setUserSubscription(data); setSubscriptionLoading(false); return
+      }
+      // Register writes the trial row before a session exists whenever email
+      // confirmation is on, so RLS drops it and the account lands here with no
+      // row at all — start the trial now instead of showing the paywall.
+      const trialEnd=new Date(Date.now()+TRIAL_DAYS*86400000).toISOString()
+      const {error:insErr}=await supabase.from('subscriptions').upsert(
+        {user_id:session.user.id,status:'trialing',trial_end:trialEnd},
+        {onConflict:'user_id',ignoreDuplicates:true}
+      )
+      if(cancelled) return
+      if(insErr){
+        setSubscriptionUnavailable(true); setUserSubscription(null); setSubscriptionLoading(false); return
+      }
+      const {data:created}=await readRow()
+      if(cancelled) return
+      setSubscriptionUnavailable(false)
+      setUserSubscription(created||{status:'trialing',trial_end:trialEnd})
+      setSubscriptionLoading(false)
+    })()
+    return()=>{ cancelled=true }
   },[session?.user?.id])
 
   // Scanner state
@@ -16789,6 +16975,7 @@ export default function App(){
   const [progress,setProgress]=useState(0)
   const [progressMsg,setProgressMsg]=useState('')
   const [lastRefresh,setLastRefresh]=useState(null)
+  const liveQuotesRef=useRef(new Map())
   const [autoRefresh,setAutoRefreshRaw]=useState(()=>{
     try{ return localStorage.getItem('lakshmimata-autorefresh')==='on' }catch(e){ return false }
   }) // OFF by default — opt-in, not opt-out, so continuous ~1-min polling only
@@ -18475,7 +18662,13 @@ export default function App(){
         historyDate?Promise.resolve([]):fetchIndustriesFromDB(),
         historyDate?Promise.resolve(null):fetchScanMeta(),
       ])
-      setStocks(dbStocks)
+      const quotes=liveQuotesRef.current
+      setStocks(quotes.size
+        ? dbStocks.map(s=>{
+            const q=quotes.get(String(s.sym||'').toUpperCase())
+            return q?applyQuoteToStock(s,q):s
+          })
+        : dbStocks)
       setSectorData(dbSectors)
       setIndustryData(dbIndustries)
       setScanMeta(meta)
@@ -18501,10 +18694,10 @@ export default function App(){
   }
 
   const runScan=useCallback(async(useDemo=false)=>{
-    const tok=session?.token||OWNER_TOKEN
+    const tok=isPersonalUpstoxToken(session?.token, OWNER_TOKEN) ? session.token : ''
     setLoading(true);setProgress(0)
     let raw=[]
-    if(useDemo||(!tok&&!OWNER_TOKEN)){
+    if(useDemo||!tok){
       setProgressMsg('Loading demo data…');raw=DEMO;setProgress(50)
     }else{
       // Determine stock list: watchlist or index
@@ -18598,6 +18791,35 @@ export default function App(){
     }
     return()=>clearInterval(refreshTimer.current)
   },[autoRefresh,refreshInterval,runDBScan,historyDate,demoMode])
+
+  // Live LTP / % change from the user's Upstox token. Scanner flags stay
+  // on the last DB scan (owner account).
+  const stocksRef=useRef(stocks)
+  stocksRef.current=stocks
+  useEffect(()=>{
+    const token=isPersonalUpstoxToken(session?.token, OWNER_TOKEN)?session.token:''
+    if(!token||historyDate||demoMode) return
+    let cancelled=false
+    const tick=async()=>{
+      if(!isMarketOpen()) return
+      const syms=stocksRef.current.map(s=>s.sym).filter(Boolean)
+      if(!syms.length) return
+      try{
+        const map=await fetchUpstoxQuotes(token,syms)
+        if(cancelled||!map.size) return
+        liveQuotesRef.current=map
+        setStocks(prev=>prev.map(s=>{
+          const q=map.get(String(s.sym||'').toUpperCase())
+          return q?applyQuoteToStock(s,q):s
+        }))
+      }catch(e){
+        console.warn('User Upstox live quotes:', e?.message||e)
+      }
+    }
+    tick()
+    const id=setInterval(tick,45000)
+    return()=>{ cancelled=true; clearInterval(id) }
+  },[session?.token,historyDate,demoMode,lastRefresh])
 
   // Auto-open #1 RS stock once — only on RS Rating (layout docks live there).
   useEffect(()=>{
@@ -19105,7 +19327,7 @@ export default function App(){
     </div>
   )
 
-  if(session && !demoMode && !isLiveSubscription(userSubscription)){
+  if(session && !demoMode && !subscriptionUnavailable && !isLiveSubscription(userSubscription)){
     return (<PaywallScreen reason={paywallReasonFor(userSubscription)}
       session={session}
       onLogout={async()=>{await supabase.auth.signOut();setSession(null)}}
@@ -19134,7 +19356,10 @@ export default function App(){
       hoverChartEnabled:hoverChartPreviewEnabled&&!isMobile,
       // The hover chart is the real Our Chart, so it needs the user id to load
       // their saved indicator prefs (Lakshmi Mata / Volume / Super Cycle).
-      chartUserId:session?.user?.id||null}}>
+      chartUserId:session?.user?.id||null,
+      upstoxToken: isPersonalUpstoxToken(session?.token, OWNER_TOKEN) ? session.token : null,
+      liveFeedConnected: isPersonalUpstoxToken(session?.token, OWNER_TOKEN),
+    }}>
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:"'Inter','SF Pro Display',sans-serif",
       color:C.text,fontSize:13,display:'flex',flexDirection:'row',zoom:zoomLevel}}>
 
@@ -19148,6 +19373,14 @@ export default function App(){
             fontFamily:'monospace',wordBreak:'break-word',cursor:'pointer',
             boxShadow:'0 2px 8px rgba(0,0,0,0.3)'}}>
           ⚠️ JS Error (tap to dismiss): {jsError}
+        </div>
+      )}
+      {session&&authNotice&&!jsError&&(
+        <div onClick={()=>setAuthNotice('')}
+          style={{position:'fixed',top:0,left:0,right:0,zIndex:9998,
+            background:C.accent,color:C.onAccent,padding:'10px 14px',fontSize:12,
+            fontWeight:700,cursor:'pointer',boxShadow:'0 2px 8px rgba(0,0,0,0.3)'}}>
+          {authNotice} · tap to dismiss
         </div>
       )}
 
@@ -24429,6 +24662,7 @@ export default function App(){
         isIndex={chartIsIndex || indexData.some(idx=>idx.name===chartSym)}
         wide={chartWide}
         userId={session?.user?.id || null}
+        upstoxToken={isPersonalUpstoxToken(session?.token, OWNER_TOKEN) ? session.token : null}
         customPct={chartOnlyDock?CHART_ONLY_DOCK_PCT:(dockStack||dockColumns||dockSoloChart?null:chartPanelPct)}
         onToggleWide={()=>{
           setChartPanelPct(null)

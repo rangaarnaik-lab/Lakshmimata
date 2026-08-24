@@ -1,11 +1,32 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import obfuscator from 'rollup-plugin-obfuscator'
+import { handleUpstoxTokenRequest } from './api/upstox-token.js'
+
+function upstoxOAuthDevPlugin(env) {
+  return {
+    name: 'upstox-oauth-dev',
+    configureServer(server) {
+      Object.assign(process.env, env)
+      server.middlewares.use((req, res, next) => {
+        const url = req.url?.split('?')[0] || ''
+        if (url !== '/api/upstox-token') return next()
+        handleUpstoxTokenRequest(req, res).catch((err) => {
+          res.statusCode = 500
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error: err?.message || 'OAuth proxy failed' }))
+        })
+      })
+    },
+  }
+}
 
 // Proprietary indicator formulas ship in the browser; obfuscate that chunk
 // and never emit sourcemaps in production. True secrecy requires server-side compute.
-export default defineConfig(({ mode }) => ({
-  plugins: [react()],
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  return {
+  plugins: [react(), upstoxOAuthDevPlugin(env)],
   build: {
     sourcemap: false,
     minify: 'esbuild',
@@ -47,4 +68,5 @@ export default defineConfig(({ mode }) => ({
     drop: mode === 'production' ? ['console', 'debugger'] : [],
     legalComments: 'none',
   },
-}))
+}
+})

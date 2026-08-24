@@ -2,6 +2,7 @@
 // Called by App.jsx instead of running live scans in browser
 
 import { supabase } from './supabase'
+import { fetchUpstoxQuotes } from './upstoxQuotes'
 import { resolveIndustry, resolveSector, getCompanyName } from '../data/industries'
 import { enrichHistoryLeaderFlags } from './historyLeaders'
 
@@ -1282,42 +1283,23 @@ export async function fetchIndexDashboard() {
 
 /**
  * Live quote for Our Chart's forming daily candle.
- * Uses stocks day OHLC from Upstox (written each scan). Falls back if
- * open/high/low columns are missing from the schema cache.
+ * Uses the signed-in user's Upstox token only — not the shared stocks table.
  */
-export async function fetchLiveStockPrice(sym) {
+export async function fetchLiveStockPrice(sym, upstoxToken) {
   const clean = (sym || '').trim()
-  if (!clean) return null
-
-  const pick = (row) => {
-    if (!row || row.last_price == null) return null
-    return {
-      price: row.last_price,
-      volume: row.volume,
-      open: row.open,
-      high: row.high,
-      low: row.low,
-      prevClose: row.prev_close,
-    }
+  const token = String(upstoxToken || '').trim()
+  if (!clean || !token) return null
+  const map = await fetchUpstoxQuotes(token, [clean])
+  const q = map.get(clean.toUpperCase())
+  if (!q) return null
+  return {
+    price: q.last,
+    volume: q.volume,
+    open: q.open,
+    high: q.high,
+    low: q.low,
+    prevClose: q.prevClose,
   }
-
-  let { data, error } = await supabase
-    .from('stocks')
-    .select('last_price,volume,open,high,low,prev_close')
-    .ilike('sym', clean)
-    .maybeSingle()
-
-  if (error) {
-    // Schema without day OHLC columns — still update close/volume.
-    const retry = await supabase
-      .from('stocks')
-      .select('last_price,volume,prev_close')
-      .ilike('sym', clean)
-      .maybeSingle()
-    if (retry.error || !retry.data) return null
-    return pick(retry.data)
-  }
-  return pick(data)
 }
 
 /** Local YYYY-MM-DD (avoid UTC day-shift from toISOString in IST). */
