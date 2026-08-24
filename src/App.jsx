@@ -4321,10 +4321,16 @@ const ASK_AI_SUGGESTIONS = [
   'Do they deliver on growth / capex promises?',
 ]
 const ASK_AI_CHART_SUGGESTIONS = [
-  'What does this chart show?',
+  'Explain this chart in simple language.',
   'Is this a healthy setup or a trap?',
   'What do the indicators on this chart say?',
 ]
+
+function askModeLabel(mode){
+  if(mode==='web') return 'Web research'
+  if(mode==='chart') return 'Chart analysis'
+  return 'Filings only'
+}
 
 function AskAiAgent({symbol, isMobile, variant='inline'}){
   // 'inline' = pill in the detail tab row. 'rail' = thin tab pinned to the
@@ -4335,7 +4341,7 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
   const [active, setActive] = useState(null)
   const [recent, setRecent] = useState([])
   const [err, setErr] = useState(null)
-  const [askMode, setAskMode] = useState('filings') // 'filings' | 'web'
+  const [askMode, setAskMode] = useState('chart') // 'filings' | 'web' | 'chart'
   const [chartImg, setChartImg] = useState(null) // { mime, b64, previewUrl }
   const [railHover, setRailHover] = useState(false)
   const fileRef = useRef(null)
@@ -4379,6 +4385,37 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
       if(prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl)
       return res
     })
+  }
+
+  const captureOurChart = async ()=>{
+    if(busy) return
+    setErr(null)
+    setBusy(true)
+    try{
+      const blob = await new Promise((resolve,reject)=>{
+        const timeout=setTimeout(()=>reject(new Error('Open Our Chart for this stock first, then try again.')),3000)
+        window.dispatchEvent(new CustomEvent('lm-capture-chart',{
+          detail:{
+            symbol,
+            resolve:(value)=>{clearTimeout(timeout);resolve(value)},
+            reject:(error)=>{clearTimeout(timeout);reject(error)},
+          },
+        }))
+      })
+      const file=new File([blob],`${symbol}-chart.png`,{type:blob.type||'image/png'})
+      const res=await compressChartImage(file)
+      if(res.error) throw new Error(res.error)
+      setChartImg(prev=>{
+        if(prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl)
+        return res
+      })
+      setAskMode('chart')
+      setQ('Explain this chart in simple language. Cover trend, key levels, volume, RS, indicators, risks, and what would confirm or invalidate the setup.')
+    }catch(e){
+      setErr(e?.message||'Could not capture Our Chart.')
+    }finally{
+      setBusy(false)
+    }
   }
 
   const submit = async (text)=>{
@@ -4494,6 +4531,7 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
                 {[
                   {id:'filings', label:'Filings only', hint:'PPT / Concall on file'},
                   {id:'web', label:'Web research', hint:'Google Search + filings'},
+                  {id:'chart', label:'Chart analysis', hint:'Read the visible Our Chart'},
                 ].map(m=>{
                   const on = askMode===m.id
                   return (
@@ -4510,6 +4548,17 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
                   )
                 })}
               </div>
+
+              {askMode==='chart'&&!chartImg&&(
+                <button type="button" disabled={busy} onClick={captureOurChart}
+                  style={{
+                    width:'100%',marginBottom:10,padding:'10px 12px',borderRadius:10,
+                    border:`1px solid ${C.accent}66`,background:C.accent+'18',
+                    color:C.accent,fontSize:12,fontWeight:900,cursor:busy?'default':'pointer',
+                  }}>
+                  {busy?'Capturing Our Chart…':'📈 Capture Our Chart'}
+                </button>
+              )}
 
               <MgmtFlagsCard symbol={symbol} compact/>
 
@@ -4541,7 +4590,7 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
                         fontSize:9,fontWeight:700,color:C.accent,background:C.accent+'18',
                         border:`1px solid ${C.accent}44`,borderRadius:999,padding:'1px 7px',
                       }}>
-                        {(active.ask_mode||askMode)==='web'?'Web research':'Filings only'}
+                        {askModeLabel(active.ask_mode||askMode)}
                       </span>
                     )}
                   </div>
@@ -4550,7 +4599,9 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
                     <div style={{fontSize:11,color:C.muted}}>
                       {(active.ask_mode||askMode)==='web'
                         ? 'Working… usually 10–40 seconds (falls back fast if web is slow).'
-                        : 'Working… usually 5–20 seconds.'}
+                        : (active.ask_mode||askMode)==='chart'
+                          ? 'Reading the visible chart… usually 10–50 seconds.'
+                          : 'Working… usually 5–20 seconds.'}
                     </div>
                   )}
                   {active.status==='error'&&(
@@ -7425,6 +7476,54 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, u
   const plotRef = useRef(null)
   const indMenuRef = useRef(null)
   const rafRef = useRef(null)
+  useEffect(()=>{
+    const capture=async(e)=>{
+      const requested=String(e?.detail?.symbol||'').trim().toUpperCase()
+      if(requested!==String(sym||'').trim().toUpperCase()) return
+      const svg=svgRef.current
+      if(!svg){ e.detail?.reject?.(new Error('Our Chart is not ready yet.')); return }
+      try{
+        const rect=svg.getBoundingClientRect()
+        if(rect.width<50||rect.height<50) throw new Error('Our Chart is minimized. Restore it and try again.')
+        const clone=svg.cloneNode(true)
+        clone.setAttribute('xmlns','http://www.w3.org/2000/svg')
+        clone.setAttribute('width',String(Math.round(rect.width)))
+        clone.setAttribute('height',String(Math.round(rect.height)))
+        const bg=document.createElementNS('http://www.w3.org/2000/svg','rect')
+        bg.setAttribute('x','0'); bg.setAttribute('y','0')
+        bg.setAttribute('width','100%'); bg.setAttribute('height','100%')
+        bg.setAttribute('fill',C.chartBg||C.card)
+        clone.insertBefore(bg,clone.firstChild)
+        const xml=new XMLSerializer().serializeToString(clone)
+        const svgBlob=new Blob([xml],{type:'image/svg+xml;charset=utf-8'})
+        const url=URL.createObjectURL(svgBlob)
+        const img=new Image()
+        img.onload=()=>{
+          try{
+            const scale=Math.min(2,1400/Math.max(1,rect.width))
+            const canvas=document.createElement('canvas')
+            canvas.width=Math.max(1,Math.round(rect.width*scale))
+            canvas.height=Math.max(1,Math.round(rect.height*scale))
+            const ctx=canvas.getContext('2d')
+            ctx.fillStyle=C.chartBg||C.card
+            ctx.fillRect(0,0,canvas.width,canvas.height)
+            ctx.drawImage(img,0,0,canvas.width,canvas.height)
+            canvas.toBlob(blob=>{
+              URL.revokeObjectURL(url)
+              if(blob) e.detail?.resolve?.(blob)
+              else e.detail?.reject?.(new Error('Could not render Our Chart image.'))
+            },'image/png')
+          }catch(error){
+            URL.revokeObjectURL(url); e.detail?.reject?.(error)
+          }
+        }
+        img.onerror=()=>{URL.revokeObjectURL(url);e.detail?.reject?.(new Error('Could not render Our Chart image.'))}
+        img.src=url
+      }catch(error){ e.detail?.reject?.(error) }
+    }
+    window.addEventListener('lm-capture-chart',capture)
+    return()=>window.removeEventListener('lm-capture-chart',capture)
+  },[sym])
   const rangeBars = RANGE_BARS_BY_INTERVAL[barInterval] || RANGE_BARS_BY_INTERVAL.D
   const intervalMeta = BAR_INTERVAL_META[barInterval] || BAR_INTERVAL_META.D
   const [intradayFeatureOn, setIntradayFeatureOn] = useState(true)

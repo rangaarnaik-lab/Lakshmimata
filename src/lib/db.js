@@ -2001,13 +2001,13 @@ export async function compressChartImage(file) {
 
 export async function submitStockAiAsk(symbol, question, askMode = 'filings', chartImage = null) {
   // Queue a free-form diligence question; fundamentals worker answers via Gemini.
-  // askMode: 'filings' (PPT/concall on file only) | 'web' (Google Search + filings)
+  // askMode: 'filings' | 'web' | 'chart' (Gemini Vision + local context)
   // chartImage: optional { mime, b64 } compressed screenshot for vision.
   let q = (question || '').trim()
   const hasChart = !!(chartImage?.b64 && chartImage.b64.length >= 800)
   if (hasChart && q.length < 8) q = 'Read this chart and explain what it shows.'
   const sym = (symbol || '').trim().toUpperCase()
-  const mode = askMode === 'web' ? 'web' : 'filings'
+  const mode = askMode === 'web' ? 'web' : askMode === 'chart' ? 'chart' : 'filings'
   if (!sym || q.length < 8 || q.length > 400) {
     return { error: 'Ask a clear question (8–400 characters), or attach a chart image.' }
   }
