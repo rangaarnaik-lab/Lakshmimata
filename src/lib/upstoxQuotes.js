@@ -1,18 +1,8 @@
 /**
- * Live LTP / % change from the signed-in user's Upstox token.
+ * Live LTP / % change via our server. The decrypted Upstox token never reaches the browser.
  * Scanners (RS, HY/HT, squeeze, …) stay on the owner Railway scan.
  */
-
-const QUOTE_URL = 'https://api.upstox.com/v2/market-quote/quotes'
-const BATCH = 80
-
-export function isPersonalUpstoxToken(token, ownerToken = '') {
-  const t = String(token || '').trim()
-  if (!t) return false
-  const o = String(ownerToken || '').trim()
-  if (o && t === o) return false
-  return true
-}
+import { supabase } from './supabase'
 
 export function nseEquityInstrumentKey(sym) {
   return `NSE_EQ|${String(sym || '').trim().toUpperCase()}`
@@ -39,37 +29,45 @@ export function parseUpstoxQuote(raw) {
   const high = num(ohlc.high)
   const low = num(ohlc.low)
   const volume = num(raw.volume) ?? num(ohlc.volume)
-  const flatPrev = prevClose != null && Math.abs(last - prevClose) < Math.max(0.005, Math.abs(last) * 0.0003)
-  const chg = prevClose && prevClose > 0 && !flatPrev
+  const chg = prevClose && prevClose > 0
     ? +(((last - prevClose) / prevClose) * 100).toFixed(2)
-    : (prevClose && prevClose > 0 ? +(((last - prevClose) / prevClose) * 100).toFixed(2) : 0)
+    : 0
   return { last, chg, open, high, low, volume, prevClose, netChange }
 }
 
 function lookupQuote(data, sym) {
   const u = String(sym || '').trim().toUpperCase()
-  return data[`NSE_EQ:${u}`] || data[`NSE_EQ|${u}`] || data[nseEquityInstrumentKey(u)] || null
+  return data[u] || data[`NSE_EQ:${u}`] || data[`NSE_EQ|${u}`] || data[nseEquityInstrumentKey(u)] || null
 }
 
-async function fetchQuoteBatch(token, symbols) {
-  const keys = symbols.map(nseEquityInstrumentKey)
-  const url = new URL(QUOTE_URL)
-  url.searchParams.set('instrument_key', keys.join(','))
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+async function lakshmimataAccessToken() {
+  const { data: { session } } = await supabase.auth.getSession()
+  return session?.access_token || ''
+}
+
+async function fetchQuoteBatch(symbols) {
+  const jwt = await lakshmimataAccessToken()
+  if (!jwt) {
+    const error = new Error('Sign in and connect Upstox to view live prices.')
+    error.code = 'upstox_not_connected'
+    throw error
+  }
+  const res = await fetch('/api/upstox-quotes', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ symbols }),
   })
-  const text = await res.text()
+  const json = await res.json().catch(() => ({}))
   if (!res.ok) {
-    const err = new Error(`Upstox quotes ${res.status}`)
+    const err = new Error(json.error || `Upstox quotes ${res.status}`)
     err.status = res.status
-    err.body = text.slice(0, 240)
+    err.code = json.code
     throw err
   }
-  let json
-  try { json = JSON.parse(text) } catch {
-    throw new Error('Upstox quotes: invalid JSON')
-  }
-  const data = json?.data || {}
+  const data = json?.quotes || {}
   const map = new Map()
   for (const sym of symbols) {
     const parsed = parseUpstoxQuote(lookupQuote(data, sym))
@@ -78,21 +76,13 @@ async function fetchQuoteBatch(token, symbols) {
   return map
 }
 
-/** Fetch live quotes for many symbols. Returns Map(SYM → parsed quote). */
-export async function fetchUpstoxQuotes(token, symbols) {
-  const t = String(token || '').trim()
+export async function fetchUpstoxQuotes(symbols) {
   const uniq = [...new Set((symbols || []).map(s => String(s || '').trim().toUpperCase()).filter(Boolean))]
-  if (!t || !uniq.length) return new Map()
-  const chunks = []
-  for (let i = 0; i < uniq.length; i += BATCH) chunks.push(uniq.slice(i, i + BATCH))
+  if (!uniq.length) return new Map()
   const out = new Map()
-  const CONCUR = 3
-  for (let i = 0; i < chunks.length; i += CONCUR) {
-    const slice = chunks.slice(i, i + CONCUR)
-    const parts = await Promise.all(slice.map(chunk => fetchQuoteBatch(t, chunk)))
-    for (const part of parts) {
-      for (const [k, v] of part) out.set(k, v)
-    }
+  for (let i = 0; i < uniq.length; i += 240) {
+    const part = await fetchQuoteBatch(uniq.slice(i, i + 240))
+    for (const [k, v] of part) out.set(k, v)
   }
   return out
 }

@@ -1,49 +1,34 @@
 /**
  * POST /api/upstox-token
  * Exchanges an Upstox OAuth authorization code for an access token.
- * Client secret stays on the server. Caller must be a signed-in Lakshmimata user.
+ * Client secret and decrypted token stay on the server.
  */
-import { createClient } from '@supabase/supabase-js'
-
-function readJsonBody(req) {
-  if (req.body && typeof req.body === 'object') return Promise.resolve(req.body)
-  if (typeof req.body === 'string') {
-    try { return Promise.resolve(JSON.parse(req.body)) } catch { return Promise.resolve({}) }
-  }
-  return new Promise((resolve) => {
-    let raw = ''
-    req.on('data', (c) => { raw += c })
-    req.on('end', () => {
-      try { resolve(raw ? JSON.parse(raw) : {}) } catch { resolve({}) }
-    })
-  })
-}
-
-function send(res, status, payload) {
-  res.statusCode = status
-  res.setHeader('Content-Type', 'application/json')
-  res.end(JSON.stringify(payload))
-}
+import {
+  authenticatedBrokerContext,
+  readJsonBody,
+  saveBrokerToken,
+  sendJson,
+  setCors,
+} from './_lib/brokerStore.js'
+import { encryptToken } from './_lib/tokenCrypto.js'
 
 export async function handleUpstoxTokenRequest(req, res) {
-  const origin = req.headers.origin || '*'
-  res.setHeader('Access-Control-Allow-Origin', origin)
-  res.setHeader('Access-Control-Allow-Headers', 'authorization, content-type')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  setCors(req, res)
   if (req.method === 'OPTIONS') {
     res.statusCode = 204
     res.end()
     return
   }
   if (req.method !== 'POST') {
-    send(res, 405, { error: 'POST only' })
+    sendJson(res, 405, { error: 'POST only' })
     return
   }
 
-  const auth = String(req.headers.authorization || '')
-  const jwt = auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
-  if (!jwt) {
-    send(res, 401, { error: 'Sign in to Lakshmimata first, then connect Upstox.' })
+  let context
+  try {
+    context = await authenticatedBrokerContext(req)
+  } catch (error) {
+    sendJson(res, error.status || 500, { error: error.message })
     return
   }
 
@@ -51,35 +36,18 @@ export async function handleUpstoxTokenRequest(req, res) {
   const code = String(body.code || '').trim()
   const redirectUri = String(body.redirect_uri || process.env.UPSTOX_REDIRECT_URI || '').trim()
   if (!code) {
-    send(res, 400, { error: 'Missing authorization code' })
+    sendJson(res, 400, { error: 'Missing authorization code' })
     return
   }
 
-  const clientId = (process.env.UPSTOX_CLIENT_ID || process.env.VITE_UPSTOX_CLIENT_ID || '').trim()
+  const clientId = String(process.env.UPSTOX_CLIENT_ID || '').trim()
   const clientSecret = (process.env.UPSTOX_CLIENT_SECRET || '').trim()
   if (!clientId || !clientSecret) {
-    send(res, 503, { error: 'Upstox OAuth is not configured on the server (UPSTOX_CLIENT_ID / UPSTOX_CLIENT_SECRET).' })
+    sendJson(res, 503, { error: 'Upstox OAuth is not configured on the server (UPSTOX_CLIENT_ID / UPSTOX_CLIENT_SECRET).' })
     return
   }
   if (!redirectUri) {
-    send(res, 400, { error: 'Missing redirect_uri' })
-    return
-  }
-
-  const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim()
-  const anonKey = (process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim()
-  if (!supabaseUrl || !anonKey) {
-    send(res, 503, { error: 'Supabase is not configured on the server.' })
-    return
-  }
-
-  const authClient = createClient(supabaseUrl, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
-  const { data: userData, error: userErr } = await authClient.auth.getUser(jwt)
-  const user = userData?.user
-  if (userErr || !user?.id) {
-    send(res, 401, { error: 'Invalid or expired Lakshmimata session' })
+    sendJson(res, 400, { error: 'Missing redirect_uri' })
     return
   }
 
@@ -101,27 +69,24 @@ export async function handleUpstoxTokenRequest(req, res) {
   const accessToken = tokenJson.extended_token || tokenJson.access_token || tokenJson.data?.access_token
   if (!tokenRes.ok || !accessToken) {
     const msg = tokenJson.message || tokenJson.error || tokenJson.errors?.[0]?.message || `Upstox token exchange failed (${tokenRes.status})`
-    send(res, 400, { error: String(msg) })
+    sendJson(res, 400, { error: String(msg) })
     return
   }
 
-  const db = createClient(supabaseUrl, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: `Bearer ${jwt}` } },
-  })
-  const { error: upErr } = await db.from('user_tokens').upsert({
-    user_id: user.id,
-    upstox_token: accessToken,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'user_id' })
-  if (upErr) {
-    send(res, 500, { error: `Saved token to Upstox but not to your account: ${upErr.message}` })
+  try {
+    await saveBrokerToken(context.db, context.user.id, {
+      accessToken: encryptToken(accessToken),
+      brokerUserId: tokenJson.user_id || tokenJson.data?.user_id || null,
+      expiresAt: tokenJson.expires_at || null,
+    })
+  } catch (error) {
+    sendJson(res, 500, { error: `Upstox connected but the encrypted token could not be saved: ${error.message}` })
     return
   }
 
-  send(res, 200, {
+  sendJson(res, 200, {
     ok: true,
-    access_token: accessToken,
+    connected: true,
     user_name: tokenJson.user_name || null,
     expires_note: tokenJson.extended_token
       ? 'Using Upstox extended (read-only) token for live quotes.'

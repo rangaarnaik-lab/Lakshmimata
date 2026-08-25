@@ -1285,11 +1285,10 @@ export async function fetchIndexDashboard() {
  * Live quote for Our Chart's forming daily candle.
  * Uses the signed-in user's Upstox token only — not the shared stocks table.
  */
-export async function fetchLiveStockPrice(sym, upstoxToken) {
+export async function fetchLiveStockPrice(sym) {
   const clean = (sym || '').trim()
-  const token = String(upstoxToken || '').trim()
-  if (!clean || !token) return null
-  const map = await fetchUpstoxQuotes(token, [clean])
+  if (!clean) return null
+  const map = await fetchUpstoxQuotes([clean])
   const q = map.get(clean.toUpperCase())
   if (!q) return null
   return {

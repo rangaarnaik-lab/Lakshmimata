@@ -1,35 +1,51 @@
-/** Upstox OAuth 2.0 (authorization code). Client secret never ships in the browser. */
+/** Upstox OAuth 2.0. Client ID is loaded from the server; the secret never ships in the browser. */
+import { supabase } from './supabase'
 
 export const UPSTOX_OAUTH_STATE_KEY = 'lakshmimata-upstox-oauth-state'
+const UPSTOX_OAUTH_REDIRECT_KEY = 'lakshmimata-upstox-oauth-redirect'
 
-export function upstoxClientId() {
-  return (import.meta.env.VITE_UPSTOX_CLIENT_ID || '').trim()
-}
+let cachedConfig = null
 
-export function upstoxOAuthConfigured() {
-  return !!upstoxClientId()
+export async function fetchUpstoxOAuthConfig() {
+  if (cachedConfig) return cachedConfig
+  const res = await fetch('/api/upstox-oauth-config')
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `Upstox config failed (${res.status})`)
+  cachedConfig = {
+    configured: !!data.configured && !!data.client_id,
+    clientId: String(data.client_id || '').trim(),
+    redirectUri: String(data.redirect_uri || '').trim(),
+  }
+  return cachedConfig
 }
 
 export function upstoxRedirectUri() {
-  const env = (import.meta.env.VITE_UPSTOX_REDIRECT_URI || '').trim()
-  if (env) return env
+  try {
+    const stored = sessionStorage.getItem(UPSTOX_OAUTH_REDIRECT_KEY)
+    if (stored) return stored
+  } catch (_) {}
   if (typeof window === 'undefined') return ''
   return `${window.location.origin}/upstox/callback`
 }
 
-export function startUpstoxOAuth() {
-  const clientId = upstoxClientId()
-  if (!clientId) {
-    throw new Error('Upstox OAuth is not configured. Set VITE_UPSTOX_CLIENT_ID and register the redirect URL in the Upstox developer app.')
+export async function startUpstoxOAuth() {
+  const cfg = await fetchUpstoxOAuthConfig()
+  if (!cfg.configured || !cfg.clientId) {
+    throw new Error('Upstox OAuth is not configured. Set UPSTOX_CLIENT_ID and UPSTOX_CLIENT_SECRET on the server.')
   }
+  const redirectUri = cfg.redirectUri || upstoxRedirectUri()
+  if (!redirectUri) throw new Error('Missing Upstox redirect URL. Set UPSTOX_REDIRECT_URI on the server.')
   const state = (typeof crypto !== 'undefined' && crypto.randomUUID)
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  try { sessionStorage.setItem(UPSTOX_OAUTH_STATE_KEY, state) } catch (_) {}
+  try {
+    sessionStorage.setItem(UPSTOX_OAUTH_STATE_KEY, state)
+    sessionStorage.setItem(UPSTOX_OAUTH_REDIRECT_KEY, redirectUri)
+  } catch (_) {}
   const u = new URL('https://api.upstox.com/v2/login/authorization/dialog')
   u.searchParams.set('response_type', 'code')
-  u.searchParams.set('client_id', clientId)
-  u.searchParams.set('redirect_uri', upstoxRedirectUri())
+  u.searchParams.set('client_id', cfg.clientId)
+  u.searchParams.set('redirect_uri', redirectUri)
   u.searchParams.set('state', state)
   window.location.assign(u.toString())
 }
@@ -82,6 +98,35 @@ export async function exchangeUpstoxAuthCode(supabaseAccessToken, code) {
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || `Upstox connect failed (${res.status})`)
-  if (!data.access_token) throw new Error('Upstox did not return an access token')
+  if (!data.connected) throw new Error('Upstox connection was not saved')
+  try { sessionStorage.removeItem(UPSTOX_OAUTH_REDIRECT_KEY) } catch (_) {}
   return data
+}
+
+async function brokerSessionRequest(method = 'GET', payload) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session?.access_token) throw new Error('Sign in to Lakshmimata first.')
+  const res = await fetch('/api/upstox-session', {
+    method,
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      ...(payload ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: payload ? JSON.stringify(payload) : undefined,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `Upstox session failed (${res.status})`)
+  return data
+}
+
+export function readUpstoxConnection() {
+  return brokerSessionRequest('GET')
+}
+
+export function savePastedUpstoxToken(accessToken) {
+  return brokerSessionRequest('POST', { access_token: accessToken })
+}
+
+export function disconnectUpstox() {
+  return brokerSessionRequest('DELETE')
 }

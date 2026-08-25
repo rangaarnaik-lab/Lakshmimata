@@ -49,13 +49,14 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import {
-  supabase, fetchOwnerToken, revokeOtherSessions,
+  supabase, revokeOtherSessions,
   claimCurrentDevice, verifyCurrentDevice,
 } from './lib/supabase'
-import { isPersonalUpstoxToken, fetchUpstoxQuotes, applyQuoteToStock } from './lib/upstoxQuotes'
+import { fetchUpstoxQuotes, applyQuoteToStock } from './lib/upstoxQuotes'
 import {
-  upstoxOAuthConfigured, startUpstoxOAuth, readUpstoxOAuthCallback, clearUpstoxOAuthParams,
-  exchangeUpstoxAuthCode, UPSTOX_OAUTH_STATE_KEY,
+  fetchUpstoxOAuthConfig, startUpstoxOAuth, readUpstoxOAuthCallback, clearUpstoxOAuthParams,
+  exchangeUpstoxAuthCode, readUpstoxConnection, savePastedUpstoxToken, disconnectUpstox,
+  UPSTOX_OAUTH_STATE_KEY,
 } from './lib/upstoxOAuth'
 import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, compressChartImage, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchUserWatchlists, saveUserWatchlists, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
@@ -83,12 +84,6 @@ import {
   GUPPY_SHORT_PERIODS, GUPPY_LONG_PERIODS,
 } from './scanners/chartAnalysis'
 import { resolveIntradayChartEnabled, resolveIntradayIntervals } from './lib/intradayChart'
-
-// ─────────────────────────────────────────────────────────────────────
-// 🔑 Owner Upstox token is for the Railway scanner only.
-// Live LTP / % change in the browser uses each user's own token (Account).
-// Do not fall back to this for other people's live quotes.
-let OWNER_TOKEN = import.meta.env.VITE_OWNER_UPSTOX_TOKEN || ''
 
 // ── Colors ────────────────────────────────────────────────────────────
 // ── Theming ──────────────────────────────────────────────────────────
@@ -200,6 +195,8 @@ const rsLabel  = r => r>=90?'Elite':r>=80?'Strong':r>=60?'Avg+':r>=40?'Avg':'Wea
 const trendIcon  = t => t==='improving'?'↑↑':t==='declining'?'↓↓':'→'
 const trendColor = t => t==='improving'?C.green:t==='declining'?C.red:C.muted
 const fmtP   = v => `₹${v>=1000?v.toFixed(0):v.toFixed(2)}`
+const hasUserLiveQuote = s => !!s?.liveFromUser
+const connectBrokerHint = 'Connect Upstox to view live price'
 /** Portfolio-style amounts: ₹1.2L / ₹40.5K / ₹999 */
 const fmtAmt = v => {
   if (v == null || !isFinite(v)) return '—'
@@ -2636,7 +2633,7 @@ function LastUpdatedBar({scanMeta,lastRefresh,loading,autoRefresh,setAutoRefresh
           boxShadow:`0 0 5px ${loading?C.yellow:marketOpen?C.green:C.muted}`,
           animation:loading?'pulse 1s infinite':'none'}}/>
         <span style={{fontWeight:700,color:C.text,whiteSpace:'nowrap'}}>
-          {loading?'Updating…':marketOpen?(layout?.liveFeedConnected?'Live · your Upstox':'Live · scanners') :'Closed'}
+          {loading?'Updating…':marketOpen?(layout?.liveFeedConnected?'Live · your Upstox':'Connect Upstox for LTP') :'Closed'}
         </span>
       </div>
       <span style={{color:C.muted,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{lastScanStr}</span>
@@ -3353,9 +3350,11 @@ function StockCard({s,i,onChart,onCompanyPage}){
         <div style={{display:'flex',gap:8,alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
           <div style={{display:'flex',alignItems:'center',gap:6}}>
             <span style={{fontSize:13,fontWeight:700,color:trendColor(s.rsTrend.trend)}} title={`RS trend: ${s.rsTrend.trend}`}>{trendIcon(s.rsTrend.trend)}</span>
+            {hasUserLiveQuote(s)?<>
             <span style={{fontWeight:700,fontSize:15}}>{fmtP(s.last)}</span>
             <span style={{fontWeight:700,fontSize:13,color:s.chg>=0?C.green:C.red}}>
               {s.chg>=0?'+':''}{s.chg.toFixed(2)}%</span>
+            </>:<span title={connectBrokerHint} style={{fontSize:11,color:C.muted}}>— Connect Upstox</span>}
           </div>
           <div style={{display:'flex',gap:10,alignItems:'center'}}>
             <a href={`https://www.tradingview.com/chart/?symbol=NSE:${s.sym}`}
@@ -5454,7 +5453,7 @@ function TradingViewDailyChart({symbol, exchange, onReady}){
   )
 }
 
-function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, chartSectionHidden=[], onChartSectionOrderChange, onChartSectionHiddenChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, chartTabHint=null, onConsumeChartTabHint, detailFirst=false, onMoveTile, stackLayout=false, columnsLayout=false, chartColPct=36, detailColPct=32, sideSoloChart=false, chartCellStyle=null, detailCellStyle=null, chartStackOrder=2, detailStackOrder=4, userId=null, upstoxToken=null}){
+function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMobile, symList, onNavigate, stocks, chartSectionOrder, chartSectionHidden=[], onChartSectionOrderChange, onChartSectionHiddenChange, panelChart, panelDetail, onPanelChart, onPanelDetail, expandCol=false, detailTabHint=null, onConsumeDetailTabHint, chartTabHint=null, onConsumeChartTabHint, detailFirst=false, onMoveTile, stackLayout=false, columnsLayout=false, chartColPct=36, detailColPct=32, sideSoloChart=false, chartCellStyle=null, detailCellStyle=null, chartStackOrder=2, detailStackOrder=4, userId=null, brokerConnected=false}){
   const [loaded, setLoaded] = useState(false)
   // Stocks open on TradingView (1D); indices only have Our Chart.
   const [chartTab, setChartTab] = useState('own') // 'own' | 'tv' — Our Chart first (Super Cycle, drawings, …)
@@ -5688,7 +5687,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
             />
           </>
         ):(
-          <CandlestickChart sym={sym} isMobile={isMobile} isIndex={isIndex} chartExpanded={chartExpanded} userId={userId} upstoxToken={upstoxToken}/>
+          <CandlestickChart sym={sym} isMobile={isMobile} isIndex={isIndex} chartExpanded={chartExpanded} userId={userId} brokerConnected={brokerConnected}/>
         )}
       </div>
     </div>
@@ -7254,7 +7253,7 @@ function detectPineCircuitPct(highs, lows, closes, lookback=30, dcrTolerance=1, 
   return 20
 }
 
-function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, upstoxToken=null}){
+function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, brokerConnected=false}){
   const [data, setData] = useState(null)
   const [intradayData, setIntradayData] = useState(null)
   const [intradayLoading, setIntradayLoading] = useState(false)
@@ -8106,7 +8105,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, u
   useEffect(() => {
     setLiveOverlay(null); setIsLiveUpdating(false)
     if (isIndex) return
-    if (!upstoxToken) return
+    if (!brokerConnected) return
     if (!isMarketOpen()) return
     let cancelled = false
     const n = (v) => {
@@ -8114,7 +8113,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, u
       return Number.isFinite(x) && x > 0 ? x : null
     }
     const poll = () => {
-      fetchLiveStockPrice(sym, upstoxToken).then(live => {
+      fetchLiveStockPrice(sym).then(live => {
         if (cancelled || !live || live.price == null) return
         const px = n(live.price)
         if (px == null) return
@@ -8160,7 +8159,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, u
       LIVE_POLLED_SYMS.delete(key)
       setIsLiveUpdating(false)
     }
-  }, [sym, isIndex, upstoxToken])
+  }, [sym, isIndex, brokerConnected])
 
   // Price alerts on the open chart get checked at the live poll's cadence;
   // everything else is covered by the app-wide check on each scan refresh.
@@ -13763,7 +13762,7 @@ function SymbolHoverMenu({sym, stock=null, showOurChart=true, onOurChart, onOpen
       </div>
       <div style={{flex:1,minHeight:0,display:'flex',flexDirection:'column',position:'relative'}}>
         <CandlestickChart key={String(sym||'').toUpperCase()} sym={sym} isMobile={false}
-          isIndex={false} chartExpanded userId={chartUserId} upstoxToken={layout?.upstoxToken||null}/>
+          isIndex={false} chartExpanded userId={chartUserId} brokerConnected={!!layout?.liveFeedConnected}/>
       </div>
     </div>
   )
@@ -13985,9 +13984,11 @@ function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder,showOurChartHover=true
 
         {/* Price + Chg% */}
         <div style={{textAlign:'right'}}>
+          {hasUserLiveQuote(s)?<>
           <div style={{fontWeight:700,fontSize:13}}>{fmtP(s.last)}</div>
           <div style={{fontSize:10,fontWeight:700,color:s.chg>=0?C.green:C.red}}>
             {s.chg>=0?'+':''}{s.chg.toFixed(2)}%</div>
+          </>:<div title={connectBrokerHint} style={{fontSize:9,color:C.muted,maxWidth:90}}>— Connect Upstox</div>}
         </div>
 
         {order.map(key=>(
@@ -14116,6 +14117,7 @@ function TickerBanner({stocks, indices, onSelect, onSelectIndex, onHide}){
         {[...stocks,...stocks].map((s,i)=>{
           const sym = s.sym || s.symbol
           const chg = s.chg_pct ?? s.chg ?? 0
+          const hasLive = hasUserLiveQuote(s)
           return (
             <span key={i}
               onClick={()=>{ if(sym && onSelect) onSelect(sym) }}
@@ -14123,10 +14125,12 @@ function TickerBanner({stocks, indices, onSelect, onSelectIndex, onHide}){
               style={{fontFamily:"monospace",fontSize:12,letterSpacing:'0.02em',color:C.muted,marginRight:32,
                 cursor:onSelect?'pointer':'default'}}>
               <b style={{color:C.text,fontWeight:600}}>{sym}</b>{' '}
+              {hasLive?<>
               ₹{(s.last_price??s.last)?.toLocaleString('en-IN',{maximumFractionDigits:2})}{' '}
               <span style={{color:chg>=0?C.green:C.red}}>
                 {chg>=0?'▲':'▼'} {Math.abs(chg).toFixed(2)}%
               </span>
+              </>:<span title={connectBrokerHint}>— Connect Upstox</span>}
             </span>
           )
         })}
@@ -16118,32 +16122,34 @@ function ProfileCard({session}){
 }
 
 function UpstoxLiveFeedCard({session,onUpdate}){
-  const connected=isPersonalUpstoxToken(session?.token, OWNER_TOKEN)
-  const oauthOn=upstoxOAuthConfigured()
+  const connected=!!session?.brokerConnected
+  const [oauthOn,setOauthOn]=useState(false)
   const [token,setToken]=useState('')
   const [showPaste,setShowPaste]=useState(false)
   const [busy,setBusy]=useState(false)
   const [err,setErr]=useState('')
   const [info,setInfo]=useState('')
-  const connectOAuth=()=>{
-    setErr('');setInfo('')
-    try{ startUpstoxOAuth() }
-    catch(e){ setErr(e?.message||'Could not start Upstox login') }
+  useEffect(()=>{
+    let cancelled=false
+    fetchUpstoxOAuthConfig()
+      .then(cfg=>{ if(!cancelled) setOauthOn(!!cfg.configured) })
+      .catch(()=>{ if(!cancelled) setOauthOn(false) })
+    return()=>{cancelled=true}
+  },[])
+  const connectOAuth=async()=>{
+    setErr('');setInfo('');setBusy(true)
+    try{ await startUpstoxOAuth() }
+    catch(e){ setErr(e?.message||'Could not start Upstox login'); setBusy(false) }
   }
   const savePaste=async()=>{
     setErr('');setInfo('');setBusy(true)
     try{
       const t=token.trim()
       if(!t) throw new Error('Paste your Upstox access token.')
-      const {error:rpcErr}=await supabase.rpc('save_upstox_token',{token:t})
-      if(rpcErr){
-        const {error:upErr}=await supabase.from('user_tokens').upsert(
-          {user_id:session.user.id,upstox_token:t},{onConflict:'user_id'})
-        if(upErr) throw upErr
-      }
-      onUpdate?.({...session,token:t})
+      await savePastedUpstoxToken(t)
+      onUpdate?.({...session,brokerConnected:true})
       setToken('')
-      setInfo('Connected via pasted token. Prefer Connect Upstox (OAuth) when it is configured.')
+      setInfo('Connected. Prefer Connect Upstox (OAuth) — the token is encrypted on the server.')
     }catch(e){
       setErr(e?.message||'Could not save token')
     }finally{ setBusy(false) }
@@ -16151,8 +16157,8 @@ function UpstoxLiveFeedCard({session,onUpdate}){
   const disconnect=async()=>{
     setErr('');setInfo('');setBusy(true)
     try{
-      await supabase.from('user_tokens').delete().eq('user_id',session.user.id)
-      onUpdate?.({...session,token:null})
+      await disconnectUpstox()
+      onUpdate?.({...session,brokerConnected:false})
       setInfo('Disconnected. Scanners still run; live LTP needs Upstox again.')
     }catch(e){
       setErr(e?.message||'Could not disconnect')
@@ -16184,7 +16190,7 @@ function UpstoxLiveFeedCard({session,onUpdate}){
       </div>
       {!oauthOn&&(
         <div style={{fontSize:11,color:C.yellow,marginTop:10,lineHeight:1.45}}>
-          OAuth is not configured yet (VITE_UPSTOX_CLIENT_ID + server UPSTOX_CLIENT_SECRET). Until then you can paste a token below.
+          OAuth is not configured yet (set UPSTOX_CLIENT_ID and UPSTOX_CLIENT_SECRET on the server). Until then you can paste a token below.
         </div>
       )}
       <button type="button" onClick={()=>setShowPaste(v=>!v)}
@@ -16849,10 +16855,13 @@ export default function App(){
   const [subscriptionUnavailable,setSubscriptionUnavailable]=useState(false)
   const [showPayment,setShowPayment]=useState(false)
 
-  useEffect(()=>{
-    // Load owner token from Supabase at runtime (refreshed daily by cron)
-    fetchOwnerToken().then(t=>{ if(t) OWNER_TOKEN=t })
+  const sessionWithBrokerState=async(s)=>{
+    let connected=false
+    try{ connected=!!(await readUpstoxConnection()).connected }catch(_){}
+    return {user:s.user,brokerConnected:connected}
+  }
 
+  useEffect(()=>{
     supabase.auth.getSession().then(async({data:{session:s}})=>{
       if(s){
         // A stored session can still be usable after a login elsewhere,
@@ -16867,8 +16876,7 @@ export default function App(){
           setAuthLoading(false)
           return
         }
-        const{data:td}=await supabase.from('user_tokens').select('upstox_token').eq('user_id',s.user.id).single()
-        setSession({user:s.user,token:td?.upstox_token||null})
+        setSession(await sessionWithBrokerState(s))
         // Recovery links land with a session already established — keep
         // the update-password gate open if ?reset= is present.
         try{
@@ -16885,10 +16893,7 @@ export default function App(){
         setPasswordRecovery(true)
         if(s){
           await revokeOtherSessions()
-          const ownerTok = await fetchOwnerToken()
-          if(ownerTok) OWNER_TOKEN = ownerTok
-          const{data:td}=await supabase.from('user_tokens').select('upstox_token').eq('user_id',s.user.id).single()
-          setSession({user:s.user,token:td?.upstox_token||null})
+          setSession(await sessionWithBrokerState(s))
         }
         setAuthLoading(false)
         return
@@ -16910,12 +16915,7 @@ export default function App(){
       }
       // Handle Google OAuth callback, email confirmation, and token refresh
       if(event==='SIGNED_IN'||event==='TOKEN_REFRESHED'){
-        // Load owner token fresh
-        const ownerTok = await fetchOwnerToken()
-        if(ownerTok) OWNER_TOKEN = ownerTok
-        // Load user's custom token if any
-        const{data:td}=await supabase.from('user_tokens').select('upstox_token').eq('user_id',s.user.id).single()
-        setSession({user:s.user,token:td?.upstox_token||null})
+        setSession(await sessionWithBrokerState(s))
         // If the redirect carried ?reset=, keep the update-password screen
         // even when Supabase emits SIGNED_IN instead of PASSWORD_RECOVERY.
         try{
@@ -17012,9 +17012,9 @@ export default function App(){
         const { data: { session: s } } = await supabase.auth.getSession()
         const jwt=s?.access_token
         if(!jwt) throw new Error('Not signed in')
-        const data=await exchangeUpstoxAuthCode(jwt, cb.code)
+        await exchangeUpstoxAuthCode(jwt, cb.code)
         try{ sessionStorage.removeItem(UPSTOX_OAUTH_STATE_KEY) }catch(_){}
-        setSession(prev=>({ user:(prev&&prev.user)||session.user, token:data.access_token }))
+        setSession(prev=>({ user:(prev&&prev.user)||session.user, brokerConnected:true }))
         setMainTab('settings')
         setAuthNotice('Upstox connected. Live last price and % change now use your account.')
       }catch(e){
@@ -18793,7 +18793,8 @@ export default function App(){
   }
 
   const runScan=useCallback(async(useDemo=false)=>{
-    const tok=isPersonalUpstoxToken(session?.token, OWNER_TOKEN) ? session.token : ''
+    if(!useDemo){ await runDBScan(); return }
+    const tok=''
     setLoading(true);setProgress(0)
     let raw=[]
     if(useDemo||!tok){
@@ -18896,15 +18897,14 @@ export default function App(){
   const stocksRef=useRef(stocks)
   stocksRef.current=stocks
   useEffect(()=>{
-    const token=isPersonalUpstoxToken(session?.token, OWNER_TOKEN)?session.token:''
-    if(!token||historyDate||demoMode) return
+    if(!session?.brokerConnected||historyDate||demoMode) return
     let cancelled=false
     const tick=async()=>{
       if(!isMarketOpen()) return
       const syms=stocksRef.current.map(s=>s.sym).filter(Boolean)
       if(!syms.length) return
       try{
-        const map=await fetchUpstoxQuotes(token,syms)
+        const map=await fetchUpstoxQuotes(syms)
         if(cancelled||!map.size) return
         liveQuotesRef.current=map
         setStocks(prev=>prev.map(s=>{
@@ -18913,12 +18913,26 @@ export default function App(){
         }))
       }catch(e){
         console.warn('User Upstox live quotes:', e?.message||e)
+        if(['upstox_not_connected','upstox_reconnect_required','upstox_token_expired'].includes(e?.code)){
+          setSession(prev=>prev?{...prev,brokerConnected:false}:prev)
+          setAuthNotice('Upstox needs to be reconnected before live price and % change can be shown.')
+        }
       }
     }
     tick()
     const id=setInterval(tick,45000)
     return()=>{ cancelled=true; clearInterval(id) }
-  },[session?.token,historyDate,demoMode,lastRefresh])
+  },[session?.brokerConnected,historyDate,demoMode,lastRefresh])
+
+  const previousBrokerConnection=useRef(!!session?.brokerConnected)
+  useEffect(()=>{
+    const wasConnected=previousBrokerConnection.current
+    previousBrokerConnection.current=!!session?.brokerConnected
+    if(wasConnected&&!session?.brokerConnected){
+      liveQuotesRef.current=new Map()
+      runDBScan()
+    }
+  },[session?.brokerConnected,runDBScan])
 
   // Auto-open #1 RS stock once — only on RS Rating (layout docks live there).
   useEffect(()=>{
@@ -19456,8 +19470,7 @@ export default function App(){
       // The hover chart is the real Our Chart, so it needs the user id to load
       // their saved indicator prefs (Lakshmi Mata / Volume / Super Cycle).
       chartUserId:session?.user?.id||null,
-      upstoxToken: isPersonalUpstoxToken(session?.token, OWNER_TOKEN) ? session.token : null,
-      liveFeedConnected: isPersonalUpstoxToken(session?.token, OWNER_TOKEN),
+      liveFeedConnected: !!session?.brokerConnected,
     }}>
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:"'Inter','SF Pro Display',sans-serif",
       color:C.text,fontSize:13,display:'flex',flexDirection:'row',zoom:zoomLevel}}>
@@ -24761,7 +24774,7 @@ export default function App(){
         isIndex={chartIsIndex || indexData.some(idx=>idx.name===chartSym)}
         wide={chartWide}
         userId={session?.user?.id || null}
-        upstoxToken={isPersonalUpstoxToken(session?.token, OWNER_TOKEN) ? session.token : null}
+        brokerConnected={!!session?.brokerConnected}
         customPct={chartOnlyDock?CHART_ONLY_DOCK_PCT:(dockStack||dockColumns||dockSoloChart?null:chartPanelPct)}
         onToggleWide={()=>{
           setChartPanelPct(null)
