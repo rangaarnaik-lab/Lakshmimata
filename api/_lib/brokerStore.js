@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { isEncryptedToken } from './tokenCrypto.js'
+import { decryptToken, isEncryptedToken } from './tokenCrypto.js'
 
 export function sendJson(res, status, payload) {
   res.statusCode = status
@@ -106,5 +106,25 @@ export function connectionStatus(row) {
     reconnect_required: !!row && !encrypted,
     broker: encrypted ? 'upstox' : null,
     expires_at: encrypted ? row.expires_at : null,
+  }
+}
+
+/** Decrypt the signed-in user's Upstox token, or throw a 409 the UI can handle. */
+export async function requireUserUpstoxToken(req) {
+  const context = await authenticatedBrokerContext(req)
+  const row = await getBrokerRow(context.db, context.user.id)
+  if (!row?.access_token) {
+    const error = new Error('Connect Upstox to load prices from your account.')
+    error.status = 409
+    error.code = 'upstox_not_connected'
+    throw error
+  }
+  try {
+    return { ...context, token: decryptToken(row.access_token) }
+  } catch (error) {
+    const wrapped = new Error(error.message || 'Reconnect Upstox')
+    wrapped.status = 409
+    wrapped.code = 'upstox_reconnect_required'
+    throw wrapped
   }
 }

@@ -2,7 +2,7 @@
 // Called by App.jsx instead of running live scans in browser
 
 import { supabase } from './supabase'
-import { fetchUpstoxQuotes } from './upstoxQuotes'
+import { fetchUpstoxQuotes, fetchUpstoxCandles, clearUpstoxCandleCache } from './upstoxQuotes'
 import { resolveIndustry, resolveSector, getCompanyName } from '../data/industries'
 import { enrichHistoryLeaderFlags } from './historyLeaders'
 
@@ -1001,211 +1001,28 @@ export async function saveUserPortfolios(userId, { portfolios, activeId } = {}) 
 
 export async function fetchStockFullHistory(sym) {
   const cleanSym = (sym || '').trim()
-  // Confirmed via direct Supabase inspection: rows exist with real data
-  // for symbols that .eq('sym', sym) was reporting as "not found" (e.g.
-  // GRSE) — a case-sensitivity or stray-whitespace mismatch between how
-  // the symbol is stored vs queried. .ilike() (case-insensitive, and we
-  // trim first) is robust to case but NOT to extra whitespace/hidden
-  // characters inside the stored value itself, which a wildcard search
-  // below can still catch.
-  let { data, error } = await supabase
-    .from('stock_full_history')
-    .select('*')
-    .ilike('sym', cleanSym)
-    .maybeSingle()
-
-  if (!error && !data) {
-    // Fallback: wildcard search, then pick the candidate whose trimmed
-    // value matches case-insensitively — catches stray leading/trailing
-    // whitespace or non-breaking spaces in the stored sym column.
-    const wc = await supabase
-      .from('stock_full_history')
-      .select('*')
-      .ilike('sym', `%${cleanSym}%`)
-      .limit(5)
-    if (!wc.error && wc.data && wc.data.length) {
-      const match = wc.data.find(r => (r.sym || '').trim().toUpperCase() === cleanSym.toUpperCase())
-      if (match) { data = match; error = null }
-      else console.warn(`fetchStockFullHistory(${sym}): wildcard search found candidates but none matched exactly:`,
-        wc.data.map(r => JSON.stringify(r.sym)))
-    }
-  }
-
-  if (error) {
-    console.error(`fetchStockFullHistory(${sym}) error:`, error.message || error)
-    return { error: error.message || String(error) }
-  }
-  if (!data) return { error: `No price history stored yet for ${sym} — it may not have completed its initial fetch.` }
-
-  // jsonb columns come back already parsed via supabase-js, but handle
-  // the string case too in case they were ever stored as text.
-  const parseArr = v => {
-    if (v == null) return []
-    return typeof v === 'string' ? JSON.parse(v) : v
-  }
-
-  return {
-    sym:       data.sym,
-    dates:     parseArr(data.dates),
-    prices:    parseArr(data.prices),
-    volumes:   parseArr(data.volumes),
-    highs:     parseArr(data.highs),
-    lows:      parseArr(data.lows),
-    opens:     parseArr(data.opens),
-    daysCount: data.days_count,
-    updatedAt: data.updated_at,
-  }
+  if (!cleanSym) return { error: 'No symbol' }
+  return fetchUpstoxCandles({ symbol: cleanSym, segment: 'equity', unit: 'days', interval: '1' })
 }
 
-/**
- * 1-minute OHLCV bars from stock_intraday_1m (written by live_scan).
- * Used by Our Chart for 1/3/5/15/30/60 intervals (client rolls up from 1m,
- * or DB rolls via get_stock_intraday_bars when available).
- *
- * Prefers Postgres RPC (1 round-trip). Falls back to parallel REST pages.
- * In-memory cache ~90s per symbol.
- */
-const _intradayCache = new Map() // key -> { at, payload }
-const INTRADAY_CACHE_TTL_MS = 90_000
-
-function _intradayCacheKey(sym, days, limit, intervalMin = 1) {
-  return `${String(sym || '').trim().toUpperCase()}|${days}|${limit}|${intervalMin}`
-}
-
-function _rowsToIntradayPayload(cleanSym, rows) {
-  return {
-    sym: cleanSym,
-    dates:   rows.map(r => r.ts),
-    prices:  rows.map(r => Number(r.close)),
-    opens:   rows.map(r => Number(r.open)),
-    highs:   rows.map(r => Number(r.high)),
-    lows:    rows.map(r => Number(r.low)),
-    volumes: rows.map(r => Number(r.volume) || 0),
-    daysCount: rows.length,
-    updatedAt: rows[rows.length - 1]?.ts || null,
-    interval: '1m',
-  }
-}
-
-export function clearIntradayHistoryCache(sym = null) {
-  if (!sym) {
-    _intradayCache.clear()
-    return
-  }
-  const u = String(sym).trim().toUpperCase()
-  for (const k of [..._intradayCache.keys()]) {
-    if (k.startsWith(`${u}|`)) _intradayCache.delete(k)
-  }
-}
-
-async function _fetchIntradayViaRpc(cleanSym, daysN, limitN, intervalMin) {
-  const { data, error } = await supabase.rpc('get_stock_intraday_bars', {
-    p_sym: cleanSym,
-    p_days: daysN,
-    p_limit: limitN,
-    p_interval_m: intervalMin,
-  })
-  if (error) throw error
-  const rows = Array.isArray(data) ? data : []
-  return rows
-}
-
-async function _fetchIntradayViaRest(cleanSym, daysN, limitN) {
-  const since = new Date()
-  since.setUTCDate(since.getUTCDate() - daysN)
-  const sinceIso = since.toISOString()
-  const pageSize = 1000
-  const maxPages = Math.ceil(limitN / pageSize)
-
-  const fetchPage = async (pageIdx) => {
-    const from = pageIdx * pageSize
-    const to = from + pageSize - 1
-    const { data, error } = await supabase
-      .from('stock_intraday_1m')
-      .select('ts,open,high,low,close,volume')
-      .eq('sym', cleanSym.toUpperCase())
-      .gte('ts', sinceIso)
-      .order('ts', { ascending: false })
-      .range(from, to)
-    if (error) throw new Error(error.message || String(error))
-    return data || []
-  }
-
-  const first = await fetchPage(0)
-  if (!first.length) return []
-  let pages = [first]
-  if (first.length >= pageSize && maxPages > 1) {
-    const rest = await Promise.all(
-      Array.from({ length: maxPages - 1 }, (_, i) => fetchPage(i + 1))
-    )
-    pages = [first, ...rest]
-  }
-  const rows = []
-  for (const page of pages) {
-    if (!page.length) break
-    rows.push(...page)
-    if (page.length < pageSize) break
-  }
-  rows.reverse()
-  if (rows.length > limitN) rows.splice(0, rows.length - limitN)
-  return rows
+export function clearIntradayHistoryCache() {
+  clearUpstoxCandleCache()
 }
 
 export async function fetchStockIntradayHistory(sym, {
   days = 10,
-  limit = 4500,
   bypassCache = false,
-  intervalMin = 1,
 } = {}) {
   const cleanSym = (sym || '').trim()
   if (!cleanSym) return { error: 'No symbol' }
-
-  const daysN = Math.max(1, Math.min(30, Number(days) || 10))
-  const limitN = Math.max(500, Math.min(12000, Number(limit) || 4500))
-  const iv = Math.max(1, Number(intervalMin) || 1)
-  const cacheKey = _intradayCacheKey(cleanSym, daysN, limitN, iv)
-  if (!bypassCache) {
-    const hit = _intradayCache.get(cacheKey)
-    if (hit && (Date.now() - hit.at) < INTRADAY_CACHE_TTL_MS && hit.payload && !hit.payload.error) {
-      return hit.payload
-    }
-  }
-
-  let rows = []
-  try {
-    // Prefer single-call RPC (run 014_get_stock_intraday_bars.sql once).
-    rows = await _fetchIntradayViaRpc(cleanSym, daysN, limitN, iv === 1 ? 1 : 1)
-    // Always fetch raw 1m via RPC; client still rolls 3/5/15 (keeps one cache
-    // for all intervals). Pass iv>1 later if we want DB-side rollup.
-  } catch (rpcErr) {
-    try {
-      rows = await _fetchIntradayViaRest(cleanSym, daysN, limitN)
-    } catch (e) {
-      console.error(`fetchStockIntradayHistory(${sym}) error:`, e.message || e)
-      return { error: e.message || String(e) }
-    }
-    if (rpcErr) {
-      // Soft log once — missing RPC is expected until migration is applied
-      if (!fetchStockIntradayHistory._rpcWarned) {
-        fetchStockIntradayHistory._rpcWarned = true
-        console.info('get_stock_intraday_bars RPC unavailable — using REST pages. Run 014_get_stock_intraday_bars.sql for faster charts.')
-      }
-    }
-  }
-
-  if (!rows.length) {
-    return {
-      error: `No 1-minute history yet for ${sym} — available after market scans fill stock_intraday_1m.`,
-    }
-  }
-
-  const payload = _rowsToIntradayPayload(cleanSym, rows)
-  _intradayCache.set(cacheKey, { at: Date.now(), payload })
-  if (_intradayCache.size > 40) {
-    const oldest = [..._intradayCache.entries()].sort((a, b) => a[1].at - b[1].at)[0]
-    if (oldest) _intradayCache.delete(oldest[0])
-  }
-  return payload
+  return fetchUpstoxCandles({
+    symbol: cleanSym,
+    segment: 'equity',
+    unit: 'minutes',
+    interval: '1',
+    days,
+    bypassCache,
+  })
 }
 
 /**
@@ -1301,119 +1118,13 @@ export async function fetchLiveStockPrice(sym) {
   }
 }
 
-/** Local YYYY-MM-DD (avoid UTC day-shift from toISOString in IST). */
-function localISODate(d) {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-function parseIndexPrices(raw) {
-  let prices = raw
-  if (typeof prices === 'string') {
-    try { prices = JSON.parse(prices) } catch { return null }
-  }
-  // Double-encoded JSON string (jsonb column stored via json.dumps)
-  if (typeof prices === 'string') {
-    try { prices = JSON.parse(prices) } catch { return null }
-  }
-  if (!Array.isArray(prices) || prices.length === 0) return null
-  const nums = prices.map(Number).filter(v => Number.isFinite(v))
-  return nums.length ? nums : null
-}
-
-function indexNameCandidates(name) {
-  const n = String(name || '').trim()
-  if (!n) return []
-  const out = [n]
-  if (/^Nifty\s+/i.test(n)) out.push(n.replace(/^Nifty\s+/i, ''))
-  else out.push(`Nifty ${n}`)
-  // Dedup preserve order
-  return [...new Set(out)]
-}
-
 /**
- * Fetch an index's price history for "Our Chart".
- * `index_price_history` stores a bare `prices` (close) array — no real dates
- * or OHLC. We synthesize trading-day dates and build candle OHLC from
- * consecutive closes (open = prior close, high/low = max/min of the body)
- * so Candles / Bars / Heikin Ashi work the same as for stocks.
+ * Index OHLC from the user's Upstox account (Nifty 50, Midcap 150, …).
  */
 export async function fetchIndexPriceHistory(name) {
-  const candidates = indexNameCandidates(name)
-  let row = null
-  let lastError = null
-
-  for (const candidate of candidates) {
-    const { data, error } = await supabase
-      .from('index_price_history')
-      .select('name,prices')
-      .eq('name', candidate)
-      .maybeSingle()
-    if (error) {
-      lastError = error
-      console.error(`fetchIndexPriceHistory(${candidate}) error:`, error.message || error)
-      continue
-    }
-    if (data?.prices != null) { row = data; break }
-  }
-
-  // Fuzzy fallback — some rows use slightly different labels
-  if (!row) {
-    const { data: all, error } = await supabase
-      .from('index_price_history')
-      .select('name,prices')
-      .limit(200)
-    if (error) {
-      lastError = error
-      console.error('fetchIndexPriceHistory list error:', error.message || error)
-    } else if (all?.length) {
-      const q = String(name || '').toLowerCase()
-      row = all.find(r => String(r.name || '').toLowerCase() === q)
-        || all.find(r => {
-          const rn = String(r.name || '').toLowerCase()
-          return rn.includes(q) || q.includes(rn)
-        })
-        || null
-    }
-  }
-
-  if (!row?.prices) {
-    const hint = lastError?.message?.includes('permission') || lastError?.code === '42501'
-      ? ' (DB permission — run ensure_index_price_history_public_read.sql in Supabase)'
-      : ''
-    return { error: `No price history stored yet for ${name}.${hint}` }
-  }
-
-  const prices = parseIndexPrices(row.prices)
-  if (!prices) {
-    return { error: `No price history stored yet for ${name}.` }
-  }
-
-  // Synthesize dates counting backward from today (no real per-point
-  // dates exist in this table) — approximate trading days by skipping
-  // weekends, close enough for a chart x-axis label.
-  const dates = []
-  let d = new Date()
-  for (let i = 0; i < prices.length; i++) {
-    while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1)
-    dates.unshift(localISODate(d))
-    d.setDate(d.getDate() - 1)
-  }
-  // Close-only → candle OHLC: open = previous close so each bar has a
-  // real up/down body instead of a flat doji on every session.
-  const opens = prices.map((c, i) => (i > 0 ? prices[i - 1] : c))
-  const highs = prices.map((c, i) => Math.max(opens[i], c))
-  const lows  = prices.map((c, i) => Math.min(opens[i], c))
-  return {
-    sym: row.name || name,
-    dates,
-    prices,
-    opens, highs, lows,
-    volumes: prices.map(() => 0),
-    daysCount: prices.length,
-  }
+  const n = String(name || '').trim()
+  if (!n) return { error: 'No index' }
+  return fetchUpstoxCandles({ symbol: n, segment: 'index', unit: 'days', interval: '1' })
 }
 
 /**

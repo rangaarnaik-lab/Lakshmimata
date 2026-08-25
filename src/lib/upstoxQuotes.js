@@ -105,3 +105,72 @@ export function applyQuoteToStock(stock, quote) {
     liveFromUser: true,
   }
 }
+
+const _candleCache = new Map()
+const CANDLE_CACHE_TTL_MS = 90_000
+
+export function clearUpstoxCandleCache() {
+  _candleCache.clear()
+}
+
+export async function fetchUpstoxCandles({
+  symbol,
+  segment = 'equity',
+  unit = 'days',
+  interval = '1',
+  days,
+  bypassCache = false,
+} = {}) {
+  const clean = String(symbol || '').trim()
+  if (!clean) return { error: 'No symbol' }
+  const cacheKey = `${clean}|${segment}|${unit}|${interval}|${days || ''}`
+  if (!bypassCache) {
+    const hit = _candleCache.get(cacheKey)
+    if (hit && Date.now() - hit.at < CANDLE_CACHE_TTL_MS && hit.payload && !hit.payload.error) {
+      return hit.payload
+    }
+  }
+
+  const jwt = await lakshmimataAccessToken()
+  if (!jwt) {
+    return { error: 'Connect Upstox to load this chart from your account.', code: 'upstox_not_connected' }
+  }
+
+  const body = {
+    symbol: clean,
+    segment,
+    unit,
+    interval: String(interval),
+  }
+  if (unit === 'minutes' && days) {
+    const from = new Date()
+    from.setDate(from.getDate() - Math.max(1, Math.min(28, Number(days) || 10)))
+    body.from_date = from.toISOString().slice(0, 10)
+  }
+
+  const res = await fetch('/api/upstox-candles', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    return {
+      error: json.error || `Upstox candles ${res.status}`,
+      code: json.code,
+    }
+  }
+  if (!Array.isArray(json.prices) || !json.prices.length) {
+    return { error: `No Upstox candles for ${clean}` }
+  }
+  const payload = json
+  _candleCache.set(cacheKey, { at: Date.now(), payload })
+  if (_candleCache.size > 40) {
+    const oldest = [..._candleCache.entries()].sort((a, b) => a[1].at - b[1].at)[0]
+    if (oldest) _candleCache.delete(oldest[0])
+  }
+  return payload
+}

@@ -8014,7 +8014,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
       .catch(() => { if(!cancelled) setData(null) })
       .finally(() => { if(!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [sym, isIndex])
+  }, [sym, isIndex, brokerConnected])
 
   // Load / refresh 1m bars when an intraday interval is selected (stocks only).
   // Switching 1↔3↔5↔15 does NOT refetch (isIntraday stays true). Cache in
@@ -8034,7 +8034,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     const t = setInterval(() => load(true), 60000)
     return () => { cancelled = true; clearInterval(t) }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: keep warm intradayData across quiet polls
-  }, [sym, isIndex, isIntraday, intradayFeatureOn])
+  }, [sym, isIndex, isIntraday, intradayFeatureOn, brokerConnected])
 
   // Index closes for Lakshmi Mata RS background, Buy RS gate and Super Cycle.
   useEffect(() => {
@@ -8194,9 +8194,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
       <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted,textAlign:'center',padding:20,lineHeight:1.5}}>
         {intradayData.error}
         <br/><br/>
-        If you already ran <code style={{fontSize:11}}>013_stock_intraday_1m.sql</code>, check Railway:
-        <br/>
-        <code style={{fontSize:11}}>ENABLE_INTRADAY_1M=1</code> (or remove a <code style={{fontSize:11}}>ENABLE_INTRADAY_1M=0</code> override), then wait 1–2 live scans during market hours.
+        Connect Upstox on Account if this chart is empty. 1-minute bars come from your Upstox account, not our scan.
       </div>
     )
   }
@@ -8216,8 +8214,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
       <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted,textAlign:'center',padding:20}}>
         Not enough price history yet for {sym} to draw a {intervalMeta.label} chart
         {` (only ${barCount} bars, need ${minBarsNeeded}+).`}
-        {isIntraday ? ' 1m history builds during market hours from the live scan.' : ''}
-        {isIndex ? ' Index history is stored in index_price_history — run ensure_index_price_history_public_read.sql if this persists.' : ''}
+        {isIntraday ? ' 1m history is loaded from your Upstox account.' : ''}
+        {isIndex ? ' Index candles also come from your Upstox account.' : ''}
       </div>
     )
   }
@@ -16172,11 +16170,11 @@ function UpstoxLiveFeedCard({session,onUpdate}){
   }
   return(
     <AccountCard title="Live prices (your Upstox)"
-      hint="You log in on Upstox’s site. Lakshmimata never sees your Upstox password. Live LTP / % change use your account; RS and scanners stay on our scan.">
+      hint="You log in on Upstox’s site. Lakshmimata never sees your Upstox password. Live last price, % change, and Our Chart candles use your account. Market breadth, RS, and scanners stay on our derived scan.">
       <div style={{fontSize:11.5,color:C.muted,lineHeight:1.5,marginBottom:10}}>
         {connected
-          ? 'Live LTP is using your Upstox account. Tokens expire at 3:30 AM IST — reconnect the next trading day.'
-          : 'Connect Upstox to show live last price and % change on scanners and charts.'}
+          ? 'Live LTP and charts are using your Upstox account. Tokens expire at 3:30 AM IST — reconnect the next trading day.'
+          : 'Connect Upstox to show last price, % change, and candles from your own account.'}
       </div>
       {err&&<div style={{fontSize:12,color:C.red,marginBottom:8}}>{err}</div>}
       {info&&<div style={{fontSize:12,color:C.green,marginBottom:8}}>{info}</div>}

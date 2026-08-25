@@ -5,6 +5,7 @@ import { handleUpstoxTokenRequest } from './api/upstox-token.js'
 import { handleUpstoxSessionRequest } from './api/upstox-session.js'
 import { handleUpstoxQuotesRequest } from './api/upstox-quotes.js'
 import { handleUpstoxOAuthConfigRequest } from './api/upstox-oauth-config.js'
+import { handleUpstoxCandlesRequest } from './api/upstox-candles.js'
 
 function upstoxOAuthDevPlugin(env) {
   return {
@@ -18,6 +19,7 @@ function upstoxOAuthDevPlugin(env) {
           '/api/upstox-session': handleUpstoxSessionRequest,
           '/api/upstox-quotes': handleUpstoxQuotesRequest,
           '/api/upstox-oauth-config': handleUpstoxOAuthConfigRequest,
+          '/api/upstox-candles': handleUpstoxCandlesRequest,
         }
         const handler = handlers[url]
         if (!handler) return next()
