@@ -196,7 +196,13 @@ const trendIcon  = t => t==='improving'?'↑↑':t==='declining'?'↓↓':'→'
 const trendColor = t => t==='improving'?C.green:t==='declining'?C.red:C.muted
 const fmtP   = v => `₹${v>=1000?v.toFixed(0):v.toFixed(2)}`
 const hasUserLiveQuote = s => !!s?.liveFromUser
-const connectBrokerHint = 'Connect Upstox to view live price'
+// Price cells live outside App, so the connection flag is mirrored here to tell
+// "not connected" apart from "connected, quote not fetched yet".
+let LIVE_FEED_CONNECTED = false
+const priceFallbackLabel = () => LIVE_FEED_CONNECTED ? '—' : '— Connect Upstox'
+const priceFallbackHint = () => LIVE_FEED_CONNECTED
+  ? 'Waiting for a quote from your Upstox account'
+  : 'Connect Upstox to view live price'
 /** Portfolio-style amounts: ₹1.2L / ₹40.5K / ₹999 */
 const fmtAmt = v => {
   if (v == null || !isFinite(v)) return '—'
@@ -3354,7 +3360,7 @@ function StockCard({s,i,onChart,onCompanyPage}){
             <span style={{fontWeight:700,fontSize:15}}>{fmtP(s.last)}</span>
             <span style={{fontWeight:700,fontSize:13,color:s.chg>=0?C.green:C.red}}>
               {s.chg>=0?'+':''}{s.chg.toFixed(2)}%</span>
-            </>:<span title={connectBrokerHint} style={{fontSize:11,color:C.muted}}>— Connect Upstox</span>}
+            </>:<span title={priceFallbackHint()} style={{fontSize:11,color:C.muted}}>{priceFallbackLabel()}</span>}
           </div>
           <div style={{display:'flex',gap:10,alignItems:'center'}}>
             <a href={`https://www.tradingview.com/chart/?symbol=NSE:${s.sym}`}
@@ -13988,7 +13994,7 @@ function DesktopRow({s,i,onChart,visibleRsCols,rsColOrder,showOurChartHover=true
           <div style={{fontWeight:700,fontSize:13}}>{fmtP(s.last)}</div>
           <div style={{fontSize:10,fontWeight:700,color:s.chg>=0?C.green:C.red}}>
             {s.chg>=0?'+':''}{s.chg.toFixed(2)}%</div>
-          </>:<div title={connectBrokerHint} style={{fontSize:9,color:C.muted,maxWidth:90}}>— Connect Upstox</div>}
+          </>:<div title={priceFallbackHint()} style={{fontSize:9,color:C.muted,maxWidth:90}}>{priceFallbackLabel()}</div>}
         </div>
 
         {order.map(key=>(
@@ -14130,7 +14136,7 @@ function TickerBanner({stocks, indices, onSelect, onSelectIndex, onHide}){
               <span style={{color:chg>=0?C.green:C.red}}>
                 {chg>=0?'▲':'▼'} {Math.abs(chg).toFixed(2)}%
               </span>
-              </>:<span title={connectBrokerHint}>— Connect Upstox</span>}
+              </>:<span title={priceFallbackHint()}>{priceFallbackLabel()}</span>}
             </span>
           )
         })}
@@ -18896,11 +18902,14 @@ export default function App(){
   // on the last DB scan (owner account).
   const stocksRef=useRef(stocks)
   stocksRef.current=stocks
+  LIVE_FEED_CONNECTED=!!session?.brokerConnected
   useEffect(()=>{
     if(!session?.brokerConnected||historyDate||demoMode) return
     let cancelled=false
-    const tick=async()=>{
-      if(!isMarketOpen()) return
+    // Fetch once on connect even outside market hours — Upstox returns the last
+    // close, so a connected user sees their own price instead of a blank dash.
+    const tick=async(force=false)=>{
+      if(!force&&!isMarketOpen()) return
       const syms=stocksRef.current.map(s=>s.sym).filter(Boolean)
       if(!syms.length) return
       try{
@@ -18919,8 +18928,8 @@ export default function App(){
         }
       }
     }
-    tick()
-    const id=setInterval(tick,45000)
+    tick(true)
+    const id=setInterval(()=>tick(),45000)
     return()=>{ cancelled=true; clearInterval(id) }
   },[session?.brokerConnected,historyDate,demoMode,lastRefresh])
 
