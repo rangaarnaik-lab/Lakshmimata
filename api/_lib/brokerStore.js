@@ -88,16 +88,10 @@ export async function saveBrokerToken(db, userId, { accessToken, brokerUserId = 
     updated_at: new Date().toISOString(),
   }
   const { error } = await db.from('user_broker_tokens').upsert(row, { onConflict: 'user_id,broker' })
-  if (!error) return
-
-  const { error: legacyErr } = await db.from('user_tokens').upsert({
-    user_id: userId,
-    upstox_token: accessToken,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'user_id' })
-  if (legacyErr) {
-    throw new Error(`${error.message}; fallback user_tokens: ${legacyErr.message}`)
-  }
+  // No fallback to user_tokens: that table holds plaintext, and a "successful"
+  // plaintext write reads back as not-connected on the next request, which
+  // looks like the connect silently failed.
+  if (error) throw new Error(`user_broker_tokens: ${error.message}`)
 }
 
 export async function deleteBrokerToken(db, userId) {

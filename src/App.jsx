@@ -17019,6 +17019,10 @@ export default function App(){
         const jwt=s?.access_token
         if(!jwt) throw new Error('Not signed in')
         await exchangeUpstoxAuthCode(jwt, cb.code)
+        // Read the connection back rather than trusting the exchange response —
+        // otherwise a token that failed to persist shows as connected until reload.
+        const saved=await readUpstoxConnection().catch(()=>({connected:false}))
+        if(!saved.connected) throw new Error('Upstox signed you in but the connection did not save. The user_broker_tokens table may be missing.')
         try{ sessionStorage.removeItem(UPSTOX_OAUTH_STATE_KEY) }catch(_){}
         setSession(prev=>({ user:(prev&&prev.user)||session.user, brokerConnected:true }))
         setMainTab('settings')
