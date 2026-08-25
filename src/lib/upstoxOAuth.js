@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 
 export const UPSTOX_OAUTH_STATE_KEY = 'lakshmimata-upstox-oauth-state'
 const UPSTOX_OAUTH_REDIRECT_KEY = 'lakshmimata-upstox-oauth-redirect'
+const UPSTOX_PENDING_KEY = 'lakshmimata-upstox-pending-oauth'
 
 let cachedConfig = null
 
@@ -21,7 +22,7 @@ export async function fetchUpstoxOAuthConfig() {
 
 export function upstoxRedirectUri() {
   try {
-    const stored = sessionStorage.getItem(UPSTOX_OAUTH_REDIRECT_KEY)
+    const stored = sessionStorage.getItem(UPSTOX_OAUTH_REDIRECT_KEY) || localStorage.getItem(UPSTOX_OAUTH_REDIRECT_KEY)
     if (stored) return stored
   } catch (_) {}
   if (typeof window === 'undefined') return ''
@@ -41,6 +42,8 @@ export async function startUpstoxOAuth() {
   try {
     sessionStorage.setItem(UPSTOX_OAUTH_STATE_KEY, state)
     sessionStorage.setItem(UPSTOX_OAUTH_REDIRECT_KEY, redirectUri)
+    localStorage.setItem(UPSTOX_OAUTH_STATE_KEY, state)
+    localStorage.setItem(UPSTOX_OAUTH_REDIRECT_KEY, redirectUri)
   } catch (_) {}
   const u = new URL('https://api.upstox.com/v2/login/authorization/dialog')
   u.searchParams.set('response_type', 'code')
@@ -48,6 +51,24 @@ export async function startUpstoxOAuth() {
   u.searchParams.set('redirect_uri', redirectUri)
   u.searchParams.set('state', state)
   window.location.assign(u.toString())
+}
+
+function storageGet(key) {
+  try { return sessionStorage.getItem(key) || localStorage.getItem(key) || '' } catch { return '' }
+}
+
+function storageSet(key, value) {
+  try {
+    sessionStorage.setItem(key, value)
+    localStorage.setItem(key, value)
+  } catch (_) {}
+}
+
+function storageRemove(key) {
+  try {
+    sessionStorage.removeItem(key)
+    localStorage.removeItem(key)
+  } catch (_) {}
 }
 
 export function readUpstoxOAuthCallback() {
@@ -59,21 +80,43 @@ export function readUpstoxOAuthCallback() {
     const state = q.get('state')
     const error = q.get('error')
     const onPath = path.endsWith('/upstox/callback')
-    if (!code && !error) return null
-    if (!onPath && !code) return null
-    return {
-      code,
-      state,
-      error,
-      errorDescription: q.get('error_description'),
+    if (code || error) {
+      const payload = {
+        code,
+        state,
+        error,
+        errorDescription: q.get('error_description'),
+      }
+      if (code && state) storageSet(UPSTOX_PENDING_KEY, JSON.stringify({ code, state, at: Date.now() }))
+      return payload
     }
+    const raw = storageGet(UPSTOX_PENDING_KEY)
+    if (!raw) return null
+    const pending = JSON.parse(raw)
+    if (!pending?.code || Date.now() - Number(pending.at || 0) > 10 * 60 * 1000) {
+      storageRemove(UPSTOX_PENDING_KEY)
+      return null
+    }
+    if (!onPath && !pending.code) return null
+    return { code: pending.code, state: pending.state, error: null, errorDescription: null }
   } catch {
     return null
   }
 }
 
+export function hasPendingUpstoxOAuth() {
+  return !!readUpstoxOAuthCallback()?.code
+}
+
+export function expectedUpstoxOAuthState() {
+  return storageGet(UPSTOX_OAUTH_STATE_KEY)
+}
+
 export function clearUpstoxOAuthParams() {
   if (typeof window === 'undefined') return
+  storageRemove(UPSTOX_PENDING_KEY)
+  storageRemove(UPSTOX_OAUTH_STATE_KEY)
+  storageRemove(UPSTOX_OAUTH_REDIRECT_KEY)
   try {
     const url = new URL(window.location.href)
     url.searchParams.delete('code')

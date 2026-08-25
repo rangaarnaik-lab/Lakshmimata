@@ -56,7 +56,7 @@ import { fetchUpstoxQuotes, applyQuoteToStock } from './lib/upstoxQuotes'
 import {
   fetchUpstoxOAuthConfig, startUpstoxOAuth, readUpstoxOAuthCallback, clearUpstoxOAuthParams,
   exchangeUpstoxAuthCode, readUpstoxConnection, savePastedUpstoxToken, disconnectUpstox,
-  UPSTOX_OAUTH_STATE_KEY,
+  expectedUpstoxOAuthState, hasPendingUpstoxOAuth,
 } from './lib/upstoxOAuth'
 import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, compressChartImage, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchUserWatchlists, saveUserWatchlists, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
@@ -16872,7 +16872,7 @@ export default function App(){
         // because revoking a refresh token does not expire the access token
         // this browser already holds.
         const device=await verifyCurrentDevice(s)
-        if(!device.valid){
+        if(!device.valid && !hasPendingUpstoxOAuth()){
           await supabase.auth.signOut({scope:'local'})
           setAuthNotice('This account was signed in on another device. Sign in again to use it here.')
           setShowAuth(true)
@@ -16996,7 +16996,7 @@ export default function App(){
     }
     if(!cb.code) return
     let expected=''
-    try{ expected=sessionStorage.getItem(UPSTOX_OAUTH_STATE_KEY)||'' }catch(_){}
+    try{ expected=expectedUpstoxOAuthState() }catch(_){}
     if(!cb.state||!expected||cb.state!==expected){
       upstoxOauthOnce.current=true
       setAuthNotice('Upstox login could not be verified. Click Connect Upstox and try again.')
@@ -17005,8 +17005,9 @@ export default function App(){
       return
     }
     if(!session?.user){
-      setAuthNotice('Sign in to Lakshmimata first, then connect Upstox.')
+      setAuthNotice('Sign in to Lakshmimata to finish connecting Upstox.')
       setShowAuth(true)
+      setAuthMode('login')
       return
     }
     if(upstoxOauthOnce.current) return
@@ -17021,10 +17022,10 @@ export default function App(){
         // otherwise a token that failed to persist shows as connected until reload.
         const saved=await readUpstoxConnection().catch(()=>({connected:false}))
         if(!saved.connected) throw new Error('Upstox signed you in but the connection did not save. The user_broker_tokens table may be missing.')
-        try{ sessionStorage.removeItem(UPSTOX_OAUTH_STATE_KEY) }catch(_){}
         setSession(prev=>({ user:(prev&&prev.user)||session.user, brokerConnected:true }))
+        setShowAuth(false)
         setMainTab('settings')
-        setAuthNotice('Upstox connected. Live last price and % change now use your account.')
+        setAuthNotice('Upstox connected. Live last price, % change, and charts now use your account.')
       }catch(e){
         upstoxOauthOnce.current=false
         setMainTab('settings')
