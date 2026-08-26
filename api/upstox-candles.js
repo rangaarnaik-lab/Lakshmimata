@@ -4,15 +4,7 @@
  * Market breadth and scanner flags stay on our derived tables.
  */
 import { readJsonBody, requireUserUpstoxToken, sendJson, setCors } from './_lib/brokerStore.js'
-
-const INDEX_ALIASES = {
-  'nifty 50': ['Nifty 50'],
-  'nifty50': ['Nifty 50'],
-  'midcap 150': ['Nifty Midcap 150', 'NIFTY MIDCAP 150', 'Nifty Midcap150'],
-  'nifty midcap 150': ['Nifty Midcap 150', 'NIFTY MIDCAP 150'],
-  'smallcap 250': ['Nifty Smallcap 250', 'NIFTY SMLCAP 250', 'NIFTY SMALLCAP 250'],
-  'nifty smallcap 250': ['Nifty Smallcap 250', 'NIFTY SMLCAP 250'],
-}
+import { resolveEquityKey, resolveIndexKey } from './_lib/upstoxInstruments.js'
 
 function istYmd(date = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
@@ -27,20 +19,6 @@ function shiftIstYmd(days) {
   const now = new Date()
   const shifted = new Date(now.getTime() + days * 86400000)
   return istYmd(shifted)
-}
-
-function cleanSymbol(value) {
-  return String(value || '').trim().toUpperCase()
-}
-
-function instrumentCandidates(symbol, segment) {
-  const raw = String(symbol || '').trim()
-  if (!raw) return []
-  if (segment === 'index') {
-    const aliases = INDEX_ALIASES[raw.toLowerCase()] || [raw]
-    return aliases.map(name => `NSE_INDEX|${name}`)
-  }
-  return [`NSE_EQ|${cleanSymbol(raw)}`]
 }
 
 function parseCandleRow(row) {
@@ -98,19 +76,6 @@ function intradayUrl(instrumentKey, unit, interval) {
   return `https://api.upstox.com/v3/historical-candle/intraday/${encodeURIComponent(instrumentKey)}/${unit}/${interval}`
 }
 
-async function firstWorkingKey(token, keys, fetchForKey) {
-  let lastError = null
-  for (const key of keys) {
-    try {
-      return { key, rows: await fetchForKey(key) }
-    } catch (error) {
-      lastError = error
-      if (error?.httpStatus && error.httpStatus !== 400 && error.httpStatus !== 404) throw error
-    }
-  }
-  throw lastError || new Error('No matching Upstox instrument')
-}
-
 export async function handleUpstoxCandlesRequest(req, res) {
   setCors(req, res)
   if (req.method === 'OPTIONS') {
@@ -135,24 +100,31 @@ export async function handleUpstoxCandlesRequest(req, res) {
       return
     }
 
-    const keys = instrumentCandidates(symbol, segment)
+    const key = segment === 'index'
+      ? await resolveIndexKey(token, symbol)
+      : await resolveEquityKey(token, symbol)
+    if (!key) {
+      sendJson(res, 404, {
+        code: 'instrument_not_found',
+        error: `${symbol} is not a tradable NSE ${segment === 'index' ? 'index' : 'symbol'} on Upstox.`,
+      })
+      return
+    }
+
     const toDate = String(body.to_date || istYmd()).slice(0, 10)
     const fromDate = String(body.from_date || (unit === 'minutes' ? shiftIstYmd(-28) : shiftIstYmd(-365 * 9))).slice(0, 10)
 
     if (unit === 'days') {
-      const { rows } = await firstWorkingKey(token, keys, key => (
-        upstoxJson(token, historicalUrl(key, 'days', interval, toDate, fromDate))
-      ))
+      const rows = await upstoxJson(token, historicalUrl(key, 'days', interval, toDate, fromDate))
       sendJson(res, 200, toPayload(symbol, rows, 'day'))
       return
     }
 
-    const { key, rows: historical } = await firstWorkingKey(token, keys, k => (
-      upstoxJson(token, historicalUrl(k, 'minutes', interval, toDate, fromDate)).catch(async (error) => {
+    const historical = await upstoxJson(token, historicalUrl(key, 'minutes', interval, toDate, fromDate))
+      .catch((error) => {
         if (error?.httpStatus === 400 || error?.httpStatus === 404) return []
         throw error
       })
-    ))
     let today = []
     try {
       today = await upstoxJson(token, intradayUrl(key, 'minutes', interval))

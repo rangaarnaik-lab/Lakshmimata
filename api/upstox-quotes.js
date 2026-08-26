@@ -6,6 +6,7 @@ import {
   setCors,
 } from './_lib/brokerStore.js'
 import { decryptToken } from './_lib/tokenCrypto.js'
+import { resolveEquityKeys } from './_lib/upstoxInstruments.js'
 
 const MAX_SYMBOLS = 240
 const BATCH_SIZE = 80
@@ -17,17 +18,17 @@ function cleanSymbols(values) {
     .slice(0, MAX_SYMBOLS)
 }
 
-function instrumentKey(symbol) {
-  return `NSE_EQ|${symbol}`
+function lookupQuote(data, symbol, instrumentKey) {
+  return data[`NSE_EQ:${symbol}`] || data[instrumentKey] || null
 }
 
-function lookupQuote(data, symbol) {
-  return data[`NSE_EQ:${symbol}`] || data[`NSE_EQ|${symbol}`] || data[instrumentKey(symbol)] || null
-}
-
-async function fetchBatch(token, symbols) {
+async function fetchBatch(token, symbols, keyBySymbol) {
+  const pairs = symbols
+    .map(symbol => [symbol, keyBySymbol.get(symbol)])
+    .filter(([, key]) => key)
+  if (!pairs.length) return {}
   const url = new URL('https://api.upstox.com/v2/market-quote/quotes')
-  url.searchParams.set('instrument_key', symbols.map(instrumentKey).join(','))
+  url.searchParams.set('instrument_key', pairs.map(([, key]) => key).join(','))
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
   })
@@ -39,8 +40,8 @@ async function fetchBatch(token, symbols) {
     throw error
   }
   const data = json?.data || {}
-  return Object.fromEntries(symbols
-    .map(symbol => [symbol, lookupQuote(data, symbol)])
+  return Object.fromEntries(pairs
+    .map(([symbol, key]) => [symbol, lookupQuote(data, symbol, key)])
     .filter(([, quote]) => quote))
 }
 
@@ -82,9 +83,10 @@ export async function handleUpstoxQuotesRequest(req, res) {
       return
     }
 
+    const keyBySymbol = await resolveEquityKeys(token, symbols)
     const quotes = {}
     for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
-      Object.assign(quotes, await fetchBatch(token, symbols.slice(i, i + BATCH_SIZE)))
+      Object.assign(quotes, await fetchBatch(token, symbols.slice(i, i + BATCH_SIZE), keyBySymbol))
     }
     sendJson(res, 200, { quotes })
   } catch (error) {
