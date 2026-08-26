@@ -202,6 +202,7 @@ const trendIcon  = t => t==='improving'?'↑↑':t==='declining'?'↓↓':'→'
 const trendColor = t => t==='improving'?C.green:t==='declining'?C.red:C.muted
 const fmtP   = v => `₹${v>=1000?v.toFixed(0):v.toFixed(2)}`
 const hasUserLiveQuote = s => !!s?.liveFromUser
+const hasUserLiveIndex = idx => !!idx?.liveFromUser
 // Price cells live outside App, so the connection flag is mirrored here to tell
 // "not connected" apart from "connected, quote not fetched yet".
 let LIVE_FEED_CONNECTED = false
@@ -3706,8 +3707,9 @@ function IndexTapeStrip({indexData, isMobile, onIndexClick, onViewAll, activeNam
               <div style={{fontSize:10,fontWeight:700,color:C.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
                 {shortName}
               </div>
-              <div style={{fontSize:14,fontWeight:800,color:idx.chgD!=null?chgColor(idx.chgD):C.muted,marginTop:2}}>
-                {fmtChg(idx.chgD)}
+              <div style={{fontSize:14,fontWeight:800,color:hasUserLiveIndex(idx)&&idx.chgD!=null?chgColor(idx.chgD):C.muted,marginTop:2}}
+                title={hasUserLiveIndex(idx)?undefined:priceFallbackHint()}>
+                {hasUserLiveIndex(idx)?fmtChg(idx.chgD):priceFallbackLabel()}
               </div>
               <div style={{display:'flex',alignItems:'center',gap:5,marginTop:4,flexWrap:'wrap'}}>
                 {idx.rsTv!=null&&(
@@ -4427,9 +4429,12 @@ function aiSectionTone(title){
   return {color:C.accent, icon:'◆'}
 }
 
-function RichAiAnswer({text}){
+function RichAiAnswer({text, big=false}){
   const raw=String(text||'').trim()
   if(!raw) return null
+  // Maximised panel gets larger type; research notes are long and the docked
+  // 420px panel forces a size that is tiring to read.
+  const z=big?1.16:1
   const scoreMatch=raw.match(/(?:CANSLIM(?:\s+score)?|score)\s*[:=]?\s*(\d)\s*\/\s*7/i)
   const score=scoreMatch?Math.max(0,Math.min(7,Number(scoreMatch[1]))):null
   const firedMatch=raw.match(/letters?\s+(?:that\s+)?(?:fired|passed?)\s*[:=]\s*([CANSLIM,\s]+)/i)
@@ -4491,8 +4496,8 @@ function RichAiAnswer({text}){
             <div key={i} style={{marginTop:i?7:0,padding:'6px 9px',borderRadius:7,
               display:'flex',alignItems:'center',gap:7,
               background:sec.color+'14',borderLeft:`3px solid ${sec.color}`,
-              color:sec.color,fontSize:11,fontWeight:900,textTransform:'uppercase',letterSpacing:'.04em'}}>
-              <span style={{fontSize:11}}>{sec.icon}</span>{block.text}
+              color:sec.color,fontSize:11*z,fontWeight:900,textTransform:'uppercase',letterSpacing:'.04em'}}>
+              <span style={{fontSize:11*z}}>{sec.icon}</span>{block.text}
             </div>
           )
           if(block.type==='bullets') return (
@@ -4503,7 +4508,7 @@ function RichAiAnswer({text}){
                 <div key={j} style={{display:'grid',gridTemplateColumns:call?'52px 1fr':'14px 1fr',gap:6,
                   padding:'6px 8px',borderRadius:7,background:C.card,
                   border:`1px solid ${C.border}`,borderLeft:`2px solid ${sec.color}66`,
-                  fontSize:12,lineHeight:1.48,color:C.text}}>
+                  fontSize:12*z,lineHeight:1.48,color:C.text}}>
                   {call
                     ? <span style={{height:20,borderRadius:999,display:'flex',alignItems:'center',justifyContent:'center',
                         fontSize:9,fontWeight:900,textTransform:'uppercase',
@@ -19403,7 +19408,16 @@ export default function App(){
       liveQuotesRef.current=new Map()
       // Drop the index overlay too: it was fetched from the account that just
       // expired, and leaving it up shows a live % next to "reconnect".
-      setIndexData(prev=>(prev||[]).map(({liveFromUser,...idx})=>idx))
+      setIndexData(prev=>(prev||[]).map(idx=>{
+        if(!idx?.liveFromUser){
+          const {liveFromUser,...rest}=idx
+          return rest
+        }
+        // Drop the live overlay, not just the flag — otherwise Market still
+        // paints the last tick as a public 1D % after Disconnect.
+        const {liveFromUser,lastPrice,chgD,...rest}=idx
+        return rest
+      }))
       runDBScan()
     }
   },[session?.brokerConnected,runDBScan])
@@ -21737,8 +21751,12 @@ export default function App(){
                               <div style={{fontSize:9,color:C.muted,marginTop:1}}>index · ≠ sector Avg RS</div>
                             )}
                           </div>
-                          <div style={cellStyle}>
-                            <div style={{fontSize:11,color:C.muted}}>₹{idx.lastPrice?.toLocaleString('en-IN')}</div>
+                          <div style={cellStyle} title={hasUserLiveIndex(idx)?undefined:priceFallbackHint()}>
+                            <div style={{fontSize:11,color:C.muted}}>
+                              {hasUserLiveIndex(idx)&&idx.lastPrice!=null
+                                ? `₹${idx.lastPrice.toLocaleString('en-IN')}`
+                                : priceFallbackLabel()}
+                            </div>
                           </div>
                           <div style={cellStyle}>
                             <div style={{fontWeight:800,fontSize:13,color:rsc}}>{idx.rsTv??'—'}</div>
@@ -21772,18 +21790,20 @@ export default function App(){
                             [idx.chgD, idx.rankD, null, colMax.d],
                             [idx.chgW, idx.rankW, idx.rankWChange, colMax.w],
                             [idx.chgM, idx.rankM, null, colMax.m],
-                          ].map(([val,rank,rankChange,cmax],j)=>(
-                            <div key={j} style={cellStyle}>
-                              <div style={{fontWeight:700,fontSize:11,color:val!=null?chgColor(val):C.muted}}>
-                                {fmtChg(val)}
+                          ].map(([val,rank,rankChange,cmax],j)=>{
+                            const hideLive=j===0&&!hasUserLiveIndex(idx)
+                            return (
+                            <div key={j} style={cellStyle} title={hideLive?priceFallbackHint():undefined}>
+                              <div style={{fontWeight:700,fontSize:11,color:!hideLive&&val!=null?chgColor(val):C.muted}}>
+                                {hideLive?priceFallbackLabel():fmtChg(val)}
                               </div>
-                              {val!=null&&(
+                              {!hideLive&&val!=null&&(
                                 <div style={{width:'100%',height:3,background:C.border+'55',borderRadius:2,marginTop:2,overflow:'hidden'}}>
                                   <div style={{width:`${Math.min(100,Math.abs(val)/cmax*100)}%`,height:'100%',
                                     background:val>=0?C.green:C.red,borderRadius:2}}/>
                                 </div>
                               )}
-                              {rank!=null&&idx.totalIndices&&(
+                              {!hideLive&&rank!=null&&idx.totalIndices&&(
                                 <div style={{fontSize:8,fontWeight:700,
                                   color:rank<=3?C.green:rank>=idx.totalIndices-2?C.red:C.muted}}>
                                   #{rank}/{idx.totalIndices}
@@ -21796,7 +21816,8 @@ export default function App(){
                                 </div>
                               )}
                             </div>
-                          ))}
+                            )
+                          })}
                           {[[idx.chgQ,colMax.q],[idx.chgY,colMax.y]].map(([val,cmax],j)=>(
                             <div key={j} style={cellStyle}>
                               <div style={{fontWeight:700,fontSize:11,color:val!=null?chgColor(val):C.muted}}>
