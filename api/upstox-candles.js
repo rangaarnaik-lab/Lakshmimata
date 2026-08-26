@@ -81,6 +81,23 @@ function intradayUrl(instrumentKey, unit, interval) {
   return `https://api.upstox.com/v3/historical-candle/intraday/${encodeURIComponent(instrumentKey)}/${unit}/${interval}`
 }
 
+function aggregateDay(rows, ymd) {
+  const dayRows = (rows || [])
+    .filter(row => String(row?.ts || '').slice(0, 10) === ymd)
+    .sort((a, b) => String(a.ts).localeCompare(String(b.ts)))
+  if (!dayRows.length) return null
+  const first = dayRows[0]
+  const last = dayRows[dayRows.length - 1]
+  return {
+    ts: `${ymd}T15:30:00+05:30`,
+    open: first.open,
+    high: Math.max(...dayRows.map(row => row.high)),
+    low: Math.min(...dayRows.map(row => row.low)),
+    close: last.close,
+    volume: dayRows.reduce((sum, row) => sum + (Number(row.volume) || 0), 0),
+  }
+}
+
 export async function handleUpstoxCandlesRequest(req, res) {
   setCors(req, res)
   if (req.method === 'OPTIONS') {
@@ -139,6 +156,20 @@ export async function handleUpstoxCandlesRequest(req, res) {
           const bseRows = await upstoxJson(token, historicalUrl(bseKey, 'days', interval, toDate, fromDate))
             .catch(() => [])
           if (bseRows.length > rows.length) rows = bseRows
+        }
+      }
+      // Upstox's historical daily endpoint commonly omits the current session
+      // even after 15:30. Build that one bar from the same user's 1-minute
+      // intraday feed, then replace/append by date. This is deterministic OHLCV
+      // and works even when the quote endpoint leaves open/high/low blank.
+      if (toDate === istYmd()) {
+        const minuteRows = await upstoxJson(
+          token, intradayUrl(key, 'minutes', '1'),
+        ).catch(() => [])
+        const today = aggregateDay(minuteRows, toDate)
+        if (today) {
+          rows = rows.filter(row => String(row.ts).slice(0, 10) !== toDate)
+          rows.push(today)
         }
       }
       sendJson(res, 200, toPayload(symbol, rows, 'day'))

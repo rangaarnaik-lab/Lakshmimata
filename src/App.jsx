@@ -8728,9 +8728,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   // Forming daily candle: drop any incomplete "today" row from history
   // (Yahoo/EOD often leaves a junk mid-session bar), then append a clean
   // candle from stocks day OHLC + last_price.
-  if (liveOverlay && barInterval === 'D') {
-    const todayStr = new Date(Date.now() + ((330 + new Date().getTimezoneOffset())*60000))
-      .toISOString().split('T')[0]
+  // During the session the quote keeps today's forming candle current. After
+  // the close, prefer the completed bar returned by /api/upstox-candles (now
+  // aggregated from 1m candles) and only use the quote when that bar is absent.
+  const todayIst = new Date(Date.now() + ((330 + new Date().getTimezoneOffset())*60000))
+    .toISOString().split('T')[0]
+  const dailyAlreadyHasToday = dates.length > 0 && dates[dates.length - 1] === todayIst
+  if (liveOverlay && barInterval === 'D' && (isMarketOpen() || !dailyAlreadyHasToday)) {
+    const todayStr = todayIst
     const lo = liveOverlay
     const lastIdx = dates.length - 1
     // On a trading holiday the quote just repeats the previous session, which
