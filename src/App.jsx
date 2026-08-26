@@ -700,6 +700,10 @@ const SEC_COLUMN_TOOLTIPS = {
   count: 'How many stocks are tracked in this sector.',
   results: 'Latest quarterly result quality among stocks in this sector: Excellent / Good / Weak (from financial results). Neutral & unrated are omitted from the counts.',
   ppCount: "Stocks in this sector showing a Pocket Pivot today — early accumulation, real-time.",
+  hyCount: "Stocks in this sector printing a High Volume Close (HY) today.",
+  htCount: "Stocks in this sector printing a High Tight (HT) setup today.",
+  ibvCount: "Stocks in this sector firing an Institutional Buying Volume (IBV) signal today.",
+  snortCount: "Stocks in this sector firing a Bull Snort today — a wide-range, high-volume thrust bar.",
   improving: "Count of this sector's stocks whose RS trend is currently improving, not just high.",
   advancesD: '% of this sector\'s stocks that are up today.',
   advancesW: '% of this sector\'s stocks that are up over the last week.',
@@ -19090,6 +19094,9 @@ export default function App(){
   const [secSort,setSecSort]=useState({key:'avgRS',dir:-1})
   const [indSort,setIndSort]=useState({key:'heat',dir:-1})
   const [marketLens,setMarketLens]=useState('all') // all | leadership | emerging | fading
+  // Sectors opens on Emerging so the first view is groups whose breadth is
+  // accelerating, not the full ranked list. Indices / Industries keep All.
+  const [sectorLens,setSectorLens]=useState('emerging')
   const [breadthData,setBreadthData]=useState(null)
   const [rotationData,setRotationData]=useState(null)
   const [loadingRotation,setLoadingRotation]=useState(false)
@@ -19844,6 +19851,11 @@ export default function App(){
       return {
         ...sec,
         members,
+        ppCount: members.filter(s=>s.pp?.isPP).length,
+        hyCount: members.filter(s=>s.hy?.isHY).length,
+        htCount: members.filter(s=>s.ht?.isHT).length,
+        ibvCount: members.filter(s=>s.ibvSignal).length,
+        snortCount: members.filter(s=>s.isBullSnort).length,
         strength:sec.avgRS,
         advD:sec.advancesD,
         advW:sec.advancesW,
@@ -21641,15 +21653,19 @@ export default function App(){
             )}
 
             <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',marginBottom:14}}>
-              {[['all','All groups'],['leadership','Leadership'],['emerging','Emerging'],['fading','Fading / Weak']].map(([id,label])=>(
-                <button key={id} type="button" onClick={()=>setMarketLens(id)}
+              {[['all','All groups'],['leadership','Leadership'],['emerging','Emerging'],['fading','Fading / Weak']].map(([id,label])=>{
+                const lens=marketSubTab==='sectors'?sectorLens:marketLens
+                const setLens=marketSubTab==='sectors'?setSectorLens:setMarketLens
+                return (
+                <button key={id} type="button" onClick={()=>setLens(id)}
                   style={{padding:'7px 12px',borderRadius:18,cursor:'pointer',fontSize:11,fontWeight:700,
-                    border:`1px solid ${marketLens===id?C.accent:C.border}`,
-                    background:marketLens===id?C.accent+'18':C.card,
-                    color:marketLens===id?C.accent:C.muted}}>
+                    border:`1px solid ${lens===id?C.accent:C.border}`,
+                    background:lens===id?C.accent+'18':C.card,
+                    color:lens===id?C.accent:C.muted}}>
                   {label}
                 </button>
-              ))}
+                )
+              })}
               <span style={{fontSize:10.5,color:C.muted,lineHeight:1.4}}>
                 Leadership = established strength · Heat = rank, breadth and fresh-signal acceleration
               </span>
@@ -21982,15 +21998,16 @@ export default function App(){
                       overflowY: String(expandedIndex||'').startsWith('sector:') ? 'visible' : 'auto',
                       maxHeight: String(expandedIndex||'').startsWith('sector:') ? 'none' : 520,
                       border:`1px solid ${C.border}`,borderRadius:12}}>
-                      <div style={{minWidth:1120}}>
+                      <div style={{minWidth:1360}}>
                         <div style={{display:'grid',
-                          gridTemplateColumns:'170px 70px 60px 62px 55px 88px 55px 120px 70px 70px 90px 90px 90px',
+                          gridTemplateColumns:'170px 70px 60px 62px 55px 88px 55px 120px 52px 48px 48px 48px 62px 70px 90px 90px 90px',
                           gap:4,padding:'10px 12px',background:C.bg,
                           borderBottom:`1px solid ${C.border}`,position:'sticky',top:0,zIndex:1}}>
                           {[['Sector','sector'],['Rank','rank'],['Avg RS','avgRS'],
                             ['Lead','leadership'],['Heat','heat'],['State','marketState'],['Stocks','count'],
                             ['Results','resultsEx'],
-                            ['PP Today','ppCount'],['Improving','improving'],
+                            ['PP Today','ppCount'],['HY','hyCount'],['HT','htCount'],['IBV','ibvCount'],['Snort','snortCount'],
+                            ['Improving','improving'],
                             ['Adv 1D','advancesD'],['Adv 1W','advancesW'],['Adv 1M','advancesM']].map(([h,key],hi)=>(
                             <div key={h} onClick={()=>setSecSort(s=>({key,dir:s.key===key?-s.dir:-1}))}
                               title={SEC_COLUMN_TOOLTIPS[key==='resultsEx'?'results':key]}
@@ -22022,7 +22039,7 @@ export default function App(){
                             return x[secSort.key]??-Infinity
                           }
                           const dir = secSort.key==='rank' ? -secSort.dir : secSort.dir
-                          return scoredSectorData.filter(x=>marketLensMatches(x,marketLens)).sort((a,b)=>{
+                          return scoredSectorData.filter(x=>marketLensMatches(x,sectorLens)).sort((a,b)=>{
                             const av=sortVal(a), bv=sortVal(b)
                             return (typeof av==='string' ? av.localeCompare(bv) : av-bv) * dir
                           }).map((sec,i)=>{
@@ -22055,7 +22072,7 @@ export default function App(){
                                   }
                                 }}
                                 style={{display:'grid',
-                                gridTemplateColumns:'170px 70px 60px 62px 55px 88px 55px 120px 70px 70px 90px 90px 90px',
+                                gridTemplateColumns:'170px 70px 60px 62px 55px 88px 55px 120px 52px 48px 48px 48px 62px 70px 90px 90px 90px',
                                 gap:4,padding:'10px 12px',alignItems:'center',cursor:'pointer',
                                 background:isExp?C.active:(i%2===0?'transparent':C.bg+'55'),
                                 borderBottom:`1px solid ${C.border}33`}}>
@@ -22108,6 +22125,26 @@ export default function App(){
                                 <div style={cellStyle}>
                                   <div style={{fontSize:11,color:sec.ppCount>0?C.orange:C.muted,fontWeight:700}}>
                                     {sec.ppCount>0?`🔥${sec.ppCount}`:'—'}
+                                  </div>
+                                </div>
+                                <div style={cellStyle} title={SEC_COLUMN_TOOLTIPS.hyCount}>
+                                  <div style={{fontSize:11,color:sec.hyCount>0?C.blue:C.muted,fontWeight:700}}>
+                                    {sec.hyCount>0?sec.hyCount:'—'}
+                                  </div>
+                                </div>
+                                <div style={cellStyle} title={SEC_COLUMN_TOOLTIPS.htCount}>
+                                  <div style={{fontSize:11,color:sec.htCount>0?C.purple:C.muted,fontWeight:700}}>
+                                    {sec.htCount>0?sec.htCount:'—'}
+                                  </div>
+                                </div>
+                                <div style={cellStyle} title={SEC_COLUMN_TOOLTIPS.ibvCount}>
+                                  <div style={{fontSize:11,color:sec.ibvCount>0?C.blue:C.muted,fontWeight:700}}>
+                                    {sec.ibvCount>0?sec.ibvCount:'—'}
+                                  </div>
+                                </div>
+                                <div style={cellStyle} title={SEC_COLUMN_TOOLTIPS.snortCount}>
+                                  <div style={{fontSize:11,color:sec.snortCount>0?C.green:C.muted,fontWeight:700}}>
+                                    {sec.snortCount>0?`🐂${sec.snortCount}`:'—'}
                                   </div>
                                 </div>
                                 <div style={cellStyle}>
