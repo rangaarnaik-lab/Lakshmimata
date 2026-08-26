@@ -4,6 +4,19 @@ import { supabase } from './supabase'
 export const UPSTOX_OAUTH_STATE_KEY = 'lakshmimata-upstox-oauth-state'
 const UPSTOX_OAUTH_REDIRECT_KEY = 'lakshmimata-upstox-oauth-redirect'
 const UPSTOX_PENDING_KEY = 'lakshmimata-upstox-pending-oauth'
+const UPSTOX_STEP_KEY = 'lakshmimata-upstox-last-step'
+
+/** Last thing the connect flow did, so a silent branch is still visible on Account. */
+export function noteUpstoxStep(step) {
+  try { localStorage.setItem(UPSTOX_STEP_KEY, JSON.stringify({ step, at: Date.now() })) } catch (_) {}
+}
+
+export function readUpstoxStep() {
+  try {
+    const raw = localStorage.getItem(UPSTOX_STEP_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
 
 let cachedConfig = null
 

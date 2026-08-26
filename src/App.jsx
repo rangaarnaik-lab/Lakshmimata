@@ -56,7 +56,7 @@ import { fetchUpstoxQuotes, applyQuoteToStock } from './lib/upstoxQuotes'
 import {
   fetchUpstoxOAuthConfig, startUpstoxOAuth, readUpstoxOAuthCallback, clearUpstoxOAuthParams,
   exchangeUpstoxAuthCode, readUpstoxConnection, savePastedUpstoxToken, disconnectUpstox,
-  expectedUpstoxOAuthState, hasPendingUpstoxOAuth,
+  expectedUpstoxOAuthState, hasPendingUpstoxOAuth, noteUpstoxStep, readUpstoxStep,
 } from './lib/upstoxOAuth'
 import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, compressChartImage, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchUserWatchlists, saveUserWatchlists, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
@@ -16133,6 +16133,12 @@ function UpstoxLiveFeedCard({session,onUpdate}){
   const [busy,setBusy]=useState(false)
   const [err,setErr]=useState('')
   const [info,setInfo]=useState('')
+  const lastStep=(()=>{
+    const s=readUpstoxStep()
+    if(!s?.step) return ''
+    const mins=Math.round((Date.now()-Number(s.at||0))/60000)
+    return `${s.step}${Number.isFinite(mins)&&mins>=0?` (${mins===0?'just now':`${mins} min ago`})`:''}`
+  })()
   useEffect(()=>{
     let cancelled=false
     fetchUpstoxOAuthConfig()
@@ -16178,6 +16184,11 @@ function UpstoxLiveFeedCard({session,onUpdate}){
       </div>
       {err&&<div style={{fontSize:12,color:C.red,marginBottom:8}}>{err}</div>}
       {info&&<div style={{fontSize:12,color:C.green,marginBottom:8}}>{info}</div>}
+      {!connected&&lastStep&&(
+        <div style={{fontSize:11,color:C.muted,marginBottom:8,lineHeight:1.45}}>
+          Last connect attempt: {lastStep}
+        </div>
+      )}
       <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
         <button type="button" onClick={connectOAuth} disabled={!oauthOn||busy}
           style={{flex:1,minWidth:160,padding:'10px 12px',borderRadius:8,border:'none',cursor:oauthOn?'pointer':'not-allowed',
@@ -16984,27 +16995,30 @@ export default function App(){
   useEffect(()=>{
     if(authLoading) return
     const cb=readUpstoxOAuthCallback()
-    if(!cb) return
+    if(!cb){ noteUpstoxStep('idle: no Upstox code in the URL or in storage'); return }
     if(cb.error){
       if(!upstoxOauthOnce.current){
         upstoxOauthOnce.current=true
+        noteUpstoxStep(`Upstox refused: ${cb.errorDescription||cb.error}`)
         setAuthNotice(cb.errorDescription||cb.error||'Upstox login was cancelled.')
         setMainTab('settings')
         clearUpstoxOAuthParams()
       }
       return
     }
-    if(!cb.code) return
+    if(!cb.code){ noteUpstoxStep('callback had no authorization code'); return }
     let expected=''
     try{ expected=expectedUpstoxOAuthState() }catch(_){}
     if(!cb.state||!expected||cb.state!==expected){
       upstoxOauthOnce.current=true
+      noteUpstoxStep(`state mismatch (got "${cb.state||'none'}", expected "${expected||'none'}")`)
       setAuthNotice('Upstox login could not be verified. Click Connect Upstox and try again.')
       setMainTab('settings')
       clearUpstoxOAuthParams()
       return
     }
     if(!session?.user){
+      noteUpstoxStep('waiting for Lakshmimata sign-in to finish the connect')
       setAuthNotice('Sign in to Lakshmimata to finish connecting Upstox.')
       setShowAuth(true)
       setAuthMode('login')
@@ -17014,6 +17028,7 @@ export default function App(){
     upstoxOauthOnce.current=true
     ;(async()=>{
       try{
+        noteUpstoxStep('exchanging the Upstox code for a token…')
         const { data: { session: s } } = await supabase.auth.getSession()
         const jwt=s?.access_token
         if(!jwt) throw new Error('Not signed in')
@@ -17022,12 +17037,14 @@ export default function App(){
         // otherwise a token that failed to persist shows as connected until reload.
         const saved=await readUpstoxConnection().catch(()=>({connected:false}))
         if(!saved.connected) throw new Error('Upstox signed you in but the connection did not save. The user_broker_tokens table may be missing.')
+        noteUpstoxStep('connected')
         setSession(prev=>({ user:(prev&&prev.user)||session.user, brokerConnected:true }))
         setShowAuth(false)
         setMainTab('settings')
         setAuthNotice('Upstox connected. Live last price, % change, and charts now use your account.')
       }catch(e){
         upstoxOauthOnce.current=false
+        noteUpstoxStep(`failed: ${e?.message||'Upstox connect failed'}`)
         setMainTab('settings')
         setAuthNotice(e?.message||'Upstox connect failed')
       }finally{
