@@ -16536,6 +16536,8 @@ function FyersLiveFeedCard({session,onUpdate}){
   const connected=!!session?.fyersConnected
   const active=session?.liveBroker==='fyers'
   const [oauthOn,setOauthOn]=useState(false)
+  // null while unknown, so the card never flashes for accounts Fyers rejects.
+  const [allowed,setAllowed]=useState(null)
   const [busy,setBusy]=useState(false)
   const [err,setErr]=useState('')
   const [info,setInfo]=useState('')
@@ -16548,10 +16550,10 @@ function FyersLiveFeedCard({session,onUpdate}){
   useEffect(()=>{
     let cancelled=false
     fetchFyersOAuthConfig()
-      .then(cfg=>{ if(!cancelled) setOauthOn(!!cfg.configured) })
-      .catch(()=>{ if(!cancelled) setOauthOn(false) })
+      .then(cfg=>{ if(!cancelled){ setOauthOn(!!cfg.configured); setAllowed(cfg.allowed!==false) } })
+      .catch(()=>{ if(!cancelled){ setOauthOn(false); setAllowed(false) } })
     return()=>{cancelled=true}
-  },[])
+  },[session?.user?.id])
   const connectOAuth=async()=>{
     setErr('');setInfo('');setBusy(true)
     try{ await startFyersOAuth() }
@@ -16568,6 +16570,9 @@ function FyersLiveFeedCard({session,onUpdate}){
       setErr(e?.message||'Could not disconnect')
     }finally{ setBusy(false) }
   }
+  // Hidden until the server confirms this account may use Fyers. An account
+  // that is already connected keeps the card so Disconnect stays reachable.
+  if(!connected&&allowed!==true) return null
   return(
     <AccountCard title="Live prices (your Fyers)"
       hint="Same idea as Upstox: you log in on Fyers. Live last price, % change, volume on the chart, and candles use your Fyers account. Scanners stay on our derived scan.">

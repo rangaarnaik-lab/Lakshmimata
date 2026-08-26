@@ -18,20 +18,36 @@ export function readFyersStep() {
 }
 
 let cachedConfig = null
+let cachedConfigKey = null
+
+async function currentAccessToken() {
+  try {
+    const { data } = await supabase.auth.getSession()
+    return data?.session?.access_token || ''
+  } catch (_) { return '' }
+}
 
 export async function fetchFyersOAuthConfig() {
-  if (cachedConfig) return cachedConfig
+  // The server decides per account whether Fyers is on offer, so a response
+  // fetched while signed out must not be replayed after signing in.
+  const jwt = await currentAccessToken()
+  if (cachedConfig && cachedConfigKey === jwt) return cachedConfig
   // no-store: a tab opened before the server had its Fyers env vars would
   // otherwise keep replaying a cached "not configured" response.
-  const res = await fetch('/api/fyers-oauth-config', { cache: 'no-store' })
+  const res = await fetch('/api/fyers-oauth-config', {
+    cache: 'no-store',
+    headers: jwt ? { Authorization: `Bearer ${jwt}` } : {},
+  })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || `Fyers config failed (${res.status})`)
   cachedConfig = {
     configured: !!data.configured && !!data.client_id,
+    allowed: data.allowed !== false,
     clientId: String(data.client_id || '').trim(),
     redirectUri: String(data.redirect_uri || '').trim(),
     reason: String(data.reason || '').trim(),
   }
+  cachedConfigKey = jwt
   return cachedConfig
 }
 
