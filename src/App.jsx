@@ -19336,6 +19336,11 @@ export default function App(){
   stocksRef.current=stocks
   const livePollSymsRef=useRef([])
   const livePollIndicesRef=useRef([])
+  // Lets the catch-up effect below reuse this poller, and remembers which
+  // symbols we already asked the broker about so a symbol with no quote of
+  // its own cannot put us in a fetch loop.
+  const liveTickRef=useRef(null)
+  const liveAskedRef=useRef(new Set())
   LIVE_FEED_CONNECTED=!!session?.brokerConnected
   useEffect(()=>{
     if(!session?.brokerConnected||historyDate||demoMode) return
@@ -19349,6 +19354,8 @@ export default function App(){
       try{
         const {stocks: stockMap, indices: indexMap}=await fetchLiveQuotes({symbols:syms, indices:names})
         if(cancelled) return
+        for(const s of syms) liveAskedRef.current.add(s)
+        for(const n of names) liveAskedRef.current.add(n)
         if(stockMap.size){
           const merged=new Map(liveQuotesRef.current)
           for(const [k,v] of stockMap) merged.set(k,v)
@@ -19373,11 +19380,14 @@ export default function App(){
         }
       }
     }
+    liveAskedRef.current=new Set()
+    liveTickRef.current=tick
     tick(true)
     const id=setInterval(()=>tick(),45000)
     const onVis=()=>{ if(document.visibilityState==='visible') tick(true) }
     document.addEventListener('visibilitychange', onVis)
-    return()=>{ cancelled=true; clearInterval(id); document.removeEventListener('visibilitychange', onVis) }
+    return()=>{ cancelled=true; clearInterval(id); document.removeEventListener('visibilitychange', onVis)
+      if(liveTickRef.current===tick) liveTickRef.current=null }
   },[session?.brokerConnected,historyDate,demoMode,lastRefresh])
 
   const indexDataRef=useRef(indexData)
@@ -19736,6 +19746,19 @@ export default function App(){
     return out.slice(0,80)
   })()
   livePollIndicesRef.current=(indexData||[]).map(i=>i.name).filter(Boolean).slice(0,24)
+
+  // The poller only force-fetches on mount and on tab focus; its 45s interval
+  // bails out while the market is closed. Symbols reaching the ticker or table
+  // after that first fetch — the common case, since the table is still loading
+  // when it runs — would otherwise sit at "—" until a refresh. Fetch once for
+  // anything we have not asked about yet, market hours or not.
+  const livePollPending=[...livePollSymsRef.current,...livePollIndicesRef.current]
+    .filter(k=>!liveAskedRef.current.has(k)).join(',')
+  useEffect(()=>{
+    if(!livePollPending||!liveTickRef.current) return
+    const t=setTimeout(()=>{ liveTickRef.current?.(true) },250)
+    return()=>clearTimeout(t)
+  },[livePollPending])
 
   const rotationAvailableDates=useMemo(()=>{
     const dates=new Set()
