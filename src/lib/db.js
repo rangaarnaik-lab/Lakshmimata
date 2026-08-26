@@ -1709,7 +1709,14 @@ export async function compressChartImage(file) {
   }
 }
 
-export async function submitStockAiAsk(symbol, question, askMode = 'filings', chartImage = null) {
+export async function submitStockAiAsk(
+  symbol,
+  question,
+  askMode = 'filings',
+  chartImage = null,
+  conversationId = null,
+  parentAskId = null,
+) {
   // Queue a free-form diligence question; fundamentals worker answers via Gemini.
   // askMode: 'filings' | 'web' | 'chart' (Gemini Vision + local context)
   // chartImage: optional { mime, b64 } compressed screenshot for vision.
@@ -1730,6 +1737,8 @@ export async function submitStockAiAsk(symbol, question, askMode = 'filings', ch
     visitor_id: getVisitorId(),
     user_id: user?.id || null,
   }
+  if (conversationId) payload.conversation_id = conversationId
+  if (parentAskId) payload.parent_ask_id = parentAskId
   if (hasChart) {
     payload.chart_image = chartImage.b64
     payload.chart_image_mime = chartImage.mime || 'image/jpeg'
@@ -1737,16 +1746,21 @@ export async function submitStockAiAsk(symbol, question, askMode = 'filings', ch
   let { data, error } = await supabase
     .from('stock_ai_asks')
     .insert(payload)
-    .select('id,symbol,question,status,ask_mode,created_at')
+    .select('id,symbol,question,status,ask_mode,conversation_id,parent_ask_id,created_at')
     .single()
   // Older DBs may lack ask_mode / chart_image — retry without them
-  if (error && /ask_mode|chart_image/i.test(error.message || '')) {
+  if (error && /ask_mode|chart_image|conversation_id|parent_ask_id/i.test(error.message || '')) {
+    if (/conversation_id|parent_ask_id/i.test(error.message || '') && conversationId) {
+      return { error: 'Follow-up chat needs a one-time SQL update (018_stock_ai_conversations.sql).' }
+    }
     if (/chart_image/i.test(error.message || '') && hasChart) {
       return { error: 'Chart images need a one-time SQL update (add_ask_ai_chart_image.sql). Ask without the picture until that runs.' }
     }
     delete payload.ask_mode
     delete payload.chart_image
     delete payload.chart_image_mime
+    delete payload.conversation_id
+    delete payload.parent_ask_id
     ;({ data, error } = await supabase
       .from('stock_ai_asks')
       .insert(payload)
@@ -1765,11 +1779,11 @@ export async function fetchStockAiAsk(id) {
   if (!id) return null
   const { data, error } = await supabase
     .from('stock_ai_asks')
-    .select('id,symbol,question,status,ask_mode,answer,verdict,flags,sources,error,created_at,answered_at')
+    .select('id,symbol,question,status,ask_mode,conversation_id,parent_ask_id,answer,verdict,flags,sources,error,created_at,answered_at')
     .eq('id', id)
     .maybeSingle()
   if (error) {
-    if (/ask_mode/i.test(error.message || '')) {
+    if (/ask_mode|conversation_id|parent_ask_id/i.test(error.message || '')) {
       const { data: d2, error: e2 } = await supabase
         .from('stock_ai_asks')
         .select('id,symbol,question,status,answer,verdict,flags,sources,error,created_at,answered_at')
@@ -1788,13 +1802,13 @@ export async function fetchRecentStockAiAsks(symbol, limit = 5) {
   if (!symbol) return []
   const { data, error } = await supabase
     .from('stock_ai_asks')
-    .select('id,symbol,question,status,ask_mode,answer,verdict,flags,sources,error,created_at,answered_at')
+    .select('id,symbol,question,status,ask_mode,conversation_id,parent_ask_id,answer,verdict,flags,sources,error,created_at,answered_at')
     .eq('symbol', symbol)
     .eq('status', 'done')
     .order('answered_at', { ascending: false })
     .limit(limit)
   if (error) {
-    if (/stock_ai_asks|ask_mode/i.test(error.message || '')) {
+    if (/stock_ai_asks|ask_mode|conversation_id|parent_ask_id/i.test(error.message || '')) {
       const { data: d2, error: e2 } = await supabase
         .from('stock_ai_asks')
         .select('id,symbol,question,status,answer,verdict,flags,sources,error,created_at,answered_at')

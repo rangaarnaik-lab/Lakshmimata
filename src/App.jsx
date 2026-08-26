@@ -667,8 +667,8 @@ const SIGNAL_TOOLTIPS = {
   hyht: 'Had HY/HT (or PP proxy) in the last 5 days and price is breaking out today with RS ≥ 60.',
   volpull: 'After HY, HT, IBV, or Bull Snort in the last ~10 days, price has pulled back to within ~3% of EMA5, EMA9, EMA21, or EMA50 — watch for the next push up.',
   hyema9: 'CHENNPETRO-style: recent HY, HT, or IBV climax, then a quiet (low-volume) sell/pullback, and today a bounce while holding EMA5, EMA9, or EMA21 (within ~3%). No RS-90 gate.',
-  canslim: 'William O\'Neil CANSLIM growth checklist — passes 5+ of 7 criteria (earnings, new highs, volume, RS leader, institutional buying, Stage 2).',
-  pead: 'Post-Earnings Announcement Drift — reported within the last 3–60 days, EPS grew, and price/RS still drifting up.',
+  canslim: 'William O\'Neil CANSLIM growth checklist (adapted for NSE). Pass = 5+ of 7 letters: C current quarterly EPS (QoQ ≥15% or YoY ≥20%), A annual consistency (YoY ≥20% and streak ≥2), N new high / within 10% of 52w high or Stage-2 entry, S supply/demand (RVOL ≥1.3, IBV, HY or HT), L RS leader (≥80), I institutional proxy (FII/DII/promoter increasing), M market = Weinstein Stage 2. Not a buy signal.',
+  pead: 'Post-Earnings Announcement Drift — results filed 3–60 days ago, EPS grew QoQ or YoY, and price/RS still drifting up (positive week or month change, RS ≥70, or RS improving). Research overlay, not a buy signal.',
 }
 
 // Tooltips for the Index Performance Dashboard's column headers.
@@ -4327,9 +4327,11 @@ function MgmtFlagsCard({symbol, compact}){
 }
 
 const ASK_AI_SUGGESTIONS = [
+  'What is the latest material news about this company?',
+  'Explain this stock\'s CANSLIM score letter by letter.',
+  'Is this a PEAD setup, and what does that mean here?',
   'Is management trustworthy or not?',
   'Any red flags in recent filings or concalls?',
-  'Do they deliver on growth / capex promises?',
 ]
 const ASK_AI_CHART_SUGGESTIONS = [
   'Explain this chart in simple language.',
@@ -4338,9 +4340,26 @@ const ASK_AI_CHART_SUGGESTIONS = [
 ]
 
 function askModeLabel(mode){
-  if(mode==='web') return 'Web research'
+  if(mode==='web') return 'Web + recent news'
   if(mode==='chart') return 'Chart analysis'
   return 'Filings only'
+}
+
+function AskAiSebiDisclaimer(){
+  return (
+    <div style={{
+      marginTop:10,padding:'8px 10px',borderRadius:8,
+      background:C.yellow+'14',border:`1px solid ${C.yellow}55`,
+      fontSize:10.5,lineHeight:1.45,color:C.text,
+    }}>
+      <strong style={{color:C.yellow}}>Disclaimer.</strong>{' '}
+      This reply is AI-generated from public filings, scan tags, and (if selected) web search.
+      It is educational research commentary only — not investment advice, not a buy/sell
+      recommendation, and not a research report under the SEBI (Research Analysts) Regulations, 2014.
+      Lakshmimata is not a SEBI-registered Investment Adviser or Research Analyst.
+      Do your own research and consult a SEBI-registered adviser before any investment decision.
+    </div>
+  )
 }
 
 function AskAiAgent({symbol, isMobile, variant='inline'}){
@@ -4350,16 +4369,18 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
   const [active, setActive] = useState(null)
+  const [chat, setChat] = useState([])
   const [recent, setRecent] = useState([])
   const [err, setErr] = useState(null)
-  const [askMode, setAskMode] = useState('chart') // 'filings' | 'web' | 'chart'
+  const [askMode, setAskMode] = useState('web') // 'filings' | 'web' | 'chart'
+  const [conversationId, setConversationId] = useState(null)
   const [chartImg, setChartImg] = useState(null) // { mime, b64, previewUrl }
   const [railHover, setRailHover] = useState(false)
   const fileRef = useRef(null)
 
   useEffect(()=>{
     let cancelled=false
-    setActive(null); setQ(''); setErr(null); setOpen(false)
+    setActive(null); setChat([]); setConversationId(null); setQ(''); setErr(null); setOpen(false)
     setChartImg(prev=>{ if(prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl); return null })
     if(!symbol){ setRecent([]); return }
     fetchRecentStockAiAsks(symbol).then(rows=>{ if(!cancelled) setRecent(rows||[]) })
@@ -4435,8 +4456,18 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
     if(!chartImg && question.length<8) return
     setErr(null)
     setBusy(true)
+    const prior = active?.id ? active : chat[chat.length-1]
+    const nextConversationId = conversationId
+      || (typeof crypto!=='undefined'&&crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    if(!conversationId) setConversationId(nextConversationId)
+    if(active){
+      setChat(prev=>prev.some(row=>row.id&&row.id===active.id)?prev:[...prev,active])
+    }
     setActive({status:'pending', question: question || 'Read this chart and explain what it shows.', ask_mode: askMode})
-    const res = await submitStockAiAsk(symbol, question, askMode, chartImg)
+    const res = await submitStockAiAsk(
+      symbol, question, askMode, chartImg, nextConversationId, prior?.id||null)
     if(res.error){
       setErr(res.error)
       setBusy(false)
@@ -4529,7 +4560,7 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
                   Ask AI agent
                 </div>
                 <div style={{fontSize:10,color:C.muted,marginTop:2}}>
-                  {symbol} · Filings, Web, or a chart screenshot · not investment advice
+                  {symbol} · Follow-up chat with filings, recent news, or a chart · not investment advice
                 </div>
               </div>
               <button type="button" onClick={()=>setOpen(false)}
@@ -4541,7 +4572,7 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
               <div style={{display:'flex',gap:6,marginBottom:10,flexWrap:'wrap'}}>
                 {[
                   {id:'filings', label:'Filings only', hint:'PPT / Concall on file'},
-                  {id:'web', label:'Web research', hint:'Google Search + filings'},
+                  {id:'web', label:'Web + news', hint:'Google Search for recent news + filings'},
                   {id:'chart', label:'Chart analysis', hint:'Read the visible Our Chart'},
                 ].map(m=>{
                   const on = askMode===m.id
@@ -4588,55 +4619,56 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
 
               {err&&<div style={{marginBottom:8,fontSize:11,color:C.red}}>{err}</div>}
 
-              {active&&(
-                <div style={{marginBottom:12,padding:'10px 12px',borderRadius:10,background:C.bg,border:`1px solid ${C.border}`}}>
+              {[...chat, ...(active?[active]:[])].map((message,messageIndex)=>(
+                <div key={message.id||`pending-${messageIndex}`}
+                  style={{marginBottom:12,padding:'10px 12px',borderRadius:10,background:C.bg,border:`1px solid ${C.border}`}}>
                   <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
                     <span>
-                      {active.status==='pending'?'Researching…'
-                        : active.status==='error'?'Could not answer'
+                      {message.status==='pending'?'Researching…'
+                        : message.status==='error'?'Could not answer'
                           : 'Answer'}
                     </span>
-                    {(active.ask_mode||askMode)&&(
+                    {(message.ask_mode||askMode)&&(
                       <span style={{
                         fontSize:9,fontWeight:700,color:C.accent,background:C.accent+'18',
                         border:`1px solid ${C.accent}44`,borderRadius:999,padding:'1px 7px',
                       }}>
-                        {askModeLabel(active.ask_mode||askMode)}
+                        {askModeLabel(message.ask_mode||askMode)}
                       </span>
                     )}
                   </div>
-                  <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>{active.question}</div>
-                  {active.status==='pending'&&(
+                  <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>{message.question}</div>
+                  {message.status==='pending'&&(
                     <div style={{fontSize:11,color:C.muted}}>
-                      {(active.ask_mode||askMode)==='web'
-                        ? 'Working… usually 10–40 seconds (falls back fast if web is slow).'
-                        : (active.ask_mode||askMode)==='chart'
+                      {(message.ask_mode||askMode)==='web'
+                        ? 'Searching recent news and filings… usually 10–40 seconds.'
+                        : (message.ask_mode||askMode)==='chart'
                           ? 'Reading the visible chart… usually 10–50 seconds.'
                           : 'Working… usually 5–20 seconds.'}
                     </div>
                   )}
-                  {active.status==='error'&&(
-                    <div style={{fontSize:12,color:C.red}}>{active.error||'Try again in a minute.'}</div>
+                  {message.status==='error'&&(
+                    <div style={{fontSize:12,color:C.red}}>{message.error||'Try again in a minute.'}</div>
                   )}
-                  {active.status==='done'&&(
+                  {message.status==='done'&&(
                     <>
-                      {active.verdict&&(
+                      {message.verdict&&(
                         <div style={{marginBottom:8}}>
                           <span style={{
                             fontSize:9,fontWeight:800,color:C.accent,background:C.accent+'18',
                             border:`1px solid ${C.accent}44`,borderRadius:999,padding:'2px 8px',textTransform:'uppercase',
-                          }}>{active.verdict}</span>
+                          }}>{message.verdict}</span>
                         </div>
                       )}
-                      <div style={{fontSize:12.5,lineHeight:1.55,color:C.text,whiteSpace:'pre-wrap'}}>{active.answer}</div>
+                      <div style={{fontSize:12.5,lineHeight:1.55,color:C.text,whiteSpace:'pre-wrap'}}>{message.answer}</div>
                       <div style={{marginTop:10}}>
                         <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6}}>Flags</div>
-                        <FlagsList flags={active.flags}/>
+                        <FlagsList flags={message.flags}/>
                       </div>
-                      {Array.isArray(active.sources)&&active.sources.some(s=>s?.url)&&(
+                      {Array.isArray(message.sources)&&message.sources.some(s=>s?.url)&&(
                         <div style={{marginTop:10}}>
                           <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:4}}>Sources</div>
-                          {active.sources.filter(s=>s?.url).slice(0,4).map((s,i)=>(
+                          {message.sources.filter(s=>s?.url).slice(0,6).map((s,i)=>(
                             <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
                               style={{display:'block',fontSize:11,color:C.accent,textDecoration:'none',
                                 overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
@@ -4645,16 +4677,19 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
                           ))}
                         </div>
                       )}
+                      <AskAiSebiDisclaimer/>
                     </>
                   )}
                 </div>
-              )}
+              ))}
 
-              {recent.length>0&&!(active&&(active.status==='done'||active.status==='pending'))&&(
+              {recent.length>0&&!active&&!chat.length&&(
                 <div style={{marginBottom:8}}>
                   <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6}}>Recent asks</div>
                   {recent.slice(0,3).map(r=>(
-                    <button key={r.id} type="button" onClick={()=>setActive(r)}
+                    <button key={r.id} type="button" onClick={()=>{
+                      setChat([]);setActive(r);setConversationId(r.conversation_id||r.id)
+                    }}
                       style={{
                         display:'block',width:'100%',textAlign:'left',marginBottom:6,
                         padding:'8px 10px',borderRadius:8,cursor:'pointer',
@@ -4715,6 +4750,9 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
                   }}>
                   {busy?'…':'Ask'}
                 </button>
+              </div>
+              <div style={{marginTop:8,fontSize:9.5,lineHeight:1.4,color:C.muted}}>
+                AI-generated · not SEBI-registered advice · not a buy/sell call. Verify independently.
               </div>
             </div>
           </div>
