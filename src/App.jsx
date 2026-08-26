@@ -16352,8 +16352,26 @@ function ProfileCard({session}){
   )
 }
 
+function BrokerConnectedBadge({active}){
+  return (
+    <div style={{display:'inline-flex',alignItems:'center',gap:6,marginBottom:10,
+      padding:'4px 9px',borderRadius:999,
+      background:(active?C.green:C.yellow)+'1c',
+      border:`1px solid ${(active?C.green:C.yellow)}55`,
+      fontSize:10.5,fontWeight:800,color:active?C.green:C.yellow}}>
+      <span style={{width:6,height:6,borderRadius:999,background:active?C.green:C.yellow}}/>
+      {active?'Connected · supplying live prices':'Connected · standby'}
+    </div>
+  )
+}
+
 function UpstoxLiveFeedCard({session,onUpdate}){
-  const connected=!!session?.brokerConnected
+  // Must be the Upstox-specific flag, not the generic brokerConnected: that one
+  // is also true when only Fyers is linked, which made this card claim Upstox
+  // was connected and offer a Disconnect button that did nothing.
+  const connected=!!(session?.upstoxConnected
+    ?? (session?.brokerConnected&&session?.liveBroker==='upstox'))
+  const active=connected&&session?.liveBroker==='upstox'
   const [oauthOn,setOauthOn]=useState(false)
   const [token,setToken]=useState('')
   const [showPaste,setShowPaste]=useState(false)
@@ -16405,9 +16423,12 @@ function UpstoxLiveFeedCard({session,onUpdate}){
   return(
     <AccountCard title="Live prices (your Upstox)"
       hint="You log in on Upstox’s site. Lakshmimata never sees your Upstox password. Live last price, % change, and Our Chart candles use your account. Market breadth, RS, and scanners stay on our derived scan.">
+      {connected&&<BrokerConnectedBadge active={active}/>}
       <div style={{fontSize:11.5,color:C.muted,lineHeight:1.5,marginBottom:10}}>
         {connected
-          ? 'Live LTP and charts are using your Upstox account. Tokens expire at 3:30 AM IST — reconnect the next trading day.'
+          ? (active
+            ? 'Live LTP and charts are using your Upstox account. Tokens expire at 3:30 AM IST — reconnect the next trading day.'
+            : 'Upstox is connected. Live data is currently coming from Fyers because that login is newer. Disconnect Fyers or reconnect Upstox to switch.')
           : 'Connect Upstox to show last price, % change, and candles from your own account.'}
       </div>
       {err&&<div style={{fontSize:12,color:C.red,marginBottom:8}}>{err}</div>}
@@ -16420,8 +16441,11 @@ function UpstoxLiveFeedCard({session,onUpdate}){
       <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
         <button type="button" onClick={connectOAuth} disabled={!oauthOn||busy}
           style={{flex:1,minWidth:160,padding:'10px 12px',borderRadius:8,border:'none',cursor:oauthOn?'pointer':'not-allowed',
-            background:C.accent,color:C.onAccent,fontWeight:800,fontSize:12,opacity:oauthOn?1:0.55}}>
-          Connect Upstox
+            background:connected?'transparent':C.accent,
+            color:connected?C.text:C.onAccent,
+            boxShadow:connected?`inset 0 0 0 1px ${C.border}`:'none',
+            fontWeight:800,fontSize:12,opacity:oauthOn?1:0.55}}>
+          {busy?'Working…':connected?'Reconnect Upstox':'Connect Upstox'}
         </button>
         {connected&&(
           <button type="button" onClick={disconnect} disabled={busy}
@@ -16503,6 +16527,7 @@ function FyersLiveFeedCard({session,onUpdate}){
   return(
     <AccountCard title="Live prices (your Fyers)"
       hint="Same idea as Upstox: you log in on Fyers. Live last price, % change, volume on the chart, and candles use your Fyers account. Scanners stay on our derived scan.">
+      {connected&&<BrokerConnectedBadge active={active}/>}
       <div style={{fontSize:11.5,color:C.muted,lineHeight:1.5,marginBottom:10}}>
         {connected
           ? (active
@@ -16520,8 +16545,11 @@ function FyersLiveFeedCard({session,onUpdate}){
       <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
         <button type="button" onClick={connectOAuth} disabled={!oauthOn||busy}
           style={{flex:1,minWidth:160,padding:'10px 12px',borderRadius:8,border:'none',cursor:oauthOn?'pointer':'not-allowed',
-            background:C.accent,color:C.onAccent,fontWeight:800,fontSize:12,opacity:oauthOn?1:0.55}}>
-          Connect Fyers
+            background:connected?'transparent':C.accent,
+            color:connected?C.text:C.onAccent,
+            boxShadow:connected?`inset 0 0 0 1px ${C.border}`:'none',
+            fontWeight:800,fontSize:12,opacity:oauthOn?1:0.55}}>
+          {busy?'Working…':connected?'Reconnect Fyers':'Connect Fyers'}
         </button>
         {connected&&(
           <button type="button" onClick={disconnect} disabled={busy}
