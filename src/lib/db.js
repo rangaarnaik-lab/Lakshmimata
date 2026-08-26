@@ -1436,6 +1436,47 @@ export async function fetchStockFundamentals(symbol) {
   return data || null
 }
 
+const _healQueuedAt = {}
+
+async function enqueueHealRequest(table, { symbol, reason, sectionKey, comment, force }) {
+  const sym = (symbol || '').trim().toUpperCase()
+  if (!sym) return { error: 'Missing symbol' }
+  const why = reason === 'dislike' ? 'dislike' : 'missing'
+  const now = Date.now()
+  const throttleKey = `${table}:${sym}`
+  if (why === 'missing' && !force && now - (_healQueuedAt[throttleKey] || 0) < 10 * 60 * 1000) {
+    return { queued: true, throttled: true }
+  }
+  const payload = {
+    symbol: sym,
+    reason: why,
+    section_key: (sectionKey || '').trim().slice(0, 60) || null,
+    comment: (comment || '').trim().slice(0, 1000) || null,
+    force: !!force || why === 'dislike',
+    status: 'pending',
+    requested_at: new Date().toISOString(),
+    processed_at: null,
+    last_error: null,
+  }
+  const { error } = await supabase.from(table).upsert(payload, { onConflict: 'symbol' })
+  if (error) {
+    console.error(`${table} heal error:`, error.message)
+    return { error: error.message }
+  }
+  _healQueuedAt[throttleKey] = now
+  return { queued: true }
+}
+
+/** Ask the worker to refill ratios (and AI takeaways if disliked). */
+export async function requestFundamentalsHeal(opts = {}) {
+  return enqueueHealRequest('fundamentals_heal_requests', opts)
+}
+
+/** Ask the worker to refill quarterly results from exchange XBRL. */
+export async function requestResultsHeal(opts = {}) {
+  return enqueueHealRequest('results_heal_requests', opts)
+}
+
 export async function fetchStockThemes(symbol) {
   // Emerging themes for the Market Cap card — prefers rows already
   // synced onto stock_fundamentals (PPT / concall / AI web).
@@ -1458,6 +1499,10 @@ export async function fetchStockThemes(symbol) {
   }
 }
 
+export const DISLIKE_DAILY_LIMIT = 5
+
+const DISLIKE_LIMIT_MESSAGE = `You can report at most ${DISLIKE_DAILY_LIMIT} issues per day. Try again tomorrow.`
+
 function getVisitorId() {
   try {
     let id = localStorage.getItem('lm_visitor_id')
@@ -1469,6 +1514,57 @@ function getVisitorId() {
   } catch {
     return null
   }
+}
+
+function dislikeLimitError(message) {
+  const text = String(message || '')
+  return /at most 5 issues per day|dislike limit|P0001/i.test(text)
+}
+
+function istDateKey() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+}
+
+function localDislikeUsed() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('lm_dislike_quota') || 'null')
+    if (!raw || raw.day !== istDateKey()) return 0
+    return Number(raw.used) || 0
+  } catch {
+    return 0
+  }
+}
+
+function bumpLocalDislikeUsed() {
+  try {
+    localStorage.setItem('lm_dislike_quota', JSON.stringify({
+      day: istDateKey(),
+      used: localDislikeUsed() + 1,
+    }))
+  } catch { /* ignore */ }
+}
+
+/** Down-votes this visitor/user has already filed since IST midnight. */
+export async function countTodayContentDislikes({
+  excludeSymbol,
+  excludeContentType,
+  excludeSectionKey,
+} = {}) {
+  const visitorId = getVisitorId()
+  if (!visitorId) return localDislikeUsed()
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data, error } = await supabase.rpc('count_today_content_dislikes', {
+    p_visitor_id: visitorId,
+    p_user_id: user?.id || null,
+    p_exclude_symbol: excludeSymbol || null,
+    p_exclude_content_type: excludeContentType || null,
+    p_exclude_section_key: excludeSectionKey || null,
+  })
+  if (error) {
+    console.error('countTodayContentDislikes error:', error.message)
+    return localDislikeUsed()
+  }
+  return Number(data) || 0
 }
 
 /** Aggregate thumbs counts for a symbol/content-type (optional section). */
@@ -1520,6 +1616,16 @@ export async function submitContentFeedback({
     return { error: 'Please describe the issue (5–1000 characters).' }
   }
   const { data: { user } } = await supabase.auth.getUser()
+  if (v === 'down') {
+    const used = await countTodayContentDislikes({
+      excludeSymbol: sym,
+      excludeContentType: ctype,
+      excludeSectionKey: skey,
+    })
+    if (used >= DISLIKE_DAILY_LIMIT) {
+      return { error: DISLIKE_LIMIT_MESSAGE, limited: true }
+    }
+  }
   const payload = {
     symbol: sym,
     content_type: ctype,
@@ -1535,8 +1641,12 @@ export async function submitContentFeedback({
     .upsert(payload, { onConflict: 'symbol,content_type,section_key,visitor_id' })
   if (error) {
     console.error('submitContentFeedback error:', error.message)
+    if (dislikeLimitError(error.message)) {
+      return { error: DISLIKE_LIMIT_MESSAGE, limited: true }
+    }
     return { error: error.message || 'Could not save feedback' }
   }
+  if (v === 'down') bumpLocalDislikeUsed()
   return { feedback: { vote: v } }
 }
 

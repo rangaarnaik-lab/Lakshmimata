@@ -64,7 +64,7 @@ import {
   expectedFyersOAuthState, hasPendingFyersOAuth, noteFyersStep, readFyersStep,
 } from './lib/fyersOAuth'
 import { readLiveBrokerConnection } from './lib/brokerLive'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, compressChartImage, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchUserWatchlists, saveUserWatchlists, fetchMissedAiFilings } from './lib/db'
+import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, requestFundamentalsHeal, requestResultsHeal, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, compressChartImage, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, countTodayContentDislikes, DISLIKE_DAILY_LIMIT, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchUserWatchlists, saveUserWatchlists, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -4981,16 +4981,68 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
   )
 }
 
+function fundamentalsMetricsThin(cards){
+  if(!cards?.length) return true
+  const filled = cards.filter(c=>c && c.value && c.value!=='—').length
+  return filled < 3
+}
+
 function FundamentalsPanel({symbol, stocks}){
   const scan = stocks?.find(x=>x.sym===symbol) || null
   const [fundRow, setFundRow] = useState(undefined) // undefined=loading
+  const [healNote, setHealNote] = useState('')
+  const healLockRef = useRef('')
+  const autoHealRef = useRef('')
   useEffect(()=>{
     let cancelled=false
     setFundRow(undefined)
+    setHealNote('')
+    autoHealRef.current = ''
+    healLockRef.current = ''
     if(!symbol){ setFundRow(null); return }
     fetchStockFundamentals(symbol).then(row=>{ if(!cancelled) setFundRow(row) })
     return()=>{cancelled=true}
   },[symbol])
+
+  const s = mergeFundamentalsOntoStock(scan, fundRow || null)
+  const allCardsPreview = buildFundamentalMetricCards(s)
+  const thin = fundRow!==undefined && fundamentalsMetricsThin(allCardsPreview)
+
+  const refill = useCallback(async({reason='missing', sectionKey=null, comment=null, force=false}={})=>{
+    if(!symbol) return
+    if(healLockRef.current===symbol && !force) return
+    healLockRef.current = symbol
+    setHealNote(reason==='dislike'
+      ? 'Issue noted — queued for tonight’s refill…'
+      : 'Ratios missing — fetching from the source…')
+    await requestFundamentalsHeal({symbol, reason, sectionKey, comment, force})
+    if(reason==='dislike'){
+      setHealNote('Queued for tonight’s refill after market close. Same stock is only fetched once.')
+      healLockRef.current = ''
+      return
+    }
+    const started = Date.now()
+    while(Date.now()-started < 90000){
+      await new Promise(r=>setTimeout(r, 8000))
+      const row = await fetchStockFundamentals(symbol)
+      setFundRow(row)
+      const merged = mergeFundamentalsOntoStock(scan, row || null)
+      if(!fundamentalsMetricsThin(buildFundamentalMetricCards(merged))){
+        setHealNote('Updated from source.')
+        healLockRef.current = ''
+        return
+      }
+    }
+    setHealNote('Source still has no ratios for this stock. Will retry on the next worker cycle.')
+    healLockRef.current = ''
+  },[symbol, scan])
+
+  useEffect(()=>{
+    if(!symbol || fundRow===undefined || !thin) return
+    if(autoHealRef.current===symbol) return
+    autoHealRef.current = symbol
+    refill({reason:'missing', sectionKey:'important_metrics'})
+  },[symbol, fundRow, thin, refill])
 
   if(fundRow===undefined && !scan){
     return <div style={{padding:'12px',fontSize:11,color:C.muted,textAlign:'center',
@@ -4999,7 +5051,6 @@ function FundamentalsPanel({symbol, stocks}){
     </div>
   }
 
-  const s = mergeFundamentalsOntoStock(scan, fundRow || null)
   const hasAny = fundRow || (scan && (scan.pe!=null || scan.roe!=null || scan.marketCap!=null
     || scan.fundamentalLabel || scan.cfo!=null || scan.pb!=null))
   if(!hasAny && fundRow===null){
@@ -5010,6 +5061,7 @@ function FundamentalsPanel({symbol, stocks}){
           Ratios for {symbol||'this stock'} are still being scraped / AI-filled.
           They appear here once the fundamentals worker finishes a cycle.
         </div>
+        {healNote&&<div style={{fontSize:11,color:C.accent,marginTop:8}}>{healNote}</div>}
       </div>
     )
   }
@@ -5035,6 +5087,10 @@ function FundamentalsPanel({symbol, stocks}){
     ? new Date(updated).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})
     : null
 
+  const onFundIssue = ({comment, sectionKey})=>{
+    refill({reason:'dislike', sectionKey, comment, force:true})
+  }
+
   return (
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden'}}>
       <div style={{height:3,background:`linear-gradient(90deg, ${C.teal}, ${C.accent})`}}/>
@@ -5045,6 +5101,9 @@ function FundamentalsPanel({symbol, stocks}){
             <div style={{fontSize:10,color:C.muted,marginTop:2}}>
               Important ratios · AI ranks what matters for this business · not investment advice
             </div>
+            {healNote&&(
+              <div style={{fontSize:10,color:C.accent,marginTop:4,fontWeight:700}}>{healNote}</div>
+            )}
           </div>
           <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4,flexShrink:0}}>
             {label&&(
@@ -5067,7 +5126,7 @@ function FundamentalsPanel({symbol, stocks}){
               <div style={{fontSize:10,fontWeight:800,color:C.teal,textTransform:'uppercase',
                 letterSpacing:'0.04em'}}>AI takeaways</div>
               <SectionFeedback symbol={symbol} contentType="fundamentals" sectionKey="ai_highlights"
-                sectionLabel="AI takeaways"/>
+                sectionLabel="AI takeaways" onIssueSubmitted={onFundIssue}/>
             </div>
             <ul style={{margin:0,paddingLeft:16,fontSize:12.5,lineHeight:1.5,color:C.text}}>
               {highlights.map((h,i)=><li key={i} style={{marginBottom:4}}>{h}</li>)}
@@ -5085,7 +5144,7 @@ function FundamentalsPanel({symbol, stocks}){
             {aiKeys.length>=3?'AI-picked important metrics':'Important metrics'}
           </div>
           <SectionFeedback symbol={symbol} contentType="fundamentals" sectionKey="important_metrics"
-            sectionLabel="Important metrics"/>
+            sectionLabel="Important metrics" onIssueSubmitted={onFundIssue}/>
         </div>
         <MetricCardsGrid cards={importantCards}/>
 
@@ -5095,7 +5154,7 @@ function FundamentalsPanel({symbol, stocks}){
               <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
                 letterSpacing:'0.04em'}}>All metrics</div>
               <SectionFeedback symbol={symbol} contentType="fundamentals" sectionKey="all_metrics"
-                sectionLabel="All metrics"/>
+                sectionLabel="All metrics" onIssueSubmitted={onFundIssue}/>
             </div>
             <MetricCardsGrid cards={restCards}/>
           </div>
@@ -6278,23 +6337,85 @@ function fmtResultPeriod(label){
   return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'})
 }
 
+function resultsHistoryThin(hist){
+  if(!hist?.length) return true
+  const latest = hist[0]
+  return latest.sales==null && latest.pat==null && latest.eps==null
+}
+
 function ResultsHistoryTable({symbol}){
   const [hist, setHist] = useState(undefined) // undefined=loading, []=no data, array=loaded
+  const [healNote, setHealNote] = useState('')
+  const healLockRef = useRef('')
+  const autoHealRef = useRef('')
   useEffect(() => {
     let cancelled = false
     setHist(undefined)
+    setHealNote('')
+    healLockRef.current = ''
+    autoHealRef.current = ''
     if (!symbol) return
     fetchFinancialResultsHistory(symbol).then(rows => { if (!cancelled) setHist(rows) })
     return () => { cancelled = true }
   }, [symbol])
+
+  const thin = hist!==undefined && resultsHistoryThin(hist)
+
+  const refill = useCallback(async({reason='missing', sectionKey=null, comment=null, force=false}={})=>{
+    if(!symbol) return
+    if(healLockRef.current===symbol && !force) return
+    healLockRef.current = symbol
+    setHealNote(reason==='dislike'
+      ? 'Issue noted — queued for tonight’s refill…'
+      : 'Results missing — fetching from the exchange filing…')
+    await requestResultsHeal({symbol, reason, sectionKey, comment, force})
+    if(reason==='dislike'){
+      setHealNote('Queued for tonight’s refill after market close. Same stock is only fetched once.')
+      healLockRef.current = ''
+      return
+    }
+    const started = Date.now()
+    while(Date.now()-started < 120000){
+      await new Promise(r=>setTimeout(r, 8000))
+      const rows = await fetchFinancialResultsHistory(symbol)
+      setHist(rows)
+      if(!resultsHistoryThin(rows)){
+        setHealNote('Updated from filing.')
+        healLockRef.current = ''
+        return
+      }
+    }
+    setHealNote('No quarterly numbers in the exchange filing yet. Will retry on the next worker cycle.')
+    healLockRef.current = ''
+  },[symbol])
+
+  useEffect(()=>{
+    if(!symbol || hist===undefined || !thin) return
+    if(autoHealRef.current===symbol) return
+    autoHealRef.current = symbol
+    refill({reason:'missing', sectionKey:'history_table'})
+  },[symbol, hist, thin, refill])
+
+  const onResultIssue = ({comment, sectionKey})=>{
+    refill({reason:'dislike', sectionKey, comment, force:true})
+  }
 
   if (hist === undefined) {
     return <div style={{padding:'10px',fontSize:11,color:C.muted,textAlign:'center',
       background:C.card,border:`1px solid ${C.border}`,borderRadius:8}}>Loading results…</div>
   }
   if (hist.length === 0) {
-    return <div style={{padding:'10px',fontSize:11,color:C.muted,textAlign:'center',
-      background:C.card,border:`1px solid ${C.border}`,borderRadius:8}}>No results history yet.</div>
+    return (
+      <div style={{padding:'10px 12px',fontSize:11,color:C.muted,textAlign:'center',
+        background:C.card,border:`1px solid ${C.border}`,borderRadius:8}}>
+        <div style={{display:'flex',justifyContent:'flex-end',marginBottom:4}}>
+          <SectionFeedback symbol={symbol} contentType="results" sectionKey="history_table"
+            sectionLabel="Results table" onIssueSubmitted={onResultIssue}/>
+        </div>
+        No results history yet.
+        {healNote&&<div style={{fontSize:10,color:C.accent,marginTop:6,fontWeight:700}}>{healNote}</div>}
+      </div>
+    )
   }
   const current = hist[0]
   const prevQtr = hist[1] || null
@@ -6350,8 +6471,11 @@ function ResultsHistoryTable({symbol}){
             letterSpacing:'0.04em'}}>Results</span>
         </div>
         <SectionFeedback symbol={symbol} contentType="results" sectionKey="history_table"
-          sectionLabel="Results table"/>
+          sectionLabel="Results table" onIssueSubmitted={onResultIssue}/>
       </div>
+      {healNote&&(
+        <div style={{fontSize:10,color:C.accent,fontWeight:700,marginBottom:6}}>{healNote}</div>
+      )}
       {otherIncomeSpike&&(
         <div title="Other income more than 50% higher than the previous quarter - worth checking whether this quarter's profit growth is coming from the core business or a one-time/non-operating gain."
           style={{display:'flex',alignItems:'center',gap:5,marginBottom:6,padding:'4px 9px',
@@ -6768,7 +6892,12 @@ function StockThemesAfterMcap({symbol}){
         return
       }
       if(fundThemes){
-        const srcMap = {ppt:'From PPT', concall:'From Concall', ai_web:'From AI research'}
+        const srcMap = {
+          ppt:'From PPT',
+          concall:'From Concall',
+          ai_web:'From AI research',
+          corporate_news:'From corporate news',
+        }
         const src = srcMap[fundThemes.source] || 'From AI research'
         const dateLabel = fundThemes.at
           ? new Date(fundThemes.at).toLocaleDateString('en-IN',
@@ -6803,8 +6932,15 @@ function _feedbackStorageKey(contentType, symbol, sectionKey){
   return `lm_fb_${contentType||''}_${(symbol||'').toUpperCase()}_${sectionKey||''}`
 }
 
+function defaultMissingKind(contentType){
+  const t = String(contentType||'').toLowerCase()
+  if(t==='fundamentals'||t==='themes'||t==='flags') return 'fundamentals'
+  if(t==='results'||t==='results_summary') return 'results'
+  return null
+}
+
 /** Compact thumbs up/down — toggle anytime; shows total up/down counts. */
-function SectionFeedback({symbol, contentType, sectionKey, sectionLabel}){
+function SectionFeedback({symbol, contentType, sectionKey, sectionLabel, onIssueSubmitted}){
   const storageKey = _feedbackStorageKey(contentType, symbol, sectionKey)
   const [vote, setVote] = useState(()=>{
     try{ return localStorage.getItem(storageKey) || null }catch{ return null }
@@ -6812,8 +6948,10 @@ function SectionFeedback({symbol, contentType, sectionKey, sectionLabel}){
   const [counts, setCounts] = useState({up:0, down:0})
   const [showIssue, setShowIssue] = useState(false)
   const [comment, setComment] = useState('')
+  const [missingKind, setMissingKind] = useState(null) // fundamentals | results | both
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState('')
+  const [dislikeLeft, setDislikeLeft] = useState(DISLIKE_DAILY_LIMIT)
 
   const refreshCounts = useCallback(async()=>{
     const map = await fetchContentFeedbackCounts(symbol, contentType, sectionKey)
@@ -6821,11 +6959,21 @@ function SectionFeedback({symbol, contentType, sectionKey, sectionLabel}){
     setCounts({up:c.up||0, down:c.down||0})
   },[symbol, contentType, sectionKey])
 
+  const refreshDislikeQuota = useCallback(async()=>{
+    const used = await countTodayContentDislikes({
+      excludeSymbol: symbol,
+      excludeContentType: contentType,
+      excludeSectionKey: sectionKey,
+    })
+    setDislikeLeft(Math.max(0, DISLIKE_DAILY_LIMIT - used))
+  },[symbol, contentType, sectionKey])
+
   useEffect(()=>{
     try{ setVote(localStorage.getItem(storageKey) || null) }catch{ setVote(null) }
-    setShowIssue(false); setComment(''); setErr('')
+    setShowIssue(false); setComment(''); setErr(''); setMissingKind(null)
     refreshCounts()
-  },[storageKey, refreshCounts])
+    refreshDislikeQuota()
+  },[storageKey, refreshCounts, refreshDislikeQuota])
 
   if(!symbol || !contentType || !sectionKey) return null
 
@@ -6859,8 +7007,35 @@ function SectionFeedback({symbol, contentType, sectionKey, sectionLabel}){
   async function send(v, note){
     setSending(true); setErr('')
     const prev = vote
+    const kind = v==='down' ? (missingKind || defaultMissingKind(contentType)) : null
+    if(v==='down' && !kind){
+      setSending(false)
+      setErr('Pick whether fundamentals or results are missing.')
+      return
+    }
+    if(v==='down'){
+      const used = await countTodayContentDislikes({
+        excludeSymbol: symbol,
+        excludeContentType: contentType,
+        excludeSectionKey: sectionKey,
+      })
+      if(used >= DISLIKE_DAILY_LIMIT){
+        setSending(false)
+        setErr(`You can report at most ${DISLIKE_DAILY_LIMIT} issues per day. Try again tomorrow.`)
+        setDislikeLeft(0)
+        return
+      }
+    }
+    const kindLabel = kind==='both' ? 'Missing fundamentals and results'
+      : kind==='results' ? 'Missing results'
+      : kind==='fundamentals' ? 'Missing fundamentals'
+      : ''
+    const extra = String(note||'').trim()
+    const finalNote = v==='down'
+      ? [kindLabel, extra && extra!==kindLabel ? extra : ''].filter(Boolean).join(' — ')
+      : extra
     const res = await submitContentFeedback({
-      symbol, contentType, sectionKey, sectionLabel, vote:v, comment:note,
+      symbol, contentType, sectionKey, sectionLabel, vote:v, comment:finalNote,
     })
     setSending(false)
     if(res.error){ setErr(res.error); return }
@@ -6875,7 +7050,15 @@ function SectionFeedback({symbol, contentType, sectionKey, sectionLabel}){
     })
     setShowIssue(false)
     setComment('')
+    setMissingKind(null)
     refreshCounts()
+    refreshDislikeQuota()
+    if(v==='down'){
+      const heal = {symbol, reason:'dislike', sectionKey, comment:finalNote, force:true}
+      if(kind==='fundamentals'||kind==='both') requestFundamentalsHeal(heal)
+      if(kind==='results'||kind==='both') requestResultsHeal(heal)
+      onIssueSubmitted?.({comment:finalNote, sectionKey, missingKind:kind})
+    }
   }
 
   async function onUp(){
@@ -6884,9 +7067,22 @@ function SectionFeedback({symbol, contentType, sectionKey, sectionLabel}){
     return send('up')
   }
 
-  function onDown(){
+  async function onDown(){
     if(sending) return
     if(vote==='down') return clearVote()
+    const used = await countTodayContentDislikes({
+      excludeSymbol: symbol,
+      excludeContentType: contentType,
+      excludeSectionKey: sectionKey,
+    })
+    const left = Math.max(0, DISLIKE_DAILY_LIMIT - used)
+    setDislikeLeft(left)
+    if(left <= 0){
+      setErr(`You can report at most ${DISLIKE_DAILY_LIMIT} issues per day. Try again tomorrow.`)
+      setShowIssue(true)
+      return
+    }
+    setMissingKind(defaultMissingKind(contentType))
     setShowIssue(true); setErr('')
   }
 
@@ -6922,17 +7118,36 @@ function SectionFeedback({symbol, contentType, sectionKey, sectionLabel}){
               padding:'20px 22px',width:'100%',maxWidth:400,
               boxShadow:'0 20px 50px rgba(0,0,0,0.5)'}}>
             <div style={{fontWeight:800,fontSize:15,color:C.text,marginBottom:4}}>
-              What is wrong?
+              What is missing?
             </div>
-            <div style={{fontSize:11.5,color:C.muted,marginBottom:12,lineHeight:1.45}}>
-              {symbol} · {sectionLabel||sectionKey}. Tell us what to fix (wrong facts, outdated, unclear…).
+            <div style={{fontSize:11.5,color:C.muted,marginBottom:10,lineHeight:1.45}}>
+              {symbol} · {sectionLabel||sectionKey}. Reports collect all day (max {DISLIKE_DAILY_LIMIT} per person). The refill job runs after market close.
+              {dislikeLeft < DISLIKE_DAILY_LIMIT ? ` ${dislikeLeft} left today.` : ''}
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:7,marginBottom:12}}>
+              {[
+                {id:'fundamentals', title:'Fundamentals missing', hint:'P/E, ROE, ROCE, cash flow, debt'},
+                {id:'results', title:'Results missing', hint:'Sales, PAT, EPS, OPM for recent quarters'},
+                {id:'both', title:'Both missing', hint:'Refill ratios and quarterly results'},
+              ].map(opt=>(
+                <button key={opt.id} type="button" onClick={()=>setMissingKind(opt.id)}
+                  style={{
+                    textAlign:'left',padding:'9px 11px',borderRadius:10,cursor:'pointer',
+                    border:`1px solid ${missingKind===opt.id?C.accent:C.border}`,
+                    background:missingKind===opt.id?C.accent+'18':'transparent',
+                  }}>
+                  <div style={{fontSize:12.5,fontWeight:800,color:missingKind===opt.id?C.accent:C.text}}>
+                    {opt.title}
+                  </div>
+                  <div style={{fontSize:10.5,color:C.muted,marginTop:2}}>{opt.hint}</div>
+                </button>
+              ))}
             </div>
             <textarea
               value={comment}
               onChange={e=>setComment(e.target.value)}
-              rows={4}
-              placeholder="Describe the issue…"
-              autoFocus
+              rows={3}
+              placeholder="Optional: what looks wrong or outdated…"
               style={{
                 width:'100%',boxSizing:'border-box',resize:'vertical',
                 background:C.bg||C.card,color:C.text,border:`1px solid ${C.border}`,
@@ -6944,12 +7159,16 @@ function SectionFeedback({symbol, contentType, sectionKey, sectionLabel}){
               <div style={{fontSize:11,color:C.red,marginBottom:8}}>{err}</div>
             )}
             <div style={{display:'flex',gap:8}}>
-              <button type="button" disabled={sending}
+              <button type="button" disabled={sending||!missingKind||dislikeLeft<=0}
                 onClick={()=>send('down', comment)}
-                style={{flex:1,padding:'10px 0',borderRadius:9,border:'none',cursor:'pointer',
+                style={{flex:1,padding:'10px 0',borderRadius:9,border:'none',cursor:(missingKind&&dislikeLeft>0)?'pointer':'not-allowed',
                   background:C.accent,color:C.onAccent,fontWeight:700,fontSize:13,
-                  opacity:sending?0.7:1}}>
-                {sending?'Sending…':'Submit issue'}
+                  opacity:(sending||!missingKind||dislikeLeft<=0)?0.7:1}}>
+                {sending?'Queuing…':dislikeLeft<=0?`Daily limit of ${DISLIKE_DAILY_LIMIT} reached`
+                  :missingKind==='both'?'Queue both for tonight'
+                  :missingKind==='results'?'Queue results for tonight'
+                  :missingKind==='fundamentals'?'Queue fundamentals for tonight'
+                  :'Pick what is missing'}
               </button>
               <button type="button" disabled={sending}
                 onClick={()=>setShowIssue(false)}
@@ -8376,7 +8595,18 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     setLiveOverlay(null); setIsLiveUpdating(false)
     if (isIndex) return
     if (!brokerConnected) return
-    if (!isMarketOpen()) return
+    // The broker's daily history often does not carry today's bar until hours
+    // after the close, so today's candle was simply absent every evening.
+    // Poll repeatedly while the session runs, and fetch once after the close
+    // so the finished candle is still drawn from the user's own account.
+    const marketOpen = isMarketOpen()
+    const afterCloseToday = (() => {
+      const ist = new Date(Date.now() + ((330 + new Date().getTimezoneOffset())*60000))
+      const day = ist.getDay()
+      if (day === 0 || day === 6) return false
+      return ist.getHours()*60 + ist.getMinutes() > 930
+    })()
+    if (!marketOpen && !afterCloseToday) return
     let cancelled = false
     const n = (v) => {
       const x = Number(v)
@@ -8417,16 +8647,16 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           }
           return { price: px, volume: live.volume, open, high, low }
         })
-        setIsLiveUpdating(true)
+        if (marketOpen) setIsLiveUpdating(true)
       }).catch(()=>{})
     }
     const key = String(sym || '').toUpperCase()
     LIVE_POLLED_SYMS.add(key)
     poll()
-    const t = setInterval(poll, 45000)
+    const t = marketOpen ? setInterval(poll, 45000) : null
     return () => {
       cancelled = true
-      clearInterval(t)
+      if (t) clearInterval(t)
       LIVE_POLLED_SYMS.delete(key)
       setIsLiveUpdating(false)
     }
@@ -8502,23 +8732,32 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     const todayStr = new Date(Date.now() + ((330 + new Date().getTimezoneOffset())*60000))
       .toISOString().split('T')[0]
     const lo = liveOverlay
-    if (dates.length && dates[dates.length - 1] === todayStr) {
-      dates = dates.slice(0, -1)
-      o = o.slice(0, -1)
-      highs = highs.slice(0, -1)
-      lows = lows.slice(0, -1)
-      closes = closes.slice(0, -1)
-      volumes = volumes.slice(0, -1)
+    const lastIdx = dates.length - 1
+    // On a trading holiday the quote just repeats the previous session, which
+    // would otherwise be drawn as a duplicate candle dated today. An exact
+    // match on close, high and low is the signal that nothing traded today.
+    const eq = (a, b) => a != null && b != null && Math.abs(a - b) < 0.005
+    const repeatsPrevSession = lastIdx >= 0 && dates[lastIdx] !== todayStr
+      && eq(lo.price, closes[lastIdx]) && eq(lo.high, highs[lastIdx]) && eq(lo.low, lows[lastIdx])
+    if (!repeatsPrevSession) {
+      if (dates.length && dates[lastIdx] === todayStr) {
+        dates = dates.slice(0, -1)
+        o = o.slice(0, -1)
+        highs = highs.slice(0, -1)
+        lows = lows.slice(0, -1)
+        closes = closes.slice(0, -1)
+        volumes = volumes.slice(0, -1)
+      }
+      const open = lo.open ?? lo.price
+      const high = Math.max(lo.high ?? lo.price, lo.price, open)
+      const low = Math.min(lo.low ?? lo.price, lo.price, open)
+      dates = [...dates, todayStr]
+      o = [...o, open]
+      highs = [...highs, high]
+      lows = [...lows, low]
+      closes = [...closes, lo.price]
+      volumes = [...volumes, lo.volume ?? (volumes[volumes.length - 1] || 0)]
     }
-    const open = lo.open ?? lo.price
-    const high = Math.max(lo.high ?? lo.price, lo.price, open)
-    const low = Math.min(lo.low ?? lo.price, lo.price, open)
-    dates = [...dates, todayStr]
-    o = [...o, open]
-    highs = [...highs, high]
-    lows = [...lows, low]
-    closes = [...closes, lo.price]
-    volumes = [...volumes, lo.volume ?? (volumes[volumes.length - 1] || 0)]
   }
   const n = closes.length
 
@@ -11132,8 +11371,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         })()}
 
         {/* VCP contraction connectors */}
-        {showPatterns && vcp.isContracting && vcp.contractions.map((c,i)=>
-          c.high.idx>=start && c.low.idx>=start ? (
+        {showPatterns && vcp?.isContracting && (vcp.contractions||[]).map((c,i)=>
+          c?.high && c?.low && c.high.idx>=start && c.low.idx>=start ? (
             <line key={i} x1={idxToX(c.high.idx-start)} y1={priceToY(c.high.price)}
               x2={idxToX(c.low.idx-start)} y2={priceToY(c.low.price)}
               stroke={patP.vcpColor || C.orange} strokeWidth={lineW(patP.lineWidth, 2) * 0.75}
@@ -12114,7 +12353,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           <span><span style={{color:LAKSHMI_BAR_COLORS.HY}}>■</span> HY</span>
           <span><span style={{color:LAKSHMI_BAR_COLORS.IBV}}>■</span> IBV</span>
           <span><span style={{color:LAKSHMI_BAR_COLORS.PPV}}>■</span> PP</span>
-          {vcp.isContracting && <span><span style={{color:C.orange}}>—</span> VCP contraction</span>}
+          {vcp?.isContracting && <span><span style={{color:C.orange}}>—</span> VCP contraction</span>}
           {cup && <span><span style={{color:C.purple}}>┊</span> Cup{cup.hasHandle?' & Handle':''}</span>}
         </>}
       </div>
@@ -17143,6 +17382,13 @@ export default function App(){
     setPatternsSubTab('breakouts')
     setPatternsBreakoutType('hyht')
   },[mainTab])
+  // Weak RS folded into the 52WL page; keep the old tab id working for saved
+  // state, deep links and the mobile menu.
+  useEffect(()=>{
+    if(mainTab!=='weak') return
+    setMainTab('52wl')
+    setSignalsSubTab('weak')
+  },[mainTab])
   useEffect(()=>{
     if(mainTab!=='market') return
     if(marketSubTab==='breadth') setMarketSubTab('overview')
@@ -17435,7 +17681,9 @@ export default function App(){
         setSession(prev=>({ user:(prev&&prev.user)||session.user, brokerConnected:true, liveBroker:'upstox', upstoxConnected:true, fyersConnected:!!prev?.fyersConnected }))
         setShowAuth(false)
         setMainTab('settings')
-        setAuthNotice('Upstox connected. Live last price, % change, and charts now use your account.')
+        // This bar is for problems only. A successful connect is already
+        // obvious from the Connected badge on the Account card.
+        setAuthNotice('')
       }catch(e){
         upstoxOauthOnce.current=false
         noteUpstoxStep(`failed: ${e?.message||'Upstox connect failed'}`)
@@ -17495,7 +17743,7 @@ export default function App(){
         setSession(prev=>({ user:(prev&&prev.user)||session.user, brokerConnected:true, liveBroker:'fyers', fyersConnected:true, upstoxConnected:!!prev?.upstoxConnected }))
         setShowAuth(false)
         setMainTab('settings')
-        setAuthNotice('Fyers connected. Live last price, % change, and charts now use your Fyers account.')
+        setAuthNotice('')
       }catch(e){
         fyersOauthOnce.current=false
         noteFyersStep(`failed: ${e?.message||'Fyers connect failed'}`)
@@ -18401,6 +18649,9 @@ export default function App(){
   const RS_PAGE_SIZE=25
   const [ppFilter52WL,setPpFilter52WL]=useState('all')
   const [ppFilterWeak,setPpFilterWeak]=useState('all')
+  // 52WL and Weak RS share one page: both are "beaten-down name moving again"
+  // screens, and each was a short list not worth its own sidebar entry.
+  const [signalsSubTab,setSignalsSubTab]=useState('wl52')
 
   // Shared market cap check, used everywhere a stock list gets filtered
   // (RS Rating's rsBase above, and the Breakout tab's sections below) so
@@ -18565,6 +18816,17 @@ export default function App(){
   const [bestPicksView,setBestPicksView]=useState('today') // 'today' | 'history'
   const [bestPicksHistory,setBestPicksHistory]=useState([])
   const [bestPicksHistoryLoading,setBestPicksHistoryLoading]=useState(false)
+  // AI Picks prices are published as the last completed session's close. The
+  // live tick may only come from the user's own broker, so keep a lookup of
+  // the overlaid rows and drop straight back to the close on disconnect.
+  const bestPickLiveBySym=useMemo(()=>{
+    const map=new Map()
+    if(!session?.brokerConnected) return map
+    for(const s of stocks||[]){
+      if(s?.liveFromUser) map.set(String(s.sym||'').toUpperCase(), s)
+    }
+    return map
+  },[stocks,session?.brokerConnected])
   const loadBestPicks=useCallback(()=>{
     setBestPicksLoading(true)
     fetchBestPicks().then(rows=>{
@@ -19797,6 +20059,10 @@ export default function App(){
     if(chartSym && !chartIsIndex) add(chartSym)
     for(const s of compareSyms||[]) add(s)
     for(const h of portfolioHoldings||[]) add(h.sym||h.symbol)
+    if(mainTab==='bestpicks'){
+      for(const p of bestPicks||[]) add(p.symbol)
+      for(const h of bestPicksHistory||[]) if((h.rank??99)<=5) add(h.symbol)
+    }
     for(const s of topMovers||[]) add(s.sym)
     for(const s of rsBase||[]){
       add(s.sym)
@@ -20087,8 +20353,7 @@ export default function App(){
           {id:'leaders',  label:'Leaders',           short:'Leaders',  Icon:Flag},
           {id:'patterns', label:'Patterns',          short:'Patterns', Icon:LineChartIcon},
           {id:'squeeze',  label:'Squeeze',           short:'Squeeze',  Icon:Zap},
-          {id:'52wl',     label:'52WL',              short:'52WL',     Icon:Award},
-          {id:'weak',     label:'Weak RS',           short:'Weak',     Icon:TrendingDown},
+          {id:'52wl',     label:'52WL & Weak RS',    short:'52WL',     Icon:Award},
         ]
         const navBottom=[
           {id:'portfolio', label:'Portfolio',        short:'Portfolio',Icon:Briefcase},
@@ -20202,7 +20467,7 @@ export default function App(){
                     gaps:'Market · Gaps',smartmoney:'Market · Smart Money'}[marketSubTab]||'Market'
                  ):
                  mainTab==='squeeze'?'Squeeze & VCP':
-                 mainTab==='52wl'?'52WL Crossover':
+                 mainTab==='52wl'?(signalsSubTab==='weak'?'Weak RS + Big Move':'52WL Crossover'):
                  mainTab==='weak'?'Weak RS':mainTab==='rotation'?'Sector Rotation':
                  mainTab==='leaders'?'Leaders':
                  mainTab==='patterns'?'Patterns':
@@ -20572,7 +20837,7 @@ export default function App(){
              gaps:'Market · Gaps',smartmoney:'Market · Smart Money'}[marketSubTab]||'Market'
           ):
           mainTab==='squeeze'?'Squeeze & VCP':
-          mainTab==='52wl'?'52WL Crossover':
+          mainTab==='52wl'?(signalsSubTab==='weak'?'Weak RS + Big Move':'52WL Crossover'):
           mainTab==='weak'?'Weak RS':mainTab==='rotation'?'Sector Rotation':
           mainTab==='leaders'?'Leaders':
           mainTab==='patterns'?'Patterns':
@@ -23820,7 +24085,7 @@ export default function App(){
         })()}
 
 
-        {/* ══ 52WL ══ */}
+        {/* ══ 52WL + WEAK RS — one page, two sub-tabs ══ */}
         {mainTab==='52wl'&&(
           <div style={{padding:'0 0 20px'}}>
             {isMobile&&(
@@ -23836,6 +24101,26 @@ export default function App(){
                 availableDates={availableDates} isMobile={isMobile} onOpenRefresh={refreshHistoryDates}/>
             </div>
 
+            <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
+              {[{id:'wl52',label:'🎯 52WL Crossover',accent:C.pink,count:displayed52WL.length},
+                {id:'weak',label:'🚨 Weak RS + Big Move',accent:C.lime,count:displayedWeak.length}].map(t=>(
+                <button key={t.id} onClick={()=>setSignalsSubTab(t.id)}
+                  style={{display:'flex',alignItems:'center',gap:7,padding:'7px 13px',borderRadius:20,
+                    cursor:'pointer',fontSize:12,fontWeight:700,
+                    border:`1px solid ${signalsSubTab===t.id?t.accent:C.border}`,
+                    background:signalsSubTab===t.id?t.accent+'22':C.card,
+                    color:signalsSubTab===t.id?t.accent:C.text}}>
+                  {t.label}
+                  <span style={{fontSize:10,fontWeight:800,padding:'1px 6px',borderRadius:10,
+                    background:signalsSubTab===t.id?t.accent+'2b':C.border+'55',
+                    color:signalsSubTab===t.id?t.accent:C.muted}}>
+                    {t.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {signalsSubTab==='wl52'&&(<>
             <PageHeader
               title="52-Week Low Crossover"
               accent={C.pink}
@@ -23885,21 +24170,9 @@ export default function App(){
                 visibleRsCols={{...visibleRsCols,wl52:true}} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
             )}
             </>)}
-          </div>
-        )}
+            </>)}
 
-        {/* ══ WEAK RS ══ */}
-        {mainTab==='weak'&&(
-          <div style={{padding:'0 0 20px'}}>
-            {isMobile&&(
-              <LastUpdatedBar
-                scanMeta={scanMeta} lastRefresh={lastRefresh} loading={loading}
-                autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh}
-                refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
-                onRefresh={runDBScan}
-              />
-            )}
-
+            {signalsSubTab==='weak'&&(<>
             <PageHeader
               title="Weak RS + Big Move"
               accent={C.lime}
@@ -23934,8 +24207,20 @@ export default function App(){
               </div>
             </div>
             {weakBase.length>0&&(
-              <PPFilterBar ppFilter={ppFilterWeak} setPpFilter={setPpFilterWeak}
-                ppCount={weakBase.filter(s=>s.pp.isPP).length} total={displayedWeak.length}/>
+              <>
+                <PPFilterBar ppFilter={ppFilterWeak} setPpFilter={setPpFilterWeak}
+                  ppCount={weakBase.filter(s=>s.pp.isPP).length} total={displayedWeak.length}/>
+                <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
+                  <button onClick={()=>setWeakSigOnly(v=>!v)}
+                    style={{padding:'8px 14px',borderRadius:20,border:`1px solid ${weakSigOnly?C.lime:C.border}`,
+                      cursor:'pointer',fontSize:12,fontWeight:600,
+                      background:weakSigOnly?C.lime+'22':'transparent',color:weakSigOnly?C.lime:C.muted}}>
+                    🚨 Full Signal Only
+                  </button>
+                  <input placeholder="Search…" value={weakSearch} onChange={e=>setWeakSearch(e.target.value)}
+                    style={{flex:1,minWidth:100,padding:'8px 12px',background:C.card,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:13,outline:'none'}}/>
+                </div>
+              </>
             )}
             {displayedWeak.length===0?(
               <EmptyPanel icon="🚨" title="No weak-RS big movers right now"
@@ -23944,6 +24229,7 @@ export default function App(){
               <BreakoutTable stocks={displayedWeak} isMobile={isMobile}
                 visibleRsCols={{...visibleRsCols,weakrs:true}} onChartOpen={openChart} showOurChartHover={hoverOurChartEnabled} onOurChart={openOurChart}/>
             )}
+            </>)}
             </>)}
           </div>
         )}
@@ -24484,6 +24770,10 @@ export default function App(){
               <div style={{display:'flex',flexDirection:'column',gap:8}}>
                 <TVCopyPanel stocks={bestPicks.slice(0,5).map(p=>({sym:p.symbol}))} label="AI Best Picks"/>
                 {bestPicks.slice(0,5).map((p)=>{
+                  const pickLive=bestPickLiveBySym.get(String(p.symbol||'').toUpperCase())
+                  const pickHasLive=hasUserLiveQuote(pickLive)
+                  const pickPrice=pickHasLive?pickLive.last:p.last_price
+                  const pickChg=pickHasLive?pickLive.chg:p.chg_pct
                   const why=p.reasoning||[
                     p.is_s2_new_entry||p.weinstein_stage===2?'Stage 2 structure':'',
                     p.rs_tv!=null?`RS ${p.rs_tv}`:'',
@@ -24505,10 +24795,19 @@ export default function App(){
                             textDecoration:'underline',textDecorationColor:C.accent+'55'}}>
                           {p.symbol}
                         </span>
-                        {p.last_price!=null&&<span style={{fontSize:11,color:C.text}}>₹{p.last_price}</span>}
-                        {p.chg_pct!=null&&(
-                          <span style={{fontSize:11,fontWeight:700,color:p.chg_pct>=0?C.green:C.red}}>
-                            {p.chg_pct>=0?'▲':'▼'} {Math.abs(p.chg_pct).toFixed(2)}%
+                        {pickPrice!=null&&(
+                          <span style={{fontSize:11,color:C.text,cursor:'help'}}
+                            title={pickHasLive?'Live from your broker account'
+                              :'Previous close — connect Upstox or Fyers for live price'}>
+                            ₹{pickPrice}{pickHasLive?'':' (prev)'}
+                          </span>
+                        )}
+                        {pickChg!=null&&(
+                          <span style={{fontSize:11,fontWeight:700,color:pickChg>=0?C.green:C.red,cursor:'help'}}
+                            title={pickHasLive?'Day change from your broker account'
+                              :'Change to the previous close — connect a broker for the live day change'}>
+                            {pickChg>=0?'▲':'▼'} {Math.abs(pickChg).toFixed(2)}%
+                            {pickHasLive?'':' (prev close)'}
                           </span>
                         )}
                         {p.sector&&<span style={{fontSize:10,color:C.muted}}>{p.sector}</span>}
@@ -24610,9 +24909,13 @@ export default function App(){
                       .sort((a,b)=>(a.rank??99)-(b.rank??99))
                       .slice(0,5)
                     const withPct = picks.map(h=>{
-                      const live = bySym[h.symbol]
+                      // Prefer the user's own broker tick; otherwise the last
+                      // published close, which is what we may serve ourselves.
+                      const overlay = bestPickLiveBySym.get(String(h.symbol||'').toUpperCase())
+                      const live = hasUserLiveQuote(overlay) ? overlay : bySym[h.symbol]
+                      const isLive = hasUserLiveQuote(overlay)
                       const pct = (live && h.price_at_pick) ? ((live.last - h.price_at_pick)/h.price_at_pick*100) : null
-                      return {...h, currentPrice: live?.last, pct}
+                      return {...h, currentPrice: live?.last, pct, isLive}
                     })
                     const validPct = withPct.filter(h=>h.pct!=null)
                     const winRate = validPct.length ? Math.round(validPct.filter(h=>h.pct>0).length/validPct.length*100) : null
@@ -24645,8 +24948,11 @@ export default function App(){
                                     minWidth:76,textDecoration:'underline',textDecorationColor:C.accent+'55'}}>
                                   {h.symbol}
                                 </span>
-                                <div style={{fontSize:10,color:C.muted}}>
-                                  ₹{h.price_at_pick} → {h.currentPrice!=null?`₹${h.currentPrice}`:'—'}
+                                <div style={{fontSize:10,color:C.muted,cursor:'help'}}
+                                  title={h.isLive?'Now: live from your broker account'
+                                    :'Now: last published close — connect Upstox or Fyers for the live price'}>
+                                  ₹{h.price_at_pick} → {h.currentPrice!=null
+                                    ?`₹${h.currentPrice}${h.isLive?'':' (prev)'}`:'—'}
                                 </div>
                                 <div style={{marginLeft:'auto',fontSize:12,fontWeight:800,
                                   color:h.pct==null?C.muted:h.pct>=0?C.green:C.red}}>
@@ -25655,7 +25961,7 @@ export default function App(){
                     ['themes',Layers,'Themes'],['bestpicks',Target,'AI Picks'],['announcements',Megaphone,'News'],
                     ['watchlist',Star,'Watchlist'],['portfolio',Briefcase,'Portfolio'],['compare',GitCompare,'Compare'],
                     ['52wl',Award,'52WL'],['leaders',Flag,'Leaders'],['squeeze',Zap,'Squeeze'],
-                    ['weak',TrendingDown,'Weak'],['docs',BookOpen,'Guide'],['feedback',MessageSquare,'Feedback'],
+                    ['weak',TrendingDown,'Weak RS'],['docs',BookOpen,'Guide'],['feedback',MessageSquare,'Feedback'],
                     ['settings',Settings,'Account'],
                   ].map(([t,Icon,label])=>(
                     <button key={t} onClick={()=>{setMainTab(t);setShowMoreMenu(false)}}
