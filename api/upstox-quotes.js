@@ -6,7 +6,7 @@ import {
   setCors,
 } from './_lib/brokerStore.js'
 import { decryptToken } from './_lib/tokenCrypto.js'
-import { resolveEquityKeys } from './_lib/upstoxInstruments.js'
+import { resolveEquityKeys, resolveIndexKeys } from './_lib/upstoxInstruments.js'
 
 const MAX_SYMBOLS = 240
 const BATCH_SIZE = 80
@@ -18,8 +18,12 @@ function cleanSymbols(values) {
     .slice(0, MAX_SYMBOLS)
 }
 
-function lookupQuote(data, symbol, instrumentKey) {
-  return data[`NSE_EQ:${symbol}`] || data[instrumentKey] || null
+function lookupQuote(data, label, instrumentKey) {
+  return data[instrumentKey]
+    || data[label]
+    || data[`NSE_EQ:${label}`]
+    || data[`NSE_INDEX:${label}`]
+    || null
 }
 
 async function fetchBatch(token, symbols, keyBySymbol) {
@@ -61,8 +65,12 @@ export async function handleUpstoxQuotesRequest(req, res) {
     const context = await authenticatedBrokerContext(req)
     const body = await readJsonBody(req)
     const symbols = cleanSymbols(body.symbols)
-    if (!symbols.length) {
-      sendJson(res, 400, { error: 'Provide at least one NSE symbol' })
+    const indices = [...new Set((Array.isArray(body.indices) ? body.indices : [])
+      .map(value => String(value || '').trim())
+      .filter(Boolean))]
+      .slice(0, MAX_SYMBOLS)
+    if (!symbols.length && !indices.length) {
+      sendJson(res, 400, { error: 'Provide at least one NSE symbol or index' })
       return
     }
 
@@ -83,10 +91,18 @@ export async function handleUpstoxQuotesRequest(req, res) {
       return
     }
 
-    const keyBySymbol = await resolveEquityKeys(token, symbols)
     const quotes = {}
-    for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
-      Object.assign(quotes, await fetchBatch(token, symbols.slice(i, i + BATCH_SIZE), keyBySymbol))
+    if (symbols.length) {
+      const keyBySymbol = await resolveEquityKeys(token, symbols)
+      for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
+        Object.assign(quotes, await fetchBatch(token, symbols.slice(i, i + BATCH_SIZE), keyBySymbol))
+      }
+    }
+    if (indices.length) {
+      const keyByName = await resolveIndexKeys(token, indices)
+      for (let i = 0; i < indices.length; i += BATCH_SIZE) {
+        Object.assign(quotes, await fetchBatch(token, indices.slice(i, i + BATCH_SIZE), keyByName))
+      }
     }
     sendJson(res, 200, { quotes })
   } catch (error) {

@@ -52,7 +52,7 @@ import {
   supabase, revokeOtherSessions,
   claimCurrentDevice, verifyCurrentDevice,
 } from './lib/supabase'
-import { fetchUpstoxQuotes, applyQuoteToStock } from './lib/upstoxQuotes'
+import { fetchUpstoxQuotes, fetchUpstoxIndexQuotes, applyQuoteToStock } from './lib/upstoxQuotes'
 import {
   fetchUpstoxOAuthConfig, startUpstoxOAuth, readUpstoxOAuthCallback, clearUpstoxOAuthParams,
   exchangeUpstoxAuthCode, readUpstoxConnection, savePastedUpstoxToken, disconnectUpstox,
@@ -14151,9 +14151,10 @@ function TickerBanner({stocks, indices, onSelect, onSelectIndex, onHide}){
           const label = shortIndexTickerName(name)
           const chg = idx.chgD ?? idx.chg_d ?? 0
           const px = idx.lastPrice ?? idx.last_price
+          const hasLive = !!idx.liveFromUser
           const tip = [
             name,
-            px!=null?`Level ${Number(px).toLocaleString('en-IN',{maximumFractionDigits:2})}`:null,
+            hasLive && px!=null?`Level ${Number(px).toLocaleString('en-IN',{maximumFractionDigits:2})}`:null,
             (onSelectIndex||onSelect)?'Open chart':null,
           ].filter(Boolean).join(' · ')
           return (
@@ -14163,9 +14164,11 @@ function TickerBanner({stocks, indices, onSelect, onSelectIndex, onHide}){
               style={{fontFamily:"monospace",fontSize:12,letterSpacing:'0.02em',color:C.muted,marginRight:28,
                 cursor:(onSelectIndex||onSelect)?'pointer':'default'}}>
               <b style={{color:C.accent,fontWeight:700}}>{label}</b>{' '}
-              <span style={{color:chg>=0?C.green:C.red}}>
-                {chg>=0?'▲':'▼'} {Math.abs(chg).toFixed(2)}%
-              </span>
+              {hasLive
+                ? <span style={{color:chg>=0?C.green:C.red}}>
+                    {chg>=0?'▲':'▼'} {Math.abs(chg).toFixed(2)}%
+                  </span>
+                : <span title={priceFallbackHint()}>{priceFallbackLabel()}</span>}
             </span>
           )
         })}
@@ -18953,6 +18956,32 @@ export default function App(){
     return()=>{ cancelled=true; clearInterval(id) }
   },[session?.brokerConnected,historyDate,demoMode,lastRefresh])
 
+  const indexDataRef=useRef(indexData)
+  indexDataRef.current=indexData
+  useEffect(()=>{
+    if(!session?.brokerConnected||historyDate||demoMode) return
+    let cancelled=false
+    const tick=async(force=false)=>{
+      if(!force&&!isMarketOpen()) return
+      const names=(indexDataRef.current||[]).map(idx=>idx.name).filter(Boolean)
+      if(!names.length) return
+      try{
+        const map=await fetchUpstoxIndexQuotes(names)
+        if(cancelled||!map.size) return
+        setIndexData(prev=>(prev||[]).map(idx=>{
+          const q=map.get(idx.name)
+          if(!q) return idx
+          return { ...idx, lastPrice: q.last, chgD: q.chg, liveFromUser: true }
+        }))
+      }catch(e){
+        console.warn('User Upstox index quotes:', e?.message||e)
+      }
+    }
+    tick(true)
+    const id=setInterval(()=>tick(),45000)
+    return()=>{ cancelled=true; clearInterval(id) }
+  },[session?.brokerConnected,historyDate,demoMode,lastRefresh])
+
   const previousBrokerConnection=useRef(!!session?.brokerConnected)
   useEffect(()=>{
     const wasConnected=previousBrokerConnection.current
@@ -19022,7 +19051,17 @@ export default function App(){
   // banner stays live even when you're not on the Market tab.
   useEffect(()=>{
     if(!session && !demoMode) return
-    const load = () => fetchIndexDashboard().then(setIndexData).catch(e=>console.error('Index fetch:',e))
+    const load = () => fetchIndexDashboard().then(rows=>{
+      setIndexData(prev=>{
+        const live=new Map((prev||[]).filter(r=>r.liveFromUser).map(r=>[r.name,r]))
+        return (rows||[]).map(row=>{
+          const overlay=live.get(row.name)
+          return overlay
+            ? { ...row, lastPrice: overlay.lastPrice, chgD: overlay.chgD, liveFromUser: true }
+            : row
+        })
+      })
+    }).catch(e=>console.error('Index fetch:',e))
     load()
     const timer = setInterval(load, 60000)
     return ()=>clearInterval(timer)

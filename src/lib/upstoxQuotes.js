@@ -87,6 +87,39 @@ export async function fetchUpstoxQuotes(symbols) {
   return out
 }
 
+export async function fetchUpstoxIndexQuotes(names) {
+  const uniq = [...new Set((names || []).map(n => String(n || '').trim()).filter(Boolean))]
+  if (!uniq.length) return new Map()
+  const jwt = await lakshmimataAccessToken()
+  if (!jwt) {
+    const error = new Error('Sign in and connect Upstox to view live index prices.')
+    error.code = 'upstox_not_connected'
+    throw error
+  }
+  const res = await fetch('/api/upstox-quotes', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ indices: uniq }),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const err = new Error(json.error || `Upstox quotes ${res.status}`)
+    err.status = res.status
+    err.code = json.code
+    throw err
+  }
+  const data = json?.quotes || {}
+  const map = new Map()
+  for (const name of uniq) {
+    const parsed = parseUpstoxQuote(lookupQuote(data, name) || data[name])
+    if (parsed) map.set(name, parsed)
+  }
+  return map
+}
+
 export function applyQuoteToStock(stock, quote) {
   if (!stock || !quote) return stock
   const last = quote.last

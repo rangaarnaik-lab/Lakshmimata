@@ -24,10 +24,15 @@ const INDEX_ALIASES = {
   'nifty 50': ['Nifty 50'],
   'nifty50': ['Nifty 50'],
   'nifty': ['Nifty 50'],
+  'bank nifty': ['Nifty Bank', 'Nifty Bank'],
+  'nifty bank': ['Nifty Bank'],
+  'india vix': ['India VIX'],
   'midcap 150': ['Nifty Midcap 150', 'NIFTY MIDCAP 150'],
   'nifty midcap 150': ['Nifty Midcap 150', 'NIFTY MIDCAP 150'],
   'smallcap 250': ['Nifty Smallcap 250', 'NIFTY SMLCAP 250'],
   'nifty smallcap 250': ['Nifty Smallcap 250', 'NIFTY SMLCAP 250'],
+  'private bank': ['Nifty Private Bank'],
+  'pvt bank': ['Nifty Private Bank'],
 }
 
 function normalizeSymbol(value) {
@@ -157,20 +162,25 @@ export async function resolveEquityKeys(token, symbols) {
   return out
 }
 
-/** Instrument key for an index label such as "Nifty 50" or "Midcap 150". */
+/** Instrument key for an index label such as "Nifty 50", "Metal", or "Bank Nifty". */
 export async function resolveIndexKey(token, name) {
   const raw = String(name || '').trim()
   if (!raw) return null
   const candidates = [raw, ...(INDEX_ALIASES[normalizeIndexName(raw)] || [])]
+  if (!/^nifty\b/i.test(raw) && !/^india vix$/i.test(raw) && !/^bank nifty$/i.test(raw)) {
+    candidates.push(`Nifty ${raw}`)
+  }
+  if (/^bank nifty$/i.test(raw)) candidates.push('Nifty Bank')
 
+  const lookup = (label) => indexKeys.get(normalizeIndexName(label))
   for (const candidate of candidates) {
-    const hit = indexKeys.get(normalizeIndexName(candidate))
+    const hit = lookup(candidate)
     if (hit) return hit
   }
 
   await ensureMaster()
   for (const candidate of candidates) {
-    const hit = indexKeys.get(normalizeIndexName(candidate))
+    const hit = lookup(candidate)
     if (hit) return hit
   }
 
@@ -181,9 +191,22 @@ export async function resolveIndexKey(token, name) {
       && (normalizeIndexName(r.trading_symbol) === wanted || normalizeIndexName(r.name) === wanted))
       || results.find(r => r.segment === 'NSE_INDEX')
     if (match?.instrument_key) {
+      indexKeys.set(normalizeIndexName(raw), match.instrument_key)
       indexKeys.set(normalizeIndexName(candidate), match.instrument_key)
       return match.instrument_key
     }
   }
   return null
+}
+
+export async function resolveIndexKeys(token, names) {
+  const wanted = [...new Set((names || []).map(n => String(n || '').trim()).filter(Boolean))]
+  const out = new Map()
+  if (!wanted.length) return out
+  await ensureMaster()
+  for (const name of wanted) {
+    const key = await resolveIndexKey(token, name)
+    if (key) out.set(name, key)
+  }
+  return out
 }
