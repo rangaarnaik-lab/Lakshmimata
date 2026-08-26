@@ -4526,12 +4526,12 @@ function RichAiAnswer({text, big=false}){
           if(block.type==='kv') return (
             <div key={i} style={{display:'grid',gridTemplateColumns:'minmax(80px,110px) 1fr',gap:8,
               padding:'6px 8px',borderRadius:7,background:C.card,border:`1px solid ${C.border}`,
-              fontSize:11.5,lineHeight:1.45}}>
+              fontSize:11.5*z,lineHeight:1.45}}>
               <strong style={{color:sec.color}}>{block.label}</strong>
               <span style={{color:C.text}}>{renderAiInline(block.text)}</span>
             </div>
           )
-          return <div key={i} style={{fontSize:12.5,lineHeight:1.58,color:C.text}}>
+          return <div key={i} style={{fontSize:12.5*z,lineHeight:1.58,color:C.text}}>
             {renderAiInline(block.text)}
           </div>
         })}
@@ -4554,6 +4554,11 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
   const [conversationId, setConversationId] = useState(null)
   const [chartImg, setChartImg] = useState(null) // { mime, b64, previewUrl }
   const [railHover, setRailHover] = useState(false)
+  // Research notes run long, so the maximised choice is remembered instead of
+  // being re-clicked on every stock.
+  const [expanded, setExpanded] = useState(()=>{
+    try{ return localStorage.getItem('lakshmimata-askai-max')==='1' }catch(e){ return false }
+  })
   const fileRef = useRef(null)
 
   useEffect(()=>{
@@ -4585,6 +4590,12 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
   },[open, active?.id, active?.status, symbol])
 
   if(!symbol) return null
+
+  const toggleExpanded = ()=>setExpanded(prev=>{
+    const next=!prev
+    try{ localStorage.setItem('lakshmimata-askai-max', next?'1':'0') }catch(e){}
+    return next
+  })
 
   const attachChart = async (file)=>{
     if(!file || busy) return
@@ -4714,10 +4725,14 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
               if(f) attachChart(f)
             }}
             style={{
-              width:isMobile?'100%':'min(420px, 100%)',
+              width:isMobile?'100%':expanded?'min(1080px, 100%)':'min(420px, 100%)',
               maxWidth:'100%',
-              height:isMobile?'min(82dvh, 82vh)':'min(560px, calc(100dvh - 32px))',
-              maxHeight:isMobile?'min(82dvh, 82vh)':'min(560px, calc(100dvh - 32px))',
+              height:isMobile
+                ? (expanded?'min(96dvh, 96vh)':'min(82dvh, 82vh)')
+                : (expanded?'calc(100dvh - 32px)':'min(560px, calc(100dvh - 32px))'),
+              maxHeight:isMobile
+                ? (expanded?'min(96dvh, 96vh)':'min(82dvh, 82vh)')
+                : 'calc(100dvh - 32px)',
               display:'flex',flexDirection:'column',
               background:C.card,
               border:isMobile?`1px solid ${C.border}`:`1px solid ${C.accent}44`,
@@ -4743,12 +4758,25 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
                   {symbol} · Follow-up chat with filings, recent news, or a chart · not investment advice
                 </div>
               </div>
-              <button type="button" onClick={()=>setOpen(false)}
-                style={{background:'transparent',border:`1px solid ${C.border}`,color:C.muted,
-                  width:30,height:30,borderRadius:8,cursor:'pointer',fontSize:16,lineHeight:1}}>×</button>
+              <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+                <button type="button" onClick={toggleExpanded}
+                  title={expanded?'Restore to a smaller panel':'Maximise for easier reading'}
+                  aria-label={expanded?'Restore panel':'Maximise panel'}
+                  style={{background:expanded?C.accent+'22':'transparent',
+                    border:`1px solid ${expanded?C.accent:C.border}`,color:expanded?C.accent:C.muted,
+                    width:30,height:30,borderRadius:8,cursor:'pointer',fontSize:13,lineHeight:1}}>
+                  {expanded?'⤡':'⤢'}
+                </button>
+                <button type="button" onClick={()=>setOpen(false)} title="Close"
+                  style={{background:'transparent',border:`1px solid ${C.border}`,color:C.muted,
+                    width:30,height:30,borderRadius:8,cursor:'pointer',fontSize:16,lineHeight:1}}>×</button>
+              </div>
             </div>
 
-            <div style={{flex:1,overflowY:'auto',padding:'12px 14px'}}>
+            <div style={{flex:1,overflowY:'auto',
+              // A 1080px-wide line of prose is tiring; pad the gutters in so the
+              // reading column stays around 900px.
+              padding:expanded&&!isMobile?'14px clamp(14px, 8%, 110px)':'12px 14px'}}>
               <div style={{display:'flex',gap:6,marginBottom:10,flexWrap:'wrap'}}>
                 {[
                   {id:'filings', label:'Filings only', hint:'PPT / Concall on file'},
@@ -4841,7 +4869,7 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
                           }}>{message.verdict}</span>
                         </div>
                       )}
-                      <RichAiAnswer text={message.answer}/>
+                      <RichAiAnswer text={message.answer} big={expanded}/>
                       <div style={{marginTop:10}}>
                         <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6}}>Flags</div>
                         <FlagsList flags={message.flags}/>
