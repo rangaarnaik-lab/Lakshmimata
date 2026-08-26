@@ -1,12 +1,13 @@
 import {
   authenticatedBrokerContext,
-  getBrokerRow,
+  getActiveLiveBroker,
   readJsonBody,
   sendJson,
   setCors,
 } from './_lib/brokerStore.js'
 import { decryptToken } from './_lib/tokenCrypto.js'
 import { resolveEquityKeys, resolveIndexKeys } from './_lib/upstoxInstruments.js'
+import { fetchFyersQuoteMap, fyersCredentials } from './_lib/fyers.js'
 
 const MAX_SYMBOLS = 240
 const BATCH_SIZE = 80
@@ -74,20 +75,31 @@ export async function handleUpstoxQuotesRequest(req, res) {
       return
     }
 
-    const row = await getBrokerRow(context.db, context.user.id)
-    if (!row?.access_token) {
+    const active = await getActiveLiveBroker(context.db, context.user.id)
+    if (!active?.row?.access_token) {
       sendJson(res, 409, {
         code: 'upstox_not_connected',
-        error: 'Connect Upstox to view live price and change.',
+        error: 'Connect Upstox or Fyers to view live price and change.',
       })
       return
     }
 
     let token
     try {
-      token = decryptToken(row.access_token)
+      token = decryptToken(active.row.access_token)
     } catch (error) {
-      sendJson(res, 409, { code: 'upstox_reconnect_required', error: error.message })
+      sendJson(res, 409, { code: `${active.broker}_reconnect_required`, error: error.message })
+      return
+    }
+
+    if (active.broker === 'fyers') {
+      const { appId, configured } = fyersCredentials()
+      if (!configured) {
+        sendJson(res, 503, { error: 'Fyers is connected but FYERS_APP_ID is missing on the server.' })
+        return
+      }
+      const quotes = await fetchFyersQuoteMap(appId, token, { symbols, indices })
+      sendJson(res, 200, { quotes, broker: 'fyers' })
       return
     }
 
@@ -104,7 +116,7 @@ export async function handleUpstoxQuotesRequest(req, res) {
         Object.assign(quotes, await fetchBatch(token, indices.slice(i, i + BATCH_SIZE), keyByName))
       }
     }
-    sendJson(res, 200, { quotes })
+    sendJson(res, 200, { quotes, broker: 'upstox' })
   } catch (error) {
     sendJson(res, error.status || 500, {
       code: error.code || 'upstox_quotes_error',

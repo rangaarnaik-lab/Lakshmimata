@@ -3,8 +3,9 @@
  * OHLC for one instrument using the signed-in user's Upstox token.
  * Market breadth and scanner flags stay on our derived tables.
  */
-import { readJsonBody, requireUserUpstoxToken, sendJson, setCors } from './_lib/brokerStore.js'
+import { readJsonBody, requireUserLiveBroker, sendJson, setCors } from './_lib/brokerStore.js'
 import { resolveBseEquityKey, resolveEquityKey, resolveIndexKey } from './_lib/upstoxInstruments.js'
+import { fetchFyersCandles, fyersCredentials } from './_lib/fyers.js'
 
 // Below this, a series is too short to draw any of the chart's studies, so it
 // is worth checking whether the security has a longer history on BSE.
@@ -93,7 +94,7 @@ export async function handleUpstoxCandlesRequest(req, res) {
   }
 
   try {
-    const { token } = await requireUserUpstoxToken(req)
+    const live = await requireUserLiveBroker(req)
     const body = await readJsonBody(req)
     const symbol = String(body.symbol || '').trim()
     const segment = String(body.segment || 'equity').toLowerCase() === 'index' ? 'index' : 'equity'
@@ -104,6 +105,21 @@ export async function handleUpstoxCandlesRequest(req, res) {
       return
     }
 
+    const toDate = String(body.to_date || istYmd()).slice(0, 10)
+    const fromDate = String(body.from_date || (unit === 'minutes' ? shiftIstYmd(-28) : shiftIstYmd(-365 * 9))).slice(0, 10)
+
+    if (live.broker === 'fyers') {
+      const { appId, configured } = fyersCredentials()
+      if (!configured) {
+        sendJson(res, 503, { error: 'Fyers is connected but FYERS_APP_ID is missing on the server.' })
+        return
+      }
+      const rows = await fetchFyersCandles(appId, live.token, { symbol, segment, unit, fromDate, toDate })
+      sendJson(res, 200, { ...toPayload(symbol, rows, unit === 'minutes' ? '1m' : 'day'), broker: 'fyers' })
+      return
+    }
+
+    const token = live.token
     const key = segment === 'index'
       ? await resolveIndexKey(token, symbol)
       : await resolveEquityKey(token, symbol)
@@ -114,9 +130,6 @@ export async function handleUpstoxCandlesRequest(req, res) {
       })
       return
     }
-
-    const toDate = String(body.to_date || istYmd()).slice(0, 10)
-    const fromDate = String(body.from_date || (unit === 'minutes' ? shiftIstYmd(-28) : shiftIstYmd(-365 * 9))).slice(0, 10)
 
     if (unit === 'days') {
       let rows = await upstoxJson(token, historicalUrl(key, 'days', interval, toDate, fromDate))

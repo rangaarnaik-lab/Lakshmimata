@@ -45,10 +45,10 @@ async function lakshmimataAccessToken() {
   return session?.access_token || ''
 }
 
-async function fetchQuoteBatch(symbols) {
+async function fetchQuoteRequest({ symbols = [], indices = [] } = {}) {
   const jwt = await lakshmimataAccessToken()
   if (!jwt) {
-    const error = new Error('Sign in and connect Upstox to view live prices.')
+    const error = new Error('Sign in and connect Upstox or Fyers to view live prices.')
     error.code = 'upstox_not_connected'
     throw error
   }
@@ -58,66 +58,48 @@ async function fetchQuoteBatch(symbols) {
       Authorization: `Bearer ${jwt}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ symbols }),
+    body: JSON.stringify({ symbols, indices }),
   })
   const json = await res.json().catch(() => ({}))
   if (!res.ok) {
-    const err = new Error(json.error || `Upstox quotes ${res.status}`)
+    const err = new Error(json.error || `Broker quotes ${res.status}`)
     err.status = res.status
     err.code = json.code
     throw err
   }
-  const data = json?.quotes || {}
-  const map = new Map()
-  for (const sym of symbols) {
+  return json?.quotes || {}
+}
+
+export async function fetchLiveQuotes({ symbols = [], indices = [] } = {}) {
+  const uniqSyms = [...new Set((symbols || []).map(s => String(s || '').trim().toUpperCase()).filter(Boolean))]
+  const uniqIdx = [...new Set((indices || []).map(n => String(n || '').trim()).filter(Boolean))]
+  const stocks = new Map()
+  const indexMap = new Map()
+  if (!uniqSyms.length && !uniqIdx.length) return { stocks, indices: indexMap }
+
+  const data = await fetchQuoteRequest({
+    symbols: uniqSyms.slice(0, 80),
+    indices: uniqIdx.slice(0, 24),
+  })
+  for (const sym of uniqSyms.slice(0, 80)) {
     const parsed = parseUpstoxQuote(lookupQuote(data, sym))
-    if (parsed) map.set(String(sym).toUpperCase(), parsed)
+    if (parsed) stocks.set(sym, parsed)
   }
-  return map
+  for (const name of uniqIdx.slice(0, 24)) {
+    const parsed = parseUpstoxQuote(lookupQuote(data, name) || data[name])
+    if (parsed) indexMap.set(name, parsed)
+  }
+  return { stocks, indices: indexMap }
 }
 
 export async function fetchUpstoxQuotes(symbols) {
-  const uniq = [...new Set((symbols || []).map(s => String(s || '').trim().toUpperCase()).filter(Boolean))]
-  if (!uniq.length) return new Map()
-  const out = new Map()
-  for (let i = 0; i < uniq.length; i += 240) {
-    const part = await fetchQuoteBatch(uniq.slice(i, i + 240))
-    for (const [k, v] of part) out.set(k, v)
-  }
-  return out
+  const { stocks } = await fetchLiveQuotes({ symbols })
+  return stocks
 }
 
 export async function fetchUpstoxIndexQuotes(names) {
-  const uniq = [...new Set((names || []).map(n => String(n || '').trim()).filter(Boolean))]
-  if (!uniq.length) return new Map()
-  const jwt = await lakshmimataAccessToken()
-  if (!jwt) {
-    const error = new Error('Sign in and connect Upstox to view live index prices.')
-    error.code = 'upstox_not_connected'
-    throw error
-  }
-  const res = await fetch('/api/upstox-quotes', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${jwt}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ indices: uniq }),
-  })
-  const json = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    const err = new Error(json.error || `Upstox quotes ${res.status}`)
-    err.status = res.status
-    err.code = json.code
-    throw err
-  }
-  const data = json?.quotes || {}
-  const map = new Map()
-  for (const name of uniq) {
-    const parsed = parseUpstoxQuote(lookupQuote(data, name) || data[name])
-    if (parsed) map.set(name, parsed)
-  }
-  return map
+  const { indices } = await fetchLiveQuotes({ indices: names })
+  return indices
 }
 
 export function applyQuoteToStock(stock, quote) {
@@ -140,7 +122,8 @@ export function applyQuoteToStock(stock, quote) {
 }
 
 const _candleCache = new Map()
-const CANDLE_CACHE_TTL_MS = 90_000
+const CANDLE_CACHE_TTL_MINUTES_MS = 90_000
+const CANDLE_CACHE_TTL_DAILY_MS = 20 * 60 * 1000
 
 export function clearUpstoxCandleCache() {
   _candleCache.clear()
@@ -157,16 +140,17 @@ export async function fetchUpstoxCandles({
   const clean = String(symbol || '').trim()
   if (!clean) return { error: 'No symbol' }
   const cacheKey = `${clean}|${segment}|${unit}|${interval}|${days || ''}`
+  const ttl = unit === 'minutes' ? CANDLE_CACHE_TTL_MINUTES_MS : CANDLE_CACHE_TTL_DAILY_MS
   if (!bypassCache) {
     const hit = _candleCache.get(cacheKey)
-    if (hit && Date.now() - hit.at < CANDLE_CACHE_TTL_MS && hit.payload && !hit.payload.error) {
+    if (hit && Date.now() - hit.at < ttl && hit.payload && !hit.payload.error) {
       return hit.payload
     }
   }
 
   const jwt = await lakshmimataAccessToken()
   if (!jwt) {
-    return { error: 'Connect Upstox to load this chart from your account.', code: 'upstox_not_connected' }
+    return { error: 'Connect Upstox or Fyers to load this chart from your account.', code: 'upstox_not_connected' }
   }
 
   const body = {
@@ -201,7 +185,7 @@ export async function fetchUpstoxCandles({
   }
   const payload = json
   _candleCache.set(cacheKey, { at: Date.now(), payload })
-  if (_candleCache.size > 40) {
+  if (_candleCache.size > 80) {
     const oldest = [..._candleCache.entries()].sort((a, b) => a[1].at - b[1].at)[0]
     if (oldest) _candleCache.delete(oldest[0])
   }

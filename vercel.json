@@ -3,7 +3,9 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "framework": null,
+  "regions": ["bom1"],
   "rewrites": [
-    { "source": "/upstox/callback", "destination": "/index.html" }
+    { "source": "/upstox/callback", "destination": "/index.html" },
+    { "source": "/fyers/callback", "destination": "/index.html" }
   ]
 }

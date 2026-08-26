@@ -52,12 +52,18 @@ import {
   supabase, revokeOtherSessions,
   claimCurrentDevice, verifyCurrentDevice,
 } from './lib/supabase'
-import { fetchUpstoxQuotes, fetchUpstoxIndexQuotes, applyQuoteToStock } from './lib/upstoxQuotes'
+import { fetchLiveQuotes, applyQuoteToStock } from './lib/upstoxQuotes'
 import {
   fetchUpstoxOAuthConfig, startUpstoxOAuth, readUpstoxOAuthCallback, clearUpstoxOAuthParams,
   exchangeUpstoxAuthCode, readUpstoxConnection, savePastedUpstoxToken, disconnectUpstox,
   expectedUpstoxOAuthState, hasPendingUpstoxOAuth, noteUpstoxStep, readUpstoxStep,
 } from './lib/upstoxOAuth'
+import {
+  fetchFyersOAuthConfig, startFyersOAuth, readFyersOAuthCallback, clearFyersOAuthParams,
+  exchangeFyersAuthCode, readFyersConnection, disconnectFyers,
+  expectedFyersOAuthState, hasPendingFyersOAuth, noteFyersStep, readFyersStep,
+} from './lib/fyersOAuth'
+import { readLiveBrokerConnection } from './lib/brokerLive'
 import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, compressChartImage, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchUserWatchlists, saveUserWatchlists, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
@@ -199,10 +205,10 @@ const hasUserLiveQuote = s => !!s?.liveFromUser
 // Price cells live outside App, so the connection flag is mirrored here to tell
 // "not connected" apart from "connected, quote not fetched yet".
 let LIVE_FEED_CONNECTED = false
-const priceFallbackLabel = () => LIVE_FEED_CONNECTED ? '—' : '— Connect Upstox'
+const priceFallbackLabel = () => LIVE_FEED_CONNECTED ? '—' : '— Connect broker'
 const priceFallbackHint = () => LIVE_FEED_CONNECTED
-  ? 'Waiting for a quote from your Upstox account'
-  : 'Connect Upstox to view live price'
+  ? 'Waiting for a quote from your broker account'
+  : 'Connect Upstox or Fyers to view live price'
 /** Portfolio-style amounts: ₹1.2L / ₹40.5K / ₹999 */
 const fmtAmt = v => {
   if (v == null || !isFinite(v)) return '—'
@@ -2639,7 +2645,7 @@ function LastUpdatedBar({scanMeta,lastRefresh,loading,autoRefresh,setAutoRefresh
           boxShadow:`0 0 5px ${loading?C.yellow:marketOpen?C.green:C.muted}`,
           animation:loading?'pulse 1s infinite':'none'}}/>
         <span style={{fontWeight:700,color:C.text,whiteSpace:'nowrap'}}>
-          {loading?'Updating…':marketOpen?(layout?.liveFeedConnected?'Live · your Upstox':'Connect Upstox for LTP') :'Closed'}
+          {loading?'Updating…':marketOpen?(layout?.liveFeedConnected?`Live · your ${layout.liveBroker==='fyers'?'Fyers':'Upstox'}`:'Connect broker for LTP') :'Closed'}
         </span>
       </div>
       <span style={{color:C.muted,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{lastScanStr}</span>
@@ -8023,6 +8029,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     if (!intradayFeatureOn || !isIntraday || isIndex) return
     let cancelled = false
     const load = (quiet = false) => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       if (!quiet && !intradayData) setIntradayLoading(true)
       // 10 days / ~4.5k bars is enough for 5D–1M zoom; parallel pages + cache.
       fetchStockIntradayHistory(sym, { days: 10, limit: 4500, bypassCache: quiet })
@@ -8119,6 +8126,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
       return Number.isFinite(x) && x > 0 ? x : null
     }
     const poll = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       fetchLiveStockPrice(sym).then(live => {
         if (cancelled || !live || live.price == null) return
         const px = n(live.price)
@@ -8194,7 +8202,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
       <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted,textAlign:'center',padding:20,lineHeight:1.5}}>
         {intradayData.error}
         <br/><br/>
-        Connect Upstox on Account if this chart is empty. 1-minute bars come from your Upstox account, not our scan.
+        Connect Upstox or Fyers on Account if this chart is empty. 1-minute bars come from your broker account, not our scan.
       </div>
     )
   }
@@ -16160,9 +16168,9 @@ function UpstoxLiveFeedCard({session,onUpdate}){
       const t=token.trim()
       if(!t) throw new Error('Paste your Upstox access token.')
       await savePastedUpstoxToken(t)
-      onUpdate?.({...session,brokerConnected:true})
+      onUpdate?.({...session,brokerConnected:true,liveBroker:'upstox',upstoxConnected:true})
       setToken('')
-      setInfo('Connected. Prefer Connect Upstox (OAuth) — the token is encrypted on the server.')
+      setInfo('Connected. The token is encrypted on the server. An Analytics Token lasts a year, so no daily reconnect.')
     }catch(e){
       setErr(e?.message||'Could not save token')
     }finally{ setBusy(false) }
@@ -16171,8 +16179,9 @@ function UpstoxLiveFeedCard({session,onUpdate}){
     setErr('');setInfo('');setBusy(true)
     try{
       await disconnectUpstox()
-      onUpdate?.({...session,brokerConnected:false})
-      setInfo('Disconnected. Scanners still run; live LTP needs Upstox again.')
+      const live=await readLiveBrokerConnection().catch(()=>({connected:!!session?.fyersConnected,liveBroker:session?.fyersConnected?'fyers':null,upstoxConnected:false,fyersConnected:!!session?.fyersConnected}))
+      onUpdate?.({...session,brokerConnected:live.connected,liveBroker:live.liveBroker,upstoxConnected:false,fyersConnected:live.fyersConnected})
+      setInfo('Disconnected. Scanners still run; live LTP needs Upstox or Fyers.')
     }catch(e){
       setErr(e?.message||'Could not disconnect')
     }finally{ setBusy(false) }
@@ -16213,12 +16222,19 @@ function UpstoxLiveFeedCard({session,onUpdate}){
       )}
       <button type="button" onClick={()=>setShowPaste(v=>!v)}
         style={{marginTop:12,background:'none',border:'none',color:C.muted,fontSize:11,cursor:'pointer',padding:0,textDecoration:'underline'}}>
-        {showPaste?'Hide token paste':'Advanced: paste access token'}
+        {showPaste?'Hide token paste':'Tired of daily login? Paste a 1-year token'}
       </button>
       {showPaste&&(
         <div style={{marginTop:8}}>
+          <div style={{fontSize:11,color:C.muted,lineHeight:1.5,marginBottom:8}}>
+            Upstox has a read-only <b style={{color:C.text}}>Analytics Token</b> that lasts <b style={{color:C.text}}>1 year</b>,
+            so you skip the 3:30 AM reconnect. Open{' '}
+            <a href="https://account.upstox.com/developer/apps" target="_blank" rel="noopener noreferrer"
+              style={{color:C.accent}}>Upstox Developer Apps</a>{' '}
+            → Analytics tab → generate, then paste it here. It cannot place orders — prices and charts only.
+          </div>
           <input type="password" value={token} onChange={e=>setToken(e.target.value)}
-            placeholder="Upstox access token"
+            placeholder="Upstox Analytics Token (or access token)"
             style={{width:'100%',padding:'9px 10px',borderRadius:8,border:`1px solid ${C.border}`,
               background:C.inputBg,color:C.text,fontSize:12,marginBottom:8}}/>
           <button type="button" onClick={savePaste} disabled={busy}
@@ -16226,6 +16242,82 @@ function UpstoxLiveFeedCard({session,onUpdate}){
               background:'transparent',color:C.text,fontWeight:700,fontSize:12}}>
             {busy?'Saving…':'Save pasted token'}
           </button>
+        </div>
+      )}
+    </AccountCard>
+  )
+}
+
+function FyersLiveFeedCard({session,onUpdate}){
+  const connected=!!session?.fyersConnected
+  const active=session?.liveBroker==='fyers'
+  const [oauthOn,setOauthOn]=useState(false)
+  const [busy,setBusy]=useState(false)
+  const [err,setErr]=useState('')
+  const [info,setInfo]=useState('')
+  const lastStep=(()=>{
+    const s=readFyersStep()
+    if(!s?.step) return ''
+    const mins=Math.round((Date.now()-Number(s.at||0))/60000)
+    return `${s.step}${Number.isFinite(mins)&&mins>=0?` (${mins===0?'just now':`${mins} min ago`})`:''}`
+  })()
+  useEffect(()=>{
+    let cancelled=false
+    fetchFyersOAuthConfig()
+      .then(cfg=>{ if(!cancelled) setOauthOn(!!cfg.configured) })
+      .catch(()=>{ if(!cancelled) setOauthOn(false) })
+    return()=>{cancelled=true}
+  },[])
+  const connectOAuth=async()=>{
+    setErr('');setInfo('');setBusy(true)
+    try{ await startFyersOAuth() }
+    catch(e){ setErr(e?.message||'Could not start Fyers login'); setBusy(false) }
+  }
+  const disconnect=async()=>{
+    setErr('');setInfo('');setBusy(true)
+    try{
+      await disconnectFyers()
+      const live=await readLiveBrokerConnection().catch(()=>({connected:!!session?.upstoxConnected,liveBroker:session?.upstoxConnected?'upstox':null,upstoxConnected:!!session?.upstoxConnected,fyersConnected:false}))
+      onUpdate?.({...session,brokerConnected:live.connected,liveBroker:live.liveBroker,upstoxConnected:live.upstoxConnected,fyersConnected:false})
+      setInfo('Fyers disconnected. Live LTP uses Upstox if that is still connected.')
+    }catch(e){
+      setErr(e?.message||'Could not disconnect')
+    }finally{ setBusy(false) }
+  }
+  return(
+    <AccountCard title="Live prices (your Fyers)"
+      hint="Same idea as Upstox: you log in on Fyers. Live last price, % change, volume on the chart, and candles use your Fyers account. Scanners stay on our derived scan.">
+      <div style={{fontSize:11.5,color:C.muted,lineHeight:1.5,marginBottom:10}}>
+        {connected
+          ? (active
+            ? 'Live LTP and charts are using your Fyers account. Fyers tokens expire at the end of the trading day — reconnect the next morning.'
+            : 'Fyers is connected. Live data is currently coming from Upstox because that login is newer. Disconnect Upstox or reconnect Fyers to switch.')
+          : 'Connect Fyers if you do not use Upstox. Price, % change, and Our Chart then come from this account.'}
+      </div>
+      {err&&<div style={{fontSize:12,color:C.red,marginBottom:8}}>{err}</div>}
+      {info&&<div style={{fontSize:12,color:C.green,marginBottom:8}}>{info}</div>}
+      {!connected&&lastStep&&(
+        <div style={{fontSize:11,color:C.muted,marginBottom:8,lineHeight:1.45}}>
+          Last connect attempt: {lastStep}
+        </div>
+      )}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+        <button type="button" onClick={connectOAuth} disabled={!oauthOn||busy}
+          style={{flex:1,minWidth:160,padding:'10px 12px',borderRadius:8,border:'none',cursor:oauthOn?'pointer':'not-allowed',
+            background:C.accent,color:C.onAccent,fontWeight:800,fontSize:12,opacity:oauthOn?1:0.55}}>
+          Connect Fyers
+        </button>
+        {connected&&(
+          <button type="button" onClick={disconnect} disabled={busy}
+            style={{padding:'10px 12px',borderRadius:8,cursor:'pointer',
+              border:`1px solid ${C.border}`,background:'transparent',color:C.muted,fontWeight:700,fontSize:12}}>
+            Disconnect
+          </button>
+        )}
+      </div>
+      {!oauthOn&&(
+        <div style={{fontSize:11,color:C.yellow,marginTop:10,lineHeight:1.45}}>
+          OAuth is not configured yet (set FYERS_APP_ID, FYERS_SECRET_ID, and FYERS_REDIRECT_URI on Vercel).
         </div>
       )}
     </AccountCard>
@@ -16292,6 +16384,7 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
           <SubscriptionCard userSubscription={userSubscription} onOpenPayment={onOpenPayment}/>
           <ProfileCard session={session}/>
           <UpstoxLiveFeedCard session={session} onUpdate={onUpdate}/>
+          <FyersLiveFeedCard session={session} onUpdate={onUpdate}/>
           <TelegramAlertsCard session={session} alertPrefs={alertPrefs} onAlertPrefs={onAlertPrefs}/>
         </div>
         <div>{prefsCard}</div>
@@ -16874,9 +16967,14 @@ export default function App(){
   const [showPayment,setShowPayment]=useState(false)
 
   const sessionWithBrokerState=async(s)=>{
-    let connected=false
-    try{ connected=!!(await readUpstoxConnection()).connected }catch(_){}
-    return {user:s.user,brokerConnected:connected}
+    const live=await readLiveBrokerConnection().catch(()=>({connected:false,liveBroker:null,upstoxConnected:false,fyersConnected:false}))
+    return {
+      user:s.user,
+      brokerConnected:live.connected,
+      liveBroker:live.liveBroker,
+      upstoxConnected:live.upstoxConnected,
+      fyersConnected:live.fyersConnected,
+    }
   }
 
   useEffect(()=>{
@@ -16886,7 +16984,7 @@ export default function App(){
         // because revoking a refresh token does not expire the access token
         // this browser already holds.
         const device=await verifyCurrentDevice(s)
-        if(!device.valid && !hasPendingUpstoxOAuth()){
+        if(!device.valid && !hasPendingUpstoxOAuth() && !hasPendingFyersOAuth()){
           await supabase.auth.signOut({scope:'local'})
           setAuthNotice('This account was signed in on another device. Sign in again to use it here.')
           setShowAuth(true)
@@ -17041,7 +17139,7 @@ export default function App(){
         const saved=await readUpstoxConnection().catch(()=>({connected:false}))
         if(!saved.connected) throw new Error('Upstox signed you in but the connection did not save. The user_broker_tokens table may be missing.')
         noteUpstoxStep('connected')
-        setSession(prev=>({ user:(prev&&prev.user)||session.user, brokerConnected:true }))
+        setSession(prev=>({ user:(prev&&prev.user)||session.user, brokerConnected:true, liveBroker:'upstox', upstoxConnected:true, fyersConnected:!!prev?.fyersConnected }))
         setShowAuth(false)
         setMainTab('settings')
         setAuthNotice('Upstox connected. Live last price, % change, and charts now use your account.')
@@ -17052,6 +17150,66 @@ export default function App(){
         setAuthNotice(e?.message||'Upstox connect failed')
       }finally{
         clearUpstoxOAuthParams()
+      }
+    })()
+  },[authLoading, session?.user?.id])
+
+  const fyersOauthOnce=useRef(false)
+  useEffect(()=>{
+    if(authLoading) return
+    const cb=readFyersOAuthCallback()
+    if(!cb) return
+    if(cb.error){
+      if(!fyersOauthOnce.current){
+        fyersOauthOnce.current=true
+        noteFyersStep(`Fyers refused: ${cb.errorDescription||cb.error}`)
+        setAuthNotice(cb.errorDescription||cb.error||'Fyers login was cancelled.')
+        setMainTab('settings')
+        clearFyersOAuthParams()
+      }
+      return
+    }
+    if(!cb.code){ noteFyersStep('callback had no authorization code'); return }
+    let expected=''
+    try{ expected=expectedFyersOAuthState() }catch(_){}
+    if(!cb.state||!expected||cb.state!==expected){
+      fyersOauthOnce.current=true
+      noteFyersStep(`state mismatch (got "${cb.state||'none'}", expected "${expected||'none'}")`)
+      setAuthNotice('Fyers login could not be verified. Click Connect Fyers and try again.')
+      setMainTab('settings')
+      clearFyersOAuthParams()
+      return
+    }
+    if(!session?.user){
+      noteFyersStep('waiting for Lakshmimata sign-in to finish the connect')
+      setAuthNotice('Sign in to Lakshmimata to finish connecting Fyers.')
+      setShowAuth(true)
+      setAuthMode('login')
+      return
+    }
+    if(fyersOauthOnce.current) return
+    fyersOauthOnce.current=true
+    ;(async()=>{
+      try{
+        noteFyersStep('exchanging the Fyers code for a token…')
+        const { data: { session: s } } = await supabase.auth.getSession()
+        const jwt=s?.access_token
+        if(!jwt) throw new Error('Not signed in')
+        await exchangeFyersAuthCode(jwt, cb.code)
+        const saved=await readFyersConnection().catch(()=>({connected:false}))
+        if(!saved.connected) throw new Error('Fyers signed you in but the connection did not save. Run the fyers SQL on user_broker_tokens if needed.')
+        noteFyersStep('connected')
+        setSession(prev=>({ user:(prev&&prev.user)||session.user, brokerConnected:true, liveBroker:'fyers', fyersConnected:true, upstoxConnected:!!prev?.upstoxConnected }))
+        setShowAuth(false)
+        setMainTab('settings')
+        setAuthNotice('Fyers connected. Live last price, % change, and charts now use your Fyers account.')
+      }catch(e){
+        fyersOauthOnce.current=false
+        noteFyersStep(`failed: ${e?.message||'Fyers connect failed'}`)
+        setMainTab('settings')
+        setAuthNotice(e?.message||'Fyers connect failed')
+      }finally{
+        clearFyersOAuthParams()
       }
     })()
   },[authLoading, session?.user?.id])
@@ -18921,66 +19079,61 @@ export default function App(){
     return()=>clearInterval(refreshTimer.current)
   },[autoRefresh,refreshInterval,runDBScan,historyDate,demoMode])
 
-  // Live LTP / % change from the user's Upstox token. Scanner flags stay
-  // on the last DB scan (owner account).
+  // Live LTP / % from the user's Upstox or Fyers token. Scanner flags stay
+  // on the last DB scan. Poll only what is on screen (ticker + open chart +
+  // first page of the table + portfolio), and pause while the tab is hidden.
   const stocksRef=useRef(stocks)
   stocksRef.current=stocks
+  const livePollSymsRef=useRef([])
+  const livePollIndicesRef=useRef([])
   LIVE_FEED_CONNECTED=!!session?.brokerConnected
   useEffect(()=>{
     if(!session?.brokerConnected||historyDate||demoMode) return
     let cancelled=false
-    // Fetch once on connect even outside market hours — Upstox returns the last
-    // close, so a connected user sees their own price instead of a blank dash.
     const tick=async(force=false)=>{
+      if(typeof document!=='undefined' && document.visibilityState==='hidden') return
       if(!force&&!isMarketOpen()) return
-      const syms=stocksRef.current.map(s=>s.sym).filter(Boolean)
-      if(!syms.length) return
+      const syms=livePollSymsRef.current
+      const names=livePollIndicesRef.current
+      if(!syms.length && !names.length) return
       try{
-        const map=await fetchUpstoxQuotes(syms)
-        if(cancelled||!map.size) return
-        liveQuotesRef.current=map
-        setStocks(prev=>prev.map(s=>{
-          const q=map.get(String(s.sym||'').toUpperCase())
-          return q?applyQuoteToStock(s,q):s
-        }))
+        const {stocks: stockMap, indices: indexMap}=await fetchLiveQuotes({symbols:syms, indices:names})
+        if(cancelled) return
+        if(stockMap.size){
+          const merged=new Map(liveQuotesRef.current)
+          for(const [k,v] of stockMap) merged.set(k,v)
+          liveQuotesRef.current=merged
+          setStocks(prev=>prev.map(s=>{
+            const q=stockMap.get(String(s.sym||'').toUpperCase())
+            return q?applyQuoteToStock(s,q):s
+          }))
+        }
+        if(indexMap.size){
+          setIndexData(prev=>(prev||[]).map(idx=>{
+            const q=indexMap.get(idx.name)
+            if(!q) return idx
+            return { ...idx, lastPrice: q.last, chgD: q.chg, liveFromUser: true }
+          }))
+        }
       }catch(e){
-        console.warn('User Upstox live quotes:', e?.message||e)
-        if(['upstox_not_connected','upstox_reconnect_required','upstox_token_expired'].includes(e?.code)){
-          setSession(prev=>prev?{...prev,brokerConnected:false}:prev)
-          setAuthNotice('Upstox needs to be reconnected before live price and % change can be shown.')
+        console.warn('User broker live quotes:', e?.message||e)
+        if(['upstox_not_connected','upstox_reconnect_required','upstox_token_expired','fyers_not_connected','fyers_reconnect_required','fyers_token_expired'].includes(e?.code)){
+          setSession(prev=>prev?{...prev,brokerConnected:false,liveBroker:null}:prev)
+          setAuthNotice('Reconnect Upstox or Fyers before live price and % change can be shown.')
         }
       }
     }
     tick(true)
     const id=setInterval(()=>tick(),45000)
-    return()=>{ cancelled=true; clearInterval(id) }
+    const onVis=()=>{ if(document.visibilityState==='visible') tick(true) }
+    document.addEventListener('visibilitychange', onVis)
+    return()=>{ cancelled=true; clearInterval(id); document.removeEventListener('visibilitychange', onVis) }
   },[session?.brokerConnected,historyDate,demoMode,lastRefresh])
 
   const indexDataRef=useRef(indexData)
   indexDataRef.current=indexData
-  useEffect(()=>{
-    if(!session?.brokerConnected||historyDate||demoMode) return
-    let cancelled=false
-    const tick=async(force=false)=>{
-      if(!force&&!isMarketOpen()) return
-      const names=(indexDataRef.current||[]).map(idx=>idx.name).filter(Boolean)
-      if(!names.length) return
-      try{
-        const map=await fetchUpstoxIndexQuotes(names)
-        if(cancelled||!map.size) return
-        setIndexData(prev=>(prev||[]).map(idx=>{
-          const q=map.get(idx.name)
-          if(!q) return idx
-          return { ...idx, lastPrice: q.last, chgD: q.chg, liveFromUser: true }
-        }))
-      }catch(e){
-        console.warn('User Upstox index quotes:', e?.message||e)
-      }
-    }
-    tick(true)
-    const id=setInterval(()=>tick(),45000)
-    return()=>{ cancelled=true; clearInterval(id) }
-  },[session?.brokerConnected,historyDate,demoMode,lastRefresh])
+  const brokerConnectedRef=useRef(!!session?.brokerConnected)
+  brokerConnectedRef.current=!!session?.brokerConnected
 
   const previousBrokerConnection=useRef(!!session?.brokerConnected)
   useEffect(()=>{
@@ -18988,6 +19141,9 @@ export default function App(){
     previousBrokerConnection.current=!!session?.brokerConnected
     if(wasConnected&&!session?.brokerConnected){
       liveQuotesRef.current=new Map()
+      // Drop the index overlay too: it was fetched from the account that just
+      // expired, and leaving it up shows a live % next to "reconnect".
+      setIndexData(prev=>(prev||[]).map(({liveFromUser,...idx})=>idx))
       runDBScan()
     }
   },[session?.brokerConnected,runDBScan])
@@ -19053,7 +19209,9 @@ export default function App(){
     if(!session && !demoMode) return
     const load = () => fetchIndexDashboard().then(rows=>{
       setIndexData(prev=>{
-        const live=new Map((prev||[]).filter(r=>r.liveFromUser).map(r=>[r.name,r]))
+        const live=brokerConnectedRef.current
+          ? new Map((prev||[]).filter(r=>r.liveFromUser).map(r=>[r.name,r]))
+          : new Map()
         return (rows||[]).map(row=>{
           const overlay=live.get(row.name)
           return overlay
@@ -19311,6 +19469,24 @@ export default function App(){
     return [...stocks].sort((a,b)=>(b.chg||0)-(a.chg||0)).slice(0,15)
   },[stocks])
 
+  livePollSymsRef.current=(()=>{
+    const out=[]
+    const add=s=>{
+      const u=String(s||'').trim().toUpperCase()
+      if(u && !out.includes(u)) out.push(u)
+    }
+    if(chartSym && !chartIsIndex) add(chartSym)
+    for(const s of compareSyms||[]) add(s)
+    for(const h of portfolioHoldings||[]) add(h.sym||h.symbol)
+    for(const s of topMovers||[]) add(s.sym)
+    for(const s of rsBase||[]){
+      add(s.sym)
+      if(out.length>=80) break
+    }
+    return out.slice(0,80)
+  })()
+  livePollIndicesRef.current=(indexData||[]).map(i=>i.name).filter(Boolean).slice(0,24)
+
   const rotationAvailableDates=useMemo(()=>{
     const dates=new Set()
     for(const s of (rotationData||[])) for(const t of (s.trail||[])) if(t.date) dates.add(t.date)
@@ -19539,6 +19715,7 @@ export default function App(){
       // their saved indicator prefs (Lakshmi Mata / Volume / Super Cycle).
       chartUserId:session?.user?.id||null,
       liveFeedConnected: !!session?.brokerConnected,
+      liveBroker: session?.liveBroker || null,
     }}>
     <div style={{background:C.bg,minHeight:'100vh',fontFamily:"'Inter','SF Pro Display',sans-serif",
       color:C.text,fontSize:13,display:'flex',flexDirection:'row',zoom:zoomLevel}}>

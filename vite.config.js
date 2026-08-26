@@ -6,6 +6,9 @@ import { handleUpstoxSessionRequest } from './api/upstox-session.js'
 import { handleUpstoxQuotesRequest } from './api/upstox-quotes.js'
 import { handleUpstoxOAuthConfigRequest } from './api/upstox-oauth-config.js'
 import { handleUpstoxCandlesRequest } from './api/upstox-candles.js'
+import { handleFyersTokenRequest } from './api/fyers-token.js'
+import { handleFyersSessionRequest } from './api/fyers-session.js'
+import { handleFyersOAuthConfigRequest } from './api/fyers-oauth-config.js'
 
 function upstoxOAuthDevPlugin(env) {
   return {
@@ -20,6 +23,9 @@ function upstoxOAuthDevPlugin(env) {
           '/api/upstox-quotes': handleUpstoxQuotesRequest,
           '/api/upstox-oauth-config': handleUpstoxOAuthConfigRequest,
           '/api/upstox-candles': handleUpstoxCandlesRequest,
+          '/api/fyers-token': handleFyersTokenRequest,
+          '/api/fyers-session': handleFyersSessionRequest,
+          '/api/fyers-oauth-config': handleFyersOAuthConfigRequest,
         }
         const handler = handlers[url]
         if (!handler) return next()

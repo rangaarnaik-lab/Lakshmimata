@@ -11,17 +11,36 @@ import {
 } from './_lib/brokerStore.js'
 import { encryptToken } from './_lib/tokenCrypto.js'
 
-async function validateUpstoxToken(token) {
-  const response = await fetch('https://api.upstox.com/v2/user/profile', {
+async function upstoxGet(token, url) {
+  const response = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
   })
   const json = await response.json().catch(() => ({}))
-  if (!response.ok) {
-    const error = new Error(String(json.message || json.error || `Upstox rejected the token (${response.status})`))
-    error.status = 400
-    throw error
-  }
-  return json?.data || {}
+  return { ok: response.ok, status: response.status, json }
+}
+
+/**
+ * Accepts a daily access token, an extended token, or a 1-year Analytics Token.
+ * Analytics Tokens are restricted to a subset of GET APIs, so a profile refusal
+ * is not proof of a bad token — fall back to a market-data read.
+ */
+async function validateUpstoxToken(token) {
+  const profile = await upstoxGet(token, 'https://api.upstox.com/v2/user/profile')
+  if (profile.ok) return profile.json?.data || {}
+
+  const quote = await upstoxGet(
+    token,
+    'https://api.upstox.com/v2/market-quote/ltp?instrument_key=NSE_INDEX%7CNifty%2050',
+  )
+  if (quote.ok) return {}
+
+  const json = profile.json || {}
+  const error = new Error(String(
+    json.message || json.error || json.errors?.[0]?.message
+    || `Upstox rejected the token (${profile.status})`,
+  ))
+  error.status = 400
+  throw error
 }
 
 export async function handleUpstoxSessionRequest(req, res) {

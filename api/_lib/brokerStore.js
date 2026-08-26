@@ -60,22 +60,37 @@ export async function authenticatedBrokerContext(req) {
   return { db, user: data.user, jwt }
 }
 
-export async function getBrokerRow(db, userId) {
+export async function getBrokerRow(db, userId, broker = 'upstox') {
   const { data, error } = await db
     .from('user_broker_tokens')
-    .select('access_token,expires_at,updated_at')
+    .select('access_token,expires_at,updated_at,broker,upstox_user_id')
     .eq('user_id', userId)
-    .eq('broker', 'upstox')
+    .eq('broker', broker)
     .maybeSingle()
   if (!error && data?.access_token) return data
 
+  if (broker !== 'upstox') return null
   const { data: legacy, error: legacyErr } = await db
     .from('user_tokens')
     .select('upstox_token,updated_at')
     .eq('user_id', userId)
     .maybeSingle()
   if (legacyErr || !legacy?.upstox_token) return null
-  return { access_token: legacy.upstox_token, expires_at: null, updated_at: legacy.updated_at }
+  return { access_token: legacy.upstox_token, expires_at: null, updated_at: legacy.updated_at, broker: 'upstox' }
+}
+
+/** Newest encrypted connection — Upstox or Fyers. Live quotes/charts use this one. */
+export async function getActiveLiveBroker(db, userId) {
+  const [upstox, fyers] = await Promise.all([
+    getBrokerRow(db, userId, 'upstox'),
+    getBrokerRow(db, userId, 'fyers'),
+  ])
+  const candidates = []
+  if (isEncryptedToken(upstox?.access_token)) candidates.push({ broker: 'upstox', row: upstox })
+  if (isEncryptedToken(fyers?.access_token)) candidates.push({ broker: 'fyers', row: fyers })
+  if (!candidates.length) return null
+  candidates.sort((a, b) => new Date(b.row.updated_at || 0) - new Date(a.row.updated_at || 0))
+  return candidates[0]
 }
 
 /** Next 3:30 AM IST — when a plain Upstox access token stops working. */
@@ -108,10 +123,10 @@ export function upstoxTokenExpiry(rawToken, provided = null) {
   return nextUpstoxTokenExpiry()
 }
 
-export async function saveBrokerToken(db, userId, { accessToken, brokerUserId = null, expiresAt = null }) {
+export async function saveBrokerToken(db, userId, { accessToken, broker = 'upstox', brokerUserId = null, expiresAt = null }) {
   const row = {
     user_id: userId,
-    broker: 'upstox',
+    broker,
     access_token: accessToken,
     upstox_user_id: brokerUserId,
     // Never null: some deployments have a NOT NULL constraint on this column.
@@ -125,25 +140,28 @@ export async function saveBrokerToken(db, userId, { accessToken, brokerUserId = 
   if (error) throw new Error(`user_broker_tokens: ${error.message}`)
 }
 
-export async function deleteBrokerToken(db, userId) {
-  await db.from('user_broker_tokens').delete().eq('user_id', userId).eq('broker', 'upstox')
-  await db.from('user_tokens').delete().eq('user_id', userId)
+export async function deleteBrokerToken(db, userId, broker = 'upstox') {
+  await db.from('user_broker_tokens').delete().eq('user_id', userId).eq('broker', broker)
+  if (broker === 'upstox') {
+    await db.from('user_tokens').delete().eq('user_id', userId)
+  }
 }
 
-export function connectionStatus(row) {
+export function connectionStatus(row, broker = 'upstox') {
   const encrypted = isEncryptedToken(row?.access_token)
   return {
     connected: encrypted,
     reconnect_required: !!row && !encrypted,
-    broker: encrypted ? 'upstox' : null,
+    broker: encrypted ? broker : null,
     expires_at: encrypted ? row.expires_at : null,
+    updated_at: row?.updated_at || null,
   }
 }
 
 /** Decrypt the signed-in user's Upstox token, or throw a 409 the UI can handle. */
 export async function requireUserUpstoxToken(req) {
   const context = await authenticatedBrokerContext(req)
-  const row = await getBrokerRow(context.db, context.user.id)
+  const row = await getBrokerRow(context.db, context.user.id, 'upstox')
   if (!row?.access_token) {
     const error = new Error('Connect Upstox to load prices from your account.')
     error.status = 409
@@ -151,11 +169,31 @@ export async function requireUserUpstoxToken(req) {
     throw error
   }
   try {
-    return { ...context, token: decryptToken(row.access_token) }
+    return { ...context, token: decryptToken(row.access_token), broker: 'upstox' }
   } catch (error) {
     const wrapped = new Error(error.message || 'Reconnect Upstox')
     wrapped.status = 409
     wrapped.code = 'upstox_reconnect_required'
+    throw wrapped
+  }
+}
+
+/** Newest connected broker (Upstox or Fyers) with a decrypted token. */
+export async function requireUserLiveBroker(req) {
+  const context = await authenticatedBrokerContext(req)
+  const active = await getActiveLiveBroker(context.db, context.user.id)
+  if (!active) {
+    const error = new Error('Connect Upstox or Fyers to load prices from your own account.')
+    error.status = 409
+    error.code = 'upstox_not_connected'
+    throw error
+  }
+  try {
+    return { ...context, token: decryptToken(active.row.access_token), broker: active.broker, row: active.row }
+  } catch (error) {
+    const wrapped = new Error(error.message || `Reconnect ${active.broker}`)
+    wrapped.status = 409
+    wrapped.code = `${active.broker}_reconnect_required`
     throw wrapped
   }
 }
