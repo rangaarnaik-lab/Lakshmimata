@@ -12,6 +12,7 @@ const NSE_MASTER_URL = 'https://assets.upstox.com/market-quote/instruments/excha
 const MASTER_TTL_MS = 12 * 60 * 60 * 1000
 
 const equityKeys = new Map()
+const equityIsins = new Map()
 const indexKeys = new Map()
 const unresolved = new Map()
 const UNRESOLVED_TTL_MS = 10 * 60 * 1000
@@ -45,7 +46,9 @@ async function loadMaster() {
   for (const row of Array.isArray(rows) ? rows : []) {
     if (!row?.instrument_key) continue
     if (row.segment === 'NSE_EQ' && row.instrument_type === 'EQ' && row.trading_symbol) {
-      equityKeys.set(normalizeSymbol(row.trading_symbol), row.instrument_key)
+      const symbol = normalizeSymbol(row.trading_symbol)
+      equityKeys.set(symbol, row.instrument_key)
+      if (row.isin) equityIsins.set(symbol, row.isin)
     } else if (row.segment === 'NSE_INDEX') {
       const label = row.trading_symbol || row.name
       if (label) indexKeys.set(normalizeIndexName(label), row.instrument_key)
@@ -106,10 +109,27 @@ export async function resolveEquityKey(token, symbol) {
   const match = results.find(r => r.segment === 'NSE_EQ' && normalizeSymbol(r.trading_symbol) === clean)
   if (match?.instrument_key) {
     equityKeys.set(clean, match.instrument_key)
+    if (match.isin) equityIsins.set(clean, match.isin)
     return match.instrument_key
   }
   unresolved.set(`EQ:${clean}`, Date.now())
   return null
+}
+
+/**
+ * BSE listing for the same security. Several names in the scan universe are
+ * BSE-listed with almost no NSE history, so the NSE key alone charts nothing.
+ */
+export async function resolveBseEquityKey(token, symbol) {
+  const clean = normalizeSymbol(symbol)
+  if (!clean) return null
+  const isin = equityIsins.get(clean)
+  if (isin) return `BSE_EQ|${isin}`
+
+  const results = await searchInstrument(token, clean, 'EQ')
+  const bse = results.find(r => r.segment === 'BSE_EQ' && normalizeSymbol(r.trading_symbol) === clean)
+    || results.find(r => r.segment === 'BSE_EQ')
+  return bse?.instrument_key || null
 }
 
 /** Resolve many symbols at once; returns a Map of symbol -> instrument key. */

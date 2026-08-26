@@ -4,7 +4,11 @@
  * Market breadth and scanner flags stay on our derived tables.
  */
 import { readJsonBody, requireUserUpstoxToken, sendJson, setCors } from './_lib/brokerStore.js'
-import { resolveEquityKey, resolveIndexKey } from './_lib/upstoxInstruments.js'
+import { resolveBseEquityKey, resolveEquityKey, resolveIndexKey } from './_lib/upstoxInstruments.js'
+
+// Below this, a series is too short to draw any of the chart's studies, so it
+// is worth checking whether the security has a longer history on BSE.
+const THIN_SERIES_BARS = 30
 
 function istYmd(date = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
@@ -115,7 +119,15 @@ export async function handleUpstoxCandlesRequest(req, res) {
     const fromDate = String(body.from_date || (unit === 'minutes' ? shiftIstYmd(-28) : shiftIstYmd(-365 * 9))).slice(0, 10)
 
     if (unit === 'days') {
-      const rows = await upstoxJson(token, historicalUrl(key, 'days', interval, toDate, fromDate))
+      let rows = await upstoxJson(token, historicalUrl(key, 'days', interval, toDate, fromDate))
+      if (rows.length < THIN_SERIES_BARS && segment !== 'index') {
+        const bseKey = await resolveBseEquityKey(token, symbol).catch(() => null)
+        if (bseKey) {
+          const bseRows = await upstoxJson(token, historicalUrl(bseKey, 'days', interval, toDate, fromDate))
+            .catch(() => [])
+          if (bseRows.length > rows.length) rows = bseRows
+        }
+      }
       sendJson(res, 200, toPayload(symbol, rows, 'day'))
       return
     }
