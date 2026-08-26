@@ -89,6 +89,10 @@ export function readUpstoxOAuthCallback() {
   try {
     const q = new URLSearchParams(window.location.search)
     const path = (window.location.pathname || '').replace(/\/$/, '')
+    // Fyers returns its own ?code=200 status next to auth_code, so without this
+    // guard we claim the Fyers callback as ours, fail the state check, and strip
+    // code and state from the URL before the Fyers handler ever reads them.
+    if (path.endsWith('/fyers/callback') || q.has('auth_code')) return null
     const code = q.get('code')
     const state = q.get('state')
     const error = q.get('error')

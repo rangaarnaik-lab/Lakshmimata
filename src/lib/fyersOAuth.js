@@ -88,6 +88,10 @@ export function readFyersOAuthCallback() {
   try {
     const q = new URLSearchParams(window.location.search)
     const path = (window.location.pathname || '').replace(/\/$/, '')
+    // Mirror of the guard in upstoxOAuth: an Upstox callback carries a bare
+    // ?code= that we would otherwise treat as a Fyers auth_code, raising a
+    // spurious "Fyers login could not be verified" during an Upstox connect.
+    if (path.endsWith('/upstox/callback')) return null
     const code = q.get('auth_code') || q.get('code')
     const state = q.get('state')
     const error = q.get('error') || (q.get('s') === 'error' ? (q.get('message') || 'error') : null)
