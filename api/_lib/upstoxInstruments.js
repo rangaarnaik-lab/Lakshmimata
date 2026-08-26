@@ -43,6 +43,40 @@ function normalizeIndexName(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
+/**
+ * Words that must appear in the official index name. "Nifty" is dropped because
+ * every candidate carries it, and purely numeric labels return nothing: "50"
+ * would match "Nifty Midcap 50" as readily as "Nifty 50", so those have to
+ * resolve exactly.
+ */
+function significantIndexWords(label) {
+  const words = normalizeIndexName(label).split(' ').filter(w => w && w !== 'nifty')
+  return words.some(w => /[a-z]/.test(w)) ? words : []
+}
+
+/**
+ * NSE publishes several of these under a longer official name — "Defence" is
+ * "Nifty India Defence", "Healthcare" is "Nifty Healthcare Index" — so an exact
+ * match alone never finds them. Require every significant word to be present
+ * and prefer the shortest such name, which keeps "Metal" off "Nifty Metal Junior".
+ */
+function indexNameMatches(candidateWords, name) {
+  if (!candidateWords.length) return false
+  const parts = normalizeIndexName(name).split(' ')
+  return candidateWords.every(w => parts.includes(w))
+}
+
+function fuzzyMasterIndexKey(label) {
+  const words = significantIndexWords(label)
+  if (!words.length) return null
+  let best = null
+  for (const [name, key] of indexKeys) {
+    if (!indexNameMatches(words, name)) continue
+    if (!best || name.length < best.name.length) best = { name, key }
+  }
+  return best?.key || null
+}
+
 async function loadMaster() {
   const response = await fetch(NSE_MASTER_URL)
   if (!response.ok) throw new Error(`instrument master ${response.status}`)
@@ -166,6 +200,7 @@ export async function resolveEquityKeys(token, symbols) {
 export async function resolveIndexKey(token, name) {
   const raw = String(name || '').trim()
   if (!raw) return null
+  const cacheKey = `IDX:${normalizeIndexName(raw)}`
   const candidates = [raw, ...(INDEX_ALIASES[normalizeIndexName(raw)] || [])]
   if (!/^nifty\b/i.test(raw) && !/^india vix$/i.test(raw) && !/^bank nifty$/i.test(raw)) {
     candidates.push(`Nifty ${raw}`)
@@ -177,6 +212,7 @@ export async function resolveIndexKey(token, name) {
     const hit = lookup(candidate)
     if (hit) return hit
   }
+  if (recentlyUnresolved(cacheKey)) return null
 
   await ensureMaster()
   for (const candidate of candidates) {
@@ -184,18 +220,29 @@ export async function resolveIndexKey(token, name) {
     if (hit) return hit
   }
 
+  const fuzzy = fuzzyMasterIndexKey(raw)
+  if (fuzzy) {
+    indexKeys.set(normalizeIndexName(raw), fuzzy)
+    return fuzzy
+  }
+
+  const words = significantIndexWords(raw)
   for (const candidate of candidates) {
     const results = await searchInstrument(token, candidate, 'INDEX')
+    const indexes = results.filter(r => r.segment === 'NSE_INDEX')
     const wanted = normalizeIndexName(candidate)
-    const match = results.find(r => r.segment === 'NSE_INDEX'
-      && (normalizeIndexName(r.trading_symbol) === wanted || normalizeIndexName(r.name) === wanted))
-      || results.find(r => r.segment === 'NSE_INDEX')
+    const match = indexes.find(r => normalizeIndexName(r.trading_symbol) === wanted
+      || normalizeIndexName(r.name) === wanted)
+      || indexes.find(r => indexNameMatches(words, r.trading_symbol) || indexNameMatches(words, r.name))
     if (match?.instrument_key) {
       indexKeys.set(normalizeIndexName(raw), match.instrument_key)
       indexKeys.set(normalizeIndexName(candidate), match.instrument_key)
       return match.instrument_key
     }
   }
+  // Without this, an index the master does not carry re-runs a search on every
+  // 45-second poll for all 24 ticker names.
+  unresolved.set(cacheKey, Date.now())
   return null
 }
 

@@ -27,6 +27,22 @@ function lookupQuote(data, label, instrumentKey) {
     || null
 }
 
+/**
+ * Upstox keys the response by its own trading symbol ("NSE_EQ:NHPC",
+ * "NSE_INDEX:Nifty Bank"), which never matches the display names we send for
+ * indices ("IT", "Bank Nifty"). Every value carries back the instrument_token
+ * that was requested, so match on that instead of guessing the response key.
+ */
+function quotesByInstrumentToken(data) {
+  const byToken = new Map()
+  for (const value of Object.values(data || {})) {
+    if (!value || typeof value !== 'object') continue
+    const key = String(value.instrument_token || '').trim()
+    if (key && !byToken.has(key)) byToken.set(key, value)
+  }
+  return byToken
+}
+
 async function fetchBatch(token, symbols, keyBySymbol) {
   const pairs = symbols
     .map(symbol => [symbol, keyBySymbol.get(symbol)])
@@ -45,8 +61,9 @@ async function fetchBatch(token, symbols, keyBySymbol) {
     throw error
   }
   const data = json?.data || {}
+  const byToken = quotesByInstrumentToken(data)
   return Object.fromEntries(pairs
-    .map(([symbol, key]) => [symbol, lookupQuote(data, symbol, key)])
+    .map(([label, key]) => [label, byToken.get(key) || lookupQuote(data, label, key)])
     .filter(([, quote]) => quote))
 }
 

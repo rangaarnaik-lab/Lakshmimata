@@ -54,7 +54,8 @@ export function indexFyersSymbol(name) {
   if (hit) return hit[1]
   const compact = key.replace(/[^a-z0-9]/g, '').toUpperCase()
   if (!compact) return ''
-  return `NSE:${compact}-INDEX`
+  // Fyers names sectorals "NSE:NIFTYIT-INDEX", so a bare "IT" needs the prefix.
+  return `NSE:${compact.startsWith('NIFTY') ? compact : `NIFTY${compact}`}-INDEX`
 }
 
 export function toUpstoxShapedQuote(v) {
