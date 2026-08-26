@@ -77,10 +77,10 @@ export function toUpstoxShapedQuote(v) {
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-// Fyers caps data calls at roughly 10/second. The candle loop below fires
-// several ranges back to back, so space them out rather than discovering the
-// cap as a failed chart.
-const FYERS_MIN_CALL_GAP_MS = 120
+// Fyers data APIs sit around 10 calls/sec per access token. A 9-year daily
+// chart used to fire ~10 history ranges plus the 45s quote poll, so some
+// users tripped the cap while others did not. Stay well under that.
+const FYERS_MIN_CALL_GAP_MS = 220
 let fyersLastCallAt = 0
 
 async function fyersThrottle() {
@@ -91,7 +91,9 @@ async function fyersThrottle() {
 
 function isFyersRateLimit(response, json) {
   if (response.status === 429) return true
-  return /request limit|rate limit|too many/i.test(String(json?.message || json?.emsg || ''))
+  const code = Number(json?.code)
+  if (code === 429 || code === -429) return true
+  return /request limit|rate limit|too many|quota/i.test(String(json?.message || json?.emsg || ''))
 }
 
 async function fyersJson(appId, token, url, attempt = 0) {
@@ -111,8 +113,8 @@ async function fyersJson(appId, token, url, attempt = 0) {
     throw error
   }
   if (isFyersRateLimit(response, json)) {
-    if (attempt < 2) {
-      await sleep(700 * (attempt + 1))
+    if (attempt < 3) {
+      await sleep(1200 * (attempt + 1))
       return fyersJson(appId, token, url, attempt + 1)
     }
     const error = new Error('Fyers hit its request limit. Wait a few seconds and open the chart again.')
@@ -149,7 +151,15 @@ export async function fetchFyersQuoteMap(appId, token, { symbols = [], indices =
   for (let i = 0; i < jobs.length; i += QUOTE_BATCH) {
     const chunk = jobs.slice(i, i + QUOTE_BATCH)
     const url = `${FYERS_API}/data/quotes?symbols=${chunk.map(j => encodeURIComponent(j.fyers)).join(',')}`
-    const json = await fyersJson(appId, token, url)
+    let json
+    try {
+      json = await fyersJson(appId, token, url)
+    } catch (error) {
+      // A rate-limited poll must not blank the page for every Fyers user.
+      // Skip this chunk; the next interval fills it in.
+      if (error.code === 'fyers_rate_limited') continue
+      throw error
+    }
     const rows = Array.isArray(json?.d) ? json.d : []
     const byN = new Map(rows.map(row => [String(row?.n || ''), row]))
     for (const job of chunk) {
@@ -216,9 +226,16 @@ export async function fetchFyersCandles(appId, token, { symbol, segment, unit, f
   const fyersSymbol = segment === 'index' ? indexFyersSymbol(symbol) : equityFyersSymbol(symbol)
   if (!fyersSymbol) return []
   const resolution = unit === 'minutes' ? '1' : 'D'
-  const maxSpan = unit === 'minutes' ? 90 : 360
+  // Daily history is one year per Fyers request. Nine years was ~10 calls
+  // and collided with the live quote poll for some users.
+  const maxSpan = unit === 'minutes' ? 90 : 365
+  let from = fromDate
+  if (unit === 'days') {
+    const minFrom = shiftYmd(toDate, -(365 * 5))
+    if (from < minFrom) from = minFrom
+  }
   const rows = []
-  let cursor = fromDate
+  let cursor = from
   while (cursor <= toDate) {
     const chunkTo = shiftYmd(cursor, maxSpan) < toDate ? shiftYmd(cursor, maxSpan) : toDate
     try {
@@ -226,6 +243,7 @@ export async function fetchFyersCandles(appId, token, { symbol, segment, unit, f
       rows.push(...part)
     } catch (error) {
       if (unit === 'minutes' && (error.httpStatus === 400 || error.httpStatus === 404)) break
+      if (error.code === 'fyers_rate_limited' && rows.length >= 30) break
       throw error
     }
     if (chunkTo >= toDate) break
@@ -238,9 +256,11 @@ export async function fetchFyersCandles(appId, token, { symbol, segment, unit, f
     for (const alt of [`NSE:${clean}-BE`, `BSE:${clean}-EQ`]) {
       if (alt === fyersSymbol) continue
       try {
-        const extra = await historyRange(appId, token, alt, 'D', fromDate, toDate)
-        if (extra.length > rows.length) rows = extra
-      } catch (_) {}
+        const extra = await historyRange(appId, token, alt, 'D', from, toDate)
+        if (extra.length > rows.length) rows.splice(0, rows.length, ...extra)
+      } catch (error) {
+        if (error.code === 'fyers_rate_limited') break
+      }
       if (rows.length >= 30) break
     }
   }

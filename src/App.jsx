@@ -19388,12 +19388,13 @@ export default function App(){
     liveAskedRef.current=new Set()
     liveTickRef.current=tick
     tick(true)
-    const id=setInterval(()=>tick(),45000)
+    const pollMs=session?.liveBroker==='fyers'?70000:45000
+    const id=setInterval(()=>tick(), pollMs + Math.floor(Math.random()*8000))
     const onVis=()=>{ if(document.visibilityState==='visible') tick(true) }
     document.addEventListener('visibilitychange', onVis)
     return()=>{ cancelled=true; clearInterval(id); document.removeEventListener('visibilitychange', onVis)
       if(liveTickRef.current===tick) liveTickRef.current=null }
-  },[session?.brokerConnected,historyDate,demoMode,lastRefresh])
+  },[session?.brokerConnected,session?.liveBroker,historyDate,demoMode,lastRefresh])
 
   const indexDataRef=useRef(indexData)
   indexDataRef.current=indexData

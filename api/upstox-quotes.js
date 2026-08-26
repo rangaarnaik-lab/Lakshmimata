@@ -115,8 +115,16 @@ export async function handleUpstoxQuotesRequest(req, res) {
         sendJson(res, 503, { error: 'Fyers is connected but FYERS_APP_ID is missing on the server.' })
         return
       }
-      const quotes = await fetchFyersQuoteMap(appId, token, { symbols, indices })
-      sendJson(res, 200, { quotes, broker: 'fyers' })
+      try {
+        const quotes = await fetchFyersQuoteMap(appId, token, { symbols, indices })
+        sendJson(res, 200, { quotes, broker: 'fyers' })
+      } catch (error) {
+        if (error.code === 'fyers_rate_limited') {
+          sendJson(res, 200, { quotes: {}, broker: 'fyers', degraded: true })
+          return
+        }
+        throw error
+      }
       return
     }
 
