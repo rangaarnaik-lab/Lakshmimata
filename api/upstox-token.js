@@ -9,6 +9,7 @@ import {
   saveBrokerToken,
   sendJson,
   setCors,
+  upstoxTokenExpiry,
 } from './_lib/brokerStore.js'
 import { encryptToken } from './_lib/tokenCrypto.js'
 
@@ -77,7 +78,7 @@ export async function handleUpstoxTokenRequest(req, res) {
     await saveBrokerToken(context.db, context.user.id, {
       accessToken: encryptToken(accessToken),
       brokerUserId: tokenJson.user_id || tokenJson.data?.user_id || null,
-      expiresAt: tokenJson.expires_at || null,
+      expiresAt: upstoxTokenExpiry(accessToken, tokenJson.expires_at),
     })
   } catch (error) {
     sendJson(res, 500, { error: `Upstox connected but the encrypted token could not be saved: ${error.message}` })

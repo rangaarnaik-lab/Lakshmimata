@@ -78,13 +78,44 @@ export async function getBrokerRow(db, userId) {
   return { access_token: legacy.upstox_token, expires_at: null, updated_at: legacy.updated_at }
 }
 
+/** Next 3:30 AM IST — when a plain Upstox access token stops working. */
+export function nextUpstoxTokenExpiry() {
+  const nowUtcMs = Date.now()
+  const istOffsetMs = 5.5 * 3600 * 1000
+  const ist = new Date(nowUtcMs + istOffsetMs)
+  const cutoff = new Date(ist)
+  cutoff.setUTCHours(3, 30, 0, 0)
+  if (cutoff <= ist) cutoff.setUTCDate(cutoff.getUTCDate() + 1)
+  return new Date(cutoff.getTime() - istOffsetMs).toISOString()
+}
+
+/**
+ * Upstox access tokens are JWTs, so prefer their own `exp` claim — extended
+ * tokens last far longer than the nightly 3:30 AM cutoff.
+ */
+export function upstoxTokenExpiry(rawToken, provided = null) {
+  if (provided) return provided
+  try {
+    const part = String(rawToken || '').split('.')[1]
+    if (part) {
+      const normalized = part.replace(/-/g, '+').replace(/_/g, '/')
+      const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+      const claims = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'))
+      const exp = Number(claims?.exp)
+      if (Number.isFinite(exp) && exp > 0) return new Date(exp * 1000).toISOString()
+    }
+  } catch (_) {}
+  return nextUpstoxTokenExpiry()
+}
+
 export async function saveBrokerToken(db, userId, { accessToken, brokerUserId = null, expiresAt = null }) {
   const row = {
     user_id: userId,
     broker: 'upstox',
     access_token: accessToken,
     upstox_user_id: brokerUserId,
-    expires_at: expiresAt,
+    // Never null: some deployments have a NOT NULL constraint on this column.
+    expires_at: expiresAt || nextUpstoxTokenExpiry(),
     updated_at: new Date().toISOString(),
   }
   const { error } = await db.from('user_broker_tokens').upsert(row, { onConflict: 'user_id,broker' })
