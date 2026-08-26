@@ -16358,9 +16358,12 @@ function BrokerConnectedBadge({active}){
       padding:'4px 9px',borderRadius:999,
       background:(active?C.green:C.yellow)+'1c',
       border:`1px solid ${(active?C.green:C.yellow)}55`,
-      fontSize:10.5,fontWeight:800,color:active?C.green:C.yellow}}>
-      <span style={{width:6,height:6,borderRadius:999,background:active?C.green:C.yellow}}/>
-      {active?'Connected · supplying live prices':'Connected · standby'}
+      fontSize:11.5,fontWeight:900,color:active?C.green:C.yellow}}>
+      <span aria-hidden="true">{active?'✓':'•'}</span>
+      Connected
+      <span style={{fontWeight:700,opacity:0.8,fontSize:10.5}}>
+        {active?'· supplying live prices':'· on standby'}
+      </span>
     </div>
   )
 }
