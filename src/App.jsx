@@ -201,11 +201,15 @@ const rsLabel  = r => r>=90?'Elite':r>=80?'Strong':r>=60?'Avg+':r>=40?'Avg':'Wea
 const trendIcon  = t => t==='improving'?'↑↑':t==='declining'?'↓↓':'→'
 const trendColor = t => t==='improving'?C.green:t==='declining'?C.red:C.muted
 const fmtP   = v => `₹${v>=1000?v.toFixed(0):v.toFixed(2)}`
-const hasUserLiveQuote = s => !!s?.liveFromUser
-const hasUserLiveIndex = idx => !!idx?.liveFromUser
 // Price cells live outside App, so the connection flag is mirrored here to tell
 // "not connected" apart from "connected, quote not fetched yet".
 let LIVE_FEED_CONNECTED = false
+// Both conditions are required. The overlay carries liveFromUser until the
+// disconnect effect strips it, which happens a commit later than the render
+// that already saw brokerConnected go false — long enough to paint a stale
+// tick as a public quote.
+const hasUserLiveQuote = s => LIVE_FEED_CONNECTED && !!s?.liveFromUser
+const hasUserLiveIndex = idx => LIVE_FEED_CONNECTED && !!idx?.liveFromUser
 const priceFallbackLabel = () => LIVE_FEED_CONNECTED ? '—' : '— Connect broker'
 const priceFallbackHint = () => LIVE_FEED_CONNECTED
   ? 'Waiting for a quote from your broker account'
@@ -14380,7 +14384,7 @@ function TickerBanner({stocks, indices, onSelect, onSelectIndex, onHide}){
           const label = shortIndexTickerName(name)
           const chg = idx.chgD ?? idx.chg_d ?? 0
           const px = idx.lastPrice ?? idx.last_price
-          const hasLive = !!idx.liveFromUser
+          const hasLive = hasUserLiveIndex(idx)
           const tip = [
             name,
             hasLive && px!=null?`Level ${Number(px).toLocaleString('en-IN',{maximumFractionDigits:2})}`:null,
@@ -23124,14 +23128,17 @@ export default function App(){
               const benches = PORTFOLIO_BENCH_INDICES.map(bench=>{
                 const idx = findIndexRow(indexData, bench.names)
                 const rsVs = portfolioWeightedAvg(portfolioHoldings, stocks, bench.rsField)
+                // 1D is a live quote, so it needs the user's own broker. The
+                // weekly/monthly lookbacks are delayed derived values.
+                const benchChgD = hasUserLiveIndex(idx) ? (idx?.chgD ?? null) : null
                 return {
                   ...bench,
                   idx,
                   rsVs,
-                  chgD: idx?.chgD ?? null,
+                  chgD: benchChgD,
                   chgW: idx?.chgW ?? null,
                   chgM: idx?.chgM ?? null,
-                  aD: (portChgD!=null && idx?.chgD!=null) ? portChgD-idx.chgD : null,
+                  aD: (portChgD!=null && benchChgD!=null) ? portChgD-benchChgD : null,
                   aW: (portChgW!=null && idx?.chgW!=null) ? portChgW-idx.chgW : null,
                   aM: (portChgM!=null && idx?.chgM!=null) ? portChgM-idx.chgM : null,
                 }
