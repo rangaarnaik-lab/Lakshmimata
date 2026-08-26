@@ -75,7 +75,27 @@ export function toUpstoxShapedQuote(v) {
   }
 }
 
-async function fyersJson(appId, token, url) {
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+// Fyers caps data calls at roughly 10/second. The candle loop below fires
+// several ranges back to back, so space them out rather than discovering the
+// cap as a failed chart.
+const FYERS_MIN_CALL_GAP_MS = 120
+let fyersLastCallAt = 0
+
+async function fyersThrottle() {
+  const wait = fyersLastCallAt + FYERS_MIN_CALL_GAP_MS - Date.now()
+  if (wait > 0) await sleep(wait)
+  fyersLastCallAt = Date.now()
+}
+
+function isFyersRateLimit(response, json) {
+  if (response.status === 429) return true
+  return /request limit|rate limit|too many/i.test(String(json?.message || json?.emsg || ''))
+}
+
+async function fyersJson(appId, token, url, attempt = 0) {
+  await fyersThrottle()
   const response = await fetch(url, {
     headers: {
       Authorization: fyersAuthHeader(appId, token),
@@ -90,8 +110,24 @@ async function fyersJson(appId, token, url) {
     error.code = 'fyers_token_expired'
     throw error
   }
+  if (isFyersRateLimit(response, json)) {
+    if (attempt < 2) {
+      await sleep(700 * (attempt + 1))
+      return fyersJson(appId, token, url, attempt + 1)
+    }
+    const error = new Error('Fyers hit its request limit. Wait a few seconds and open the chart again.')
+    error.status = 429
+    error.code = 'fyers_rate_limited'
+    error.httpStatus = response.status
+    throw error
+  }
+  // "no_data" is a successful empty range, not a failure — Fyers returns it
+  // with HTTP 200 for symbols that have no candles in the window, which used
+  // to surface as the nonsensical "Fyers request failed (200)".
+  if (json?.s === 'no_data') return { ...json, candles: [], d: [] }
   if (!response.ok || (json.s && json.s !== 'ok')) {
-    const error = new Error(String(json.message || json.emsg || json.error || `Fyers request failed (${response.status})`))
+    const error = new Error(String(json.message || json.emsg || json.error
+      || `Fyers returned no usable data (${json.s || response.status})`))
     error.status = response.status >= 400 ? response.status : 502
     error.code = 'fyers_request_failed'
     error.httpStatus = response.status
@@ -196,11 +232,17 @@ export async function fetchFyersCandles(appId, token, { symbol, segment, unit, f
     cursor = shiftYmd(chunkTo, 1)
   }
   if (segment !== 'index' && unit === 'days' && rows.length < 30) {
-    const bse = `BSE:${String(symbol).trim().toUpperCase()}-EQ`
-    try {
-      const extra = await historyRange(appId, token, bse, 'D', fromDate, toDate)
-      if (extra.length > rows.length) return extra
-    } catch (_) {}
+    // Fyers suffixes the series, so a trade-to-trade scrip is -BE and never
+    // answers on -EQ; BSE covers names that barely trade on NSE.
+    const clean = String(symbol).trim().toUpperCase()
+    for (const alt of [`NSE:${clean}-BE`, `BSE:${clean}-EQ`]) {
+      if (alt === fyersSymbol) continue
+      try {
+        const extra = await historyRange(appId, token, alt, 'D', fromDate, toDate)
+        if (extra.length > rows.length) rows = extra
+      } catch (_) {}
+      if (rows.length >= 30) break
+    }
   }
   return rows
 }
