@@ -2167,6 +2167,20 @@ function alertNotificationTitle(alert){
 }
 
 /**
+ * Signal alerts carry the fired signal, RS and sector only. Price and % change
+ * are deliberately absent: they would be our own Upstox feed redistributed to
+ * every user. Live numbers come from the user's own broker on the stock page.
+ */
+function signalAlertBody(alert){
+  const rs=alert?.rs_tv??alert?.rs
+  return [
+    String(alert?.fire_type||'Alert'),
+    rs!=null?`RS: ${rs}`:'',
+    alert?.sector||'',
+  ].filter(Boolean).join(' | ')
+}
+
+/**
  * Symbols an open chart is polling tick-by-tick. The app-wide alert check
  * skips them: mixing a live LTP with the scan's slightly older close on the
  * same alert can fake a crossing back and forth across the level.
@@ -3281,7 +3295,8 @@ function StockDetail({s}){
           ['R1 Resistance',s.resistanceR1?fmtP(s.resistanceR1):'—',s.isResistanceBreakout?C.red:C.muted],
           ['52W High',`${s.pctFromHigh.toFixed(1)}%`,s.pctFromHigh>=-5?C.green:C.yellow],
           ['Sector',s.sector,C.muted],
-          ['Day Chg',`${s.chg>=0?'+':''}${s.chg.toFixed(2)}%`,s.chg>=0?C.green:C.red],
+          [hasUserLiveQuote(s)?'Day Chg':'Day Chg (prev close)',
+            `${s.chg>=0?'+':''}${s.chg.toFixed(2)}%`,s.chg>=0?C.green:C.red],
         ].map(([k,v,c])=>(
           <div key={k} style={{background:C.bg,borderRadius:8,padding:'9px 11px'}}>
             <div style={{fontSize:9,color:C.muted,marginBottom:2,textTransform:'uppercase',letterSpacing:'0.06em'}}>{k}</div>
@@ -4326,17 +4341,22 @@ function MgmtFlagsCard({symbol, compact}){
   )
 }
 
+const ASK_AI_ANALYST_Q = 'Have any brokerages given a Buy, Hold, or Sell call recently? Include target prices and dates.'
+const ASK_AI_RESEARCH_Q = 'Give me a full research note: latest quarter, growth, margins, balance sheet, valuation vs peers, technicals, bull case, bear case and what to watch.'
 const ASK_AI_SUGGESTIONS = [
-  'What is the latest material news about this company?',
-  'Explain this stock\'s CANSLIM score letter by letter.',
-  'Is this a PEAD setup, and what does that mean here?',
-  'Is management trustworthy or not?',
-  'Any red flags in recent filings or concalls?',
+  {label:'Full research note', q:ASK_AI_RESEARCH_Q},
+  {label:'Latest news', q:'What is the latest material news about this company?'},
+  {label:'Analyst calls', q:ASK_AI_ANALYST_Q},
+  {label:'Valuation vs peers', q:'How does this stock\'s valuation compare with its industry peers, and is the premium or discount justified by growth and returns?'},
+  {label:'Bull vs bear case', q:'Give me the strongest bull case and the strongest bear case, with the numbers behind each.'},
+  {label:'CANSLIM breakdown', q:'Explain this stock\'s CANSLIM score letter by letter.'},
+  {label:'PEAD setup', q:'Is this a PEAD setup, and what does that mean here?'},
+  {label:'Management quality', q:'Is management trustworthy or not?'},
 ]
 const ASK_AI_CHART_SUGGESTIONS = [
-  'Explain this chart in simple language.',
-  'Is this a healthy setup or a trap?',
-  'What do the indicators on this chart say?',
+  {label:'Explain this chart', q:'Explain this chart in simple language.'},
+  {label:'Setup or trap?', q:'Is this a healthy setup or a trap?'},
+  {label:'Read the indicators', q:'What do the indicators on this chart say?'},
 ]
 
 function askModeLabel(mode){
@@ -4358,6 +4378,155 @@ function AskAiSebiDisclaimer(){
       recommendation, and not a research report under the SEBI (Research Analysts) Regulations, 2014.
       Lakshmimata is not a SEBI-registered Investment Adviser or Research Analyst.
       Do your own research and consult a SEBI-registered adviser before any investment decision.
+    </div>
+  )
+}
+
+function analystCallTone(item){
+  const t=String(item||'')
+  if(/\b(sell|reduce|underperform|underweight)\b/i.test(t)) return {label:'Sell',color:C.red}
+  if(/\b(hold|neutral|equal.?weight|market.?perform)\b/i.test(t)) return {label:'Hold',color:C.yellow}
+  if(/\b(buy|accumulate|overweight|outperform|add)\b/i.test(t)) return {label:'Buy',color:C.green}
+  return null
+}
+
+function renderAiInline(text){
+  const parts=String(text||'').split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
+  return parts.map((part,i)=>{
+    if(part.startsWith('**')&&part.endsWith('**')){
+      return <strong key={i} style={{color:C.text,fontWeight:850}}>{part.slice(2,-2)}</strong>
+    }
+    if(part.startsWith('`')&&part.endsWith('`')){
+      return <code key={i} style={{padding:'1px 4px',borderRadius:4,background:C.accent+'16',
+        color:C.accent,fontSize:'0.92em'}}>{part.slice(1,-1)}</code>
+    }
+    return <React.Fragment key={i}>{part}</React.Fragment>
+  })
+}
+
+// Research-note sections read far faster when bull/bear/risk carry their own
+// colour, so the eye can jump straight to the part it cares about.
+const AI_SECTIONS=[
+  {re:/^snapshot|^summary|^overview/i,                  color:C.accent, icon:'◈'},
+  {re:/^(latest|last) quarter|^q[1-4]|^result/i,        color:C.accent, icon:'▤'},
+  {re:/^growth|^margin|^revenue/i,                      color:C.accent, icon:'▲'},
+  {re:/^balance sheet|^cash|^debt/i,                    color:C.accent, icon:'▣'},
+  {re:/^valuation|^peer/i,                              color:C.yellow, icon:'⚖'},
+  {re:/^technical|^chart read|^canslim|^pead|^stage/i,  color:C.accent, icon:'◧'},
+  {re:/^recent news|^news/i,                            color:C.accent, icon:'✦'},
+  {re:/^analyst|^brokerage|^target/i,                   color:C.accent, icon:'◆'},
+  {re:/^bull case|^positives|^strengths/i,              color:C.green,  icon:'▲'},
+  {re:/^bear case|^risk|^concerns|^negatives|^red flag/i,color:C.red,   icon:'▼'},
+  {re:/^what to watch|^trigger|^catalyst|^monitor/i,    color:C.yellow, icon:'◉'},
+  {re:/^bottom line|^verdict|^conclusion/i,             color:C.accent, icon:'●'},
+]
+
+function aiSectionTone(title){
+  const t=String(title||'').trim()
+  for(const s of AI_SECTIONS){ if(s.re.test(t)) return s }
+  return {color:C.accent, icon:'◆'}
+}
+
+function RichAiAnswer({text}){
+  const raw=String(text||'').trim()
+  if(!raw) return null
+  const scoreMatch=raw.match(/(?:CANSLIM(?:\s+score)?|score)\s*[:=]?\s*(\d)\s*\/\s*7/i)
+  const score=scoreMatch?Math.max(0,Math.min(7,Number(scoreMatch[1]))):null
+  const firedMatch=raw.match(/letters?\s+(?:that\s+)?(?:fired|passed?)\s*[:=]\s*([CANSLIM,\s]+)/i)
+  const fired=firedMatch
+    ? new Set(firedMatch[1].toUpperCase().split(/[\s,]+/).filter(x=>x.length===1&&'CANSLIM'.includes(x)))
+    : null
+  const lines=raw.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)
+  const blocks=[]
+  let bullets=[]
+  let tone={color:C.accent,icon:'◆'}
+  const flushBullets=()=>{
+    if(bullets.length){blocks.push({type:'bullets',items:bullets,tone});bullets=[]}
+  }
+  for(const line of lines){
+    const clean=line.replace(/^#{1,4}\s*/,'').replace(/\*\*([^*]+)\*\*/g,'$1')
+    const bullet=line.match(/^[-•]\s+(.+)/)
+    const numbered=line.match(/^\d+[.)]\s+(.+)/)
+    if(bullet||numbered){bullets.push((bullet||numbered)[1]);continue}
+    flushBullets()
+    const title=clean.replace(/:$/,'')
+    const heading=/^#{1,4}\s+/.test(line)
+      || (/^[A-Z][A-Za-z /&()-]{2,40}:$/.test(clean)&&clean.split(' ').length<=6)
+      || /^(recent news|bottom line|verdict|canslim|pead|key risks?|what to watch|why it matters|evidence|summary|analyst calls?|brokerage calls?|target prices?|snapshot|latest quarter|growth and margins|balance sheet and cash|valuation|technical read|bull case|bear case|triggers?|catalysts?)$/i.test(title)
+    const kv=clean.match(/^([A-Z](?:[A-Za-z /&()-]{1,24})):\s+(.+)$/)
+    if(heading){
+      tone=aiSectionTone(title)
+      blocks.push({type:'heading',text:title,tone})
+    }
+    else if(kv) blocks.push({type:'kv',label:kv[1],text:kv[2],tone})
+    else blocks.push({type:'paragraph',text:line,tone})
+  }
+  flushBullets()
+  return (
+    <div>
+      {score!=null&&(
+        <div style={{marginBottom:10,padding:'9px 10px',borderRadius:9,
+          background:C.accent+'10',border:`1px solid ${C.accent}40`}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+            <span style={{fontSize:10,fontWeight:900,color:C.accent,letterSpacing:'.05em'}}>CANSLIM SCORE</span>
+            <span style={{fontSize:13,fontWeight:900,color:score>=5?C.green:C.yellow}}>{score}/7</span>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:4}}>
+            {'CANSLIM'.split('').map((letter,i)=>(
+              <div key={letter} style={{height:22,borderRadius:5,display:'flex',alignItems:'center',
+                justifyContent:'center',fontSize:10,fontWeight:900,
+                color:(fired?fired.has(letter):i<score)?'#07110a':C.muted,
+                background:(fired?fired.has(letter):i<score)?C.green:C.border}}
+                title={fired?(fired.has(letter)?`${letter} passed`:`${letter} did not pass`):'Score meter; ask for letter-by-letter detail'}>
+                {fired?letter:(i+1)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div style={{display:'flex',flexDirection:'column',gap:7}}>
+        {blocks.map((block,i)=>{
+          const sec=block.tone||{color:C.accent,icon:'◆'}
+          if(block.type==='heading') return (
+            <div key={i} style={{marginTop:i?7:0,padding:'6px 9px',borderRadius:7,
+              display:'flex',alignItems:'center',gap:7,
+              background:sec.color+'14',borderLeft:`3px solid ${sec.color}`,
+              color:sec.color,fontSize:11,fontWeight:900,textTransform:'uppercase',letterSpacing:'.04em'}}>
+              <span style={{fontSize:11}}>{sec.icon}</span>{block.text}
+            </div>
+          )
+          if(block.type==='bullets') return (
+            <div key={i} style={{display:'flex',flexDirection:'column',gap:5}}>
+              {block.items.map((item,j)=>{
+                const call=analystCallTone(item)
+                return (
+                <div key={j} style={{display:'grid',gridTemplateColumns:call?'52px 1fr':'14px 1fr',gap:6,
+                  padding:'6px 8px',borderRadius:7,background:C.card,
+                  border:`1px solid ${C.border}`,borderLeft:`2px solid ${sec.color}66`,
+                  fontSize:12,lineHeight:1.48,color:C.text}}>
+                  {call
+                    ? <span style={{height:20,borderRadius:999,display:'flex',alignItems:'center',justifyContent:'center',
+                        fontSize:9,fontWeight:900,textTransform:'uppercase',
+                        color:call.color,background:call.color+'22',border:`1px solid ${call.color}55`}}>{call.label}</span>
+                    : <span style={{color:sec.color,fontWeight:900}}>{sec.icon}</span>}
+                  <span>{renderAiInline(item)}</span>
+                </div>
+              )})}
+            </div>
+          )
+          if(block.type==='kv') return (
+            <div key={i} style={{display:'grid',gridTemplateColumns:'minmax(80px,110px) 1fr',gap:8,
+              padding:'6px 8px',borderRadius:7,background:C.card,border:`1px solid ${C.border}`,
+              fontSize:11.5,lineHeight:1.45}}>
+              <strong style={{color:sec.color}}>{block.label}</strong>
+              <span style={{color:C.text}}>{renderAiInline(block.text)}</span>
+            </div>
+          )
+          return <div key={i} style={{fontSize:12.5,lineHeight:1.58,color:C.text}}>
+            {renderAiInline(block.text)}
+          </div>
+        })}
+      </div>
     </div>
   )
 }
@@ -4465,9 +4634,11 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
     if(active){
       setChat(prev=>prev.some(row=>row.id&&row.id===active.id)?prev:[...prev,active])
     }
-    setActive({status:'pending', question: question || 'Read this chart and explain what it shows.', ask_mode: askMode})
+    const wantsAnalyst=/\b(analyst|brokerage|buy call|sell call|target price|price target)\b/i.test(question)
+    const mode=wantsAnalyst?'web':askMode
+    setActive({status:'pending', question: question || 'Read this chart and explain what it shows.', ask_mode: mode})
     const res = await submitStockAiAsk(
-      symbol, question, askMode, chartImg, nextConversationId, prior?.id||null)
+      symbol, question, mode, chartImg, nextConversationId, prior?.id||null)
     if(res.error){
       setErr(res.error)
       setBusy(false)
@@ -4606,13 +4777,14 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
 
               <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
                 {(chartImg ? ASK_AI_CHART_SUGGESTIONS : ASK_AI_SUGGESTIONS).map(s=>(
-                  <button key={s} type="button" disabled={busy} onClick={()=>submit(s)}
+                  <button key={s.label} type="button" disabled={busy} onClick={()=>submit(s.q)}
+                    title={s.q}
                     style={{
                       fontSize:10,fontWeight:700,cursor:busy?'default':'pointer',
                       padding:'5px 9px',borderRadius:999,
                       border:`1px solid ${C.border}`,background:C.bg,color:C.muted,
                     }}>
-                    {s}
+                    {s.label}
                   </button>
                 ))}
               </div>
@@ -4660,19 +4832,25 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
                           }}>{message.verdict}</span>
                         </div>
                       )}
-                      <div style={{fontSize:12.5,lineHeight:1.55,color:C.text,whiteSpace:'pre-wrap'}}>{message.answer}</div>
+                      <RichAiAnswer text={message.answer}/>
                       <div style={{marginTop:10}}>
                         <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6}}>Flags</div>
                         <FlagsList flags={message.flags}/>
                       </div>
                       {Array.isArray(message.sources)&&message.sources.some(s=>s?.url)&&(
                         <div style={{marginTop:10}}>
-                          <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:4}}>Sources</div>
+                          <div style={{fontSize:9,fontWeight:800,color:C.muted,textTransform:'uppercase',marginBottom:6}}>Sources & recent-news links</div>
                           {message.sources.filter(s=>s?.url).slice(0,6).map((s,i)=>(
                             <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
-                              style={{display:'block',fontSize:11,color:C.accent,textDecoration:'none',
-                                overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                              {s.title||s.url}
+                              style={{display:'grid',gridTemplateColumns:'22px minmax(0,1fr)',alignItems:'center',
+                                gap:7,marginBottom:5,padding:'6px 8px',borderRadius:7,
+                                border:`1px solid ${C.border}`,background:C.card,
+                                fontSize:11,color:C.accent,textDecoration:'none'}}>
+                              <span style={{width:22,height:22,borderRadius:6,display:'flex',alignItems:'center',
+                                justifyContent:'center',background:C.accent+'18',fontWeight:900}}>{i+1}</span>
+                              <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                                {s.title||s.url}
+                              </span>
                             </a>
                           ))}
                         </div>
@@ -17734,7 +17912,7 @@ export default function App(){
         kind:'signal',
         sym:r.sym,
         title:alertNotificationTitle(r),
-        body:`${r.fire_type} | RS: ${r.rs_tv||r.rs} | ${r.chg_pct>=0?'+':''}${Number(r.chg_pct||0).toFixed(2)}% | ${r.sector||''}`,
+        body:signalAlertBody(r),
         fireType:r.fire_type,
       })))
     } finally {
@@ -17804,7 +17982,7 @@ export default function App(){
             const goSqueeze=/Squeeze|VCP/i.test(ft)
             const goPatterns=/Stage\s*2|Guppy|Bull\s*Snort|HY\/HT|Breakout|Cup|52W/i.test(ft)
             const title=alertNotificationTitle(alert)
-            const body=`${alert.fire_type} | RS: ${alert.rs_tv||alert.rs} | ${alert.chg_pct>=0?'+':''}${Number(alert.chg_pct||0).toFixed(2)}% | ${alert.sector||''}`
+            const body=signalAlertBody(alert)
             const historyEntry={
               id:`signal-${alert.sym}-${alert.fire_type}-${alert.fired_at||''}`,
               at: alert.fired_at || new Date().toISOString(),
@@ -17909,9 +18087,12 @@ export default function App(){
       // Cap the burst so a big scanner move doesn't bury the desktop.
       fresh.slice(0,6).forEach(sym=>{
         const row=stocks.find(s=>String(s.sym||'').toUpperCase()===sym)
-        const chg=Number(row?.chg||0)
         const title=`🔎 ${sym} — ${scanner.name||'Scanner'}`
-        const body=`Entered "${scanner.name||'scanner'}" | RS: ${row?.rsTv??row?.rs??'—'} | ${chg>=0?'+':''}${chg.toFixed(2)}% | ${row?.sector||''}`
+        const body=[
+          `Entered "${scanner.name||'scanner'}"`,
+          `RS: ${row?.rsTv??row?.rs??'—'}`,
+          row?.sector||'',
+        ].filter(Boolean).join(' | ')
         pushNotifHistory({
           id:`scanner-${id}-${sym}-${Date.now()}`,
           at:new Date().toISOString(),
@@ -22503,7 +22684,9 @@ export default function App(){
                                 <div style={{textAlign:'right'}}>
                                   <div style={{fontWeight:900,fontSize:22,color:rsColor(s.rs)}}>{s.rs}</div>
                                   <div style={{fontWeight:700,fontSize:14,color:C.green}}>+{bo.chg}%</div>
-                                  <div style={{fontSize:11,color:C.muted}}>{fmtP(s.last)}</div>
+                                  <div style={{fontSize:11,color:C.muted}}
+                                    title={hasUserLiveQuote(s)?'Live from your broker':'Previous close — connect a broker for live price'}>
+                                    {fmtP(s.last)}{hasUserLiveQuote(s)?'':' (prev)'}</div>
                                 </div>
                               </div>
                               <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
@@ -23401,8 +23584,10 @@ export default function App(){
                             {stage&&<StageBadge stage={stage}/>}
                           </div>
                           {[
-                            ['Price',   fmtP(s.last),                      C.text],
-                            ['Chg%',    `${s.chg>=0?'+':''}${s.chg?.toFixed(2)}%`, s.chg>=0?C.green:C.red],
+                            [hasUserLiveQuote(s)?'Price':'Price (prev close)',
+                              fmtP(s.last),                                  C.text],
+                            [hasUserLiveQuote(s)?'Chg%':'Chg% (prev close)',
+                              `${s.chg>=0?'+':''}${s.chg?.toFixed(2)}%`, s.chg>=0?C.green:C.red],
                             ['MID RS',  s.rsMidcap??'—',                   s.rsMidcap?rsColor(s.rsMidcap):C.muted],
                             ['SML RS',  s.rsSmallcap??'—',                 s.rsSmallcap?rsColor(s.rsSmallcap):C.muted],
                             ['Sector',  s.rsSector??'—',                   s.rsSector?rsColor(s.rsSector):C.muted],

@@ -183,14 +183,14 @@ alter table public.stocks add column if not exists is_s2_new_entry boolean defau
 select 'All new columns added! ✅' as result;
 
 -- Squeeze fire alerts table
+-- Derived analytics only. No last_price / chg_pct: this table is world-readable
+-- to signed-in clients, so quotes here would redistribute our own broker feed.
 create table if not exists public.squeeze_alerts (
   id         bigint generated always as identity primary key,
   sym        text not null,
   fire_type  text,           -- 'BB Squeeze', 'VCP', or 'BB Squeeze, VCP'
   rs_tv      int,
   rs         int,
-  last_price numeric,
-  chg_pct    numeric,
   sector     text,
   fired_at   timestamptz not null default now(),
   unique (sym, fired_at)
