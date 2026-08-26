@@ -21,13 +21,16 @@ let cachedConfig = null
 
 export async function fetchFyersOAuthConfig() {
   if (cachedConfig) return cachedConfig
-  const res = await fetch('/api/fyers-oauth-config')
+  // no-store: a tab opened before the server had its Fyers env vars would
+  // otherwise keep replaying a cached "not configured" response.
+  const res = await fetch('/api/fyers-oauth-config', { cache: 'no-store' })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || `Fyers config failed (${res.status})`)
   cachedConfig = {
     configured: !!data.configured && !!data.client_id,
     clientId: String(data.client_id || '').trim(),
     redirectUri: String(data.redirect_uri || '').trim(),
+    reason: String(data.reason || '').trim(),
   }
   return cachedConfig
 }
@@ -61,11 +64,25 @@ function storageRemove(key) {
 
 export async function startFyersOAuth() {
   const cfg = await fetchFyersOAuthConfig()
-  if (!cfg.configured || !cfg.clientId) {
-    throw new Error('Fyers OAuth is not configured. Set FYERS_APP_ID and FYERS_SECRET_ID on the server.')
+  if (!cfg.configured || !cfg.clientId || !cfg.redirectUri) {
+    throw new Error(cfg.reason
+      ? `Fyers login is not configured: ${cfg.reason}`
+      : 'Fyers login is not configured. Set FYERS_APP_ID, FYERS_SECRET_ID and FYERS_REDIRECT_URI on the server.')
   }
-  const redirectUri = cfg.redirectUri || fyersRedirectUri()
-  if (!redirectUri) throw new Error('Missing Fyers redirect URL. Set FYERS_REDIRECT_URI on the server.')
+  const redirectUri = cfg.redirectUri
+  // Fyers only honours the redirect registered on the app. Opening the site on
+  // any other host (custom domain, www, a preview build) sends an unregistered
+  // redirect and Fyers answers with a bare "invalid appId" page, so name the
+  // problem here instead.
+  if (typeof window !== 'undefined') {
+    let expectedOrigin = ''
+    try { expectedOrigin = new URL(redirectUri).origin } catch (_) {}
+    if (expectedOrigin && window.location.origin !== expectedOrigin) {
+      throw new Error(
+        `Open ${expectedOrigin} to connect Fyers. This tab is on ${window.location.origin}, `
+        + 'which is not the redirect URL registered with Fyers.')
+    }
+  }
   const state = (typeof crypto !== 'undefined' && crypto.randomUUID)
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -80,6 +97,9 @@ export async function startFyersOAuth() {
   u.searchParams.set('redirect_uri', redirectUri)
   u.searchParams.set('response_type', 'code')
   u.searchParams.set('state', state)
+  // Recorded so "Last connect attempt" shows the exact appId and redirect that
+  // Fyers rejected; its own error page names neither.
+  noteFyersStep(`sending to Fyers · appId ${cfg.clientId} · redirect ${redirectUri}`)
   window.location.assign(u.toString())
 }
 
