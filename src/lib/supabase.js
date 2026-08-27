@@ -40,12 +40,34 @@ function localDeviceId() {
 }
 
 /**
- * Who owns the account right now. Not every GoTrue version puts session_id
- * in the access token, and treating its absence as "someone replaced me"
- * signed people out on a device nothing had replaced — hence the fallback.
+ * Who owns the account right now — the browser id first, the token's
+ * session_id only when storage is unavailable.
+ *
+ * Keying on session_id was the wrong identity for "one device": it is absent
+ * from some access tokens and it changes whenever the same person signs in
+ * again in this same browser, so a token refresh could make a browser look
+ * like a different device and sign it out with "signed in on another device"
+ * when nothing had replaced it. Coming back from a broker OAuth redirect is
+ * the easiest way to hit that, because the round trip through the broker's
+ * login page is long enough for a refresh. The uuid below changes only when
+ * the user clears storage, which is exactly what one device should mean.
  */
 function deviceIdentity(session) {
-  return authSessionId(session) || localDeviceId()
+  return localDeviceId() || authSessionId(session)
+}
+
+// Rows written before the identity above changed hold a token session_id, so
+// every already-signed-in browser would read as "replaced" exactly once. This
+// flag lets a browser rewrite the row in its own terms one time instead of
+// signing its user out for a mismatch it did not cause.
+const DEVICE_CLAIM_KEY = 'lakshmimata-device-claimed'
+
+function markClaimed() {
+  try { localStorage.setItem(DEVICE_CLAIM_KEY, '1') } catch (_) {}
+}
+
+function hasEverClaimed() {
+  try { return localStorage.getItem(DEVICE_CLAIM_KEY) === '1' } catch { return false }
 }
 
 /**
@@ -67,6 +89,7 @@ export async function claimCurrentDevice(session) {
     console.warn('claimCurrentDevice:', error.message)
     return { ok: false, unavailable: true }
   }
+  markClaimed()
   return { ok: true, userId, sessionId }
 }
 
@@ -100,6 +123,12 @@ export async function verifyCurrentDevice(session) {
     // signed in even if that write fails; the next check retries.
     const claimed = await claimCurrentDevice(current)
     return { valid: true, unavailable: !claimed.ok }
+  }
+  if (data.session_id !== sessionId && !hasEverClaimed()) {
+    // First check this browser has ever run: the row was written under the old
+    // identity, so adopt it rather than reading it as another device.
+    const claimed = await claimCurrentDevice(current)
+    if (claimed.ok) return { valid: true, userId, sessionId, adopted: true }
   }
   return { valid: data.session_id === sessionId, userId, sessionId }
 }

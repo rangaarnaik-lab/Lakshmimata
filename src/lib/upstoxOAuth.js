@@ -5,6 +5,7 @@ export const UPSTOX_OAUTH_STATE_KEY = 'lakshmimata-upstox-oauth-state'
 const UPSTOX_OAUTH_REDIRECT_KEY = 'lakshmimata-upstox-oauth-redirect'
 const UPSTOX_PENDING_KEY = 'lakshmimata-upstox-pending-oauth'
 const UPSTOX_STEP_KEY = 'lakshmimata-upstox-last-step'
+const UPSTOX_STARTED_KEY = 'lakshmimata-upstox-oauth-started'
 
 /** Last thing the connect flow did, so a silent branch is still visible on Account. */
 export function noteUpstoxStep(step) {
@@ -63,7 +64,22 @@ export async function startUpstoxOAuth() {
   u.searchParams.set('client_id', cfg.clientId)
   u.searchParams.set('redirect_uri', redirectUri)
   u.searchParams.set('state', state)
+  storageSet(UPSTOX_STARTED_KEY, String(Date.now()))
+  noteUpstoxStep(`sending to Upstox · redirect ${redirectUri}`)
   window.location.assign(u.toString())
+}
+
+/**
+ * True once per attempt if this browser started a connect recently. Lets the
+ * app tell the difference between "never tried" and "tried, and Upstox never
+ * sent an authorization code back here" — which otherwise looks like the
+ * button doing nothing at all.
+ */
+export function takeUpstoxStartedFlag() {
+  const raw = storageGet(UPSTOX_STARTED_KEY)
+  if (!raw) return false
+  storageRemove(UPSTOX_STARTED_KEY)
+  return Date.now() - Number(raw || 0) < 15 * 60 * 1000
 }
 
 function storageGet(key) {
@@ -93,10 +109,15 @@ export function readUpstoxOAuthCallback() {
     // guard we claim the Fyers callback as ours, fail the state check, and strip
     // code and state from the URL before the Fyers handler ever reads them.
     if (path.endsWith('/fyers/callback') || q.has('auth_code')) return null
+    // Supabase's own sign-in redirect lands on "/" with a PKCE ?code= (no state)
+    // or ?error=&error_code=. Claiming either one showed a bogus "Upstox login
+    // could not be verified" and stripped the code before Supabase read it.
+    if (q.has('error_code')) return null
     const code = q.get('code')
     const state = q.get('state')
     const error = q.get('error')
     const onPath = path.endsWith('/upstox/callback')
+    if (code && !state && !onPath) return null
     if (code || error) {
       const payload = {
         code,
@@ -134,6 +155,7 @@ export function clearUpstoxOAuthParams() {
   storageRemove(UPSTOX_PENDING_KEY)
   storageRemove(UPSTOX_OAUTH_STATE_KEY)
   storageRemove(UPSTOX_OAUTH_REDIRECT_KEY)
+  storageRemove(UPSTOX_STARTED_KEY)
   try {
     const url = new URL(window.location.href)
     url.searchParams.delete('code')

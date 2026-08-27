@@ -57,11 +57,13 @@ import {
   fetchUpstoxOAuthConfig, startUpstoxOAuth, readUpstoxOAuthCallback, clearUpstoxOAuthParams,
   exchangeUpstoxAuthCode, readUpstoxConnection, savePastedUpstoxToken, disconnectUpstox,
   expectedUpstoxOAuthState, hasPendingUpstoxOAuth, noteUpstoxStep, readUpstoxStep,
+  takeUpstoxStartedFlag,
 } from './lib/upstoxOAuth'
 import {
   fetchFyersOAuthConfig, startFyersOAuth, readFyersOAuthCallback, clearFyersOAuthParams,
   exchangeFyersAuthCode, readFyersConnection, disconnectFyers,
   expectedFyersOAuthState, hasPendingFyersOAuth, noteFyersStep, readFyersStep,
+  takeFyersStartedFlag,
 } from './lib/fyersOAuth'
 import { readLiveBrokerConnection } from './lib/brokerLive'
 import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, requestFundamentalsHeal, requestResultsHeal, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, compressChartImage, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, countTodayContentDislikes, DISLIKE_DAILY_LIMIT, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchUserWatchlists, saveUserWatchlists, fetchMissedAiFilings } from './lib/db'
@@ -7602,6 +7604,48 @@ const INTRADAY_TOOLBAR = [
   ['1H','60','1 hour'],
 ]
 const TV_TOOLBAR_BLUE = '#2962ff'
+const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const IST_SHIFT_MS = (5 * 60 + 30) * 60 * 1000
+
+/**
+ * Wall-clock IST pieces of a bar stamp. Intraday bars come back from the
+ * broker as ISO strings that already carry +05:30, so the common case is a
+ * slice; anything else goes through Date and gets shifted.
+ */
+function istBarParts(raw) {
+  const s = String(raw || '').trim()
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(s)
+  if (m && /\+05:?30$/.test(s)) {
+    return { y:+m[1], mo:+m[2], d:+m[3], h:+m[4], mi:+m[5] }
+  }
+  const dt = new Date(s)
+  if (!Number.isNaN(dt.getTime())) {
+    const ist = new Date(dt.getTime() + IST_SHIFT_MS)
+    return {
+      y: ist.getUTCFullYear(), mo: ist.getUTCMonth() + 1, d: ist.getUTCDate(),
+      h: ist.getUTCHours(), mi: ist.getUTCMinutes(),
+    }
+  }
+  return m ? { y:+m[1], mo:+m[2], d:+m[3], h:+m[4], mi:+m[5] } : null
+}
+
+const istHhMm = p => `${String(p.h).padStart(2,'0')}:${String(p.mi).padStart(2,'0')}`
+
+/** Time inside a session, the date on the first label of a new session. */
+function intradayAxisLabel(raw, prevRaw) {
+  const p = istBarParts(raw)
+  if (!p) return ''
+  const sameDay = prevRaw != null
+    && String(prevRaw).slice(0, 10) === String(raw).slice(0, 10)
+  return sameDay ? istHhMm(p) : `${p.d} ${MONTH_ABBR[p.mo - 1]}`
+}
+
+/** "27 Aug 09:15" — for the hover strip and the crosshair tag. */
+function intradayStampLabel(raw, { withDate = true } = {}) {
+  const p = istBarParts(raw)
+  if (!p) return String(raw || '')
+  return withDate ? `${p.d} ${MONTH_ABBR[p.mo - 1]} ${istHhMm(p)}` : istHhMm(p)
+}
 
 /**
  * "Lakshmi Mata" is the main price overlay, matching the Pine study: EMA
@@ -7748,6 +7792,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   const [loading, setLoading] = useState(true)
   const [range, setRange] = useState('1Y')
   const [barInterval, setBarInterval] = useState('D') // 1/3/5/15 + D/W/M/Y
+  // Needed this early to gate the daily-only studies below; the feature-flag
+  // aware `isIntraday` further down means the same thing once flags load.
+  const isIntradayInterval = INTRADAY_INTERVALS.has(barInterval)
   const [intervalFavorites, setIntervalFavorites] = useState(() => loadChartIntervalFavorites(userId))
   const [showIntervalFavMenu, setShowIntervalFavMenu] = useState(false)
   const intervalFavMenuRef = useRef(null)
@@ -7814,10 +7861,15 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   const showRSI = indicatorVisible('rsi')
   const showMACD = indicatorVisible('macd')
   const showForecast = indicatorVisible('forecast')
-  const showBuySell = indicatorVisible('buysell')
+  // Buy/Sell and Super Cycle both score the stock against Nifty, and the only
+  // index history we hold is daily closes. On a 3m chart those closes get
+  // mapped one-per-bar, so the "RS" behind the markers compares minutes of the
+  // stock against years of the index — the tags and the pane were noise built
+  // on the wrong input. They come back on 1D and above.
+  const showBuySell = indicatorVisible('buysell') && !isIntradayInterval
   // Super Cycle measures RS against the index, so it has nothing to plot on an
   // index chart — keep the preference but don't reserve a pane for it there.
-  const showSuperCycle = indicatorVisible('supercycle') && !isIndex
+  const showSuperCycle = indicatorVisible('supercycle') && !isIndex && !isIntradayInterval
   const showCandleColors = indicatorVisible('barcolor')
   const showLakshmiVol = indicatorVisible('lakshmivol')
   const showCircuit = prefsN.indicators.circuit?.enabled === true
@@ -7827,7 +7879,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   const maP = prefsN.indicators.ma.params
   // Lakshmi_Mata.pine background is relative performance over RS Period,
   // not the 1–99 RS Rating used by the Super Cycle pane.
-  const showLakshmiRsBg = !isIndex && showMA && maP.showRsBackground !== false
+  const showLakshmiRsBg = !isIndex && !isIntradayInterval && showMA && maP.showRsBackground !== false
   const rsiP = prefsN.indicators.rsi.params
   const macdP = prefsN.indicators.macd.params
   const scP = prefsN.indicators.supercycle.params
@@ -8559,13 +8611,22 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     // Switching candle size resets zoom to the current range preset in that unit.
     // Prefer a useful default on coarse intervals (yearly 1M is only 1 bar).
     let nextRange = range
-    if (isIntraday && ['1Y','5Y','All','YTD','6M','3M'].includes(range)) nextRange = '5D'
+    if (isIntraday && ['1Y','5Y','All','YTD','6M','3M','1M','5D'].includes(range)) nextRange = '1D'
     else if (barInterval === 'Y' && ['1M','3M','6M','1Y'].includes(range)) nextRange = '5Y'
     else if (barInterval === 'M' && range === '1M') nextRange = '1Y'
     if (nextRange !== range) setRange(nextRange)
     const bars = nextRange==='YTD' ? null : rangeBars[nextRange]
-    if(bars!=null) setZoomBars(Math.max(1, bars))
-    else setZoomBars(rangeBars['1Y'] ?? RANGE_BARS_BY_INTERVAL.D['1Y'])
+    let next = bars!=null
+      ? Math.max(1, bars)
+      : (rangeBars['1Y'] ?? RANGE_BARS_BY_INTERVAL.D['1Y'])
+    if (isIntraday) {
+      // A 1m chart opened on 5D meant ~1900 candles across the plot, i.e. half
+      // a pixel each. Open at a width that is actually readable — zooming out
+      // from here is still allowed.
+      const readable = Math.max(40, Math.floor((chartBox.w - 70) / 5))
+      next = Math.min(next, readable)
+    }
+    setZoomBars(next)
     setPanOffset(0)
   },[barInterval]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -9064,7 +9125,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   const scTop = paneTop.sc ?? 0
   const rsiTop = paneTop.rsi ?? 0
   const macdTop = paneTop.macd ?? 0
-  const axisY  = panesBottom + 16
+  // Pane minimum heights can add up to more than `usable`, and when they did
+  // the stack pushed the date row past the bottom of the SVG, which is why a
+  // chart carrying the RS table showed no dates at all. Clamp it into view.
+  const axisY  = Math.min(panesBottom + 16, H - 5)
 
   // ── Draggable pane separators: grab the line between two panes and drag ──
   const paneBoundaryY = paneHeadTop
@@ -9237,8 +9301,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     ...vMA20, ...vMA50, ...vMA150, ...vMA200, ...vEma9line, ...guppyVals,
     ...(showBB ? [...vBBUpper, ...vBBLower] : []),
   ].filter(v=>v!=null)
-  let maxP = Math.max(...visibleHighs, ...maVals, sr.r1||0, sr.r2||0, circuitBand?.uc*1.02||0)
-  let minP = Math.min(...visibleLows, ...(maVals.length?maVals:[Infinity]), sr.s1||Infinity, sr.s2||Infinity, circuitBand?.lc||Infinity)
+  // The circuit band is a ±pct envelope off the daily close, so letting it
+  // drive the price scale on a 1m/5m chart flattened the candles into a line.
+  // The lines still draw; they just no longer stretch the axis there.
+  const circuitScales = !!circuitBand && !isIntraday
+  let maxP = Math.max(...visibleHighs, ...maVals, sr.r1||0, sr.r2||0, (circuitScales && circuitBand.uc*1.02)||0)
+  let minP = Math.min(...visibleLows, ...(maVals.length?maVals:[Infinity]), sr.s1||Infinity, sr.s2||Infinity, (circuitScales && circuitBand.lc)||Infinity)
   if(!isFinite(minP)) minP = Math.min(...visibleLows)
   const pad = (maxP - minP) * 0.06 || 1
   maxP += pad; minP -= pad
@@ -9265,7 +9333,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   const forecastDays = showForecast ? Math.max(5, Math.round(barsToShow * (fcP.projPct ?? 0.15))) : 0
   const totalCols = barsToShow + forecastDays
   const idxToX   = i => padL + (i + 0.5) / totalCols * chartW
-  const candleW  = Math.max(1.5, (chartW / totalCols) * 0.62)
+  const slotW    = chartW / totalCols
+  // A fixed 1.5px floor was wider than the slot itself once a 1m chart showed
+  // a few hundred bars, so neighbouring candles overlapped into a smear. Keep
+  // a gap between bars at every zoom level instead.
+  const candleW  = Math.min(Math.max(1, slotW * 0.62), Math.max(0.8, slotW - 0.4))
+  // Below ~3px per bar an outline is wider than the body it outlines, so hollow
+  // candles and per-bar tags turn into a smear. Draw solid bars instead.
+  const denseBars = slotW < 3
 
   // Least-squares linear regression over the last ~30 visible closes,
   // projected forward forecastDays bars. Deliberately simple/transparent
@@ -9296,7 +9371,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   const priceTicks = nicePriceTicks(minP, maxP, Math.max(4, Math.round(priceH / 48)))
   const maxVol = Math.max(...vVol.filter(v=>v!=null), 1)
   const volToY = v => volTop + volH - (v / maxVol) * volH
-  const volBarW = Math.max(1.5, candleW * 0.92)
+  const volBarW = Math.max(0.8, Math.min(candleW * 0.92, slotW - 0.4))
   const TV_VOL_UP = '#26a69a'
   const TV_VOL_DN = '#ef5350'
   const TV_VOL_MA = showLakshmiVol ? '#A0A0A0' : '#5d8cff' // pine uses near-black (#141414); lightened for dark chart
@@ -9602,20 +9677,40 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   }
   handleTouchEnd = () => { dragRef.current = null }
 
-  // X-axis labels, TradingView style: show the month abbreviation at
-  // month boundaries, just the day number otherwise.
-  const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-  const labelStep = Math.max(1, Math.floor(barsToShow / 6))
+  // X-axis labels, TradingView style: on daily+ the month abbreviation at
+  // month boundaries and the day number otherwise; on intraday the IST time,
+  // with the date shown once per session instead of the same day number
+  // repeated across every label.
+  const labelStep = Math.max(1, Math.floor(barsToShow / (isIntraday ? 8 : 6)))
   const xLabels = []
   let lastMonthShown = null
   for (let i = 0; i < barsToShow; i += labelStep) {
     const d = vDates[i]
     if (!d) continue
+    if (isIntraday) {
+      const prev = i >= labelStep ? vDates[i - labelStep] : null
+      xLabels.push({ i, text: intradayAxisLabel(d, prev) })
+      continue
+    }
     const m = parseInt(d.slice(5,7), 10)
     const day = parseInt(d.slice(8,10), 10)
     const isNewMonth = lastMonthShown !== m
     lastMonthShown = m
     xLabels.push({ i, text: isNewMonth ? MONTH_ABBR[m-1] : String(day) })
+  }
+
+  // Session boundaries on intraday, so a multi-day 5m chart reads as separate
+  // days instead of one continuous run of candles. Bars are index-based, so
+  // this is the only cue that the overnight gap is there.
+  const sessionBreaks = []
+  if (isIntraday) {
+    let prevDay = null
+    for (let i = 0; i < barsToShow; i++) {
+      const day = String(vDates[i] || '').slice(0, 10)
+      if (!day) continue
+      if (prevDay && day !== prevDay) sessionBreaks.push(i)
+      prevDay = day
+    }
   }
 
   const hiRaw = pinnedIdx ?? hoverIdx
@@ -9682,13 +9777,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     // Always listed so it can be switched back on; on an index it has nothing
     // to compare against, so it stays visible but blocked instead of vanishing.
     { id:'supercycle', group:'Oscillators', label:'Lakshmi Super Cycle', short:'Super Cycle',
-      desc: isIndex ? 'Needs a stock — it measures RS against the index' : 'RS-vs-index cycle oscillator — leadership warming or cooling',
-      blocked: isIndex, on:indicatorEnabled('supercycle'), visible:showSuperCycle, set:setShowSuperCycle },
+      desc: isIndex ? 'Needs a stock — it measures RS against the index'
+        : isIntradayInterval ? 'Daily and above — index history is end-of-day, so RS is not meaningful on minute bars'
+        : 'RS-vs-index cycle oscillator — leadership warming or cooling',
+      blocked: isIndex || isIntradayInterval, on:indicatorEnabled('supercycle'), visible:showSuperCycle, set:setShowSuperCycle },
     { id:'patterns', group:'Signals', label:'Patterns', short:'Patterns', desc:'Pattern markers aligned with scanner detections', on:indicatorEnabled('patterns'), visible:showPatterns, set:setShowPatterns },
     { id:'lakshmivol', group:'Signals', label:'Lakshmi Volume', short:'Volume', desc:'Unusual volume, climax and dry-up context for Our Chart', on:indicatorEnabled('lakshmivol'), visible:showLakshmiVol, set:setShowLakshmiVol },
     { id:'barcolor', group:'Signals', label:'Volume Candle Colors', short:'Bar Color', desc:'Colors candles by volume character', on:indicatorEnabled('barcolor'), visible:showCandleColors, set:setShowCandleColors },
     { id:'bullsnort', group:'Signals', label:'Bull Snort', short:'Bull Snort', desc:'Bullish volume climax — heavy up volume with a strong close', on:indicatorEnabled('bullsnort'), visible:showBullSnort, set:setShowBullSnort },
-    { id:'buysell', group:'Signals', label:'Lakshmi Buy/Sell', short:'Buy/Sell', desc:'Rule-based markers from Lakshmi Mata — prompts, not auto-orders', on:indicatorEnabled('buysell'), visible:showBuySell, set:setShowBuySell },
+    { id:'buysell', group:'Signals', label:'Lakshmi Buy/Sell', short:'Buy/Sell',
+      desc: isIntradayInterval
+        ? 'Daily and above — the RS gate behind these markers needs end-of-day index data'
+        : 'Rule-based markers from Lakshmi Mata — prompts, not auto-orders',
+      blocked: isIntradayInterval, on:indicatorEnabled('buysell'), visible:showBuySell, set:setShowBuySell },
     { id:'forecast', group:'Signals', label:'Forecast', short:'Forecast', desc:'Forward projection overlay (research aid only)', on:indicatorEnabled('forecast'), visible:showForecast, set:setShowForecast },
     { id:'circuit', group:'Overlays', label:'Circuit Band (UC / LC)', short:'UC/LC', desc:'Upper/lower circuit-style bands from detected lock percentages', on:prefsN.indicators.circuit?.enabled===true, visible:showCircuit, set:setShowCircuit },
   ]
@@ -10467,7 +10568,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
               <span onClick={()=>setPinnedIdx(null)}
                 style={{color:C.accent,fontWeight:700,cursor:'pointer',marginRight:6}}>📌 (tap to unpin)</span>
             )}
-            <b style={{color:C.text}}>{hover.date}</b>{'  '}
+            <b style={{color:C.text}}>{isIntraday ? intradayStampLabel(hover.date) : hover.date}</b>{'  '}
             <span style={{color:C.muted}}>O</span> <span style={{color:C.text}}>{hover.open?.toFixed(2)}</span>{'  '}
             <span style={{color:C.muted}}>H</span> <span style={{color:TV_VOL_UP}}>{hover.high?.toFixed(2)}</span>{'  '}
             <span style={{color:C.muted}}>L</span> <span style={{color:TV_VOL_DN}}>{hover.low?.toFixed(2)}</span>{'  '}
@@ -11479,7 +11580,13 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
             Colour grades the coil (high / mid / low compression), the fired
             dot marks the first bar back outside every Keltner. */}
         {showSqueeze && vSqOn.length > 0 && (() => {
-          const r = Math.min(5, Math.max(1, Number(sqP.sqDotSize) || 2.2))
+          // Fixed-radius dots merged into one solid band once bars got narrower
+          // than the dots, so the row scales with the slot and drops the "off"
+          // dots when dense — the compression tiers stay readable.
+          const r = Math.min(
+            Math.min(5, Math.max(1, Number(sqP.sqDotSize) || 2.2)),
+            Math.max(0.6, slotW * 0.45),
+          )
           const y = priceTop + priceH - r - 3
           const relColor = sqP.sqReleaseColor || SQUEEZE_PRO_COLORS.NONE
           const offColor = sqP.sqOffColor || C.muted
@@ -11488,7 +11595,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
             : lvl === SQUEEZE_PRO_LEVELS.MID ? (sqP.sqOnColor || SQUEEZE_PRO_COLORS.MID)
             : (sqP.sqLowColor || SQUEEZE_PRO_COLORS.LOW)
           )
-          const showOff = sqP.sqShowOff !== false
+          const showOff = sqP.sqShowOff !== false && !denseBars
           return (
             <g>
               {vSqOn.map((on,i)=>{
@@ -11556,8 +11663,16 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           ]
           return (
             <g style={{pointerEvents:'none'}}>
-              <line x1={padL} y1={priceToY(uc*1.02)} x2={padL+chartW} y2={priceToY(uc*1.02)}
-                stroke={C.muted} strokeWidth={0.8} strokeDasharray="7,4" opacity={0.35}/>
+              {(() => {
+                // Headroom guide above UC. Bounded like the levels below it, or
+                // it draws over the toolbar whenever UC sits off the pane.
+                const y = priceToY(uc*1.02)
+                if (y < priceTop - 1 || y > priceTop + priceH + 1) return null
+                return (
+                  <line x1={padL} y1={y} x2={padL+chartW} y2={y}
+                    stroke={C.muted} strokeWidth={0.8} strokeDasharray="7,4" opacity={0.35}/>
+                )
+              })()}
               {rows.map(r => {
                 const y = priceToY(r.price)
                 if (y < priceTop - 1 || y > priceTop + priceH + 1) return null
@@ -11654,10 +11769,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           const rawBodyH = Math.abs(yClose-yOpen)
           const isDoji = rawBodyH < 0.75
           const bodyH = Math.max(isDoji && chartStyle !== 'hollow' ? 0 : 1, rawBodyH)
-          const wickW = Math.max(1, Math.min(2.2, candleW * 0.18))
-          const hollow = chartStyle==='hollow'
+          const wickW = Math.max(0.6, Math.min(2.2, candleW * 0.22))
+          const hollow = denseBars ? false : (chartStyle==='hollow'
             ? !custom
-            : (!custom && up && !isDoji && chartStyle==='candle')
+            : (!custom && up && !isDoji && chartStyle==='candle'))
           return (
             <g key={i}
               onClick={(e)=>{
@@ -11687,11 +11802,11 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
                     fill="none" stroke={color} strokeWidth={1.25}/>
                 ) : (
                   <rect x={x-candleW/2} y={bodyTop} width={candleW} height={bodyH}
-                    fill={color} stroke={color} strokeWidth={0.4}/>
+                    fill={color} stroke={denseBars ? 'none' : color} strokeWidth={denseBars ? 0 : 0.4}/>
                 )}
               </>}
               {/* Pattern markers */}
-              {showPatterns && vInsideBars[i] && (
+              {showPatterns && !denseBars && vInsideBars[i] && (
                 <circle cx={x} cy={priceToY(hi)-6} r={2} fill={patP.insideColor || C.teal}/>
               )}
               {showBuySell && vBuy[i] && (
@@ -11722,7 +11837,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
                   <text x={x} y={axisY+1} fontSize={8} fontWeight={700}
                     fill={pinnedIdx===i?'#0a0a0f':C.text} textAnchor="middle"
                     style={{fontVariantNumeric:'tabular-nums'}}>
-                    {vDates[i]?.slice(5).replace('-','/')}
+                    {isIntraday
+                      ? intradayStampLabel(vDates[i], {withDate:false})
+                      : vDates[i]?.slice(5).replace('-','/')}
                   </text>
                 </>
               )}
@@ -11846,8 +11963,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         })()}
 
         {/* Lakshmi Volume icons on candles (IBV / PPV / Bull Snort only —
-            HT / HY / HQ / M text labels clutter the main price pane). */}
-        {showLakshmiVol && (
+            HT / HY / HQ / M text labels clutter the main price pane). Icons are
+            wider than the bars they mark once the view gets dense, so they are
+            dropped there rather than covering the price action. */}
+        {showLakshmiVol && !denseBars && (
           <g style={{pointerEvents:'none'}}>
             {vCloses.map((c,i)=>{
               const lo = vLows[i]
@@ -12233,8 +12352,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           </>
         )}
 
-        {/* X-axis date labels — TradingView style: month name at month
-            boundaries, day number otherwise */}
+        {/* Session separators — intraday only */}
+        {sessionBreaks.map(i=>(
+          <line key={`sb-${i}`} x1={idxToX(i)-((chartW/totalCols)/2)} y1={padT}
+            x2={idxToX(i)-((chartW/totalCols)/2)} y2={panesBottom}
+            stroke={C.border} strokeWidth={0.7} strokeDasharray="2,4" opacity={0.7}/>
+        ))}
+
+        {/* X-axis labels — month/day on daily+, IST time on intraday */}
         {xLabels.map(({i,text})=>(
           <text key={i} x={idxToX(i)} y={axisY} fontSize={8} fill={C.muted} textAnchor="middle">
             {text}
@@ -17158,7 +17283,20 @@ export class ErrorBoundary extends React.Component {
               </div>
             </details>
           )}
-          <button onClick={()=>window.location.reload()}
+          {/* A plain reload can be served the same cached index.html, which
+              keeps a browser on the build that just crashed. Ask for a fresh
+              document, and drop any caches the browser will let us clear. */}
+          <button onClick={async()=>{
+            try{
+              if(window.caches?.keys){
+                const keys=await window.caches.keys()
+                await Promise.all(keys.map(k=>window.caches.delete(k)))
+              }
+            }catch(_){}
+            const url=new URL(window.location.href)
+            url.searchParams.set('fresh',String(Date.now()))
+            window.location.replace(url.toString())
+          }}
             style={{marginTop:16,padding:'10px 20px',background:'#4f8ef7',color:'#0a0d12',
               border:'none',borderRadius:8,fontWeight:700,cursor:'pointer'}}>
             Reload
@@ -17297,6 +17435,46 @@ function computeResultRating(hist){
   }
 
   return tiers[Math.min(idx, maxTierIdx)]
+}
+
+/**
+ * Supabase bounces a failed sign-in back to the app with its own error params
+ * (?error=...&error_code=...). Only Supabase sends error_code, so keying on it
+ * keeps this away from the Upstox/Fyers callbacks, which have their own ?error=.
+ */
+const AUTH_REDIRECT_ERRORS={
+  bad_oauth_state:'That Google sign-in link had already been used or had expired. Please sign in again.',
+  bad_oauth_callback:'Google did not send back everything needed to finish the sign-in. Please try again.',
+  bad_code_verifier:'The sign-in has to finish in the same browser and tab that started it. Please sign in again here.',
+  flow_state_expired:'The sign-in took too long and expired. Please sign in again.',
+  flow_state_not_found:'That sign-in link is no longer valid. Please sign in again.',
+  otp_expired:'That email link has expired. Request a new one.',
+  access_denied:'Sign-in was cancelled.',
+  provider_email_needs_verification:'Verify your email address with Google, then sign in again.',
+  validation_failed:'Sign-in could not be validated. Please sign in again.',
+}
+
+function readAuthRedirectError(){
+  if(typeof window==='undefined') return null
+  try{
+    const search=new URLSearchParams(window.location.search)
+    const hash=new URLSearchParams(String(window.location.hash||'').replace(/^#/,''))
+    const pick=k=>search.get(k)||hash.get(k)||''
+    const code=pick('error_code')
+    if(!code) return null
+    const desc=pick('error_description').replace(/\+/g,' ').trim()
+    return {code, message:AUTH_REDIRECT_ERRORS[code]||desc||'Sign-in could not be completed. Please try again.'}
+  }catch{ return null }
+}
+
+function clearAuthRedirectError(){
+  if(typeof window==='undefined') return
+  try{
+    const url=new URL(window.location.href)
+    ;['error','error_code','error_description'].forEach(k=>url.searchParams.delete(k))
+    if(/error/.test(url.hash||'')) url.hash=''
+    window.history.replaceState({},'',(url.pathname+url.search+url.hash)||'/')
+  }catch(_){}
 }
 
 export default function App(){
@@ -17528,7 +17706,8 @@ export default function App(){
         // because revoking a refresh token does not expire the access token
         // this browser already holds.
         const device=await verifyCurrentDevice(s)
-        if(!device.valid && !hasPendingUpstoxOAuth() && !hasPendingFyersOAuth()){
+        const brokerReturn=hasPendingUpstoxOAuth()||hasPendingFyersOAuth()
+        if(!device.valid && !brokerReturn){
           await supabase.auth.signOut({scope:'local'})
           setAuthNotice('This account was signed in on another device. Sign in again to use it here.')
           setShowAuth(true)
@@ -17536,6 +17715,11 @@ export default function App(){
           setAuthLoading(false)
           return
         }
+        // Landing back from the broker's login page is this browser finishing
+        // its own connect, so take the device row back. Without this the check
+        // below found the same mismatch a moment later and signed the user out
+        // right after the connect succeeded.
+        if(!device.valid) await claimCurrentDevice(s)
         setSession(await sessionWithBrokerState(s))
         // Recovery links land with a session already established — keep
         // the update-password gate open if ?reset= is present.
@@ -17609,6 +17793,10 @@ export default function App(){
     }
     const check=async()=>{
       if(replaced) return
+      // A broker connect in flight means the browser is bouncing through the
+      // broker's domain and back; ending the session under it loses the token
+      // exchange, so let the connect finish and check on the next tick.
+      if(hasPendingUpstoxOAuth()||hasPendingFyersOAuth()) return
       const{valid}=await verifyCurrentDevice()
       if(!valid) await endSession()
     }
@@ -17636,11 +17824,39 @@ export default function App(){
     }
   },[session?.user?.id,demoMode])
 
+  // A failed Google/email sign-in used to land on a normal-looking dashboard
+  // URL with the reason hidden in the query string, so it looked like the
+  // button simply did nothing.
+  const authRedirectErrorOnce=useRef(false)
+  useEffect(()=>{
+    if(authLoading||authRedirectErrorOnce.current) return
+    const err=readAuthRedirectError()
+    if(!err) return
+    authRedirectErrorOnce.current=true
+    setAuthNotice(err.message)
+    if(!session?.user){ setShowAuth(true); setAuthMode('login') }
+    clearAuthRedirectError()
+  },[authLoading,session?.user?.id])
+
   const upstoxOauthOnce=useRef(false)
   useEffect(()=>{
     if(authLoading) return
     const cb=readUpstoxOAuthCallback()
-    if(!cb){ noteUpstoxStep('idle: no Upstox code in the URL or in storage'); return }
+    if(!cb){
+      // A connect that was started here but came back with no code at all is
+      // the silent failure users describe as "the button does nothing": the
+      // Upstox login finished in some other browser, so the code never
+      // reached this one. Say that instead of showing an unchanged card.
+      if(!upstoxOauthOnce.current && takeUpstoxStartedFlag()){
+        upstoxOauthOnce.current=true
+        noteUpstoxStep('came back from Upstox with no authorization code in the URL')
+        setAuthNotice('Upstox sent you back without an authorisation code, so nothing could be connected. This happens when the Upstox login opens in a different browser or app. Open Lakshmimata directly in Chrome or Safari and tap Connect Upstox there.')
+        setMainTab('settings')
+        return
+      }
+      noteUpstoxStep('idle: no Upstox code in the URL or in storage')
+      return
+    }
     if(cb.error){
       if(!upstoxOauthOnce.current){
         upstoxOauthOnce.current=true
@@ -17654,7 +17870,15 @@ export default function App(){
     if(!cb.code){ noteUpstoxStep('callback had no authorization code'); return }
     let expected=''
     try{ expected=expectedUpstoxOAuthState() }catch(_){}
-    if(!cb.state||!expected||cb.state!==expected){
+    // Only a stored state that disagrees is evidence of a bad callback. Upstox
+    // frequently finishes its login in a different browser than it started in
+    // (its own in-app browser on phones, or a "open in browser" tap), and there
+    // the state we saved does not exist — which failed this check and dropped
+    // the user straight back on Connect Upstox with no way through. Completing
+    // the exchange still needs this user's Lakshmimata JWT plus a single-use
+    // code issued to our client id, so a state-less callback is a far smaller
+    // risk than a connect that can never finish.
+    if(expected && cb.state && cb.state!==expected){
       upstoxOauthOnce.current=true
       noteUpstoxStep(`state mismatch (got "${cb.state||'none'}", expected "${expected||'none'}")`)
       setAuthNotice('Upstox login could not be verified. Click Connect Upstox and try again.')
@@ -17662,6 +17886,7 @@ export default function App(){
       clearUpstoxOAuthParams()
       return
     }
+    if(!expected) noteUpstoxStep('no saved state in this browser — finishing the connect anyway')
     if(!session?.user){
       noteUpstoxStep('waiting for Lakshmimata sign-in to finish the connect')
       setAuthNotice('Sign in to Lakshmimata to finish connecting Upstox.')
@@ -17683,6 +17908,8 @@ export default function App(){
         const saved=await readUpstoxConnection().catch(()=>({connected:false}))
         if(!saved.connected) throw new Error('Upstox signed you in but the connection did not save. The user_broker_tokens table may be missing.')
         noteUpstoxStep('connected')
+        // This browser is demonstrably the one in use, so own the device row.
+        await claimCurrentDevice(s)
         setSession(prev=>({ user:(prev&&prev.user)||session.user, brokerConnected:true, liveBroker:'upstox', upstoxConnected:true, fyersConnected:!!prev?.fyersConnected }))
         setShowAuth(false)
         setMainTab('settings')
@@ -17704,7 +17931,16 @@ export default function App(){
   useEffect(()=>{
     if(authLoading) return
     const cb=readFyersOAuthCallback()
-    if(!cb) return
+    if(!cb){
+      // Same silent case as the Upstox handler above.
+      if(!fyersOauthOnce.current && takeFyersStartedFlag()){
+        fyersOauthOnce.current=true
+        noteFyersStep('came back from Fyers with no auth_code in the URL')
+        setAuthNotice('Fyers sent you back without an authorisation code, so nothing could be connected. This happens when the Fyers login opens in a different browser or app. Open Lakshmimata directly in Chrome or Safari and tap Connect Fyers there.')
+        setMainTab('settings')
+      }
+      return
+    }
     if(cb.error){
       if(!fyersOauthOnce.current){
         fyersOauthOnce.current=true
@@ -17718,7 +17954,8 @@ export default function App(){
     if(!cb.code){ noteFyersStep('callback had no authorization code'); return }
     let expected=''
     try{ expected=expectedFyersOAuthState() }catch(_){}
-    if(!cb.state||!expected||cb.state!==expected){
+    // Same reasoning as the Upstox handler above.
+    if(expected && cb.state && cb.state!==expected){
       fyersOauthOnce.current=true
       noteFyersStep(`state mismatch (got "${cb.state||'none'}", expected "${expected||'none'}")`)
       setAuthNotice('Fyers login could not be verified. Click Connect Fyers and try again.')
@@ -17726,6 +17963,7 @@ export default function App(){
       clearFyersOAuthParams()
       return
     }
+    if(!expected) noteFyersStep('no saved state in this browser — finishing the connect anyway')
     if(!session?.user){
       noteFyersStep('waiting for Lakshmimata sign-in to finish the connect')
       setAuthNotice('Sign in to Lakshmimata to finish connecting Fyers.')
@@ -17745,6 +17983,7 @@ export default function App(){
         const saved=await readFyersConnection().catch(()=>({connected:false}))
         if(!saved.connected) throw new Error('Fyers signed you in but the connection did not save. Run the fyers SQL on user_broker_tokens if needed.')
         noteFyersStep('connected')
+        await claimCurrentDevice(s)
         setSession(prev=>({ user:(prev&&prev.user)||session.user, brokerConnected:true, liveBroker:'fyers', fyersConnected:true, upstoxConnected:!!prev?.upstoxConnected }))
         setShowAuth(false)
         setMainTab('settings')

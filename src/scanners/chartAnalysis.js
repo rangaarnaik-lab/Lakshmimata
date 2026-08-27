@@ -135,8 +135,12 @@ export {
 } from './lakshmiProprietary.js'
 
 
-/** Aggregate daily OHLCV into coarser bars using a period key (UTC). */
-function aggregateByKey(dates, opens, highs, lows, closes, volumes, keyFn) {
+/**
+ * Aggregate daily OHLCV into coarser bars using a period key (UTC).
+ * `stampFirst` labels each bar with its opening stamp instead of its closing
+ * one, which is what an intraday axis needs (a 15m bar is "09:15", not "09:29").
+ */
+function aggregateByKey(dates, opens, highs, lows, closes, volumes, keyFn, stampFirst = false) {
   const bars = []
   let cur = null
   for (let i = 0; i < dates.length; i++) {
@@ -150,7 +154,7 @@ function aggregateByKey(dates, opens, highs, lows, closes, volumes, keyFn) {
       if (h != null) cur.high = Math.max(cur.high ?? h, h)
       if (l != null) cur.low = Math.min(cur.low ?? l, l)
       cur.close = c
-      cur.date = dates[i]
+      if (!stampFirst) cur.date = dates[i]
       cur.volume += v
     }
   }
@@ -211,7 +215,7 @@ export function aggregateIntradayMinutes(dates, opens, highs, lows, closes, volu
     const bucket = Math.floor(totalMins / n) * n
     return `${y}-${m}-${day}|${bucket}`
   }
-  return aggregateByKey(dates, opens, highs, lows, closes, volumes, keyFn)
+  return aggregateByKey(dates, opens, highs, lows, closes, volumes, keyFn, true)
 }
 
 /** EMA series (exponential moving average) — null until enough data. */

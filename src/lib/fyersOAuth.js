@@ -5,6 +5,7 @@ export const FYERS_OAUTH_STATE_KEY = 'lakshmimata-fyers-oauth-state'
 const FYERS_OAUTH_REDIRECT_KEY = 'lakshmimata-fyers-oauth-redirect'
 const FYERS_PENDING_KEY = 'lakshmimata-fyers-pending-oauth'
 const FYERS_STEP_KEY = 'lakshmimata-fyers-last-step'
+const FYERS_STARTED_KEY = 'lakshmimata-fyers-oauth-started'
 
 export function noteFyersStep(step) {
   try { localStorage.setItem(FYERS_STEP_KEY, JSON.stringify({ step, at: Date.now() })) } catch (_) {}
@@ -116,7 +117,16 @@ export async function startFyersOAuth() {
   // Recorded so "Last connect attempt" shows the exact appId and redirect that
   // Fyers rejected; its own error page names neither.
   noteFyersStep(`sending to Fyers · appId ${cfg.clientId} · redirect ${redirectUri}`)
+  storageSet(FYERS_STARTED_KEY, String(Date.now()))
   window.location.assign(u.toString())
+}
+
+/** Mirror of takeUpstoxStartedFlag — see the note there. */
+export function takeFyersStartedFlag() {
+  const raw = storageGet(FYERS_STARTED_KEY)
+  if (!raw) return false
+  storageRemove(FYERS_STARTED_KEY)
+  return Date.now() - Number(raw || 0) < 15 * 60 * 1000
 }
 
 export function readFyersOAuthCallback() {
@@ -128,10 +138,14 @@ export function readFyersOAuthCallback() {
     // ?code= that we would otherwise treat as a Fyers auth_code, raising a
     // spurious "Fyers login could not be verified" during an Upstox connect.
     if (path.endsWith('/upstox/callback')) return null
+    // Same reason as in upstoxOAuth: a Supabase sign-in redirect carries a bare
+    // ?code= or ?error=&error_code= that is not a broker callback.
+    if (q.has('error_code')) return null
     const code = q.get('auth_code') || q.get('code')
     const state = q.get('state')
     const error = q.get('error') || (q.get('s') === 'error' ? (q.get('message') || 'error') : null)
     const onPath = path.endsWith('/fyers/callback')
+    if (code && !state && !onPath && !q.has('auth_code')) return null
     if (code || error) {
       const payload = { code, state, error, errorDescription: q.get('message') || q.get('error_description') }
       if (code && state) storageSet(FYERS_PENDING_KEY, JSON.stringify({ code, state, at: Date.now() }))
@@ -164,6 +178,7 @@ export function clearFyersOAuthParams() {
   storageRemove(FYERS_PENDING_KEY)
   storageRemove(FYERS_OAUTH_STATE_KEY)
   storageRemove(FYERS_OAUTH_REDIRECT_KEY)
+  storageRemove(FYERS_STARTED_KEY)
   try {
     const url = new URL(window.location.href)
     ;['auth_code', 'code', 'state', 'error', 'error_description', 'message', 's'].forEach(k => url.searchParams.delete(k))
