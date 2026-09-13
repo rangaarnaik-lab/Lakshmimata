@@ -4817,7 +4817,7 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
               {askMode==='chart'&&!chartImg&&(
                 <button type="button" disabled={busy} onClick={captureOurChart}
                   style={{
-                    width:'100%',marginBottom:10,padding:'10px 12px',borderRadius:10,
+                    position:'relative', zIndex:1, width:'100%',marginBottom:10,padding:'10px 12px',borderRadius:10,
                     border:`1px solid ${C.accent}66`,background:C.accent+'18',
                     color:C.accent,fontSize:12,fontWeight:900,cursor:busy?'default':'pointer',
                   }}>
@@ -6093,7 +6093,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
               onClick={()=>setMobileOverviewOpen(o=>!o)}
               title={mobileOverviewOpen?'Collapse company overview':'Expand company overview'}
               style={{flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',gap:8,
-                width:'100%',padding:'6px 12px',border:'none',
+                position:'relative', zIndex:1, width:'100%',padding:'6px 12px',border:'none',
                 borderTop:`1px solid ${C.divider}`,borderBottom:`1px solid ${C.divider}`,
                 background:C.card,color:C.muted,fontSize:11,fontWeight:700,
                 cursor:'pointer',fontFamily:'inherit'}}>
@@ -7160,7 +7160,7 @@ function SectionFeedback({symbol, contentType, sectionKey, sectionLabel, onIssue
               rows={3}
               placeholder="Optional: what looks wrong or outdated…"
               style={{
-                width:'100%',boxSizing:'border-box',resize:'vertical',
+                position:'relative', zIndex:1, width:'100%',boxSizing:'border-box',resize:'vertical',
                 background:C.bg||C.card,color:C.text,border:`1px solid ${C.border}`,
                 borderRadius:9,padding:'10px 12px',fontSize:13,lineHeight:1.45,
                 outline:'none',marginBottom:8,fontFamily:'inherit',
@@ -7792,6 +7792,30 @@ function detectPineCircuitPct(highs, lows, closes, lookback=30, dcrTolerance=1, 
     if(matched!=null) return matched
   }
   return 20
+}
+
+/* BharatEngine canvas underlay — paints the base chart series (grid,
+   watermark, candles/bars/line/area/baseline, volume columns) on a
+   <canvas> beneath the SVG overlay layer. The SVG keeps everything
+   interactive (hover targets, markers, drawings, crosshair) and all
+   overlay studies, so behaviour is unchanged while the base render gets
+   the crisp devicePixelRatio canvas look of the BharatEngine. */
+function BharatCanvas({ draw }){
+  const ref = useRef(null)
+  const drawRef = useRef(draw)
+  drawRef.current = draw
+  useEffect(() => {
+    const cv = ref.current
+    if (!cv) return
+    const paint = () => { try { drawRef.current(cv) } catch (e) { /* a canvas hiccup must never break the chart */ } }
+    paint()
+    let ro = null
+    try { ro = new ResizeObserver(paint); ro.observe(cv.parentElement || cv) } catch (e) {}
+    return () => { if (ro) { try { ro.disconnect() } catch (e) {} } }
+  })
+  return (
+    <canvas ref={ref} style={{ position:'absolute', left:0, top:0, width:'100%', height:'100%', pointerEvents:'none', zIndex:0 }}/>
+  )
 }
 
 function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, brokerConnected=false}){
@@ -10143,7 +10167,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
                   onChange={e=>setIndSearch(e.target.value)}
                   placeholder="Search RSI, MACD, Guppy…"
                   style={{
-                    width:'100%', boxSizing:'border-box',
+                    position:'relative', zIndex:1, width:'100%', boxSizing:'border-box',
                     padding:'7px 10px', borderRadius:4, border:`1px solid ${C.border}`,
                     background:C.bg||'#0e1117', color:C.text, fontSize:12, fontFamily:'inherit', outline:'none',
                   }}
@@ -10222,7 +10246,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
                           const tab = tabs.some(t => t.id===indSettingsTab) ? indSettingsTab : tabs[0]?.id
                           const fields = own.filter(f => (f.tab||'inputs')===tab)
                           const inputBox = {
-                            width:'100%', boxSizing:'border-box',
+                            position:'relative', zIndex:1, width:'100%', boxSizing:'border-box',
                             padding:'5px 7px', borderRadius:4, border:`1px solid ${C.border}`,
                             background:C.card, color:C.text, fontSize:12, fontFamily:'inherit',
                           }
@@ -10703,7 +10727,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
               justifyContent:'center',
             }}>
             <div style={{
-              width:'100%',
+              position:'relative', zIndex:1, width:'100%',
               height:active?2:1,
               background:active?C.accent:C.border,
               opacity:active?0.85:0.3,
@@ -11313,10 +11337,154 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           </div>
         )
       })()}
+      <div style={{position:'relative',width:'100%',height:'100%'}}>
+      {(() => {
+        /* BharatEngine base-series painter — same geometry the SVG overlays
+           use (priceToY / idxToX / volToY), so every overlay lines up
+           pixel-perfect on top of the canvas render. */
+        const bharatPaint = (cv) => {
+          const dpr = window.devicePixelRatio || 1
+          const cw = Math.max(1, Math.round(W * dpr)), ch = Math.max(1, Math.round(H * dpr))
+          if (cv.width !== cw || cv.height !== ch) { cv.width = cw; cv.height = ch }
+          const x = cv.getContext('2d')
+          if (!x) return
+          x.setTransform(dpr, 0, 0, dpr, 0, 0)
+          x.clearRect(0, 0, W, H)
+          const floor = priceTop + priceH
+          /* horizontal grid + price labels */
+          x.font = '9px Inter, system-ui, sans-serif'
+          x.textAlign = 'left'; x.textBaseline = 'middle'
+          for (const p of priceTicks) {
+            const y = priceToY(p)
+            if (y < priceTop - 1 || y > floor + 1) continue
+            x.globalAlpha = 0.28; x.strokeStyle = C.border; x.lineWidth = 0.5
+            x.beginPath(); x.moveTo(padL, y); x.lineTo(padL + chartW, y); x.stroke()
+            x.globalAlpha = 1; x.fillStyle = C.muted
+            x.fillText(axisLabel(p), padL + chartW + 4, y)
+          }
+          /* low-contrast symbol watermark */
+          x.textAlign = 'center'; x.textBaseline = 'middle'
+          x.fillStyle = C.text; x.globalAlpha = clean ? 0.035 : 0.06
+          x.font = `800 ${Math.min(56, Math.max(28, priceH * (clean ? 0.18 : 0.28)))}px Inter, system-ui, sans-serif`
+          x.fillText(sym, padL + chartW / 2, priceTop + priceH * 0.48)
+          x.globalAlpha = 1
+          /* line / area / baseline series */
+          if (chartStyle === 'line' || chartStyle === 'area' || chartStyle === 'baseline') {
+            const pts = []
+            for (let i = 0; i < vCloses.length; i++) {
+              const c = vCloses[i]
+              if (c != null) pts.push([idxToX(i), priceToY(c)])
+            }
+            if (pts.length > 1) {
+              if (chartStyle === 'area') {
+                const g = x.createLinearGradient(0, priceTop, 0, floor)
+                g.addColorStop(0, 'rgba(41,98,255,0.34)'); g.addColorStop(1, 'rgba(41,98,255,0.02)')
+                x.beginPath(); x.moveTo(pts[0][0], floor)
+                pts.forEach(([px, py]) => x.lineTo(px, py))
+                x.lineTo(pts[pts.length - 1][0], floor); x.closePath()
+                x.fillStyle = g; x.fill()
+              } else if (chartStyle === 'baseline' && scaleBase != null) {
+                const baseY = priceToY(scaleBase)
+                const body = () => { x.beginPath(); x.moveTo(pts[0][0], baseY); pts.forEach(([px, py]) => x.lineTo(px, py)); x.lineTo(pts[pts.length - 1][0], baseY); x.closePath() }
+                x.save(); x.beginPath(); x.rect(padL, priceTop, chartW, Math.max(0, baseY - priceTop)); x.clip()
+                x.fillStyle = TV_VOL_UP; x.globalAlpha = 0.22; body(); x.fill(); x.globalAlpha = 1
+                x.strokeStyle = TV_VOL_UP; x.lineWidth = 1.6
+                x.beginPath(); pts.forEach(([px, py], k) => k ? x.lineTo(px, py) : x.moveTo(px, py)); x.stroke()
+                x.restore()
+                x.save(); x.beginPath(); x.rect(padL, baseY, chartW, Math.max(0, floor - baseY)); x.clip()
+                x.fillStyle = TV_VOL_DN; x.globalAlpha = 0.22; body(); x.fill(); x.globalAlpha = 1
+                x.strokeStyle = TV_VOL_DN; x.lineWidth = 1.6
+                x.beginPath(); pts.forEach(([px, py], k) => k ? x.lineTo(px, py) : x.moveTo(px, py)); x.stroke()
+                x.restore()
+                x.strokeStyle = C.muted; x.globalAlpha = 0.7; x.lineWidth = 0.8; x.setLineDash([4, 3])
+                x.beginPath(); x.moveTo(padL, baseY); x.lineTo(padL + chartW, baseY); x.stroke()
+                x.setLineDash([]); x.globalAlpha = 1
+              } else {
+                x.strokeStyle = C.accent; x.lineWidth = 1.8
+                x.beginPath(); pts.forEach(([px, py], k) => k ? x.lineTo(px, py) : x.moveTo(px, py)); x.stroke()
+              }
+              x.lineWidth = 1
+            }
+          } else {
+
+            /* candles / hollow / bar */
+            for (let i = 0; i < dCloses.length; i++) {
+              const c = dCloses[i], op = dOpens[i], h = dHighs[i], lo = dLows[i]
+              if (c == null || op == null || h == null || lo == null) continue
+              const up = c >= op
+              const custom = showCandleColors && vBarColor[i]
+              const color = custom || (up ? TV_VOL_UP : TV_VOL_DN)
+              const cx = idxToX(i)
+              const yOpen = priceToY(op), yClose = priceToY(c)
+              const bodyTop = Math.min(yOpen, yClose)
+              const rawBodyH = Math.abs(yClose - yOpen)
+              const isDoji = rawBodyH < 0.75
+              const bodyH = Math.max(isDoji && chartStyle !== 'hollow' ? 0 : 1, rawBodyH)
+              const wickW = Math.max(0.6, Math.min(2.2, candleW * 0.22))
+              const hollow = denseBars ? false : (chartStyle === 'hollow'
+                ? !custom
+                : (!custom && up && !isDoji && chartStyle === 'candle'))
+              x.globalAlpha = custom ? barColorOpacity : 1
+              x.strokeStyle = color; x.fillStyle = color
+              x.lineWidth = Math.max(1, wickW)
+              if (chartStyle === 'bar') {
+                x.beginPath(); x.moveTo(cx, priceToY(h)); x.lineTo(cx, priceToY(lo)); x.stroke()
+                x.beginPath(); x.moveTo(cx - candleW / 2, yOpen); x.lineTo(cx, yOpen); x.stroke()
+                x.beginPath(); x.moveTo(cx, yClose); x.lineTo(cx + candleW / 2, yClose); x.stroke()
+              } else {
+                x.beginPath(); x.moveTo(cx, priceToY(h)); x.lineTo(cx, priceToY(lo)); x.stroke()
+                if (isDoji && chartStyle !== 'hollow') {
+                  x.lineWidth = 1.35
+                  x.beginPath(); x.moveTo(cx - candleW / 2, yClose); x.lineTo(cx + candleW / 2, yClose); x.stroke()
+                } else if (hollow) {
+                  x.lineWidth = 1.25; x.strokeRect(cx - candleW / 2, bodyTop, candleW, bodyH)
+                } else {
+                  x.fillRect(cx - candleW / 2, bodyTop, candleW, bodyH)
+                  if (!denseBars) { x.lineWidth = 0.4; x.strokeRect(cx - candleW / 2, bodyTop, candleW, bodyH) }
+                }
+              }
+              x.globalAlpha = 1; x.lineWidth = 1
+            }
+          }
+          /* volume columns (incl. Lakshmi Volume backgrounds) */
+          for (let i = 0; i < vCloses.length; i++) {
+            const c = vCloses[i]
+            if (vVol[i] == null || c == null) continue
+            const op = vOpens[i]
+            const up = c >= (op ?? c)
+            const vx = idxToX(i)
+            let fill
+            if (showLakshmiVol && vLvColor[i]) {
+              fill = vLvColor[i]
+            } else {
+              const signal = showPatterns && (vHT[i] ? 'HT' : vHY[i] ? 'HY' : vIBV[i] ? 'IBV' : vPP[i] ? 'PP' : null)
+              fill = signal
+                ? { HT: LAKSHMI_BAR_COLORS.HT, HY: LAKSHMI_BAR_COLORS.HY, IBV: LAKSHMI_BAR_COLORS.IBV, PP: LAKSHMI_BAR_COLORS.PPV }[signal]
+                : (up ? volUpColor : volDownColor)
+            }
+            if (showLakshmiVol && vLvLow[i]) {
+              x.globalAlpha = 0.35; x.fillStyle = LAKSHMI_VOL_COLORS.LOW_VOL_BG
+              x.fillRect(vx - volBarW / 2 - 0.5, volTop, volBarW + 1, volH)
+            }
+            if (showLakshmiVol && (vLvSnort[i] || (showBullSnort && vSnort[i]))) {
+              x.globalAlpha = 0.28; x.fillStyle = LAKSHMI_VOL_COLORS.BULL_SNORT_BG
+              x.fillRect(vx - volBarW / 2 - 0.5, volTop, volBarW + 1, volH)
+            }
+            const barTopY = volToY(vVol[i])
+            const barH = volTop + volH - barTopY
+            if (barH >= 0.5) {
+              x.globalAlpha = volBarOpacity; x.fillStyle = fill
+              x.fillRect(vx - volBarW / 2, barTopY, volBarW, barH)
+            }
+            x.globalAlpha = 1
+          }
+        }
+        return <BharatCanvas draw={bharatPaint}/>
+      })()}
+
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
         style={{
-          width:'100%',
-          height:'100%',
+          position:'relative', zIndex:1, width:'100%',
           display:'block',
           touchAction:'none',
           cursor: drawTool!=='pan' ? 'crosshair' : (dragRef.current?'grabbing':'grab'),
@@ -11356,25 +11524,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           )
         })()}
         {/* Grid lines + nice price labels */}
-        {priceTicks.map(p=>{
-          const y = priceToY(p)
-          if (y < priceTop - 1 || y > priceTop + priceH + 1) return null
-          return (
-            <g key={`pt-${p}`}>
-              <line x1={padL} y1={y} x2={padL+chartW} y2={y} stroke={C.border} strokeWidth={0.5} opacity={0.28}/>
-              <text x={padL+chartW+4} y={y+3} fontSize={9} fill={C.muted}
-                style={{fontVariantNumeric:'tabular-nums'}}>{axisLabel(p)}</text>
-            </g>
-          )
-        })}
+        {/* grid + price labels painted by BharatEngine canvas */}
 
-        {/* Low-contrast symbol watermark */}
-        <text x={padL + chartW / 2} y={priceTop + priceH * 0.48}
-          textAnchor="middle" fontSize={Math.min(56, Math.max(28, priceH * (clean ? 0.18 : 0.28)))}
-          fontWeight={800} fill={C.text} opacity={clean ? 0.035 : 0.06}
-          style={{pointerEvents:'none', userSelect:'none'}}>
-          {sym}
-        </text>
 
         {/* Volume sub-chart — TradingView-style pane with its own grid */}
         <line x1={padL} y1={volTop} x2={padL+chartW} y2={volTop} stroke={C.border} strokeWidth={1} opacity={0.55}/>
@@ -11704,66 +11855,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           )
         })()}
 
-        {/* Line-chart mode — continuous close-price line instead of
-            candlesticks. Volume bars, pattern markers, hover/click
-            targets all stay exactly as they are; only the price
-            visualization itself changes. */}
-        {chartStyle==='line' && (() => {
-          const pts = vCloses.map((c,i)=> c!=null ? `${idxToX(i)},${priceToY(c)}` : null).filter(Boolean)
-          return pts.length>1 ? <polyline points={pts.join(' ')} fill="none" stroke={C.accent} strokeWidth={1.8}/> : null
-        })()}
-
-        {/* Area — close line with a gradient body down to the pane floor */}
-        {chartStyle==='area' && (() => {
-          const xy = vCloses.map((c,i)=> c!=null ? [idxToX(i), priceToY(c)] : null).filter(Boolean)
-          if (xy.length < 2) return null
-          const floor = priceTop + priceH
-          const line = xy.map(([x,y])=>`${x},${y}`).join(' ')
-          const area = `M ${xy[0][0]},${floor} `
-            + xy.map(([x,y])=>`L ${x},${y}`).join(' ')
-            + ` L ${xy[xy.length-1][0]},${floor} Z`
-          return (
-            <g>
-              <defs>
-                <linearGradient id="lm-area-fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={C.accent} stopOpacity={0.34}/>
-                  <stop offset="100%" stopColor={C.accent} stopOpacity={0.02}/>
-                </linearGradient>
-              </defs>
-              <path d={area} fill="url(#lm-area-fill)" stroke="none"/>
-              <polyline points={line} fill="none" stroke={C.accent} strokeWidth={1.8}/>
-            </g>
-          )
-        })()}
-
-        {/* Baseline — green above / red below the first visible close */}
-        {chartStyle==='baseline' && (() => {
-          const xy = vCloses.map((c,i)=> c!=null ? [idxToX(i), priceToY(c)] : null).filter(Boolean)
-          if (xy.length < 2 || scaleBase == null) return null
-          const baseY = priceToY(scaleBase)
-          const line = xy.map(([x,y])=>`${x},${y}`).join(' ')
-          const body = `M ${xy[0][0]},${baseY} `
-            + xy.map(([x,y])=>`L ${x},${y}`).join(' ')
-            + ` L ${xy[xy.length-1][0]},${baseY} Z`
-          return (
-            <g>
-              <defs>
-                <clipPath id="lm-base-up">
-                  <rect x={padL} y={priceTop} width={chartW} height={Math.max(0, baseY - priceTop)}/>
-                </clipPath>
-                <clipPath id="lm-base-dn">
-                  <rect x={padL} y={baseY} width={chartW} height={Math.max(0, priceTop + priceH - baseY)}/>
-                </clipPath>
-              </defs>
-              <path d={body} fill={TV_VOL_UP} fillOpacity={0.22} stroke="none" clipPath="url(#lm-base-up)"/>
-              <path d={body} fill={TV_VOL_DN} fillOpacity={0.22} stroke="none" clipPath="url(#lm-base-dn)"/>
-              <polyline points={line} fill="none" stroke={TV_VOL_UP} strokeWidth={1.6} clipPath="url(#lm-base-up)"/>
-              <polyline points={line} fill="none" stroke={TV_VOL_DN} strokeWidth={1.6} clipPath="url(#lm-base-dn)"/>
-              <line x1={padL} y1={baseY} x2={padL+chartW} y2={baseY}
-                stroke={C.muted} strokeWidth={0.8} strokeDasharray="4,3" opacity={0.7}/>
-            </g>
-          )
-        })()}
+        {/* line / area / baseline painted by BharatEngine canvas */}
 
         {/* Candlesticks — TradingView hollow-up / filled-down */}
         {dCloses.map((c,i)=>{
@@ -11791,29 +11883,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
               opacity={custom ? barColorOpacity : 1}
               style={{cursor: drawTool==='pan' ? 'crosshair' : 'inherit'}}>
               <rect x={x-candleW/2-1} y={priceTop} width={candleW+2} height={priceH} fill="transparent"/>
-              {chartStyle==='bar' ? (
-                <>
-                  <line x1={x} y1={priceToY(hi)} x2={x} y2={priceToY(lo)}
-                    stroke={color} strokeWidth={Math.max(1, wickW)} strokeLinecap="butt"/>
-                  <line x1={x-candleW/2} y1={yOpen} x2={x} y2={yOpen}
-                    stroke={color} strokeWidth={Math.max(1, wickW)}/>
-                  <line x1={x} y1={yClose} x2={x+candleW/2} y2={yClose}
-                    stroke={color} strokeWidth={Math.max(1, wickW)}/>
-                </>
-              ) : drawsBars && <>
-                <line x1={x} y1={priceToY(hi)} x2={x} y2={priceToY(lo)}
-                  stroke={color} strokeWidth={wickW} strokeLinecap="round"/>
-                {isDoji && chartStyle!=='hollow' ? (
-                  <line x1={x-candleW/2} y1={yClose} x2={x+candleW/2} y2={yClose}
-                    stroke={color} strokeWidth={1.35}/>
-                ) : hollow ? (
-                  <rect x={x-candleW/2} y={bodyTop} width={candleW} height={bodyH}
-                    fill="none" stroke={color} strokeWidth={1.25}/>
-                ) : (
-                  <rect x={x-candleW/2} y={bodyTop} width={candleW} height={bodyH}
-                    fill={color} stroke={denseBars ? 'none' : color} strokeWidth={denseBars ? 0 : 0.4}/>
-                )}
-              </>}
+              {/* candle bodies painted by BharatEngine canvas; hit-rect + markers stay */}
               {/* Pattern markers */}
               {showPatterns && !denseBars && vInsideBars[i] && (
                 <circle cx={x} cy={priceToY(hi)-6} r={2} fill={patP.insideColor || C.teal}/>
@@ -12127,46 +12197,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           )
         })()}
 
-        {/* Volume bars — Lakshmi Volume colors when enabled; else TV teal/red */}
-        <g>
-          {vCloses.map((c,i)=>{
-            if(vVol[i]==null||c==null) return null
-            const op=vOpens[i]
-            const up=c>=(op??c)
-            const x=idxToX(i)
-            let fill
-            if (showLakshmiVol && vLvColor[i]) {
-              fill = vLvColor[i]
-            } else {
-              const signal=showPatterns&&(vHT[i]?'HT':vHY[i]?'HY':vIBV[i]?'IBV':vPP[i]?'PP':null)
-              const signalColor={
-                HT:LAKSHMI_BAR_COLORS.HT,
-                HY:LAKSHMI_BAR_COLORS.HY,
-                IBV:LAKSHMI_BAR_COLORS.IBV,
-                PP:LAKSHMI_BAR_COLORS.PPV,
-              }[signal]
-              // Volume.pine does not recolor columns for Bull Snort (BG only)
-              fill=signal?signalColor:(up?volUpColor:volDownColor)
-            }
-            const barTopY=volToY(vVol[i])
-            const barH=volTop+volH-barTopY
-            if(barH<0.5) return null
-            return (
-              <g key={`vol-${i}`}>
-                {showLakshmiVol && vLvLow[i] && (
-                  <rect x={x-volBarW/2-0.5} y={volTop} width={volBarW+1} height={volH}
-                    fill={LAKSHMI_VOL_COLORS.LOW_VOL_BG} opacity={0.35}/>
-                )}
-                {showLakshmiVol && (vLvSnort[i] || (showBullSnort && vSnort[i])) && (
-                  <rect x={x-volBarW/2-0.5} y={volTop} width={volBarW+1} height={volH}
-                    fill={LAKSHMI_VOL_COLORS.BULL_SNORT_BG} opacity={0.28}/>
-                )}
-                <rect x={x-volBarW/2} y={barTopY} width={volBarW} height={barH}
-                  fill={fill} opacity={volBarOpacity}/>
-              </g>
-            )
-          })}
-        </g>
+        {/* volume columns painted by BharatEngine canvas */}
 
         {/* Signal marker row under the volume axis — IBV / PPV / Bull Snort
             only (no HT / HY / HQ / M text tags on the chart). */}
@@ -12375,6 +12406,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           </text>
         ))}
       </svg>
+      </div>
       </div>
 
       {/* TradingView-style date range strip (under chart) */}
@@ -26085,7 +26117,7 @@ export default function App(){
             display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
           <div onClick={e=>e.stopPropagation()}
             style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,
-              width:'100%',maxWidth:560,maxHeight:'85vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+              position:'relative', zIndex:1, width:'100%',maxWidth:560,maxHeight:'85vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
             <div style={{padding:'14px 18px',borderBottom:`1px solid ${C.border}`,
               display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
               <div>
