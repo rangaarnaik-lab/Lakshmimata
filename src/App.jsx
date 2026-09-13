@@ -4817,7 +4817,7 @@ function AskAiAgent({symbol, isMobile, variant='inline'}){
               {askMode==='chart'&&!chartImg&&(
                 <button type="button" disabled={busy} onClick={captureOurChart}
                   style={{
-                    position:'relative', zIndex:1, width:'100%',marginBottom:10,padding:'10px 12px',borderRadius:10,
+                    width:'100%',marginBottom:10,padding:'10px 12px',borderRadius:10,
                     border:`1px solid ${C.accent}66`,background:C.accent+'18',
                     color:C.accent,fontSize:12,fontWeight:900,cursor:busy?'default':'pointer',
                   }}>
@@ -6093,7 +6093,7 @@ function ChartPanel({sym, isIndex, wide, customPct, onToggleWide, onClose, isMob
               onClick={()=>setMobileOverviewOpen(o=>!o)}
               title={mobileOverviewOpen?'Collapse company overview':'Expand company overview'}
               style={{flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',gap:8,
-                position:'relative', zIndex:1, width:'100%',padding:'6px 12px',border:'none',
+                width:'100%',padding:'6px 12px',border:'none',
                 borderTop:`1px solid ${C.divider}`,borderBottom:`1px solid ${C.divider}`,
                 background:C.card,color:C.muted,fontSize:11,fontWeight:700,
                 cursor:'pointer',fontFamily:'inherit'}}>
@@ -7160,7 +7160,7 @@ function SectionFeedback({symbol, contentType, sectionKey, sectionLabel, onIssue
               rows={3}
               placeholder="Optional: what looks wrong or outdated…"
               style={{
-                position:'relative', zIndex:1, width:'100%',boxSizing:'border-box',resize:'vertical',
+                width:'100%',boxSizing:'border-box',resize:'vertical',
                 background:C.bg||C.card,color:C.text,border:`1px solid ${C.border}`,
                 borderRadius:9,padding:'10px 12px',fontSize:13,lineHeight:1.45,
                 outline:'none',marginBottom:8,fontFamily:'inherit',
@@ -10167,7 +10167,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
                   onChange={e=>setIndSearch(e.target.value)}
                   placeholder="Search RSI, MACD, Guppy…"
                   style={{
-                    position:'relative', zIndex:1, width:'100%', boxSizing:'border-box',
+                    width:'100%', boxSizing:'border-box',
                     padding:'7px 10px', borderRadius:4, border:`1px solid ${C.border}`,
                     background:C.bg||'#0e1117', color:C.text, fontSize:12, fontFamily:'inherit', outline:'none',
                   }}
@@ -10246,7 +10246,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
                           const tab = tabs.some(t => t.id===indSettingsTab) ? indSettingsTab : tabs[0]?.id
                           const fields = own.filter(f => (f.tab||'inputs')===tab)
                           const inputBox = {
-                            position:'relative', zIndex:1, width:'100%', boxSizing:'border-box',
+                            width:'100%', boxSizing:'border-box',
                             padding:'5px 7px', borderRadius:4, border:`1px solid ${C.border}`,
                             background:C.card, color:C.text, fontSize:12, fontFamily:'inherit',
                           }
@@ -10727,7 +10727,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
               justifyContent:'center',
             }}>
             <div style={{
-              position:'relative', zIndex:1, width:'100%',
+              width:'100%',
               height:active?2:1,
               background:active?C.accent:C.border,
               opacity:active?0.85:0.3,
@@ -26117,7 +26117,7 @@ export default function App(){
             display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
           <div onClick={e=>e.stopPropagation()}
             style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,
-              position:'relative', zIndex:1, width:'100%',maxWidth:560,maxHeight:'85vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+              width:'100%',maxWidth:560,maxHeight:'85vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
             <div style={{padding:'14px 18px',borderBottom:`1px solid ${C.border}`,
               display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
               <div>
