@@ -206,16 +206,25 @@ const fmtP   = v => `₹${v>=1000?v.toFixed(0):v.toFixed(2)}`
 // Price cells live outside App, so the connection flag is mirrored here to tell
 // "not connected" apart from "connected, quote not fetched yet".
 let LIVE_FEED_CONNECTED = false
-// Both conditions are required. The overlay carries liveFromUser until the
-// disconnect effect strips it, which happens a commit later than the render
-// that already saw brokerConnected go false — long enough to paint a stale
-// tick as a public quote.
-const hasUserLiveQuote = s => LIVE_FEED_CONNECTED && !!s?.liveFromUser
-const hasUserLiveIndex = idx => LIVE_FEED_CONNECTED && !!idx?.liveFromUser
-const priceFallbackLabel = () => LIVE_FEED_CONNECTED ? '—' : '— Connect broker'
+// Every signed-in user can see the shared price + daily % change the backend
+// already publishes (index_dashboard / stocks) — connecting a broker is no
+// longer required just to read a number. When a user HAS connected their own
+// broker, the liveFromUser overlay carries a fresher tick and is preferred.
+// The LIVE_FEED_CONNECTED guard on the overlay branch is kept: it stops a
+// stale broker tick being painted as public during the brief window after
+// disconnect where the overlay's liveFromUser still lingers a commit longer
+// than brokerConnected goes false. When not connected we show the shared
+// value only if no lingering overlay is present.
+const hasUserLiveQuote = s =>
+  (LIVE_FEED_CONNECTED && !!s?.liveFromUser) ||
+  (!LIVE_FEED_CONNECTED && !s?.liveFromUser && s?.last != null)
+const hasUserLiveIndex = idx =>
+  (LIVE_FEED_CONNECTED && !!idx?.liveFromUser) ||
+  (!LIVE_FEED_CONNECTED && !idx?.liveFromUser && idx?.lastPrice != null)
+const priceFallbackLabel = () => '—'
 const priceFallbackHint = () => LIVE_FEED_CONNECTED
   ? 'Waiting for a quote from your broker account'
-  : 'Connect Upstox or Fyers to view live price'
+  : 'No live price for this item yet'
 /** Portfolio-style amounts: ₹1.2L / ₹40.5K / ₹999 */
 const fmtAmt = v => {
   if (v == null || !isFinite(v)) return '—'
@@ -19867,19 +19876,18 @@ export default function App(){
     }
   },[demoMode])
 
-  // Auto-refresh from DB every 1 minute — disabled while viewing a past
+  // Auto-refresh from DB every refreshInterval - disabled while viewing a past
   // date, and disabled in demo mode (a real runDBScan() would silently
   // replace the curated sample dataset with a live scan, breaking the
-  // 'sample data — not live' promise the demo banner makes). Also only
-  // actually scans during market hours — isMarketOpen() is checked fresh
-  // on every tick (not just once at setup), so it correctly goes quiet
-  // if the market closes while the interval is still running, rather
-  // than continuing to poll all night/weekend for someone who left the
-  // tab open with auto-refresh on.
+  // 'sample data - not live' promise the demo banner makes). runDBScan only
+  // re-reads the already-persisted rows from Supabase (it never triggers a
+  // live teardown scan), so it is safe to re-run after hours too: the old
+  // isMarketOpen() gate made the data go stale outside 9:15-15:30 IST,
+  // which users experienced as the market page freezing after the close.
   useEffect(()=>{
     clearInterval(refreshTimer.current)
     if(autoRefresh&&!historyDate&&!demoMode){
-      refreshTimer.current=setInterval(()=>{ if(isMarketOpen()) runDBScan() },refreshInterval)
+      refreshTimer.current=setInterval(()=>runDBScan(),refreshInterval)
     }
     return()=>clearInterval(refreshTimer.current)
   },[autoRefresh,refreshInterval,runDBScan,historyDate,demoMode])
@@ -20028,7 +20036,7 @@ export default function App(){
   },[session,demoMode,runDBScan])
 
   // Index dashboard feeds the app-wide ticker (all indices above stocks)
-  // and Market → Indices. Refresh every 60s while logged in / demo so the
+  // and Market -> Indices. Refresh every refreshInterval while logged in /
   // banner stays live even when you're not on the Market tab.
   useEffect(()=>{
     if(!session && !demoMode) return
@@ -20046,9 +20054,9 @@ export default function App(){
       })
     }).catch(e=>console.error('Index fetch:',e))
     load()
-    const timer = setInterval(load, 60000)
+    const timer = setInterval(load, refreshInterval)
     return ()=>clearInterval(timer)
-  },[session,demoMode])
+  },[session,demoMode,refreshInterval])
 
   // Breadth + rotation load on tab switch.
   useEffect(()=>{
@@ -20308,6 +20316,19 @@ export default function App(){
       for(const h of bestPicksHistory||[]) if((h.rank??99)<=5) add(h.symbol)
     }
     for(const s of topMovers||[]) add(s.sym)
+    if(mainTab==='market'){
+      // Market · Gaps / Smart Money work like RS Rating: register the
+      // symbols the market page shows (biggest gap movers first) for
+      // per-user broker polling, so their price / % change come live from
+      // the user's own Upstox / Fyers account instead of only the last
+      // DB scan. Quotes land on the same shared stocks state these tables
+      // render from, so no other change is needed.
+      const marketRanked=[...stocks].sort((a,b)=>Math.abs(b.gapPct??-999)-Math.abs(a.gapPct??-999))
+      for(const s of marketRanked){
+        add(s.sym)
+        if(out.length>=80) break
+      }
+    }
     for(const s of rsBase||[]){
       add(s.sym)
       if(out.length>=80) break
@@ -23344,8 +23365,8 @@ export default function App(){
                                   <div style={{fontWeight:900,fontSize:22,color:rsColor(s.rs)}}>{s.rs}</div>
                                   <div style={{fontWeight:700,fontSize:14,color:C.green}}>+{bo.chg}%</div>
                                   <div style={{fontSize:11,color:C.muted}}
-                                    title={hasUserLiveQuote(s)?'Live from your broker':'Previous close — connect a broker for live price'}>
-                                    {fmtP(s.last)}{hasUserLiveQuote(s)?'':' (prev)'}</div>
+                                    title={LIVE_FEED_CONNECTED && hasUserLiveQuote(s) ? 'Live from your broker' : 'Latest published price'}>
+                                    {fmtP(s.last)}{LIVE_FEED_CONNECTED && hasUserLiveQuote(s) ? '' : ' (prev)'}</div>
                                 </div>
                               </div>
                               <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
