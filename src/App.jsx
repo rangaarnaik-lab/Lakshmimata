@@ -20316,6 +20316,19 @@ export default function App(){
       for(const h of bestPicksHistory||[]) if((h.rank??99)<=5) add(h.symbol)
     }
     for(const s of topMovers||[]) add(s.sym)
+    if(mainTab==='market'){
+      // Market · Gaps / Smart Money work like RS Rating: register the
+      // symbols the market page shows (biggest gap movers first) for
+      // per-user broker polling, so their price / % change come live from
+      // the user's own Upstox / Fyers account instead of only the last
+      // DB scan. Quotes land on the same shared stocks state these tables
+      // render from, so no other change is needed.
+      const marketRanked=[...stocks].sort((a,b)=>Math.abs(b.gapPct??-999)-Math.abs(a.gapPct??-999))
+      for(const s of marketRanked){
+        add(s.sym)
+        if(out.length>=80) break
+      }
+    }
     for(const s of rsBase||[]){
       add(s.sym)
       if(out.length>=80) break
