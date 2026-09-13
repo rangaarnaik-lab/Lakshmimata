@@ -11368,6 +11368,27 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           x.font = `800 ${Math.min(56, Math.max(28, priceH * (clean ? 0.18 : 0.28)))}px Inter, system-ui, sans-serif`
           x.fillText(sym, padL + chartW / 2, priceTop + priceH * 0.48)
           x.globalAlpha = 1
+          /* Vertical time grid + bottom time labels — BharatEngine signature.
+            The legacy SVG never had a time axis at all; the canvas paints the
+            grid every ~85px and stamps each tick like TradingView does. */
+          if (vCloses.length) {
+            const stride = Math.max(1, Math.ceil(85 / candleW))
+            x.font = '8px Inter, system-ui, sans-serif'
+            x.textAlign = 'center'; x.textBaseline = 'top'
+            for (let i = 0; i < vCloses.length; i++) {
+              if (vCloses[i] == null || vDates[i] == null) continue
+              if (i % stride !== 0) continue
+              const xx = idxToX(i)
+              if (xx < padL || xx > padL + chartW) continue
+              x.globalAlpha = 0.18; x.strokeStyle = C.border; x.lineWidth = 0.5
+              x.beginPath(); x.moveTo(xx, priceTop); x.lineTo(xx, panesBottom); x.stroke()
+              x.globalAlpha = 1; x.fillStyle = C.muted
+              const lbl = isIntraday
+                ? intradayStampLabel(vDates[i], { withDate: false })
+                : String(vDates[i]).slice(5).replace('-', '/')
+              x.fillText(lbl, xx, panesBottom + 3)
+            }
+          }
           /* line / area / baseline series */
           if (chartStyle === 'line' || chartStyle === 'area' || chartStyle === 'baseline') {
             const pts = []
@@ -11481,7 +11502,15 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         }
         return <BharatCanvas draw={bharatPaint}/>
       })()}
-
+      {/* Visible proof the chart is canvas-rendered (PR #8): tiny chip over the
+          price pane; delete this block to remove it. */}
+      <div className="bharat-chip"
+        title="Rendered by the BharatEngine canvas renderer — candles, grid and volume paint on <canvas>; markers, overlays and the crosshair are the SVG layer above it."
+        style={{ position:'absolute', top: priceTop + 4, right: 8, zIndex: 2, fontSize: 9,
+          fontWeight: 700, color: C.muted, background: C.card + 'cc', border: '1px solid ' + C.border,
+          borderRadius: 99, padding: '2px 8px', cursor: 'help', pointerEvents: 'auto', userSelect: 'none' }}>
+        ⚡ Canvas engine
+      </div>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
         style={{
           position:'relative', zIndex:1, width:'100%',
