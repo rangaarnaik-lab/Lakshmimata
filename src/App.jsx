@@ -7669,7 +7669,7 @@ const INDICATOR_BUNDLES = {
     { id: 'hilo52', label: '52-week high / low flags' },
     { id: 'sr', label: 'Support / Resistance' },
     { id: 'bb', label: 'Bollinger Bands' },
-    { id: 'buysell', label: 'Lakshmi Buy / Sell' },
+    { id: 'buysell', label: 'Lakshmi Bullish / Bearish' },
     { id: 'circuit', label: 'Circuit Limits (UC / LC)' },
     { id: 'patterns', label: 'Patterns / consolidation' },
     { id: 'barcolor', label: 'Volume candle colours' },
@@ -7944,7 +7944,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   const patP = prefsN.indicators.patterns?.params || {}
   const buySellFont = Math.min(14, Math.max(6, Number(buyP.labelSize) || 8))
   const bsFont = clean ? Math.max(6, buySellFont - 1.5) : buySellFont
-  const bsTagW = clean ? 20 : 28
+  const bsTagW = clean ? 30 : 40
   const bsTagH = clean ? 10 : 12
   const barColorOpacity = Math.min(1, Math.max(0.4, (Number(barP.barOpacity) || 100) / 100))
   const snortMarkerSize = Math.min(16, Math.max(4, Number(snortP.markerSize) || 9))
@@ -9780,7 +9780,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   const chartIndicatorsAll = [
     // Main price overlay — the parent row for the EMA lines and Guppy cloud.
     { id:'lakshmimata', group:'Overlays', label:'Lakshmi Mata', short:'Lakshmi',
-      desc:'Complete Pine study: EMA 9/21/50/150/200, GMMA, compression, S/R, Bollinger Bands, Buy/Sell, UC/LC and volume signals',
+      desc:'Complete Pine study: EMA 9/21/50/150/200, GMMA, compression, S/R, Bollinger Bands, Bullish/Bearish, UC/LC and volume signals',
       on: (INDICATOR_BUNDLES.lakshmimata||[]).some(x=>indicatorEnabled(x.id)),
       visible: showMA || showGuppy || showSqueeze || showHiLo52 || showSR || showBB
         || showBuySell || showCircuit || showPatterns || showCandleColors || showBullSnort,
@@ -9818,7 +9818,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     { id:'lakshmivol', group:'Signals', label:'Lakshmi Volume', short:'Volume', desc:'Unusual volume, climax and dry-up context for Our Chart', on:indicatorEnabled('lakshmivol'), visible:showLakshmiVol, set:setShowLakshmiVol },
     { id:'barcolor', group:'Signals', label:'Volume Candle Colors', short:'Bar Color', desc:'Colors candles by volume character', on:indicatorEnabled('barcolor'), visible:showCandleColors, set:setShowCandleColors },
     { id:'bullsnort', group:'Signals', label:'Bull Snort', short:'Bull Snort', desc:'Bullish volume climax — heavy up volume with a strong close', on:indicatorEnabled('bullsnort'), visible:showBullSnort, set:setShowBullSnort },
-    { id:'buysell', group:'Signals', label:'Lakshmi Buy/Sell', short:'Buy/Sell',
+    { id:'buysell', group:'Signals', label:'Lakshmi Bullish/Bearish', short:'Bull/Bear',
       desc: isIntradayInterval
         ? 'Daily and above — the RS gate behind these markers needs end-of-day index data'
         : 'Rule-based markers from Lakshmi Mata — prompts, not auto-orders',
@@ -11922,7 +11922,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
                   <rect x={x-bsTagW/2} y={priceToY(lo)+4} width={bsTagW} height={bsTagH} rx={2}
                     fill={buyP.buyColor || LAKSHMI_BUY_SELL_COLORS.BUY}/>
                   {buyP.showLabels !== false && (
-                    <text x={x} y={priceToY(lo)+4+bsTagH-3} fontSize={bsFont} fontWeight={800} fill="#fff" textAnchor="middle">Buy</text>
+                    <text x={x} y={priceToY(lo)+4+bsTagH-3} fontSize={bsFont} fontWeight={800} fill="#fff" textAnchor="middle">Bullish</text>
                   )}
                 </g>
               )}
@@ -11931,7 +11931,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
                   <rect x={x-bsTagW/2} y={priceToY(hi)-4-bsTagH} width={bsTagW} height={bsTagH} rx={2}
                     fill={buyP.sellColor || LAKSHMI_BUY_SELL_COLORS.SELL}/>
                   {buyP.showLabels !== false && (
-                    <text x={x} y={priceToY(hi)-7} fontSize={bsFont} fontWeight={800} fill="#fff" textAnchor="middle">Sell</text>
+                    <text x={x} y={priceToY(hi)-7} fontSize={bsFont} fontWeight={800} fill="#fff" textAnchor="middle">Bearish</text>
                   )}
                 </g>
               )}
@@ -12544,8 +12544,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         </>}
         {showBullSnort && !showLakshmiVol && <span><span style={{color:bullSnortColor}}>■</span> Bull Snort</span>}
         {showBuySell && <>
-          <span><span style={{color:buyP.buyColor || LAKSHMI_BUY_SELL_COLORS.BUY}}>■</span> Buy</span>
-          <span><span style={{color:buyP.sellColor || LAKSHMI_BUY_SELL_COLORS.SELL}}>■</span> Sell</span>
+          <span><span style={{color:buyP.buyColor || LAKSHMI_BUY_SELL_COLORS.BUY}}>■</span> Bullish</span>
+          <span><span style={{color:buyP.sellColor || LAKSHMI_BUY_SELL_COLORS.SELL}}>■</span> Bearish</span>
         </>}
         {showPatterns && <>
           <span><span style={{color:patP.insideColor || C.teal}}>●</span> Inside Bar</span>
@@ -26197,7 +26197,7 @@ export default function App(){
                 </button>
                 {helpCenterSection==='chart-indicators'&&(
                   <div style={{padding:'0 8px 14px',fontSize:11.5,color:C.muted,lineHeight:1.7}}>
-                    Our Chart packs Lakshmi Mata (EMAs, Guppy, Squeeze dots, S/R, Bollinger, Buy/Sell, UC/LC),
+                    Our Chart packs Lakshmi Mata (EMAs, Guppy, Squeeze dots, S/R, Bollinger, Bullish/Bearish, UC/LC),
                     Lakshmi Volume, and Super Cycle. Each has a “how it works” write-up in Guide.
                     <HelpVisual id="chart-anatomy" theme={C}
                       caption="Chart on top, filings tabs below. Indicators live under fx."/>
