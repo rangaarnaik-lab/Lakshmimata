@@ -16856,6 +16856,13 @@ function isDevUpstoxUser(email){
   if(e && DEV_UPSTOX_EMAILS.has(e)) return true
   try{ return localStorage.getItem('lm_dev_upstox')==='1' }catch{ return false }
 }
+// AI Picks tab is developer-only while it is being tuned: it renders only for
+// allow-listed emails. Everyone else never sees the tab or its content.
+const DEV_AI_PICK_EMAILS = new Set(['rangaa.r.naik@gmail.com'])
+function isDevAiPickUser(email){
+  const e=(email||'').trim().toLowerCase()
+  return !!(e && DEV_AI_PICK_EMAILS.has(e))
+}
 function UpstoxLiveFeedCard({session,onUpdate}){
 
 function UpstoxLiveFeedCard({session,onUpdate}){
@@ -19169,6 +19176,11 @@ export default function App(){
     if(mainTab!=='bestpicks') return
     loadBestPicks()
   },[mainTab,loadBestPicks])
+  // Safety net: a non-allow-listed user who somehow lands on bestpicks (stale
+  // persisted tab, deep link) is bounced to the RS scanner immediately.
+  useEffect(()=>{
+    if(mainTab==='bestpicks'&&!isDevAiPickUser(session?.user?.email)) setMainTab('rs')
+  },[mainTab,session?.user?.email])
   useEffect(()=>{
     if(mainTab!=='bestpicks'||bestPicksView!=='history') return
     loadBestPicksHistory()
@@ -20700,7 +20712,7 @@ export default function App(){
           {id:'bestpicks', label:'AI Best Picks',    short:'AI Picks', Icon:Target},
           {id:'docs',      label:'Guide',             short:'Guide',    Icon:BookOpen},
           {id:'feedback',  label:'User Feedback',     short:'Feedback', Icon:MessageSquare},
-        ]
+        ].filter(n=>n.id!=='bestpicks'||isDevAiPickUser(session?.user?.email))
         const ITEM_H=52, DIVIDER_H=9 // 1px line + 4px margin top/bottom
         const navAll=[...navTop,...navBottom]
         const activeIdx=navAll.findIndex(n=>n.id===mainTab)
@@ -25043,7 +25055,7 @@ export default function App(){
         )}
 
         {/* ══ CORPORATE ANNOUNCEMENTS ══ */}
-        {mainTab==='bestpicks'&&(
+        {mainTab==='bestpicks'&&isDevAiPickUser(session?.user?.email)&&(
           <div>
             <div style={{marginBottom:14,display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10}}>
               <div style={{minWidth:0,flex:1}}>
@@ -26293,7 +26305,7 @@ export default function App(){
                 <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:'8px auto 16px'}}/>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:4}}>
                   {[
-                    ['themes',Layers,'Themes'],['bestpicks',Target,'AI Picks'],['announcements',Megaphone,'News'],
+                    ['themes',Layers,'Themes'],...(isDevAiPickUser(session?.user?.email)?[['bestpicks',Target,'AI Picks']]:[]),['announcements',Megaphone,'News'],
                     ['watchlist',Star,'Watchlist'],['portfolio',Briefcase,'Portfolio'],['compare',GitCompare,'Compare'],
                     ['52wl',Award,'52WL'],['leaders',Flag,'Leaders'],['squeeze',Zap,'Squeeze'],
                     ['weak',TrendingDown,'Weak RS'],['docs',BookOpen,'Guide'],['feedback',MessageSquare,'Feedback'],
