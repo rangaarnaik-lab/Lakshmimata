@@ -16869,30 +16869,13 @@ function UpstoxLiveFeedCard({session,onUpdate}){
   const connected=!!(session?.upstoxConnected
     ?? (session?.brokerConnected&&session?.liveBroker==='upstox'))
   const active=connected&&session?.liveBroker==='upstox'
-  const [oauthOn,setOauthOn]=useState(false)
+  // Developer-token-only card: no daily OAuth. The 1-year Analytics Token
+  // paste is the primary (and only) way to connect — it avoids the 3:30 AM
+  // IST daily reconnect entirely.
   const [token,setToken]=useState('')
-  const [showPaste,setShowPaste]=useState(false)
   const [busy,setBusy]=useState(false)
   const [err,setErr]=useState('')
   const [info,setInfo]=useState('')
-  const lastStep=(()=>{
-    const s=readUpstoxStep()
-    if(!s?.step) return ''
-    const mins=Math.round((Date.now()-Number(s.at||0))/60000)
-    return `${s.step}${Number.isFinite(mins)&&mins>=0?` (${mins===0?'just now':`${mins} min ago`})`:''}`
-  })()
-  useEffect(()=>{
-    let cancelled=false
-    fetchUpstoxOAuthConfig()
-      .then(cfg=>{ if(!cancelled) setOauthOn(!!cfg.configured) })
-      .catch(()=>{ if(!cancelled) setOauthOn(false) })
-    return()=>{cancelled=true}
-  },[])
-  const connectOAuth=async()=>{
-    setErr('');setInfo('');setBusy(true)
-    try{ await startUpstoxOAuth() }
-    catch(e){ setErr(e?.message||'Could not start Upstox login'); setBusy(false) }
-  }
   const savePaste=async()=>{
     setErr('');setInfo('');setBusy(true)
     try{
@@ -16919,31 +16902,24 @@ function UpstoxLiveFeedCard({session,onUpdate}){
   }
   return(
     <AccountCard title="Live prices (your Upstox)"
-      hint="You log in on Upstox’s site. Lakshmimata never sees your Upstox password. Live last price, % change, and Our Chart candles use your account. Market breadth, RS, and scanners stay on our derived scan.">
+      hint="Paste your 1-year Upstox Analytics Token (read-only) and Lakshmimata shows live last price, % change, and Our Chart candles from your account. Market breadth, RS, and scanners stay on our derived scan. No daily login.">
       {connected&&<BrokerConnectedBadge active={active}/>}
       <div style={{fontSize:11.5,color:C.muted,lineHeight:1.5,marginBottom:10}}>
         {connected
-          ? (active
-            ? 'Live LTP and charts are using your Upstox account. Tokens expire at 3:30 AM IST — reconnect the next trading day.'
-            : 'Upstox is connected but not active. Reconnect Upstox to switch live data back to it.')
-          : 'Connect Upstox to show last price, % change, and candles from your own account.'}
+          ? 'Live LTP and charts are using your Upstox account via your 1-year Analytics Token.'
+          : 'Paste your Upstox Analytics Token (lasts 1 year) to show last price, % change, and candles from your own account. No daily login needed.'}
       </div>
       {err&&<div style={{fontSize:12,color:C.red,marginBottom:8}}>{err}</div>}
       {info&&<div style={{fontSize:12,color:C.green,marginBottom:8}}>{info}</div>}
-      {!connected&&lastStep&&(
-        <div style={{fontSize:11,color:C.muted,marginBottom:8,lineHeight:1.45}}>
-          Last connect attempt: {lastStep}
+      {!connected&&(
+        <div style={{fontSize:11,color:C.muted,lineHeight:1.5,marginBottom:8}}>
+          Open{' '}
+          <a href="https://account.upstox.com/developer/apps" target="_blank" rel="noopener noreferrer"
+            style={{color:C.accent}}>Upstox Developer Apps</a>{' '}
+          → Analytics tab → generate a token, then paste it below. It is read-only — prices and charts only, it cannot place orders.
         </div>
       )}
-      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-        <button type="button" onClick={connectOAuth} disabled={!oauthOn||busy}
-          style={{flex:1,minWidth:160,padding:'10px 12px',borderRadius:8,border:'none',cursor:oauthOn?'pointer':'not-allowed',
-            background:connected?'transparent':C.accent,
-            color:connected?C.text:C.onAccent,
-            boxShadow:connected?`inset 0 0 0 1px ${C.border}`:'none',
-            fontWeight:800,fontSize:12,opacity:oauthOn?1:0.55}}>
-          {busy?'Working…':connected?'Reconnect Upstox':'Connect Upstox'}
-        </button>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10}}>
         {connected&&(
           <button type="button" onClick={disconnect} disabled={busy}
             style={{padding:'10px 12px',borderRadius:8,cursor:'pointer',
@@ -16952,35 +16928,17 @@ function UpstoxLiveFeedCard({session,onUpdate}){
           </button>
         )}
       </div>
-      {!oauthOn&&(
-        <div style={{fontSize:11,color:C.yellow,marginTop:10,lineHeight:1.45}}>
-          OAuth is not configured yet (set UPSTOX_CLIENT_ID and UPSTOX_CLIENT_SECRET on the server). Until then you can paste a token below.
-        </div>
-      )}
-      <button type="button" onClick={()=>setShowPaste(v=>!v)}
-        style={{marginTop:12,background:'none',border:'none',color:C.muted,fontSize:11,cursor:'pointer',padding:0,textDecoration:'underline'}}>
-        {showPaste?'Hide token paste':'Tired of daily login? Paste a 1-year token'}
-      </button>
-      {showPaste&&(
-        <div style={{marginTop:8}}>
-          <div style={{fontSize:11,color:C.muted,lineHeight:1.5,marginBottom:8}}>
-            Upstox has a read-only <b style={{color:C.text}}>Analytics Token</b> that lasts <b style={{color:C.text}}>1 year</b>,
-            so you skip the 3:30 AM reconnect. Open{' '}
-            <a href="https://account.upstox.com/developer/apps" target="_blank" rel="noopener noreferrer"
-              style={{color:C.accent}}>Upstox Developer Apps</a>{' '}
-            → Analytics tab → generate, then paste it here. It cannot place orders — prices and charts only.
-          </div>
-          <input type="password" value={token} onChange={e=>setToken(e.target.value)}
-            placeholder="Upstox Analytics Token (or access token)"
-            style={{width:'100%',padding:'9px 10px',borderRadius:8,border:`1px solid ${C.border}`,
-              background:C.inputBg,color:C.text,fontSize:12,marginBottom:8}}/>
+      <div style={{marginTop:8}}>
+        <input type="password" value={token} onChange={e=>setToken(e.target.value)}
+          placeholder="Paste your Upstox Analytics Token (1-year)"
+          style={{width:'100%',padding:'9px 10px',borderRadius:8,border:`1px solid ${C.border}`,
+            background:C.inputBg,color:C.text,fontSize:12,marginBottom:8}}/>
           <button type="button" onClick={savePaste} disabled={busy}
             style={{padding:'8px 12px',borderRadius:8,border:`1px solid ${C.border}`,cursor:'pointer',
               background:'transparent',color:C.text,fontWeight:700,fontSize:12}}>
             {busy?'Saving…':'Save pasted token'}
           </button>
-        </div>
-      )}
+      </div>
     </AccountCard>
   )
 }
