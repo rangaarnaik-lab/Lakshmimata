@@ -16864,8 +16864,6 @@ function isDevAiPickUser(email){
   return !!(e && DEV_AI_PICK_EMAILS.has(e))
 }
 function UpstoxLiveFeedCard({session,onUpdate}){
-
-function UpstoxLiveFeedCard({session,onUpdate}){
   // Must be the Upstox-specific flag, not the generic brokerConnected: that one
   // is also true when only Fyers is linked, which made this card claim Upstox
   // was connected and offer a Disconnect button that did nothing.
