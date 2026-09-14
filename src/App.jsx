@@ -8783,7 +8783,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
       <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted,textAlign:'center',padding:20,lineHeight:1.5}}>
         {String(intradayData.error||'').replace(/\s*or Fyers/g,'')}
         <br/><br/>
-        Connect Upstox on Account if this chart is empty. 1-minute bars come from your Upstox account, not our scan.
+        {isDevUpstoxUser(null) ? 'Connect Upstox on Account if this chart is empty. 1-minute bars come from your Upstox account, not our scan.' : '1-minute bars for this symbol are not available right now.'}
       </div>
     )
   }
@@ -16847,6 +16847,16 @@ function BrokerConnectedBadge({active}){
     </div>
   )
 }
+// Upstox connect is developer-only: personal API tokens expire daily and the
+// feed is tied to one brokerage account, so the connect UI renders only for
+// allow-listed emails or an explicit dev unlock (localStorage lm_dev_upstox=1).
+const DEV_UPSTOX_EMAILS = new Set([])
+function isDevUpstoxUser(email){
+  const e=(email||'').trim().toLowerCase()
+  if(e && DEV_UPSTOX_EMAILS.has(e)) return true
+  try{ return localStorage.getItem('lm_dev_upstox')==='1' }catch{ return false }
+}
+function UpstoxLiveFeedCard({session,onUpdate}){
 
 function UpstoxLiveFeedCard({session,onUpdate}){
   // Must be the Upstox-specific flag, not the generic brokerConnected: that one
@@ -17115,7 +17125,7 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
         <div>
           <SubscriptionCard userSubscription={userSubscription} onOpenPayment={onOpenPayment}/>
           <ProfileCard session={session}/>
-          <UpstoxLiveFeedCard session={session} onUpdate={onUpdate}/>
+          {isDevUpstoxUser(session?.user?.email)&&<UpstoxLiveFeedCard session={session} onUpdate={onUpdate}/>}
           <TelegramAlertsCard session={session} alertPrefs={alertPrefs} onAlertPrefs={onAlertPrefs}/>
         </div>
         <div>{prefsCard}</div>
