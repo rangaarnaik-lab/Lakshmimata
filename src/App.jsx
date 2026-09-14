@@ -2679,7 +2679,7 @@ function LastUpdatedBar({scanMeta,lastRefresh,loading,autoRefresh,setAutoRefresh
           boxShadow:`0 0 5px ${loading?C.yellow:marketOpen?C.green:C.muted}`,
           animation:loading?'pulse 1s infinite':'none'}}/>
         <span style={{fontWeight:700,color:C.text,whiteSpace:'nowrap'}}>
-          {loading?'Updating…':marketOpen?(layout?.liveFeedConnected?`Live · your ${layout.liveBroker==='fyers'?'Fyers':'Upstox'}`:'Connect broker for LTP') :'Closed'}
+          {loading?'Updating…':marketOpen?(layout?.liveFeedConnected?'Live · your Upstox':'Connect broker for LTP') :'Closed'}
         </span>
       </div>
       <span style={{color:C.muted,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{lastScanStr}</span>
@@ -8781,16 +8781,16 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   if(isIntraday && intradayData?.error){
     return fillShell(
       <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.muted,textAlign:'center',padding:20,lineHeight:1.5}}>
-        {intradayData.error}
+        {String(intradayData.error||'').replace(/\s*or Fyers/g,'')}
         <br/><br/>
-        Connect Upstox or Fyers on Account if this chart is empty. 1-minute bars come from your broker account, not our scan.
+        Connect Upstox on Account if this chart is empty. 1-minute bars come from your Upstox account, not our scan.
       </div>
     )
   }
   if(!isIntraday && data && data.error){
     return fillShell(
       <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:C.red,textAlign:'center',padding:20}}>
-        Couldn't load chart data for {sym}: {data.error}
+        Couldn't load chart data for {sym}: {String(data.error||'').replace(/\s*or Fyers/g,'')}
       </div>
     )
   }
@@ -16898,7 +16898,7 @@ function UpstoxLiveFeedCard({session,onUpdate}){
       await disconnectUpstox()
       const live=await readLiveBrokerConnection().catch(()=>({connected:!!session?.fyersConnected,liveBroker:session?.fyersConnected?'fyers':null,upstoxConnected:false,fyersConnected:!!session?.fyersConnected}))
       onUpdate?.({...session,brokerConnected:live.connected,liveBroker:live.liveBroker,upstoxConnected:false,fyersConnected:live.fyersConnected})
-      setInfo('Disconnected. Scanners still run; live LTP needs Upstox or Fyers.')
+      setInfo('Disconnected. Scanners still run; live LTP needs Upstox.')
     }catch(e){
       setErr(e?.message||'Could not disconnect')
     }finally{ setBusy(false) }
@@ -16911,7 +16911,7 @@ function UpstoxLiveFeedCard({session,onUpdate}){
         {connected
           ? (active
             ? 'Live LTP and charts are using your Upstox account. Tokens expire at 3:30 AM IST — reconnect the next trading day.'
-            : 'Upstox is connected. Live data is currently coming from Fyers because that login is newer. Disconnect Fyers or reconnect Upstox to switch.')
+            : 'Upstox is connected but not active. Reconnect Upstox to switch live data back to it.')
           : 'Connect Upstox to show last price, % change, and candles from your own account.'}
       </div>
       {err&&<div style={{fontSize:12,color:C.red,marginBottom:8}}>{err}</div>}
@@ -17116,7 +17116,6 @@ function SettingsPanel({session,onUpdate,onLogout,onExitDemo,themeKey,switchThem
           <SubscriptionCard userSubscription={userSubscription} onOpenPayment={onOpenPayment}/>
           <ProfileCard session={session}/>
           <UpstoxLiveFeedCard session={session} onUpdate={onUpdate}/>
-          <FyersLiveFeedCard session={session} onUpdate={onUpdate}/>
           <TelegramAlertsCard session={session} alertPrefs={alertPrefs} onAlertPrefs={onAlertPrefs}/>
         </div>
         <div>{prefsCard}</div>
@@ -20000,7 +19999,7 @@ export default function App(){
         console.warn('User broker live quotes:', e?.message||e)
         if(['upstox_not_connected','upstox_reconnect_required','upstox_token_expired','fyers_not_connected','fyers_reconnect_required','fyers_token_expired'].includes(e?.code)){
           setSession(prev=>prev?{...prev,brokerConnected:false,liveBroker:null}:prev)
-          setAuthNotice('Reconnect Upstox or Fyers before live price and % change can be shown.')
+          setAuthNotice('Reconnect Upstox before live price and % change can be shown.')
         }
       }
     }
@@ -25124,7 +25123,7 @@ export default function App(){
                         {pickPrice!=null&&(
                           <span style={{fontSize:11,color:C.text,cursor:'help'}}
                             title={pickHasLive?'Live from your broker account'
-                              :'Previous close — connect Upstox or Fyers for live price'}>
+                              :'Previous close — connect Upstox for live price'}>
                             ₹{pickPrice}{pickHasLive?'':' (prev)'}
                           </span>
                         )}
@@ -25276,7 +25275,7 @@ export default function App(){
                                 </span>
                                 <div style={{fontSize:10,color:C.muted,cursor:'help'}}
                                   title={h.isLive?'Now: live from your broker account'
-                                    :'Now: last published close — connect Upstox or Fyers for the live price'}>
+                                    :'Now: last published close — connect Upstox for the live price'}>
                                   ₹{h.price_at_pick} → {h.currentPrice!=null
                                     ?`₹${h.currentPrice}${h.isLive?'':' (prev)'}`:'—'}
                                 </div>
