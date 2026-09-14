@@ -559,6 +559,69 @@ function calcHyLowVolEma9Bounce(s, lookback=10){
   }
 }
 
+// ── 2/3-Tops & 2/3-Bottoms Breakout Scanner ──────────────────────────
+// Swing-pivot heuristic: collects the last ~1 year of swing highs/lows,
+// groups the most recent 2 or 3 into a tight price band, and flags a
+// breakout when today's close clears the band (tops) or the neckline
+// between the bottoms (bottoms). The "multi-year" flavour: bases counted
+// over many months of pivots, not days.
+function calcNTopBottom(s){
+  const out={t2:false,b2:false,t3:false,b3:false}
+  const H=(s.highs||[]).map(Number)
+  const L=(s.lows||[]).map(Number)
+  const Cx=(s.prices||s.closes||[]).map(Number)
+  const n=Math.min(Cx.length,H.length,L.length)
+  if(n<60) return out
+  const close=Cx[n-1]
+  if(!isFinite(close)||close<=0) return out
+  const W=5, SPAN=260, SEP=3, BAND=0.04
+  const tops=[], bottoms=[]
+  for(let i=W;i<n-W;i++){
+    let t=true, b=true
+    for(let j=i-W;j<=i+W;j++){
+      if(j===i) continue
+      if(H[j]>=H[i]) t=false
+      if(L[j]<=L[i]) b=false
+    }
+    if(t) tops.push(i)
+    if(b) bottoms.push(i)
+  }
+  const inSpan=a=>a.filter(i=>i>=n-SPAN)
+  const T=inSpan(tops), B=inSpan(bottoms)
+  if(T.length>=2){
+    const [t2,t1]=T.slice(-2)
+    if(t1-t2>=SEP){
+      const hi=Math.max(H[t1],H[t2]), lo=Math.min(H[t1],H[t2])
+      if(hi-lo<=hi*BAND && close>hi) out.t2=true
+      if(T.length>=3){
+        const t3=T[T.length-3]
+        if(t2-t3>=SEP){
+          const hi3=Math.max(hi,H[t3]), lo3=Math.min(lo,H[t3])
+          if(hi3-lo3<=hi3*BAND && close>hi3) out.t3=true
+        }
+      }
+    }
+  }
+  if(B.length>=2){
+    const [b2,b1]=B.slice(-2)
+    if(b1-b2>=SEP){
+      // neckline = highest high between the two bottom pivots
+      let neck=0
+      for(let k=b2;k<=b1;k++) if(H[k]>neck) neck=H[k]
+      if(neck>0 && close>neck) out.b2=true
+      if(B.length>=3){
+        const b3=B[B.length-3]
+        if(b2-b3>=SEP){
+          let neck3=0
+          for(let k=b3;k<=b1;k++) if(H[k]>neck3) neck3=H[k]
+          if(neck3>0 && close>neck3) out.b3=true
+        }
+      }
+    }
+  }
+  return out
+}
+
 // ── Preset filter definitions ─────────────────────────────────────────
 const PRESETS = [
   {id:'all',       label:'All',          icon:'🌐', desc:'Show all stocks'},
@@ -18966,6 +19029,10 @@ export default function App(){
     if(sig==='vcp2t') return !!s.isVCP && s.vcpStage===2
     if(sig==='vcp3t') return !!s.isVCP && s.vcpStage===3
     if(sig==='vcp4t') return !!s.isVCP && s.vcpStage===4
+    if(sig==='top2') return !!calcNTopBottom(s).t2
+    if(sig==='bot2') return !!calcNTopBottom(s).b2
+    if(sig==='top3') return !!calcNTopBottom(s).t3
+    if(sig==='bot3') return !!calcNTopBottom(s).b3
     if(sig==='ppconsec2') return hasConsecutivePP(s.pp?.ppHistory, 2)
     if(sig==='ppgt2') return (s.pp?.ppCount10d||0) > 2
     return false
@@ -19031,6 +19098,10 @@ export default function App(){
     const st=Array.isArray(f.strategyFilters)?f.strategyFilters:[]
     if(st.length>0&&!st.some(x=>(x==='pead'&&s.isPead)||(x==='canslim'&&s.isCanslim))) return false
     const bt=f.breakoutTypeFilter
+    if(bt==='top2'&&!calcNTopBottom(s).t2) return false
+    if(bt==='bot2'&&!calcNTopBottom(s).b2) return false
+    if(bt==='top3'&&!calcNTopBottom(s).t3) return false
+    if(bt==='bot3'&&!calcNTopBottom(s).b3) return false
     if(bt==='hyht'&&!calcHYHTBreakout(s).isBreakout) return false
     if(bt==='volpull'&&!calcVolClimaxNearSupport(s).isMatch) return false
     if(bt==='hyema9'&&!calcHyLowVolEma9Bounce(s).isMatch) return false
@@ -20267,6 +20338,10 @@ export default function App(){
       if(!ok) return false
     }
     // Breakout type filter (RS Filters panel)
+    if(breakoutTypeFilter==='top2'&&!calcNTopBottom(s).t2)return false
+    if(breakoutTypeFilter==='bot2'&&!calcNTopBottom(s).b2)return false
+    if(breakoutTypeFilter==='top3'&&!calcNTopBottom(s).t3)return false
+    if(breakoutTypeFilter==='bot3'&&!calcNTopBottom(s).b3)return false
     if(breakoutTypeFilter==='hyht'&&!calcHYHTBreakout(s).isBreakout)return false
     if(breakoutTypeFilter==='volpull'&&!calcVolClimaxNearSupport(s).isMatch)return false
     if(breakoutTypeFilter==='hyema9'&&!calcHyLowVolEma9Bounce(s).isMatch)return false
@@ -21704,7 +21779,7 @@ export default function App(){
                           style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${sigFilters.length===0?C.muted:C.border}`,
                             cursor:'pointer',fontSize:12,fontWeight:600,
                             background:sigFilters.length===0?C.muted+'22':'transparent',color:sigFilters.length===0?C.text:C.muted}}>All</button>
-                        {[['ht','🚀HT',C.orange],['hy','📊HY',C.pink],['ibv','🏛️IBV',C.blue],['pp','🔥PP',C.green],['bullsnort','🐂Bull Snort','#f59e0b'],['volpull','🔥→⚡ HY/HT/IBV/Snort → EMA5/9/21/50',C.accent],['hyema9','🔥→⚡EMA HY/HT/IBV → low-vol → EMA5/9/21',C.pink],['ppconsec2','🔥PP 2x Consecutive',C.green],['ppgt2','🔥PP >2 in 10d',C.green],['ema5','⚡EMA5',C.teal],['ema9','⚡EMA9',C.teal],['ema21','⚡EMA21',C.teal],['ema50','⚡EMA50',C.teal],['power','⭐Power',C.accent],['hyht','💥HY/HT Break',C.accent],['r1breakout','🎯R1 Breakout',C.red],['52wh','🏆52W High',C.yellow],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.purple],['s2new','🚀Stage 2 New',C.green],['vcp2t','🌀VCP 2T',C.purple],['vcp3t','🌀VCP 3T',C.purple],['vcp4t','🌀VCP 4T',C.purple]].map(([v,label,color])=>{
+                        {[['ht','🚀HT',C.orange],['hy','📊HY',C.pink],['ibv','🏛️IBV',C.blue],['pp','🔥PP',C.green],['bullsnort','🐂Bull Snort','#f59e0b'],['volpull','🔥→⚡ HY/HT/IBV/Snort → EMA5/9/21/50',C.accent],['hyema9','🔥→⚡EMA HY/HT/IBV → low-vol → EMA5/9/21',C.pink],['ppconsec2','🔥PP 2x Consecutive',C.green],['ppgt2','🔥PP >2 in 10d',C.green],['ema5','⚡EMA5',C.teal],['ema9','⚡EMA9',C.teal],['ema21','⚡EMA21',C.teal],['ema50','⚡EMA50',C.teal],['power','⭐Power',C.accent],['hyht','💥HY/HT Break',C.accent],['r1breakout','🎯R1 Breakout',C.red],['52wh','🏆52W High',C.yellow],['cupbreakout','☕Cup Breakout',C.yellow],['guppy','🐠Guppy Crossover',C.purple],['s2new','🚀Stage 2 New',C.green],['vcp2t','🌀VCP 2T',C.purple],['vcp3t','🌀VCP 3T',C.purple],['vcp4t','🌀VCP 4T',C.purple],['top2','⛰️2 Tops Break',C.green],['bot2','🥣2 Bottoms Break',C.green],['top3','🏔️3 Tops Break',C.green],['bot3','🌊3 Bottoms Break',C.green]].map(([v,label,color])=>{
                           const active = sigFilters.includes(v)
                           return (
                             <button key={v} onClick={()=>setSigFilters(prev=>active?prev.filter(x=>x!==v):[...prev,v])}
@@ -21834,6 +21909,10 @@ export default function App(){
                           ['cup','☕ Cup',C.yellow],
                           ['guppy','🐠 Guppy',C.green],
                           ['s2','🚀 Stage 2 New',C.green],
+                          ['top2','⛰️ 2 Tops Break',C.green],
+                          ['bot2','🥣 2 Bottoms Break',C.green],
+                          ['top3','🏔️ 3 Tops Break',C.green],
+                          ['bot3','🌊 3 Bottoms Break',C.green],
                         ].map(([v,label,color])=>(
                           <button key={v} onClick={()=>setBreakoutTypeFilter(v)}
                             style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${breakoutTypeFilter===v?color:C.border}`,
@@ -23292,6 +23371,10 @@ export default function App(){
                   {key:'h52',      label:'52-Week High Breakout', color:C.green, filter:s=>s.is52whBreakout},
                   {key:'cupBreak', label:'Cup & Handle Breakout', color:C.green, filter:s=>s.isCupHandleBreakout},
                   {key:'s2new',    label:'New Stage 2 Entry', color:C.green, filter:s=>s.isS2NewEntry},
+                  {key:'top2',     label:'2 Tops Breakout',  color:C.green, filter:s=>calcNTopBottom(s).t2},
+                  {key:'bot2',     label:'2 Bottoms Breakout', color:C.green, filter:s=>calcNTopBottom(s).b2},
+                  {key:'top3',     label:'3 Tops Breakout',  color:C.green, filter:s=>calcNTopBottom(s).t3},
+                  {key:'bot3',     label:'3 Bottoms Breakout', color:C.green, filter:s=>calcNTopBottom(s).b3},
                 ]},
                 {id:'coiling', group:'🌀 Base-Building / Coiling', items:[
                   {key:'cupForm',  label:'Cup Pattern Forming', color:C.teal, filter:s=>s.hasCupPattern&&!s.isCupHandleBreakout},
