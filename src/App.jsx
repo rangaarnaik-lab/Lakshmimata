@@ -16849,12 +16849,11 @@ function BrokerConnectedBadge({active}){
 }
 // Upstox connect is developer-only: personal API tokens expire daily and the
 // feed is tied to one brokerage account, so the connect UI renders only for
-// allow-listed emails or an explicit dev unlock (localStorage lm_dev_upstox=1).
-const DEV_UPSTOX_EMAILS = new Set([])
+// allow-listed emails. Only the developer's account can update the token.
+const DEV_UPSTOX_EMAILS = new Set(['rangaa.r.naik@gmail.com'])
 function isDevUpstoxUser(email){
   const e=(email||'').trim().toLowerCase()
-  if(e && DEV_UPSTOX_EMAILS.has(e)) return true
-  try{ return localStorage.getItem('lm_dev_upstox')==='1' }catch{ return false }
+  return !!(e && DEV_UPSTOX_EMAILS.has(e))
 }
 // AI Picks tab is developer-only while it is being tuned: it renders only for
 // allow-listed emails. Everyone else never sees the tab or its content.
