@@ -160,6 +160,12 @@ const THEMES = {
   },
 }
 const C = {...THEMES.dark}
+/** True when the active theme is dark/black. On a black background the
+ *  chart's horizontal chrome (grid lines, pane borders, S/R and circuit
+ *  level lines) glares as visual noise, so dark mode suppresses them —
+ *  light mode keeps the classic TradingView grid. Vertical time grid,
+ *  last-price line, crosshair, alerts and user drawings always render. */
+let UI_IS_DARK = true
 /** Theme-driven global chrome that inline styles can't reach. */
 function applyThemeGlobalCss(t, key){
   const id = 'lm-theme-globals'
@@ -191,6 +197,7 @@ function applyThemeGlobalCss(t, key){
 function applyTheme(key){
   const t = THEMES[key] || THEMES.dark
   Object.assign(C, t)
+  UI_IS_DARK = key !== 'light'
   document.body.style.background = t.bg
   document.body.style.color = t.text
   document.documentElement.style.colorScheme = key === 'light' ? 'light' : 'dark'
@@ -11420,8 +11427,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           for (const p of priceTicks) {
             const y = priceToY(p)
             if (y < priceTop - 1 || y > floor + 1) continue
-            x.globalAlpha = 0.28; x.strokeStyle = C.border; x.lineWidth = 0.5
-            x.beginPath(); x.moveTo(padL, y); x.lineTo(padL + chartW, y); x.stroke()
+            if (!UI_IS_DARK) { x.globalAlpha = 0.28; x.strokeStyle = C.border; x.lineWidth = 0.5; x.beginPath(); x.moveTo(padL, y); x.lineTo(padL + chartW, y); x.stroke() }
             x.globalAlpha = 1; x.fillStyle = C.muted
             x.fillText(axisLabel(p), padL + chartW + 4, y)
           }
@@ -11620,13 +11626,13 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
 
 
         {/* Volume sub-chart — TradingView-style pane with its own grid */}
-        <line x1={padL} y1={volTop} x2={padL+chartW} y2={volTop} stroke={C.border} strokeWidth={1} opacity={0.55}/>
+        <line x1={padL} y1={volTop} x2={padL+chartW} y2={volTop} stroke={C.border} strokeWidth={1} opacity={0.55} style={UI_IS_DARK?{display:'none'}:undefined}/>
         {[0,0.5,1].map(f=>{
           const y = volTop + f*volH
           const v = maxVol * (1-f)
           return (
             <g key={`volgrid-${f}`}>
-              <line x1={padL} y1={y} x2={padL+chartW} y2={y} stroke={C.border} strokeWidth={0.5} opacity={0.22}/>
+              <line x1={padL} y1={y} x2={padL+chartW} y2={y} stroke={C.border} strokeWidth={0.5} opacity={0.22} style={UI_IS_DARK?{display:'none'}:undefined}/>
               <text x={padL+chartW+4} y={y+3} fontSize={8} fill={C.muted}
                 style={{fontVariantNumeric:'tabular-nums'}}>{fmtVol(v)}</text>
             </g>
@@ -11662,7 +11668,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
             val!=null && val<=maxP && val>=minP ? (
               <g key={k}>
                 <line x1={padL} y1={priceToY(val)} x2={padL+chartW} y2={priceToY(val)}
-                  stroke={color} strokeWidth={w} strokeDasharray={dash} opacity={0.6}/>
+                  stroke={color} strokeWidth={w} strokeDasharray={dash} opacity={0.6} style={UI_IS_DARK?{display:'none'}:undefined}/>
                 {srP.showLabels !== false && (
                   <text x={padL+2} y={priceToY(val)-3} fontSize={8} fontWeight={700} fill={color}>
                     {k.toUpperCase()} {val.toFixed(1)}
@@ -11922,7 +11928,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
                 if (y < priceTop - 1 || y > priceTop + priceH + 1) return null
                 return (
                   <line x1={padL} y1={y} x2={padL+chartW} y2={y}
-                    stroke={C.muted} strokeWidth={0.8} strokeDasharray="7,4" opacity={0.35}/>
+                    stroke={C.muted} strokeWidth={0.8} strokeDasharray="7,4" opacity={0.35} style={UI_IS_DARK?{display:'none'}:undefined}/>
                 )
               })()}
               {rows.map(r => {
@@ -11932,7 +11938,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
                   <g key={r.label}>
                     <line x1={padL} y1={y} x2={padL+chartW} y2={y}
                       stroke={r.color} strokeWidth={lineW(circuitP.lineWidth, 0.9)}
-                      strokeDasharray="7,4" opacity={0.55}/>
+                      strokeDasharray="7,4" opacity={0.55} style={UI_IS_DARK?{display:'none'}:undefined}/>
                     {circuitP.showLabels !== false && (
                       <text x={padL+chartW-4} y={y-3} fontSize={8.5} fontWeight={700}
                         fill={r.color} textAnchor="end" opacity={0.9}
@@ -12331,14 +12337,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         {showRSI && (
           <g>
             <rect x={padL} y={rsiTop} width={chartW} height={rsiH} fill={C.card} opacity={0.4}/>
-            <line x1={padL} y1={rsiTop} x2={padL+chartW} y2={rsiTop} stroke={C.border} strokeWidth={1} opacity={0.8}/>
+            <line x1={padL} y1={rsiTop} x2={padL+chartW} y2={rsiTop} stroke={C.border} strokeWidth={1} opacity={0.8} style={UI_IS_DARK?{display:'none'}:undefined}/>
             <rect x={padL} y={rsiToY(rsiP.overbought ?? 70)} width={chartW} height={Math.max(0, rsiToY(rsiP.oversold ?? 30)-rsiToY(rsiP.overbought ?? 70))}
               fill={C.muted} opacity={0.08}/>
             {(rsiP.showBands === false ? [50] : [rsiP.overbought ?? 70, 50, rsiP.oversold ?? 30]).map(lvl=>(
               <g key={`rsi-${lvl}`}>
                 <line x1={padL} y1={rsiToY(lvl)} x2={padL+chartW} y2={rsiToY(lvl)}
                   stroke={lvl===50?C.border:(rsiP.bandColor || C.red)}
-                  strokeWidth={0.6} strokeDasharray={lvl===50?'2,2':'3,3'} opacity={0.7}/>
+                  strokeWidth={0.6} strokeDasharray={lvl===50?'2,2':'3,3'} opacity={0.7} style={UI_IS_DARK?{display:'none'}:undefined}/>
                 <text x={padL+chartW+4} y={rsiToY(lvl)+3} fontSize={8} fill={C.muted}>{lvl}</text>
               </g>
             ))}
@@ -12359,9 +12365,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         {showMACD && (
           <g>
             <rect x={padL} y={macdTop} width={chartW} height={macdH} fill={C.card} opacity={0.4}/>
-            <line x1={padL} y1={macdTop} x2={padL+chartW} y2={macdTop} stroke={C.border} strokeWidth={1} opacity={0.8}/>
+            <line x1={padL} y1={macdTop} x2={padL+chartW} y2={macdTop} stroke={C.border} strokeWidth={1} opacity={0.8} style={UI_IS_DARK?{display:'none'}:undefined}/>
             <line x1={padL} y1={macdToY(0)} x2={padL+chartW} y2={macdToY(0)}
-              stroke={C.border} strokeWidth={0.7} opacity={0.8}/>
+              stroke={C.border} strokeWidth={0.7} opacity={0.8} style={UI_IS_DARK?{display:'none'}:undefined}/>
             <text x={padL+4} y={macdTop+11} fontSize={8} fontWeight={700} fill={C.muted}>MACD {macdP.fast ?? 12},{macdP.slow ?? 26},{macdP.signal ?? 9}</text>
             {vMacdHist.map((h,i)=>{
               if (h==null) return null
