@@ -11506,9 +11506,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           price pane; delete this block to remove it. */}
       <div className="bharat-chip"
         title="Rendered by the BharatEngine canvas renderer — candles, grid and volume paint on <canvas>; markers, overlays and the crosshair are the SVG layer above it."
-        style={{ position:'absolute', top: priceTop + 4, right: 8, zIndex: 2, fontSize: 9,
-          fontWeight: 700, color: C.muted, background: C.card + 'cc', border: '1px solid ' + C.border,
-          borderRadius: 99, padding: '2px 8px', cursor: 'help', pointerEvents: 'auto', userSelect: 'none' }}>
+        style={{ position:'absolute', top: priceTop + priceH - 30, right: 12, zIndex: 2, fontSize: 11,
+          fontWeight: 800, color: '#fff', background: TV_TOOLBAR_BLUE, border: '1px solid #1c4ed8',
+          boxShadow: '0 2px 8px rgba(0,0,0,.45)', borderRadius: 99, padding: '4px 12px', cursor: 'help', pointerEvents: 'auto', userSelect: 'none' }}>
         ⚡ Canvas engine
       </div>
       <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
