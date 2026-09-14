@@ -158,7 +158,108 @@ const THEMES = {
     gold:'#D8B33F',goldSoft:'#EEDC9A',
     tvTheme:'dark',chartBg:'#0f1830',
   },
+  oled: {
+    // True-black AMOLED look (battery-friendly on phones, zero glow in
+    // the dark). Cards lift with pure border lines, no shadows.
+    bg:'#000000',card:'#0a0a0a',border:'#232323',
+    accent:'#4f8ef7',text:'#e5e5e5',muted:'#8f8f8f',
+    green:'#22c55e',red:'#ef4444',yellow:'#eab308',
+    purple:'#a855f7',orange:'#f97316',blue:'#3b82f6',
+    pink:'#ec4899',lime:'#84cc16',teal:'#14b8a6',
+    sidebar:'#000000',divider:'#151515',
+    rowHover:'#141414',active:'#1d1d1d',
+    onAccent:'#000000',
+    shadow:'0 1px 2px rgba(0,0,0,0.8)',
+    shadowLg:'0 12px 32px rgba(0,0,0,0.9)',
+    inputBg:'#000000',
+    gold:'#C9A227',goldSoft:'#E8D28A',
+    tvTheme:'dark',chartBg:'#0a0a0a',
+  },
+  nord: {
+    // Nord palette (nordtheme.com) — the calm blue-grey dark most
+    // code editors ship with; low-glare for long screening sessions.
+    bg:'#2e3440',card:'#3b4252',border:'#4c566a',
+    accent:'#88c0d0',text:'#eceff4',muted:'#b9c2cf',
+    green:'#a3be8c',red:'#bf616a',yellow:'#ebcb8b',
+    purple:'#b48ead',orange:'#d08770',blue:'#81a1c1',
+    pink:'#d8a5b8',lime:'#a3be8c',teal:'#8fbcbb',
+    sidebar:'#272c36',divider:'#353c4a',
+    rowHover:'#434c5e',active:'#4c566a',
+    onAccent:'#20242c',
+    shadow:'0 1px 2px rgba(20,24,34,0.5)',
+    shadowLg:'0 12px 32px rgba(20,24,34,0.65)',
+    inputBg:'#2e3440',
+    gold:'#d8b765',goldSoft:'#ebd5a3',
+    tvTheme:'dark',chartBg:'#3b4252',
+  },
+  sepia: {
+    // Warm paper / e-reader light. Easier on the eyes than white
+    // during daylight screening; a light theme, so charts keep grids.
+    bg:'#f4ecd8',card:'#fdf8ee',border:'#d9c9a8',
+    accent:'#b07d3a',text:'#43331e',muted:'#8a7454',
+    green:'#5e7d3e',red:'#b0432f',yellow:'#a16207',
+    purple:'#7d5ba6',orange:'#c06a2c',blue:'#4a6f9a',
+    pink:'#b0567a',lime:'#6d8f3a',teal:'#3a7d74',
+    sidebar:'#efe4cb',divider:'#e2d3b3',
+    rowHover:'#f0e6cf',active:'#ecdfc0',
+    onAccent:'#fff8ec',
+    shadow:'0 1px 2px rgba(67,51,30,0.08), 0 1px 3px rgba(67,51,30,0.10)',
+    shadowLg:'0 12px 32px rgba(67,51,30,0.18)',
+    inputBg:'#fdf8ee',
+    gold:'#8a6a12',goldSoft:'#6f5410',
+    tvTheme:'light',chartBg:'#fdf8ee',
+  },
+  solar: {
+    // Solarized-light (Ethan Schoonover) — the classic warm-light
+    // terminal palette; another light theme, grids stay on.
+    bg:'#fdf6e3',card:'#fffbf0',border:'#ddd6c1',
+    accent:'#268bd2',text:'#4a565c',muted:'#7c8a8c',
+    green:'#859900',red:'#dc322f',yellow:'#b58900',
+    purple:'#6c71c4',orange:'#cb4b16',blue:'#268bd2',
+    pink:'#d33682',lime:'#859900',teal:'#2aa198',
+    sidebar:'#f5efdc',divider:'#e8e0c9',
+    rowHover:'#f3edda',active:'#eee8d5',
+    onAccent:'#ffffff',
+    shadow:'0 1px 2px rgba(58,66,66,0.08), 0 1px 3px rgba(58,66,66,0.10)',
+    shadowLg:'0 12px 32px rgba(58,66,66,0.16)',
+    inputBg:'#fffbf0',
+    gold:'#8a6a12',goldSoft:'#6f5410',
+    tvTheme:'light',chartBg:'#fffbf0',
+  },
+  dracula: {
+    // Dracula palette (draculatheme.com) — the purple-tinted dark
+    // theme popular across editors and dev tools.
+    bg:'#282a36',card:'#2f3141',border:'#44475a',
+    accent:'#bd93f9',text:'#f8f8f2',muted:'#a9aec0',
+    green:'#50fa7b',red:'#ff5555',yellow:'#f1fa8c',
+    purple:'#bd93f9',orange:'#ffb86c',blue:'#8be9fd',
+    pink:'#ff79c6',lime:'#50fa7b',teal:'#8be9fd',
+    sidebar:'#21222c',divider:'#3a3d4d',
+    rowHover:'#373947',active:'#44475a',
+    onAccent:'#17181f',
+    shadow:'0 1px 2px rgba(10,11,16,0.5)',
+    shadowLg:'0 12px 32px rgba(10,11,16,0.65)',
+    inputBg:'#282a36',
+    gold:'#e6c07b',goldSoft:'#f1fa8c',
+    tvTheme:'dark',chartBg:'#2f3141',
+  },
 }
+/** Themes whose backgrounds are light — the horizontal-line suppression
+ *  (UI_IS_DARK) and scrollbar/colorScheme chrome key off this set, so
+ *  every new light theme only needs to be listed here. */
+const LIGHT_THEME_KEYS = new Set(['light','sepia','solar'])
+/** One list driving every appearance picker (Settings card + quick 🎨
+ *  popover). Swatch = [page background, accent] hex pair for the dot. */
+const APPEARANCES = [
+  ['dark','Dark','🌙','#0a0d12','#4f8ef7'],
+  ['light','Light','☀️','#f0f3fa','#2962ff'],
+  ['midnight','Midnight','🌌','#0b1220','#60a5fa'],
+  ['oled','OLED','⬛','#000000','#4f8ef7'],
+  ['nord','Nord','🌲','#2e3440','#88c0d0'],
+  ['dracula','Dracula','🦇','#282a36','#bd93f9'],
+  ['sepia','Sepia','📜','#f4ecd8','#b07d3a'],
+  ['solar','Solar','🌇','#fdf6e3','#268bd2'],
+]
 const C = {...THEMES.dark}
 /** True when the active theme is dark/black. On a black background the
  *  chart's horizontal chrome (grid lines, pane borders, S/R and circuit
@@ -175,9 +276,9 @@ function applyThemeGlobalCss(t, key){
     tag.id = id
     document.head.appendChild(tag)
   }
-  const track = key === 'light' ? '#e6e9f2' : t.bg
-  const thumb  = key === 'light' ? '#b8bdcc' : t.border
-  const thumbHover = key === 'light' ? '#9aa1b4' : t.muted
+  const track = t.bg
+  const thumb  = t.border
+  const thumbHover = t.muted
   tag.textContent = `
     html,body{background:${t.bg};color:${t.text};}
     ::selection{background:${t.accent}33;color:${t.text};}
@@ -197,10 +298,10 @@ function applyThemeGlobalCss(t, key){
 function applyTheme(key){
   const t = THEMES[key] || THEMES.dark
   Object.assign(C, t)
-  UI_IS_DARK = key !== 'light'
+  UI_IS_DARK = !LIGHT_THEME_KEYS.has(key)
   document.body.style.background = t.bg
   document.body.style.color = t.text
-  document.documentElement.style.colorScheme = key === 'light' ? 'light' : 'dark'
+  document.documentElement.style.colorScheme = UI_IS_DARK ? 'dark' : 'light'
   applyThemeGlobalCss(t, key)
   try{ localStorage.setItem('lakshmimata-theme', key) }catch(e){}
 }
@@ -16511,14 +16612,19 @@ function AppPreferencesCard({
       <div style={{padding:'4px 18px 16px'}}>
         <div style={{fontSize:10,fontWeight:800,color:C.muted,textTransform:'uppercase',
           letterSpacing:'0.07em',marginBottom:8}}>Theme</div>
-        <div style={{display:'flex',gap:6}}>
-          {[['dark','🌙 Dark'],['light','☀️ Light'],['midnight','🌌 Midnight']].map(([key,label])=>(
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
+          {APPEARANCES.map(([key,label,icon,bgHex,acHex])=>(
             <button key={key} type="button" onClick={()=>switchTheme(key)}
-              style={{flex:1,padding:'8px 0',borderRadius:8,cursor:'pointer',fontSize:11,fontWeight:700,
+              title={`${label} theme`}
+              style={{padding:'7px 0 6px',borderRadius:8,cursor:'pointer',
+                display:'flex',flexDirection:'column',alignItems:'center',gap:4,
                 border:`1px solid ${themeKey===key?C.accent:C.border}`,
-                background:themeKey===key?C.accent+'18':C.bg,
-                color:themeKey===key?C.accent:C.muted}}>
-              {label}
+                background:themeKey===key?C.accent+'18':C.bg}}>
+              <span style={{width:14,height:14,borderRadius:'50%',
+                background:`linear-gradient(135deg, ${bgHex} 50%, ${acHex} 50%)`,
+                border:`1px solid ${C.border}`}}/>
+              <span style={{fontSize:9.5,fontWeight:700,
+                color:themeKey===key?C.accent:C.muted}}>{label}</span>
             </button>
           ))}
         </div>
@@ -25989,12 +26095,13 @@ export default function App(){
             boxShadow:'0 12px 32px rgba(0,0,0,0.35)'}}>
             <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',
               letterSpacing:'0.06em',marginBottom:8}}>Appearance</div>
-            <div style={{display:'flex',gap:6,marginBottom:16}}>
-              {[['dark','🌙'],['light','☀️'],['midnight','🌌']].map(([key,icon])=>(
-                <button key={key} onClick={()=>switchTheme(key)}
-                  style={{flex:1,padding:'8px 0',borderRadius:8,cursor:'pointer',fontSize:16,
+            <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:16}}>
+              {APPEARANCES.map(([key,label,icon,bgHex])=>(
+                <button key={key} onClick={()=>switchTheme(key)} title={`${label} theme`}
+                  style={{width:38,height:38,borderRadius:10,cursor:'pointer',fontSize:15,
                     border:`1px solid ${themeKey===key?C.accent:C.border}`,
-                    background:themeKey===key?C.accent+'18':C.bg}}>
+                    background:themeKey===key?C.accent+'18':C.bg,
+                    display:'flex',alignItems:'center',justifyContent:'center'}}>
                   {icon}
                 </button>
               ))}
