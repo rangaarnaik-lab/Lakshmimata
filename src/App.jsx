@@ -730,6 +730,77 @@ function calcNTopBottom(s){
   return out
 }
 
+// ── Shared list-filter engine (Patterns / Squeeze / 52WL) ────────────
+// Gives the non-RS scanner tabs the same filtering capability as the RS
+// Rating page: symbol search, signal multi-select, breakout type, Stage,
+// and market-cap range. One shared state object, applied by applyListFilters.
+const LIST_SIGNAL_CHIPS=[
+  ['ht','🚀HT'],['hy','📊HY'],['ibv','🏛️IBV'],['pp','🔥PP'],['bullsnort','🐂Bull Snort'],
+  ['volpull','🔥→⚡ Vol→EMA'],['hyema9','🔥→⚡EMA'],['ema5','⚡EMA5'],['ema9','⚡EMA9'],
+  ['ema21','⚡EMA21'],['ema50','⚡EMA50'],['power','⭐Power'],['hyht','💥HY/HT Break'],
+  ['r1breakout','🎯R1 Breakout'],['52wh','🏆52W High'],['cupbreakout','☕Cup Breakout'],
+  ['guppy','🐠Guppy Crossover'],['s2new','🚀Stage 2 New'],
+  ['vcp2t','🌀VCP 2T'],['vcp3t','🌀VCP 3T'],['vcp4t','🌀VCP 4T'],
+  ['top2','⛰️2 Tops Break'],['bot2','🥣2 Bottoms Break'],['top3','🏔️3 Tops Break'],['bot3','🌊3 Bottoms Break'],
+]
+function matchSignalSig(s,sig){
+  if(sig==='pp') return topVolumeSignal(s)==='pp'
+  if(sig==='bullsnort') return !!s.isBullSnort
+  if(sig==='hy') return topVolumeSignal(s)==='hy'
+  if(sig==='ht') return topVolumeSignal(s)==='ht'
+  if(sig==='ema5') return !!s.nearEMA5?.isNearEMA5
+  if(sig==='ema9') return !!s.nearEMA9?.isNearEMA9
+  if(sig==='ema21') return !!s.nearEMA21?.isNearEMA21
+  if(sig==='ema50') return !!s.nearEMA50?.isNearEMA50
+  if(sig==='power') return topVolumeSignal(s)==='pp' && s.rs>=80
+  if(sig==='ibv') return topVolumeSignal(s)==='ibv'
+  if(sig==='r1breakout') return !!s.isResistanceBreakout
+  if(sig==='cupbreakout') return !!s.isCupHandleBreakout
+  if(sig==='guppy') return !!s.isGuppyBullishCrossover
+  if(sig==='52wh') return !!s.is52whBreakout
+  if(sig==='hyht') return !!calcHYHTBreakout(s).isBreakout
+  if(sig==='volpull') return !!calcVolClimaxNearSupport(s).isMatch
+  if(sig==='hyema9') return !!calcHyLowVolEma9Bounce(s).isMatch
+  if(sig==='s2new') return !!s.isS2NewEntry
+  if(sig==='vcp2t') return !!s.isVCP && s.vcpStage===2
+  if(sig==='vcp3t') return !!s.isVCP && s.vcpStage===3
+  if(sig==='vcp4t') return !!s.isVCP && s.vcpStage===4
+  if(sig==='top2') return !!calcNTopBottom(s).t2
+  if(sig==='bot2') return !!calcNTopBottom(s).b2
+  if(sig==='top3') return !!calcNTopBottom(s).t3
+  if(sig==='bot3') return !!calcNTopBottom(s).b3
+  if(sig==='ppconsec2') return hasConsecutivePP(s.pp?.ppHistory, 2)
+  if(sig==='ppgt2') return (s.pp?.ppCount10d||0) > 2
+  return false
+}
+const emptyListFilter=()=>({search:'',sigFilters:[],breakoutTypeFilter:'all',stageFilter:'all',mcapMin:'',mcapMax:''})
+function applyListFilters(list,f){
+  if(!f) return list
+  return list.filter(s=>{
+    if(f.search&&!stockMatchesQuery(s,f.search)) return false
+    if(f.mcapMin!==''&&f.mcapMin!=null&&(s.marketCap==null||s.marketCap<+f.mcapMin)) return false
+    if(f.mcapMax!==''&&f.mcapMax!=null&&(s.marketCap==null||s.marketCap>+f.mcapMax)) return false
+    const sigs=Array.isArray(f.sigFilters)?f.sigFilters:[]
+    if(sigs.length>0&&!sigs.some(sig=>matchSignalSig(s,sig))) return false
+    if(f.stageFilter&&f.stageFilter!=='all'&&calcWeinsteinStage(s).stage!==+f.stageFilter) return false
+    const bt=f.breakoutTypeFilter
+    if(bt==='top2'&&!calcNTopBottom(s).t2) return false
+    if(bt==='bot2'&&!calcNTopBottom(s).b2) return false
+    if(bt==='top3'&&!calcNTopBottom(s).t3) return false
+    if(bt==='bot3'&&!calcNTopBottom(s).b3) return false
+    if(bt==='hyht'&&!calcHYHTBreakout(s).isBreakout) return false
+    if(bt==='volpull'&&!calcVolClimaxNearSupport(s).isMatch) return false
+    if(bt==='hyema9'&&!calcHyLowVolEma9Bounce(s).isMatch) return false
+    if(bt==='ema5'&&!s.nearEMA5?.isNearEMA5) return false
+    if(bt==='r1'&&!s.isResistanceBreakout) return false
+    if(bt==='52wh'&&!s.is52whBreakout) return false
+    if(bt==='cup'&&!s.isCupHandleBreakout) return false
+    if(bt==='guppy'&&!s.isGuppyBullishCrossover) return false
+    if(bt==='s2'&&!s.isS2NewEntry) return false
+    return true
+  })
+}
+
 // ── Preset filter definitions ─────────────────────────────────────────
 const PRESETS = [
   {id:'all',       label:'All',          icon:'🌐', desc:'Show all stocks'},
@@ -2968,6 +3039,72 @@ function VolBadge({vol}){
       padding:'2px 7px',borderRadius:5,fontSize:9,fontWeight:700,
       background:vol.color+'18',color:vol.color,whiteSpace:'nowrap'}}>
       {vol.label} <span style={{fontSize:8,opacity:0.7}}>{vol.pct}% of peak</span>
+    </div>
+  )
+}
+
+// ── Tab Filter Bar (Patterns / Squeeze / 52WL) ────────────────────────
+// Same controls as the RS Rating page's Filters panel — search, Signal
+// multi-select, Breakout type, Stage, Market cap — driven by one shared
+// filter state so criteria carry across those tabs in a session.
+function TabFilterBar({f,set,hideSearch=false}){
+  const [open,setOpen]=useState(false)
+  const dirty=f.search||f.sigFilters.length>0||f.breakoutTypeFilter!=='all'||f.stageFilter!=='all'||f.mcapMin!==''||f.mcapMax!==''
+  const chip=(active,label,onClick)=>(
+    <button onClick={onClick}
+      style={{padding:'6px 13px',borderRadius:20,border:`1px solid ${active?C.accent:C.border}`,
+        cursor:'pointer',fontSize:12,fontWeight:600,
+        background:active?C.accent+'22':'transparent',color:active?C.accent:C.muted}}>{label}</button>
+  )
+  return (
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:'10px 12px',marginBottom:14}}>
+      <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+        {!hideSearch&&(
+        <input placeholder='Search symbol or company…' value={f.search} onChange={e=>set(p=>({...p,search:e.target.value}))}
+          style={{flex:'1 1 160px',minWidth:120,padding:'8px 12px',background:C.bg,border:`1px solid ${f.search?C.accent:C.border}`,
+            borderRadius:8,color:C.text,fontSize:13,outline:'none'}}/>
+        )}
+        <button onClick={()=>setOpen(o=>!o)}
+          style={{padding:'8px 14px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:700,
+            border:`1px solid ${dirty||open?C.accent:C.border}`,background:dirty||open?C.accent+'22':'transparent',
+            color:dirty||open?C.accent:C.text}}>
+          ⚙ Filters{dirty?' •':''} {open?'▲':'▼'}
+        </button>
+        {dirty&&chip(false,'✕ Clear',()=>set(emptyListFilter()))}
+      </div>
+      {open&&(
+        <div style={{marginTop:10,borderTop:`1px solid ${C.border}`,paddingTop:10}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>
+            Signal <span style={{color:C.muted,fontWeight:400}}>(tap multiple — matches any selected)</span>
+          </div>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
+            {chip(f.sigFilters.length===0,'All',()=>set(p=>({...p,sigFilters:[]})))}
+            {LIST_SIGNAL_CHIPS.map(([v,label])=>chip(f.sigFilters.includes(v),label,
+              ()=>set(p=>({...p,sigFilters:f.sigFilters.includes(v)?p.sigFilters.filter(x=>x!==v):[...p.sigFilters,v]}))))}
+          </div>
+          <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>Breakout type</div>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
+            {[['all','All'],['hyht','💥 HY/HT'],['volpull','🔥→⚡ Vol→EMA'],['hyema9','🔥→⚡EMA'],['ema5','⚡EMA5'],
+              ['r1','🎯 R1'],['52wh','🏆 52W High'],['cup','☕ Cup'],['guppy','🐠 Guppy'],['s2','🚀 Stage 2 New'],
+              ['top2','⛰️ 2 Tops Break'],['bot2','🥣 2 Bottoms Break'],['top3','🏔️ 3 Tops Break'],['bot3','🌊 3 Bottoms Break']
+            ].map(([v,label])=>chip(f.breakoutTypeFilter===v,label,()=>set(p=>({...p,breakoutTypeFilter:v}))))}
+          </div>
+          <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>Stage</div>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
+            {[['all','All'],['1','S1 Base'],['2','S2 Up'],['3','S3 Top'],['4','S4 Down']].map(([v,label])=>
+              chip(f.stageFilter===v,label,()=>set(p=>({...p,stageFilter:v}))))}
+          </div>
+          <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>Market cap (₹ Cr)</div>
+          <div style={{display:'flex',gap:8}}>
+            <input placeholder='Min' value={f.mcapMin} onChange={e=>set(p=>({...p,mcapMin:e.target.value}))}
+              style={{flex:1,padding:'8px 10px',background:C.bg,border:`1px solid ${f.mcapMin?C.accent:C.border}`,
+                borderRadius:6,color:C.text,fontSize:12,outline:'none'}}/>
+            <input placeholder='Max' value={f.mcapMax} onChange={e=>set(p=>({...p,mcapMax:e.target.value}))}
+              style={{flex:1,padding:'8px 10px',background:C.bg,border:`1px solid ${f.mcapMax?C.accent:C.border}`,
+                borderRadius:6,color:C.text,fontSize:12,outline:'none'}}/>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -19245,6 +19382,11 @@ export default function App(){
   // clickable filter chips instead of 5 always-stacked sections.
   // RS Rating → Filters → Breakout type (single-select, like Result quality).
   const [breakoutTypeFilter,setBreakoutTypeFilter]=useState('all')
+  // Shared filter state for the Patterns / Squeeze / 52WL tabs — gives
+  // them the same filter capability as the RS Rating page (search,
+  // signals, breakout type, stage, market cap) via TabFilterBar +
+  // applyListFilters. One object so criteria carry across those tabs.
+  const [listFilter,setListFilter]=useState(emptyListFilter)
   const resetAllRsFilters=()=>{
     setSearch('')
     setRsMin(0); setRsMax(99)
@@ -19804,8 +19946,8 @@ export default function App(){
       persistChartPanelAutoSave(DEFAULT_CHART_WIDE,null)
     }catch(e){}
   }
-  const [wlSearch,setWlSearch]=useState(''),[wlSigOnly,setWlSigOnly]=useState(false)
-  const [weakSearch,setWeakSearch]=useState(''),[weakSigOnly,setWeakSigOnly]=useState(false)
+  const [wlSigOnly,setWlSigOnly]=useState(false)
+  const [weakSigOnly,setWeakSigOnly]=useState(false)
 
   // ── DB-powered scan (reads from Supabase, pre-computed by live server) ──
   const [indexData,setIndexData]=useState([])
@@ -20714,10 +20856,10 @@ export default function App(){
     return { rows, hiddenCount: allRows.length - rows.length }
   },[stocks,industryData])
 
-  const wlBase=scopedStocks.filter(s=>s.scanner52wl.near52wLow&&stockMatchesQuery(s,wlSearch)&&(!wlSigOnly||s.scanner52wl.isSignal)).sort((a,b)=>a.scanner52wl.pctFrom52wLow-b.scanner52wl.pctFrom52wLow)
+  const wlBase=applyListFilters(scopedStocks.filter(s=>s.scanner52wl.near52wLow&&(!wlSigOnly||s.scanner52wl.isSignal)),listFilter).sort((a,b)=>a.scanner52wl.pctFrom52wLow-b.scanner52wl.pctFrom52wLow)
   const displayed52WL=applyPP(wlBase,ppFilter52WL)
 
-  const weakBase=scopedStocks.filter(s=>s.weakRS.chg1d>=weakThreshold&&s.rs<50&&stockMatchesQuery(s,weakSearch)&&(!weakSigOnly||s.weakRS.isSignal)).sort((a,b)=>b.weakRS.chg1d-a.weakRS.chg1d)
+  const weakBase=applyListFilters(scopedStocks.filter(s=>s.weakRS.chg1d>=weakThreshold&&s.rs<50&&(!weakSigOnly||s.weakRS.isSignal)),listFilter).sort((a,b)=>b.weakRS.chg1d-a.weakRS.chg1d)
   const displayedWeak=applyPP(weakBase,ppFilterWeak)
 
   const tabs=[['rs','📊','RS Rating'],['market','🌐','Market'],['squeeze','🌀','Squeeze'],['patterns','📐','Patterns'],['52wl','🎯','52WL'],['portfolio','💼','Portfolio'],['compare','⚖','Compare'],['watchlist','📋','Watchlist'],['settings','⚙','Account']]
@@ -23424,7 +23566,7 @@ export default function App(){
 
         {/* ══ PATTERNS — every detected chart pattern, one by one ══ */}
         {mainTab==='patterns'&&(()=>{
-          const stocks = scopedStocks
+          const stocks = applyListFilters(scopedStocks, listFilter)
           return (
           <div style={{padding:'0 0 20px'}}>
             <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
@@ -23465,6 +23607,7 @@ export default function App(){
               <strong style={{color:C.yellow}}>Heuristic patterns.</strong>
               {' '}Head &amp; Shoulders, triangles, wedges, flags are swing-point approximations — not exact textbook geometry. Expect some false positives.
             </div>
+            {stocks.length>0&&<TabFilterBar f={listFilter} set={setListFilter}/>}
             {stocks.length===0?(
               <EmptyPanel icon="📐" title="No scan data yet"
                 body="Patterns need the live stock universe. Open RS Rating once so data loads, then come back."/>
@@ -24548,7 +24691,7 @@ export default function App(){
 
         {/* ══ SQUEEZE ══ */}
         {mainTab==='squeeze'&&(()=>{
-          const stocks = scopedStocks
+          const stocks = applyListFilters(scopedStocks, listFilter)
           return (
           <div style={{padding:'0 0 20px'}}>
             {isMobile&&(
@@ -24569,6 +24712,7 @@ export default function App(){
               subtitle="John Carter's three compression tiers — Bollinger Bands inside the 1.0 / 1.5 / 2.0 ATR Keltner — with how long the coil has held and which way momentum is leaning."
               tip="High compression = tightest coil. ▲ Long means TTM momentum is above zero, so the break is more likely to resolve up. Sort by Squeeze/VCP to put the longest, hardest coils on top."
             />
+            {stocks.length>0&&<TabFilterBar f={listFilter} set={setListFilter}/>}
             {stocks.length===0?(
               <EmptyPanel icon="🌀" title="No scan data yet"
                 body="Squeeze needs the live universe. Open RS Rating so data loads, then return here."/>
@@ -24597,6 +24741,8 @@ export default function App(){
               <HistoryCalendarPicker historyDate={historyDate} setHistoryDate={setHistoryDate}
                 availableDates={availableDates} isMobile={isMobile} onOpenRefresh={refreshHistoryDates}/>
             </div>
+
+            {stocks.length>0&&<TabFilterBar f={listFilter} set={setListFilter} hideSearch/>}
 
             <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
               {[{id:'wl52',label:'🎯 52WL Crossover',accent:C.pink,count:displayed52WL.length},
@@ -24654,7 +24800,7 @@ export default function App(){
                       background:wlSigOnly?C.pink+'22':'transparent',color:wlSigOnly?C.pink:C.muted}}>
                     🎯 Full Signal Only
                   </button>
-                  <input placeholder="Search…" value={wlSearch} onChange={e=>setWlSearch(e.target.value)}
+                  <input placeholder="Search symbol or company…" value={listFilter.search} onChange={e=>setListFilter(p=>({...p,search:e.target.value}))}
                     style={{flex:1,minWidth:100,padding:'8px 12px',background:C.card,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:13,outline:'none'}}/>
                 </div>
               </>
@@ -24714,7 +24860,7 @@ export default function App(){
                       background:weakSigOnly?C.lime+'22':'transparent',color:weakSigOnly?C.lime:C.muted}}>
                     🚨 Full Signal Only
                   </button>
-                  <input placeholder="Search…" value={weakSearch} onChange={e=>setWeakSearch(e.target.value)}
+                  <input placeholder="Search symbol or company…" value={listFilter.search} onChange={e=>setListFilter(p=>({...p,search:e.target.value}))}
                     style={{flex:1,minWidth:100,padding:'8px 12px',background:C.card,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:13,outline:'none'}}/>
                 </div>
               </>
