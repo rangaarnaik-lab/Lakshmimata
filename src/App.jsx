@@ -66,7 +66,7 @@ import {
   takeFyersStartedFlag,
 } from './lib/fyersOAuth'
 import { readLiveBrokerConnection } from './lib/brokerLive'
-import { fetchStocksFromDB, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, requestFundamentalsHeal, requestResultsHeal, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, compressChartImage, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, countTodayContentDislikes, DISLIKE_DAILY_LIMIT, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchUserWatchlists, saveUserWatchlists, fetchMissedAiFilings } from './lib/db'
+import { fetchStocksFromDB, attachMultiYearBreakout, fetchSectorsFromDB, fetchIndustriesFromDB, fetchScanMeta, fetchAvailableHistoryDates, fetchIndexDashboard, fetchStockFullHistory, fetchStockIntradayHistory, fetchSavedScanners, saveScanner, deleteScanner, fetchMarketBreadthHistory, fetchEmaBreadthHistory, fetchFiiDiiDailyHistory, fetchTopGainers, fetchRecentAlerts, fetchSectorRotation, fetchIndexRotation, fetchWatchlistRotation, fetchLiveStockPrice, fetchIndexPriceHistory, logPageView, fetchUsageStats, fetchAnnouncements, fetchAnnouncementFilterOptions, fetchWatchlistAnnouncementsSince, fetchSymbolCorporateNews, fetchRecentFinancialResults, fetchFinancialResultsGroupedForRatings, fetchIndexSymbols, fetchBestPicks, fetchBestPicksHistory, fetchFinancialResultsHistory, fetchConcallSummaries, fetchTranscriptSummaries, fetchPptSummaries, fetchCompanyAbout, fetchStockFundamentals, requestFundamentalsHeal, requestResultsHeal, fetchStockThemes, fetchMgmtFlags, submitStockAiAsk, compressChartImage, fetchStockAiAsk, fetchRecentStockAiAsks, submitContentFeedback, clearContentFeedback, fetchContentFeedbackCounts, countTodayContentDislikes, DISLIKE_DAILY_LIMIT, fetchEmergingThemeRadar, EMERGING_THEME_LABELS, fetchPublicUserFeedback, fetchMyUserFeedback, submitUserFeedback, fetchUserFeedbackRatingStats, fetchUserLayouts, saveUserLayout, deleteUserLayout, MAX_USER_LAYOUTS, fetchUserAlertPrefs, saveUserAlertPrefs, fetchAppSetting, fetchUserTelegram, startTelegramLink, setTelegramAlertsEnabled, fetchUserChartIndicatorPrefs, saveUserChartIndicatorPrefs, fetchUserPortfolios, saveUserPortfolios, fetchUserWatchlists, saveUserWatchlists, fetchMissedAiFilings } from './lib/db'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import {
   calcRSRaw, percentileRank, buildRSHistory, rsSlope,
@@ -749,6 +749,7 @@ const LIST_SIGNAL_CHIPS=[
   ['ema21','⚡EMA21'],['ema50','⚡EMA50'],['power','⭐Power'],['hyht','💥HY/HT Break'],
   ['r1breakout','🎯R1 Breakout'],['52wh','🏆52W High'],['cupbreakout','☕Cup Breakout'],
   ['guppy','🐠Guppy Crossover'],['s2new','🚀Stage 2 New'],
+  ['myAny','📈Multi-Yr (Any)'],['my3y','📈3Y High'],['my5y','📈5Y High'],['my10y','📈10Y High'],
   ['vcp2t','🌀VCP 2T'],['vcp3t','🌀VCP 3T'],['vcp4t','🌀VCP 4T'],
   ['top2','⛰️2 Tops Break'],['bot2','🥣2 Bottoms Break'],['top3','🏔️3 Tops Break'],['bot3','🌊3 Bottoms Break'],
 ]
@@ -767,6 +768,10 @@ function matchSignalSig(s,sig){
   if(sig==='cupbreakout') return !!s.isCupHandleBreakout
   if(sig==='guppy') return !!s.isGuppyBullishCrossover
   if(sig==='52wh') return !!s.is52whBreakout
+  if(sig==='myAny') return !!s.isMultiYearBreakout
+  if(sig==='my3y') return s.multiYear?.[3]?.fresh === true
+  if(sig==='my5y') return s.multiYear?.[5]?.fresh === true
+  if(sig==='my10y') return s.multiYear?.[10]?.fresh === true
   if(sig==='hyht') return !!calcHYHTBreakout(s).isBreakout
   if(sig==='volpull') return !!calcVolClimaxNearSupport(s).isMatch
   if(sig==='hyema9') return !!calcHyLowVolEma9Bounce(s).isMatch
@@ -803,6 +808,10 @@ function applyListFilters(list,f){
     if(bt==='ema5'&&!s.nearEMA5?.isNearEMA5) return false
     if(bt==='r1'&&!s.isResistanceBreakout) return false
     if(bt==='52wh'&&!s.is52whBreakout) return false
+if(bt==='myAny'&&!s.isMultiYearBreakout) return false
+    if(bt==='my3y'&&s.multiYear?.[3]?.fresh!==true) return false
+    if(bt==='my5y'&&s.multiYear?.[5]?.fresh!==true) return false
+    if(bt==='my10y'&&s.multiYear?.[10]?.fresh!==true) return false
     if(bt==='cup'&&!s.isCupHandleBreakout) return false
     if(bt==='guppy'&&!s.isGuppyBullishCrossover) return false
     if(bt==='s2'&&!s.isS2NewEntry) return false
@@ -3095,6 +3104,7 @@ function TabFilterBar({f,set,hideSearch=false}){
           <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
             {[['all','All'],['hyht','💥 HY/HT'],['volpull','🔥→⚡ Vol→EMA'],['hyema9','🔥→⚡EMA'],['ema5','⚡EMA5'],
               ['r1','🎯 R1'],['52wh','🏆 52W High'],['cup','☕ Cup'],['guppy','🐠 Guppy'],['s2','🚀 Stage 2 New'],
+              ['myAny','📈 Multi-Yr (Any)'],['my3y','📈 3Y High'],['my5y','📈 5Y High'],['my10y','📈 10Y High'],
               ['top2','⛰️ 2 Tops Break'],['bot2','🥣 2 Bottoms Break'],['top3','🏔️ 3 Tops Break'],['bot3','🌊 3 Bottoms Break']
             ].map(([v,label])=>chip(f.breakoutTypeFilter===v,label,()=>set(p=>({...p,breakoutTypeFilter:v}))))}
           </div>
@@ -18638,6 +18648,10 @@ export default function App(){
     }
   },[autoRefresh])
   const [scanMeta,setScanMeta]=useState(null)
+  // Bumped once the multi-year breakout enrichment lands. Filtered lists read
+  // `s.multiYear`, and `stocks` is mutated in place — without a state change
+  // the useMemo filters would never recompute once the flags arrive.
+  const [multiYearReady,setMultiYearReady]=useState(0)
   const [weakThreshold,setWeakThreshold]=useState(8)
   const [indexFilter,setIndexFilter]=useState('all')
   const refreshTimer=useRef(null)
@@ -19448,6 +19462,10 @@ export default function App(){
     if(sig==='cupbreakout') return !!s.isCupHandleBreakout
     if(sig==='guppy') return !!s.isGuppyBullishCrossover
     if(sig==='52wh') return !!s.is52whBreakout
+    if(sig==='myAny') return !!s.isMultiYearBreakout
+    if(sig==='my3y') return s.multiYear?.[3]?.fresh === true
+    if(sig==='my5y') return s.multiYear?.[5]?.fresh === true
+    if(sig==='my10y') return s.multiYear?.[10]?.fresh === true
     if(sig==='hyht') return !!calcHYHTBreakout(s).isBreakout
     if(sig==='volpull') return !!calcVolClimaxNearSupport(s).isMatch
     if(sig==='hyema9') return !!calcHyLowVolEma9Bounce(s).isMatch
@@ -19534,6 +19552,10 @@ export default function App(){
     if(bt==='ema5'&&!s.nearEMA5?.isNearEMA5) return false
     if(bt==='r1'&&!s.isResistanceBreakout) return false
     if(bt==='52wh'&&!s.is52whBreakout) return false
+if(bt==='myAny'&&!s.isMultiYearBreakout) return false
+    if(bt==='my3y'&&s.multiYear?.[3]?.fresh!==true) return false
+    if(bt==='my5y'&&s.multiYear?.[5]?.fresh!==true) return false
+    if(bt==='my10y'&&s.multiYear?.[10]?.fresh!==true) return false
     if(bt==='cup'&&!s.isCupHandleBreakout) return false
     if(bt==='guppy'&&!s.isGuppyBullishCrossover) return false
     if(bt==='s2'&&!s.isS2NewEntry) return false
@@ -20302,15 +20324,30 @@ export default function App(){
         historyDate?Promise.resolve(null):fetchScanMeta(),
       ])
       const quotes=liveQuotesRef.current
-      setStocks(quotes.size
+      // Build the quote-applied rows first, then hand THAT array to the
+      // enrichment — otherwise re-setting `stocks` afterwards would swap in
+      // the pre-quote objects and silently drop every live price.
+      const rows=quotes.size
         ? dbStocks.map(s=>{
             const q=quotes.get(String(s.sym||'').toUpperCase())
             return q?applyQuoteToStock(s,q):s
           })
-        : dbStocks)
+        : dbStocks
+      setStocks(rows)
       setSectorData(dbSectors)
       setIndustryData(dbIndustries)
       setScanMeta(meta)
+      // Multi-year (3/5/10Y) breakout flags need per-symbol price history from
+      // stock_full_history — far too heavy to block the main scan, so the list
+      // renders first and the flags stream in afterwards. Until they land the
+      // Multi-Yr chips simply match nothing.
+      if(!historyDate) attachMultiYearBreakout(rows).then(flagged=>{
+        // Re-set with a NEW array identity. `rows` was mutated in place, so
+        // without a fresh reference every React.memo'd table/filter downstream
+        // would keep its stale "no multi-year matches" result.
+        setStocks(flagged.slice())
+        setMultiYearReady(v=>v+1)
+      }).catch(()=>{})
       setLastRefresh(Date.now())
       setProgress(100);setProgressMsg('Done!')
     }catch(e){
@@ -20779,6 +20816,10 @@ export default function App(){
     if(breakoutTypeFilter==='ema5'&&!s.nearEMA5?.isNearEMA5)return false
     if(breakoutTypeFilter==='r1'&&!s.isResistanceBreakout)return false
     if(breakoutTypeFilter==='52wh'&&!s.is52whBreakout)return false
+if(breakoutTypeFilter==='myAny'&&!s.isMultiYearBreakout)return false
+    if(breakoutTypeFilter==='my3y'&&s.multiYear?.[3]?.fresh!==true)return false
+    if(breakoutTypeFilter==='my5y'&&s.multiYear?.[5]?.fresh!==true)return false
+    if(breakoutTypeFilter==='my10y'&&s.multiYear?.[10]?.fresh!==true)return false
     if(breakoutTypeFilter==='cup'&&!s.isCupHandleBreakout)return false
     if(breakoutTypeFilter==='guppy'&&!s.isGuppyBullishCrossover)return false
     if(breakoutTypeFilter==='s2'&&!s.isS2NewEntry)return false
@@ -22340,6 +22381,10 @@ export default function App(){
                           ['cup','☕ Cup',C.yellow],
                           ['guppy','🐠 Guppy',C.green],
                           ['s2','🚀 Stage 2 New',C.green],
+                          ['myAny','📈 Multi-Yr (Any)',C.accent],
+                          ['my3y','📈 3Y High',C.teal],
+                          ['my5y','📈 5Y High',C.blue],
+                          ['my10y','📈 10Y High',C.purple],
                           ['top2','⛰️ 2 Tops Break',C.green],
                           ['bot2','🥣 2 Bottoms Break',C.green],
                           ['top3','🏔️ 3 Tops Break',C.green],

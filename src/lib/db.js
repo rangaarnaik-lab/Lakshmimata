@@ -5,6 +5,7 @@ import { supabase } from './supabase'
 import { fetchUpstoxQuotes, fetchUpstoxCandles, clearUpstoxCandleCache } from './upstoxQuotes'
 import { resolveIndustry, resolveSector, getCompanyName } from '../data/industries'
 import { enrichHistoryLeaderFlags } from './historyLeaders'
+import { multiYearBreakout, isMultiYearBreakout, MULTIYEAR_WINDOWS } from '../scanners/multiYearBreakout'
 
 /**
  * Fetch all stocks from Supabase DB (pre-computed by live server)
@@ -2429,3 +2430,100 @@ export async function fetchMissedAiFilings({ days = 45, limitPerType = 80 } = {}
   return out
 }
 
+// ── Multi-year breakout ────────────────────────────────────────────────
+// The `stocks` table carries `is_52wh_breakout` (one year of lookback) but
+// nothing for 3/5/10-year highs — that needs per-symbol price history, which
+// only lives in `stock_full_history`. So this is fetched separately and merged
+// onto the stock rows by the caller.
+//
+// Chunked by symbol (not by row count) because PostgREST caps rows per
+// response; selecting all symbols at once returns the cap and silently drops
+// the tail. ~2500 symbols × 6 columns of daily closes is a large payload, so
+// results are cached per symbol for the session.
+const MULTIYEAR_CHUNK = 120
+
+export function multiYearFlags(closes, opts = {}) {
+  const out = {}
+  for (const { years } of MULTIYEAR_WINDOWS) {
+    const r = multiYearBreakout(closes, { years, ...opts })
+    if (r) out[years] = r
+  }
+  const best = [3, 5, 10].map(y => out[y]).find(r => r && r.fresh) || null
+  return {
+    ...out,
+    // Widest window that produced a fresh cross — the headline signal.
+    years: best ? best.years : null,
+    breakout: !!best,
+    pctAbove: best ? best.pctAbove : null,
+  }
+}
+
+/**
+ * Fetch closes for `symbols` from stock_full_history.
+ * Returns Map<symbol, number[]> (oldest → newest).
+ */
+export async function fetchMultiYearCloses(symbols, { years = 10 } = {}) {
+  const out = new Map()
+  const list = (symbols || []).filter(Boolean)
+  if (!list.length) return out
+
+  const need = barsForYearsCached(years)
+  // Extra headroom for gaps, non-trading days and the "crossed within N bars"
+  // walk-back, which needs history beyond the window itself.
+  const limit = need + 60
+  const since = new Date()
+  since.setFullYear(since.getFullYear() - years - 1)
+
+  for (let i = 0; i < list.length; i += MULTIYEAR_CHUNK) {
+    const chunk = list.slice(i, i + MULTIYEAR_CHUNK)
+    try {
+      const { data, error } = await supabase
+        .from('stock_full_history')
+        .select('symbol, close, trade_date')
+        .in('symbol', chunk)
+        .gte('trade_date', since.toISOString().slice(0, 10))
+        .order('symbol')
+        .order('trade_date')
+        .limit(limit * chunk.length)
+      if (error) { console.warn('multiYear history error:', error.message); continue }
+      for (const row of data || []) {
+        const c = Number(row.close)
+        if (!isFinite(c) || c <= 0) continue
+        if (!out.has(row.symbol)) out.set(row.symbol, [])
+        out.get(row.symbol).push(c)
+      }
+    } catch (e) {
+      // A failed chunk must not take down the whole scan.
+      console.warn('multiYear history chunk failed:', e?.message)
+    }
+  }
+  return out
+}
+
+function barsForYearsCached(years) {
+  return MULTIYEAR_WINDOWS.find(w => w.years === years)?.bars ?? years * 252
+}
+
+/**
+ * Attach `s.multiYear` to each stock. Returns the same array (mutated) so
+ * callers can use it inline without a re-render dance.
+ *
+ * Stock rows key the ticker as `sym`, not `symbol` — the history table uses
+ * `symbol`. Normalised here so callers don't have to care.
+ */
+export async function attachMultiYearBreakout(stocks, opts = {}) {
+  const list = Array.isArray(stocks) ? stocks : []
+  if (!list.length) return list
+  const syms = list.map(s => String(s.sym ?? s.symbol ?? '').trim()).filter(Boolean)
+  const closes = await fetchMultiYearCloses(syms, opts)
+  for (const s of list) {
+    const key = String(s.sym ?? s.symbol ?? '').trim()
+    const arr = closes.get(key)
+    s.multiYear = arr?.length ? multiYearFlags(arr, opts) : null
+    s.isMultiYearBreakout = !!s.multiYear?.breakout
+    s.multiYearYears = s.multiYear?.years ?? null
+  }
+  return list
+}
+
+export { isMultiYearBreakout }
