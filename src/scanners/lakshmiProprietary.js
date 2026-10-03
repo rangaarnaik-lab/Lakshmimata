@@ -29,8 +29,13 @@ export const LAKSHMI_VOL_COLORS = {
   PPV: '#4CAF50',       // color.green
   DOWN: '#FF5252',      // color.red
   NEUTRAL: '#787B86',   // color.gray
-  LOW_VOL_BG: '#EEE7EE', // color.rgb(238, 231, 238)
-  BULL_SNORT_BG: '#D2AAE6', // color.rgb(210, 170, 230)
+  // Full-pane-highlight backgrounds. The Pine originals (#EEE7EE / #D2AAE6)
+  // are near-white and were authored for TradingView's LIGHT theme — on the
+  // dark chart they painted one bright vertical stripe per bar across the
+  // whole volume pane, which read as stray white grid lines. These are the
+  // dark-theme equivalents (same hue, luminance dropped to sit under the bars).
+  LOW_VOL_BG: '#2A2F3E',     // was #EEE7EE (Pine color.rgb(238,231,238))
+  BULL_SNORT_BG: '#3B2E4A',  // was #D2AAE6 (Pine color.rgb(210,170,230))
   IBV_ICON: '#FF69B4',  // Mata.pine below-candle IBV (hot pink)
   PPV_ICON: '#FFFFFF',  // dark chart: white star (Pine uses black on light TV theme)
   BULL_SNORT_ICON: '#E040FB', // Mata col_BullSnort
