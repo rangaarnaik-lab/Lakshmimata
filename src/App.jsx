@@ -9251,7 +9251,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   const volDownColor = volP.volDownColor || TV_VOL_DN
   const volBarOpacity = Math.min(1, Math.max(0.2, (Number(volP.barOpacity) || 50) / 100))
   const volShowMarkers = showLakshmiVol && volP.showMarkers !== false
-  const volTableBoxH = clean ? (isMobile ? 38 : 30) : (isMobile ? 48 : 40)
+  // Sized for a two-line label plus the value row. The previous 40/30 assumed a
+  // single-line label, which is why the wrapped labels were being clipped.
+  const volTableBoxH = clean ? (isMobile ? 42 : 36) : (isMobile ? 54 : 48)
   const volTableH = volShowTable && !volTableOverlay && !volTableBelow && !volTableCard ? volTableBoxH : 0
   const volTableFootH = volShowTable && volTableBelow && !volTableCard ? volTableBoxH : 0
   // Marker row under the volume pane baseline: signal icons + HT/HY/HQ/M tags,
@@ -11499,34 +11501,39 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
                   background: row.bg || 'transparent',
                 }}>
                   <span style={{
-                    fontSize: clean ? 6.5 : 7, fontWeight:700, color:C.muted,
-                    whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
-                  }}>{row.label}</span>
+                    fontSize: clean ? 8 : 9, fontWeight:700, color:C.muted,
+                    lineHeight:1.15, overflowWrap:'anywhere',
+                  }} title={row.label}>{row.label}</span>
                   <span style={{
-                    fontSize: clean ? 8 : 9, fontWeight:800, color:C.text,
-                    whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flexShrink:0,
-                  }}>{row.value}</span>
+                    fontSize: clean ? 9 : 10, fontWeight:800, color:C.text,
+                    textAlign:'right', overflowWrap:'anywhere',
+                  }} title={String(row.value)}>{row.value}</span>
                 </div>
               ))}
             </div>
           )
         }
+        // Labels wrap to a second line instead of truncating: with 8 columns on a
+        // wide chart the old nowrap+ellipsis clipped "Comments" to "Commerce" and
+        // cut "20 Bar Up/Down" in half. `minWidth:0` + `flex:1 1 0` lets all 8
+        // columns shrink to fit the strip instead of overflowing it.
         const cell = (label, value, valueBg) => (
           <div key={label} style={{
-            minWidth: isMobile ? 64 : 80, flex: '1 1 72px',
+            minWidth: 0, flex: '1 1 0',
             /* Vertical separators only — a full border would put a horizontal
                edge across every column, reading as a line over the pane. */
             borderLeft:`1px solid ${C.border}`, overflow:'hidden',
           }}>
             <div style={{
-              padding: clean ? '1px 4px' : '2px 5px', fontSize: clean ? 6.5 : 7, fontWeight:700, color:C.muted,
+              padding: clean ? '1px 4px' : '2px 5px',
+              fontSize: clean ? 8 : 9, fontWeight:700, color:C.muted,
               background:C.card, borderBottom:`1px solid ${C.border}`,
-              whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+              lineHeight:1.15, overflowWrap:'anywhere',
             }} title={label}>{label}</div>
             <div style={{
-              padding: clean ? '2px 4px' : '3px 5px', fontSize: clean ? 8 : 9, fontWeight:700, color:C.text,
-              background: valueBg || C.bg, whiteSpace:'nowrap',
-              overflow:'hidden', textOverflow:'ellipsis',
+              padding: clean ? '2px 4px' : '3px 5px', fontSize: clean ? 9 : 10, fontWeight:700, color:C.text,
+              background: valueBg || C.bg, lineHeight:1.15,
+              overflowWrap:'anywhere',
             }} title={String(value)}>{value}</div>
           </div>
         )
