@@ -65,6 +65,15 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'cloudUpColor', label: 'Cloud up', type: 'color', tab: 'style' },
     { key: 'cloudDnColor', label: 'Cloud down', type: 'color', tab: 'style' },
     { key: 'cloudOpacity', label: 'Cloud opacity %', min: 5, max: 80, step: 1, tab: 'style' },
+    { key: 'showRibbon', label: 'GMMA ribbon lines', type: 'bool', tab: 'style' },
+    { key: 'ribbonShortColor', label: 'Short ribbon', type: 'color', tab: 'style' },
+    { key: 'ribbonLongColor', label: 'Long ribbon', type: 'color', tab: 'style' },
+    { key: 'ribbonWidth', label: 'Ribbon line width', min: 0.5, max: 4, step: 0.1, tab: 'style' },
+    { key: 'showCrossover', label: 'Crossover markers', type: 'bool', tab: 'style' },
+    { key: 'crossBullColor', label: 'Bullish cross', type: 'color', tab: 'style' },
+    { key: 'crossBearColor', label: 'Bearish cross', type: 'color', tab: 'style' },
+    { key: 'crossSize', label: 'Cross marker size', min: 3, max: 14, step: 1, tab: 'style' },
+    { key: 'showCrossLabels', label: 'Cross labels (GMMA)', type: 'bool', tab: 'style' },
   ],
   squeeze: [
     { key: 'sqLength', label: 'BB / KC Length', min: 5, max: 100, step: 1 },
@@ -306,6 +315,12 @@ const DEFAULT_PARAMS = {
   },
   guppy: {
     showCloud: true, cloudUpColor: '#16a34a', cloudDnColor: '#ef4444', cloudOpacity: 20,
+    // The GMMA ribbon (6 short + 6 long EMAs) and the crossover markers are
+    // what make this a crossover study — the cloud alone only shows trend state.
+    showRibbon: true, ribbonShortColor: '#26a69a', ribbonLongColor: '#ef5350',
+    ribbonWidth: 1,
+    showCrossover: true, crossBullColor: '#00e676', crossBearColor: '#ff5252',
+    crossSize: 7, showCrossLabels: true,
   },
   // Squeeze Pro (John Carter): one BB against three Keltner widths, so the
   // dot says how hard price is coiled instead of just on/off.
@@ -390,7 +405,7 @@ export function defaultChartIndicatorPrefs() {
       },
     }
   }
-  return { version: 13, indicators }
+  return { version: 14, indicators }
 }
 
 function clampNum(v, min, max, fallback) {
@@ -546,7 +561,18 @@ export function normalizeChartIndicatorPrefs(raw) {
   if (prevVer < 13) {
     base.indicators.squeeze.params.sqShowOff = false
   }
-  base.version = 13
+  // v14: Guppy shipped as a cloud fill only — no GMMA ribbon lines and no
+  // crossover markers, so it couldn't be read as a crossover study at all.
+  // Seed the ribbon and cross markers on for existing profiles.
+  if (prevVer < 14) {
+    Object.assign(base.indicators.guppy.params, {
+      showRibbon: true, ribbonShortColor: '#26a69a', ribbonLongColor: '#ef5350',
+      ribbonWidth: 1,
+      showCrossover: true, crossBullColor: '#00e676', crossBearColor: '#ff5252',
+      crossSize: 7, showCrossLabels: true,
+    })
+  }
+  base.version = 14
   return base
 }
 

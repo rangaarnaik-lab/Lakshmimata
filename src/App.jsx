@@ -10156,7 +10156,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         setShowBullSnort(next)
       } },
     { id:'ma', group:'Overlays', label:'Moving Averages', short:'MA', desc:'EMA 9 / 21 / 50 / 150 / 200 and SMA 20 / 50 / 200', on:indicatorEnabled('ma'), visible:showMA, set:setShowMA },
-    { id:'guppy', group:'Overlays', label:'Guppy MMA', short:'Guppy', desc:'GMMA ribbon — compression vs expansion of the trend', on:indicatorEnabled('guppy'), visible:showGuppy, set:setShowGuppy },
+    { id:'guppy', group:'Overlays', label:'Guppy Crossover (GMMA)', short:'Guppy', desc:'GMMA ribbon + crossover markers — short vs long EMA band', on:indicatorEnabled('guppy'), visible:showGuppy, set:setShowGuppy },
     { id:'squeeze', group:'Overlays', label:'Squeeze Pro Dots', short:'Squeeze Pro', desc:'John Carter compression tiers — high / mid / low coil + momentum bias', on:indicatorEnabled('squeeze'), visible:showSqueeze, set:setShowSqueeze },
     { id:'hilo52', group:'Overlays', label:'52-Week High / Low Flags', short:'52W', desc:'Marks fresh 52-week high / low events on the chart', on:indicatorEnabled('hilo52'), visible:showHiLo52, set:setShowHiLo52 },
     { id:'sr', group:'Overlays', label:'Support & Resistance', short:'S/R', desc:'Pivot-based support and resistance from swing highs/lows', on:indicatorEnabled('sr'), visible:showSR, set:setShowSR },
@@ -12042,10 +12042,37 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           ) : null
         )}
 
-        {/* Lakshmi Mata Guppy cloud — Pine-style fill only, without GMMA
-            ribbon lines, highlighted EMAs, or crossover markers. */}
+        {/* Guppy GMMA — the cloud fill (trend state) plus the actual ribbon lines and
+            crossover markers. A crossover study needs the crossing itself to be
+            marked: the short-ribbon midpoint crossing the long-ribbon midpoint.
+            The cloud alone only tells you which side the ribbons are on. */}
         {showGuppy && (
           <g>
+            {guppyP.showRibbon !== false && vGuppyShort.length > 0 && (() => {
+              const w = Math.min(4, Math.max(0.5, Number(guppyP.ribbonWidth) || 1))
+              const sCol = guppyP.ribbonShortColor || '#26a69a'
+              const lCol = guppyP.ribbonLongColor || '#ef5350'
+              const line = (series, color, dash) => {
+                const pts = []
+                for (let i = 0; i < series.length; i++) {
+                  const v = series[i]
+                  if (v == null || !Number.isFinite(v)) continue
+                  pts.push(`${idxToX(i)},${priceToY(v)}`)
+                }
+                if (pts.length < 2) return null
+                return (
+                  <polyline key={`gmma-${color}-${pts[0]}`} points={pts.join(' ')}
+                    fill="none" stroke={color} strokeWidth={w}
+                    strokeDasharray={dash} strokeLinejoin="round" strokeLinecap="round"/>
+                )
+              }
+              // Long ribbon dashed and thinner so the two ribbons stay separable
+              // where they overlap during compression.
+              return [
+                ...vGuppyLong.map((s, k) => line(s, lCol, `${w},${w * 1.6}`)),
+                ...vGuppyShort.map((s, k) => line(s, sCol, undefined)),
+              ]
+            })()}
             {guppyP.showCloud !== false && (() => {
               const segments = []
               let cur = null
@@ -12085,6 +12112,51 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
                   stroke="none"
                 />
               ))
+            })()}
+            {guppyP.showCrossover !== false && (() => {
+              // Midpoint of each ribbon is the conventional GMMA cross test:
+              // the average of the 6 short EMAs vs the average of the 6 long.
+              const midOf = (arr, i) => {
+                let sum = 0, n = 0
+                for (const s of arr) {
+                  const v = s[i]
+                  if (v == null || !Number.isFinite(v)) continue
+                  sum += v; n++
+                }
+                return n ? sum / n : null
+              }
+              const size = Math.min(14, Math.max(3, Number(guppyP.crossSize) || 7))
+              const bullC = guppyP.crossBullColor || '#00e676'
+              const bearC = guppyP.crossBearColor || '#ff5252'
+              const marks = []
+              let prev = null
+              for (let i = 0; i < vCloses.length; i++) {
+                const s = midOf(vGuppyShort, i), l = midOf(vGuppyLong, i)
+                if (s == null || l == null) { prev = null; continue }
+                const above = s >= l
+                if (prev != null && above !== prev) {
+                  // Diamond just under the bar, clear of the ribbon lines,
+                  // which converge on the cross itself.
+                  const y = priceToY(Math.max(s, l)) + size * 1.5
+                  const bull = above
+                  marks.push(
+                    <g key={`gcross-${i}`}>
+                      <path
+                        d={`M ${idxToX(i)},${y - size} L ${idxToX(i) + size * 0.8},${y} L ${idxToX(i)},${y + size} L ${idxToX(i) - size * 0.8},${y} Z`}
+                        fill={bull ? bullC : bearC} stroke={C.bg || '#0e1117'} strokeWidth={0.8}/>
+                      {guppyP.showCrossLabels !== false && (
+                        <text x={idxToX(i)} y={y + size * 2.6}
+                          textAnchor="middle" fontSize={Math.max(7, size + 1)}
+                          fontWeight={800} fill={bull ? bullC : bearC}>
+                          {bull ? 'GMMA+' : 'GMMA−'}
+                        </text>
+                      )}
+                    </g>
+                  )
+                }
+                prev = above
+              }
+              return marks
             })()}
           </g>
         )}
@@ -12849,8 +12921,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         </span>}
         {showGuppy && (
           <span>
-            <span style={{color:guppyP.cloudUpColor || '#16a34a'}}>■</span>
-            /<span style={{color:guppyP.cloudDnColor || '#ef4444'}}>■</span> Guppy cloud
+            {guppyP.showRibbon !== false && <span><span style={{color:guppyP.ribbonShortColor || '#26a69a'}}>—</span> GMMA short</span>}
+            {guppyP.showRibbon !== false && <span><span style={{color:guppyP.ribbonLongColor || '#ef5350'}}>- -</span> GMMA long</span>}
+            {guppyP.showCloud !== false && <span><span style={{color:guppyP.cloudUpColor || '#16a34a'}}>■</span> Guppy cloud</span>}
+            {guppyP.showCrossover !== false && <span><span style={{color:guppyP.crossBullColor || '#00e676'}}>◆</span> GMMA cross</span>}
           </span>
         )}
         {showHiLo52 && (

@@ -1,4 +1,4 @@
-// Verify the v12 MA migration and the SMA series math used by the chart.
+﻿// Verify the v12 MA migration and the SMA series math used by the chart.
 import { normalizeChartIndicatorPrefs } from '../src/lib/chartIndicatorPrefs.js'
 import { calcSMASeries } from '../src/scanners/chartAnalysis.js'
 
@@ -41,7 +41,7 @@ ok('3 SMA lines on by default',
   [fresh.params.showSma20, fresh.params.showSma50, fresh.params.showSma200].every(v => v === true))
 ok('ma20Color is not the invisible #141414', fresh.params.ma20Color !== '#141414',
   `got ${fresh.params.ma20Color}`)
-ok('version 13', normalizeChartIndicatorPrefs(null).version === 13)
+ok('version 14', normalizeChartIndicatorPrefs(null).version === 14)
 
 console.log('\nMigration from an existing v11 profile')
 const old = {
@@ -61,7 +61,7 @@ ok('v11 -> SMA lines visible',
   mig.indicators.ma.params.showSma200 === true)
 ok('v11 -> #141414 recolored', mig.indicators.ma.params.ma20Color === '#2962ff',
   `got ${mig.indicators.ma.params.ma20Color}`)
-ok('v11 -> version bumped to 13', mig.version === 13)
+ok('v11 -> version bumped to 14', mig.version === 14)
 
 console.log('\nSqueeze dot row is not a continuous ribbon (v13)')
 ok('fresh: "dot on every bar" off by default',
@@ -74,7 +74,7 @@ const v12 = normalizeChartIndicatorPrefs({
 })
 ok('v12 -> persisted sqShowOff:true cleared', v12.indicators.squeeze.params.sqShowOff === false,
   `got ${v12.indicators.squeeze.params.sqShowOff}`)
-ok('v12 -> version bumped to 13', v12.version === 13)
+ok('v12 -> version bumped to 14', v12.version === 14)
 
 console.log('\nUser overrides survive')
 const custom = {
@@ -95,10 +95,28 @@ ok('SMA toggles-off respected',
 
 console.log('\nOut-of-range SMA periods are clamped, not passed through')
 const bad = normalizeChartIndicatorPrefs({
-  version: 12, indicators: { ma: { params: { sma20: 0, sma50: -5 } } },
+  version: 14, indicators: { ma: { params: { sma20: 0, sma50: -5 } } },
 }).indicators.ma.params
 ok('sma20 0 -> clamped', bad.sma20 >= 2, `got ${bad.sma20}`)
 ok('sma50 -5 -> clamped', bad.sma50 >= 5, `got ${bad.sma50}`)
+
+console.log('\nGuppy GMMA ribbon + crossovers (v14)')
+const gFresh = normalizeChartIndicatorPrefs(null).indicators.guppy.params
+ok('fresh: GMMA ribbon lines on', gFresh.showRibbon === true)
+ok('fresh: crossover markers on', gFresh.showCrossover === true)
+ok('fresh: cloud still on', gFresh.showCloud === true)
+ok('fresh: bull/bear cross colours distinct',
+  gFresh.crossBullColor !== gFresh.crossBearColor)
+const gMig = normalizeChartIndicatorPrefs({ version: 13, indicators: {} })
+  .indicators.guppy.params
+ok('v13 -> ribbon seeded on', gMig.showRibbon === true)
+ok('v13 -> crossovers seeded on', gMig.showCrossover === true)
+// A user who had deliberately switched the cloud off keeps that choice.
+const gOff = normalizeChartIndicatorPrefs({
+  version: 13, indicators: { guppy: { params: { showCloud: false } } },
+}).indicators.guppy.params
+ok('v13 -> explicit showCloud:false respected', gOff.showCloud === false)
+ok('version 14', normalizeChartIndicatorPrefs(null).version === 14)
 
 console.log(`\n${pass} passed, ${fail} failed\n`)
 process.exit(fail ? 1 : 0)
