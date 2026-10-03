@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, useContext } from 'react'
+﻿import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, useContext } from 'react'
 import { createPortal } from 'react-dom'
 import PanelWindow, { PanelTaskbar, ScreenerFrame } from './components/PanelWindow'
 import EarningsTracker from './components/EarningsTracker'
@@ -11962,13 +11962,11 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         {showSR && (() => {
           const resC = srP.resColor || C.red
           const supC = srP.supColor || C.green
-          const w = lineW(srP.lineWidth, 1)
-          const dash = dashFor(srP.lineStyle || 'dashed', w)
           return [['r1',sr.r1,resC],['r2',sr.r2,resC],['s1',sr.s1,supC],['s2',sr.s2,supC]].map(([k,val,color])=>
             val!=null && val<=maxP && val>=minP ? (
               <g key={k}>
-                <line x1={padL} y1={priceToY(val)} x2={padL+chartW} y2={priceToY(val)}
-                  stroke={color} strokeWidth={w} strokeDasharray={dash} opacity={0.6} style={UI_IS_DARK?{display:'none'}:undefined}/>
+                {/* Horizontal S/R rule removed at user request; the R1/R2/S1/S2
+                    level labels stay. */}
                 {srP.showLabels !== false && (
                   <text x={padL+2} y={priceToY(val)-3} fontSize={8} fontWeight={700} fill={color}>
                     {k.toUpperCase()} {val.toFixed(1)}
@@ -12229,24 +12227,13 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           ]
           return (
             <g style={{pointerEvents:'none'}}>
-              {(() => {
-                // Headroom guide above UC. Bounded like the levels below it, or
-                // it draws over the toolbar whenever UC sits off the pane.
-                const y = priceToY(uc*1.02)
-                if (y < priceTop - 1 || y > priceTop + priceH + 1) return null
-                return (
-                  <line x1={padL} y1={y} x2={padL+chartW} y2={y}
-                    stroke={C.muted} strokeWidth={0.8} strokeDasharray="7,4" opacity={0.35} style={UI_IS_DARK?{display:'none'}:undefined}/>
-                )
-              })()}
+              {/* Horizontal band rules removed at user request; the UC/LC value
+                  labels stay so the levels are still readable. */}
               {rows.map(r => {
                 const y = priceToY(r.price)
                 if (y < priceTop - 1 || y > priceTop + priceH + 1) return null
                 return (
                   <g key={r.label}>
-                    <line x1={padL} y1={y} x2={padL+chartW} y2={y}
-                      stroke={r.color} strokeWidth={lineW(circuitP.lineWidth, 0.9)}
-                      strokeDasharray="7,4" opacity={0.55} style={UI_IS_DARK?{display:'none'}:undefined}/>
                     {circuitP.showLabels !== false && (
                       <text x={padL+chartW-4} y={y-3} fontSize={8.5} fontWeight={700}
                         fill={r.color} textAnchor="end" opacity={0.9}
@@ -12648,16 +12635,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         {showRSI && (
           <g>
             <rect x={padL} y={rsiTop} width={chartW} height={rsiH} fill={C.card} opacity={0.4}/>
-            {/* Pane-top separator removed (near-white C.border); level lines stay. */}
+            {/* Indicator horizontal level lines removed at user request. The
+                overbought/oversold shading and the right-axis value labels
+                stay — they carry the levels without drawing a rule across the
+                pane. */}
             <rect x={padL} y={rsiToY(rsiP.overbought ?? 70)} width={chartW} height={Math.max(0, rsiToY(rsiP.oversold ?? 30)-rsiToY(rsiP.overbought ?? 70))}
               fill={C.muted} opacity={0.08}/>
             {(rsiP.showBands === false ? [50] : [rsiP.overbought ?? 70, 50, rsiP.oversold ?? 30]).map(lvl=>(
-              <g key={`rsi-${lvl}`}>
-                <line x1={padL} y1={rsiToY(lvl)} x2={padL+chartW} y2={rsiToY(lvl)}
-                  stroke={lvl===50?C.border:(rsiP.bandColor || C.red)}
-                  strokeWidth={0.6} strokeDasharray={lvl===50?'2,2':'3,3'} opacity={0.7} style={UI_IS_DARK?{display:'none'}:undefined}/>
-                <text x={padL+chartW+4} y={rsiToY(lvl)+3} fontSize={8} fill={C.muted}>{lvl}</text>
-              </g>
+              <text key={`rsi-${lvl}`} x={padL+chartW+4} y={rsiToY(lvl)+3} fontSize={8} fill={C.muted}>{lvl}</text>
             ))}
             <text x={padL+4} y={rsiTop+11} fontSize={8} fontWeight={700} fill={C.muted}>RSI {rsiP.length ?? 14}</text>
             {(() => {
@@ -12676,12 +12661,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         {showMACD && (
           <g>
             <rect x={padL} y={macdTop} width={chartW} height={macdH} fill={C.card} opacity={0.4}/>
-            {/* Zero separator: was LAKSHMI_CYCLE_COLORS.ZERO (hardcoded
-                rgba(255,255,255,0.3)) with no UI_IS_DARK guard, so it read as
-                a bright white line across the dark pane. Now C.muted + guard. */}
-            <line x1={padL} y1={macdToY(0)} x2={padL+chartW} y2={macdToY(0)}
-              stroke={C.muted} strokeWidth={0.7} strokeDasharray="3,3" opacity={0.5}
-              style={UI_IS_DARK?{display:'none'}:undefined}/>
+            {/* Zero separator removed at user request. The histogram still scales around
+                zero (bars are drawn from macdToY(0)) and the right-axis "0"
+                label remains, so the reference point is still readable. */}
             <text x={padL+4} y={macdTop+11} fontSize={8} fontWeight={700} fill={C.muted}>MACD {macdP.fast ?? 12},{macdP.slow ?? 26},{macdP.signal ?? 9}</text>
             {vMacdHist.map((h,i)=>{
               if (h==null) return null
@@ -12744,10 +12726,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
                 </g>
               )
             })()}
-            {/* Pane-top separator removed — this one had no UI_IS_DARK guard, so it
-            painted over the dark canvas too. */}
-            <line x1={padL} y1={scToY(0)} x2={padL+chartW} y2={scToY(0)}
-              stroke={C.muted} strokeWidth={0.7} style={UI_IS_DARK?{display:'none'}:undefined}/>
+            {/* Pane-top separator and zero separator removed at user request. Bars
+                still scale around zero and the right-axis "0" label stays. */}
+
+
             <text x={padL+4} y={scTop+11} fontSize={8} fontWeight={700} fill={C.muted}>
               Super Cycle{scRsLatest != null ? ` · RS ${scRsLatest}` : ''}
             </text>
