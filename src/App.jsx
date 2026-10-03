@@ -9264,7 +9264,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   // Marker row under the volume pane baseline: signal icons + HT/HY/HQ/M tags,
   // kept out of the bars so tall bars never clip them.
   const volMarkerH = volShowMarkers ? (isMobile ? 16 : 15) : 0
-  // Reserve strip above Super Cycle for the TV-style RS rating history table.
   // Reserve strip for the TV-style RS rating history table. Fall back to an
   // estimate until the first measurement lands, then use the real content
   // height so every row is visible.
