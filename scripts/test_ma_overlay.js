@@ -41,7 +41,7 @@ ok('3 SMA lines on by default',
   [fresh.params.showSma20, fresh.params.showSma50, fresh.params.showSma200].every(v => v === true))
 ok('ma20Color is not the invisible #141414', fresh.params.ma20Color !== '#141414',
   `got ${fresh.params.ma20Color}`)
-ok('version 12', normalizeChartIndicatorPrefs(null).version === 12)
+ok('version 13', normalizeChartIndicatorPrefs(null).version === 13)
 
 console.log('\nMigration from an existing v11 profile')
 const old = {
@@ -61,11 +61,24 @@ ok('v11 -> SMA lines visible',
   mig.indicators.ma.params.showSma200 === true)
 ok('v11 -> #141414 recolored', mig.indicators.ma.params.ma20Color === '#2962ff',
   `got ${mig.indicators.ma.params.ma20Color}`)
-ok('v11 -> version bumped to 12', mig.version === 12)
+ok('v11 -> version bumped to 13', mig.version === 13)
+
+console.log('\nSqueeze dot row is not a continuous ribbon (v13)')
+ok('fresh: "dot on every bar" off by default',
+  normalizeChartIndicatorPrefs(null).indicators.squeeze.params.sqShowOff === false)
+ok('v11 -> squeeze off-dots turned off',
+  mig.indicators.squeeze.params.sqShowOff === false)
+// A v12 profile had sqShowOff persisted true; v13 must clear it.
+const v12 = normalizeChartIndicatorPrefs({
+  version: 12, indicators: { squeeze: { params: { sqShowOff: true } } },
+})
+ok('v12 -> persisted sqShowOff:true cleared', v12.indicators.squeeze.params.sqShowOff === false,
+  `got ${v12.indicators.squeeze.params.sqShowOff}`)
+ok('v12 -> version bumped to 13', v12.version === 13)
 
 console.log('\nUser overrides survive')
 const custom = {
-  version: 12,
+  version: 13,
   indicators: { ma: { enabled: true, params: {
     ema9: 5, ma20: 12, ma50: 34, ma150: 89, ma200: 144,
     sma20: 10, sma50: 30, sma200: 150,

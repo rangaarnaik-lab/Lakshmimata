@@ -12134,7 +12134,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
 
         {/* Squeeze Pro dots — one per bar along the foot of the price pane.
             Colour grades the coil (high / mid / low compression), the fired
-            dot marks the first bar back outside every Keltner. */}
+            dot marks the first bar back outside every Keltner. Dots render
+            only on coiled bars (plus the release bar); the "dot on every bar"
+            option is off by default because an unbroken run of dots across
+            all ~300 bars reads as a ribbon rather than a squeeze readout. */}
         {showSqueeze && vSqOn.length > 0 && (() => {
           // Fixed-radius dots merged into one solid band once bars got narrower
           // than the dots, so the row scales with the slot and drops the "off"
@@ -12151,21 +12154,20 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
             : lvl === SQUEEZE_PRO_LEVELS.MID ? (sqP.sqOnColor || SQUEEZE_PRO_COLORS.MID)
             : (sqP.sqLowColor || SQUEEZE_PRO_COLORS.LOW)
           )
-          const showOff = sqP.sqShowOff !== false && !denseBars
-          return (
-            <g>
-              {vSqOn.map((on,i)=>{
-                const fired = !!vSqRel[i]
-                if (!on && !fired && !showOff) return null
-                return (
-                  <circle key={`msq-${i}`} cx={idxToX(i)} cy={y}
-                    r={on || fired ? r : r * 0.6}
-                    fill={fired ? relColor : on ? tierColor(vSqLevel[i]) : offColor}
-                    opacity={on || fired ? 0.95 : 0.45}/>
-                )
-              })}
-            </g>
-          )
+          const showOff = sqP.sqShowOff === true && !denseBars
+          const dots = []
+          for (let i = 0; i < vSqOn.length; i++) {
+            const on = !!vSqOn[i]
+            const fired = !!vSqRel[i]
+            if (!on && !fired && !showOff) continue
+            dots.push(
+              <circle key={`msq-${i}`} cx={idxToX(i)} cy={y}
+                r={on || fired ? r : r * 0.6}
+                fill={fired ? relColor : on ? tierColor(vSqLevel[i]) : offColor}
+                opacity={on || fired ? 0.95 : 0.45}/>
+            )
+          }
+          return dots.length ? <g>{dots}</g> : null
         })()}
 
         {/* Lakshmi Mata Pine Bollinger Bands — SMA basis, upper/lower lines

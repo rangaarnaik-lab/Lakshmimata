@@ -313,7 +313,11 @@ const DEFAULT_PARAMS = {
     sqLength: 20, sqBbMult: 2.0, sqKcHigh: 1.0, sqKcMult: 1.5, sqKcLow: 2.0, sqMomLength: 20,
     sqHighColor: '#ff9100', sqOnColor: '#ff1744', sqLowColor: '#b0bec5',
     sqReleaseColor: '#00e676', sqOffColor: '#5d606b',
-    sqShowOff: true, sqDotSize: 2.2,
+    // "Dot on every bar" is off by default. Painting a dot on all ~300 bars
+    // reads as one continuous ribbon along the foot of the pane — it looks like
+    // a drawn line rather than a compression readout. Dots now appear only on
+    // bars that are actually coiled (and on the release bar that follows).
+    sqShowOff: false, sqDotSize: 2.2,
   },
   hilo52: {
     hlWindowDays: 365, hlOnlyFirst: true,
@@ -386,7 +390,7 @@ export function defaultChartIndicatorPrefs() {
       },
     }
   }
-  return { version: 12, indicators }
+  return { version: 13, indicators }
 }
 
 function clampNum(v, min, max, fallback) {
@@ -536,7 +540,13 @@ export function normalizeChartIndicatorPrefs(raw) {
       base.indicators.ma.params.ma20Color = '#2962ff'
     }
   }
-  base.version = 12
+  // v13: the squeeze dot row defaulted to "dot on every bar", which painted
+  // ~300 adjacent dots and read as a solid ribbon instead of a readout. Turn
+  // it off for existing profiles — dots now mark only coiled bars and releases.
+  if (prevVer < 13) {
+    base.indicators.squeeze.params.sqShowOff = false
+  }
+  base.version = 13
   return base
 }
 
