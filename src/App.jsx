@@ -16992,6 +16992,13 @@ function TelegramAlertsCard({session, alertPrefs, onAlertPrefs}){
 }
 
 const TRIAL_DAYS=30
+/**
+ * Launch promo — everything is FREE (paywall bypassed) until this instant.
+ * Set FREE_UNTIL to null to re-enable paid gating immediately.
+ * Nov 1 2026, 00:00 IST.
+ */
+const FREE_UNTIL=new Date('2026-11-01T00:00:00+05:30')
+function freeAccessActive(){ return !!FREE_UNTIL && Date.now()<FREE_UNTIL.getTime() }
 const SUB_STATUS_LABELS={trialing:'Free Trial',active:'Active',past_due:'Payment Issue',cancelled:'Cancelled'}
 function subStatusColor(status){
   return {trialing:C.yellow,active:C.green,past_due:C.red,cancelled:C.muted}[status]||C.muted
@@ -20918,7 +20925,7 @@ export default function App(){
     </div>
   )
 
-  if(session && !demoMode && !subscriptionUnavailable && !isLiveSubscription(userSubscription)){
+  if(session && !demoMode && !subscriptionUnavailable && !freeAccessActive() && !isLiveSubscription(userSubscription)){
     return (<PaywallScreen reason={paywallReasonFor(userSubscription)}
       session={session}
       onLogout={async()=>{await supabase.auth.signOut();setSession(null)}}
