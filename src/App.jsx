@@ -9264,7 +9264,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   // estimate until the first measurement lands, then use the real content
   // height so every row is visible. Overlay can be taller because it costs
   // the panes nothing; a reserved strip is capped so candles still fit.
-  const scTableEstH = clean ? (isMobile ? 150 : 138) : (isMobile ? 182 : 170)
+  // Row labels wrap onto two lines at narrow widths, so the fallback estimate
+  // has to assume a wrapped row — otherwise the first paint clips the last rows
+  // until the ResizeObserver reports back.
+  const scTableEstH = clean ? (isMobile ? 168 : 156) : (isMobile ? 200 : 188)
   const scTableBoxH = Math.min(
     Math.max(60, scTableNatH || scTableEstH),
     Math.max(80, Math.round(H * (scTableOverlay ? 0.62 : 0.42))),
@@ -11588,27 +11591,32 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           return `${curr}${arrow}`
         }
         const cellPad = clean ? '1px 3px' : (isMobile ? '2px 3px' : '3px 5px')
-        const cellFont = clean ? 7 : (isMobile ? 7 : 8)
+const cellFont = clean ? 8 : (isMobile ? 8 : 9)
+        const labFont = clean ? 8 : (isMobile ? 8 : 9)
+        // Row labels wrap instead of truncating. "OUTPERFORM"/"SMALLCAP" were
+        // being clipped by the nowrap + narrow label track, so the row names were
+        // unreadable — same defect the volume metrics table had.
         const th = (txt) => (
           <div key={txt} style={{
             padding: cellPad, fontSize: cellFont, fontWeight: 700,
-            color: '#fff', background: COL.hdr, textAlign: 'center', whiteSpace: 'nowrap',
+            color: '#fff', background: COL.hdr, textAlign: 'center',
             borderRight: '1px solid #2A2A3E',
-          }}>{txt}</div>
+          }} title={txt}>{txt}</div>
         )
         const lab = (txt) => (
           <div style={{
-            padding: cellPad, fontSize: cellFont, fontWeight: 700,
-            color: '#fff', background: COL.label, whiteSpace: 'nowrap',
+            padding: cellPad, fontSize: labFont, fontWeight: 700,
+            color: '#fff', background: COL.label,
             borderRight: '1px solid #2A2A3E', borderTop: '1px solid #2A2A3E',
-          }}>{txt}</div>
+            lineHeight: 1.15, overflowWrap: 'anywhere', textAlign: 'right',
+          }} title={txt}>{txt}</div>
         )
         const td = (txt, color, opts={}) => (
           <div style={{
             padding: cellPad,
-            fontSize: opts.big ? (clean ? 8.5 : (isMobile ? 9 : 10)) : cellFont,
+            fontSize: opts.big ? (clean ? 9.5 : (isMobile ? 10 : 11)) : cellFont,
             fontWeight: 800,
-            color: color || COL.white, background: COL.cell, textAlign: 'center', whiteSpace: 'nowrap',
+            color: color || COL.white, background: COL.cell, textAlign: 'center',
             borderRight: '1px solid #2A2A3E', borderTop: '1px solid #2A2A3E',
             letterSpacing: opts.big ? '0.02em' : undefined,
             fontVariantNumeric: 'tabular-nums',
@@ -11662,7 +11670,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         ]
         // Overlay floats over the cycle pane TradingView-style, so it must not
         // be clipped to the pane — only kept inside the chart body.
-        const labW = clean ? 52 : 64
+        const labW = clean ? 58 : 72
         const colW = clean ? 28 : 36
         const boxTop = scTableOverlay
           ? Math.max(padT, Math.min(scTop + 1, H - axisPad - scTableBoxH - 2))
@@ -11689,7 +11697,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
             <div ref={scTableContentRef}>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: `minmax(${labW}px,auto) repeat(${scRsTable.length}, minmax(${colW}px,1fr))`,
+              gridTemplateColumns: `${labW}px repeat(${scRsTable.length}, minmax(${colW}px,1fr))`,
               width: '100%',
               minWidth: Math.max(isMobile ? 420 : 0, labW + scRsTable.length * colW),
             }}>
