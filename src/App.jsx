@@ -11494,7 +11494,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         const cell = (label, value, valueBg) => (
           <div key={label} style={{
             minWidth: isMobile ? 64 : 80, flex: '1 1 72px',
-            border:`1px solid ${C.border}`, overflow:'hidden',
+            /* Vertical separators only — a full border would put a horizontal
+               edge across every column, reading as a line over the pane. */
+            borderLeft:`1px solid ${C.border}`, overflow:'hidden',
           }}>
             <div style={{
               padding: clean ? '1px 4px' : '2px 5px', fontSize: clean ? 6.5 : 7, fontWeight:700, color:C.muted,
@@ -11518,7 +11520,11 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
             zIndex: 3,
             display:'flex', flexWrap:'nowrap', gap:0, alignItems:'stretch',
             boxSizing:'border-box',
-            border:`1px solid ${C.border}`,
+            /* No outer border: this box spans the full chart width, so its
+               top/bottom edges read as white lines across the pane (same
+               reason the canvas grid was dropped). Inner cell separators
+               still delimit the columns. */
+            border:'none',
             background: C.bg,
             opacity: volTableOverlay ? volTableAlpha : 1,
             overflow:'hidden',
@@ -11643,7 +11649,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
             height: (scTableBoxH / H) * 100 + '%',
             zIndex: 4,
             overflow: 'auto',
-            border: '1px solid #3A3A5C',
+            /* Full-width box — outer border would render as a horizontal line
+               across the chart. See note on the volume metrics table. */
+            border: 'none',
             background: '#0D0D14',
             opacity: scTableOverlay ? scTableAlpha : 1,
             boxSizing: 'border-box',
