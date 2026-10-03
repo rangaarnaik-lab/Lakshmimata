@@ -16999,6 +16999,10 @@ const TRIAL_DAYS=30
  */
 const FREE_UNTIL=new Date('2026-11-01T00:00:00+05:30')
 function freeAccessActive(){ return !!FREE_UNTIL && Date.now()<FREE_UNTIL.getTime() }
+/** Human label for the promo end date, e.g. "1 Nov 2026". */
+function freeUntilLabel(){
+  return FREE_UNTIL?FREE_UNTIL.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}):''
+}
 const SUB_STATUS_LABELS={trialing:'Free Trial',active:'Active',past_due:'Payment Issue',cancelled:'Cancelled'}
 function subStatusColor(status){
   return {trialing:C.yellow,active:C.green,past_due:C.red,cancelled:C.muted}[status]||C.muted
@@ -17038,9 +17042,10 @@ function AccountHero({session,userSubscription,onOpenPayment,onLogout}){
   const meta=session.user.user_metadata||{}
   const name=(meta.full_name||meta.name||'').trim()
   const email=session.user.email||''
+  const promo=freeAccessActive()
   const status=userSubscription?.status
-  const statusLabel=status?(SUB_STATUS_LABELS[status]||status):'No plan yet'
-  const statusCol=subStatusColor(status)
+  const statusLabel=promo?'Free access':(status?(SUB_STATUS_LABELS[status]||status):'No plan yet')
+  const statusCol=promo?C.green:subStatusColor(status)
   const initial=(name||email||'?').charAt(0).toUpperCase()
   return(
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:18,marginBottom:16,
@@ -17062,7 +17067,7 @@ function AccountHero({session,userSubscription,onOpenPayment,onLogout}){
           <button type="button" onClick={onOpenPayment}
             style={{padding:'8px 14px',borderRadius:9,border:'none',cursor:'pointer',
               background:C.accent,color:C.onAccent,fontWeight:800,fontSize:12,whiteSpace:'nowrap'}}>
-            {status==='active'?'Manage plan':'View plans'}
+            {!promo&&status==='active'?'Manage plan':'View plans'}
           </button>
         )}
         <button type="button" onClick={onLogout}
@@ -17076,6 +17081,37 @@ function AccountHero({session,userSubscription,onOpenPayment,onLogout}){
 }
 
 function SubscriptionCard({userSubscription,onOpenPayment}){
+  // Launch promo: no plan needed and none to show — surface the free window
+  // instead of a trial countdown, which would read "ended" for exactly the
+  // users who now have access.
+  if(freeAccessActive()){
+    const promoRows=[
+      ['Status','Free access (launch promo)',C.green],
+      ['Free until',freeUntilLabel(),C.text],
+      ['Payment','Not required until then',C.text],
+    ]
+    return(
+      <AccountCard title="Subscription" hint={`Everything is free until ${freeUntilLabel()} — no payment needed.`}>
+        <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+          {promoRows.map(([label,value,col],i)=>(
+            <div key={label} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,
+              padding:'10px 12px',borderTop:i?`1px solid ${C.divider}`:'none'}}>
+              <span style={{fontSize:11.5,color:C.muted}}>{label}</span>
+              <span style={{fontSize:12,fontWeight:700,color:col}}>{value}</span>
+            </div>
+          ))}
+        </div>
+        {onOpenPayment&&(
+          <button type="button" onClick={onOpenPayment}
+            style={{marginTop:12,width:'100%',padding:'10px 12px',borderRadius:9,cursor:'pointer',
+              border:`1px solid ${C.border}`,background:'transparent',color:C.muted,
+              fontWeight:600,fontSize:12.5}}>
+            View plans
+          </button>
+        )}
+      </AccountCard>
+    )
+  }
   if(!userSubscription){
     return(
       <AccountCard title="Subscription" hint="Plan details appear here once a plan is active.">
