@@ -11665,8 +11665,10 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           for (const p of priceTicks) {
             const y = priceToY(p)
             if (y < priceTop - 1 || y > floor + 1) continue
-            if (!UI_IS_DARK) { x.globalAlpha = 0.28; x.strokeStyle = C.border; x.lineWidth = 0.5; x.beginPath(); x.moveTo(padL, y); x.lineTo(padL + chartW, y); x.stroke() }
-            x.globalAlpha = 1; x.fillStyle = C.muted
+            /* Grid stroke intentionally omitted — C.border is near-white on the
+               light themes and read as a white line across the pane. The
+               axis labels below are all that stays. */
+            x.fillStyle = C.muted
             x.fillText(axisLabel(p), padL + chartW + 4, y)
           }
           /* low-contrast symbol watermark */
@@ -11687,9 +11689,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
               if (i % stride !== 0) continue
               const xx = idxToX(i)
               if (xx < padL || xx > padL + chartW) continue
-              x.globalAlpha = 0.18; x.strokeStyle = C.border; x.lineWidth = 0.5
-              x.beginPath(); x.moveTo(xx, priceTop); x.lineTo(xx, panesBottom); x.stroke()
-              x.globalAlpha = 1; x.fillStyle = C.muted
+              /* No vertical grid stroke (was C.border @0.18) — same near-white
+               problem as the horizontal grid. Date stamps still print. */
+              x.fillStyle = C.muted
               const lbl = isIntraday
                 ? intradayStampLabel(vDates[i], { withDate: false })
                 : String(vDates[i]).slice(5).replace('-', '/')
@@ -11863,14 +11865,13 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         {/* grid + price labels painted by BharatEngine canvas */}
 
 
-        {/* Volume sub-chart — TradingView-style pane with its own grid */}
-        <line x1={padL} y1={volTop} x2={padL+chartW} y2={volTop} stroke={C.border} strokeWidth={1} opacity={0.55} style={UI_IS_DARK?{display:'none'}:undefined}/>
+        {/* Volume sub-chart — TradingView-style pane. Pane-top separator and
+            grid strokes removed: C.border renders near-white on light themes. */}
         {[0,0.5,1].map(f=>{
           const y = volTop + f*volH
           const v = maxVol * (1-f)
           return (
             <g key={`volgrid-${f}`}>
-              <line x1={padL} y1={y} x2={padL+chartW} y2={y} stroke={C.border} strokeWidth={0.5} opacity={0.22} style={UI_IS_DARK?{display:'none'}:undefined}/>
               <text x={padL+chartW+4} y={y+3} fontSize={8} fill={C.muted}
                 style={{fontVariantNumeric:'tabular-nums'}}>{fmtVol(v)}</text>
             </g>
@@ -12539,8 +12540,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
             only (no HT / HY / HQ / M text tags on the chart). */}
         {volShowMarkers && volMarkerH > 0 && (
           <g>
-            <line x1={padL} y1={volMarkerTop} x2={padL+chartW} y2={volMarkerTop}
-              stroke={C.border} strokeWidth={0.6} opacity={0.6}/>
+            {/* Divider above the marker row removed (near-white C.border, no
+                UI_IS_DARK guard — it painted over both light and dark). */}
             {vCloses.map((c,i)=>{
               if (c==null) return null
               const parts = []
@@ -12575,7 +12576,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         {showRSI && (
           <g>
             <rect x={padL} y={rsiTop} width={chartW} height={rsiH} fill={C.card} opacity={0.4}/>
-            <line x1={padL} y1={rsiTop} x2={padL+chartW} y2={rsiTop} stroke={C.border} strokeWidth={1} opacity={0.8} style={UI_IS_DARK?{display:'none'}:undefined}/>
+            {/* Pane-top separator removed (near-white C.border); level lines stay. */}
             <rect x={padL} y={rsiToY(rsiP.overbought ?? 70)} width={chartW} height={Math.max(0, rsiToY(rsiP.oversold ?? 30)-rsiToY(rsiP.overbought ?? 70))}
               fill={C.muted} opacity={0.08}/>
             {(rsiP.showBands === false ? [50] : [rsiP.overbought ?? 70, 50, rsiP.oversold ?? 30]).map(lvl=>(
@@ -12603,9 +12604,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         {showMACD && (
           <g>
             <rect x={padL} y={macdTop} width={chartW} height={macdH} fill={C.card} opacity={0.4}/>
-            <line x1={padL} y1={macdTop} x2={padL+chartW} y2={macdTop} stroke={C.border} strokeWidth={1} opacity={0.8} style={UI_IS_DARK?{display:'none'}:undefined}/>
+            {/* Pane-top and zero separators removed (near-white C.border). */}
             <line x1={padL} y1={macdToY(0)} x2={padL+chartW} y2={macdToY(0)}
-              stroke={C.border} strokeWidth={0.7} opacity={0.8} style={UI_IS_DARK?{display:'none'}:undefined}/>
+              stroke={LAKSHMI_CYCLE_COLORS.ZERO} strokeWidth={0.7} strokeDasharray="3,3" opacity={0.7}/>
             <text x={padL+4} y={macdTop+11} fontSize={8} fontWeight={700} fill={C.muted}>MACD {macdP.fast ?? 12},{macdP.slow ?? 26},{macdP.signal ?? 9}</text>
             {vMacdHist.map((h,i)=>{
               if (h==null) return null
@@ -12668,7 +12669,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
                 </g>
               )
             })()}
-            <line x1={padL} y1={scTop} x2={padL+chartW} y2={scTop} stroke={C.border} strokeWidth={1} opacity={0.8}/>
+            {/* Pane-top separator removed — this one had no UI_IS_DARK guard, so it
+            painted over the dark canvas too. */}
             <line x1={padL} y1={scToY(0)} x2={padL+chartW} y2={scToY(0)}
               stroke={LAKSHMI_CYCLE_COLORS.ZERO} strokeWidth={0.7}/>
             <text x={padL+4} y={scTop+11} fontSize={8} fontWeight={700} fill={C.muted}>
@@ -12728,12 +12730,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           </>
         )}
 
-        {/* Session separators — intraday only */}
-        {sessionBreaks.map(i=>(
-          <line key={`sb-${i}`} x1={idxToX(i)-((chartW/totalCols)/2)} y1={padT}
-            x2={idxToX(i)-((chartW/totalCols)/2)} y2={panesBottom}
-            stroke={C.border} strokeWidth={0.7} strokeDasharray="2,4" opacity={0.7}/>
-        ))}
+        {/* Session separators — intraday only. Stroke removed: C.border reads as a
+            white line on the light themes and had no UI_IS_DARK guard. */}
 
         {/* X-axis labels — month/day on daily+, IST time on intraday */}
         {xLabels.map(({i,text})=>(
