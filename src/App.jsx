@@ -8454,6 +8454,21 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   const [intradayFeatureOn, setIntradayFeatureOn] = useState(true)
   const [intradayKeys, setIntradayKeys] = useState(() => ['1','3','5','15','30','60'])
   const isIntraday = intradayFeatureOn && INTRADAY_INTERVALS.has(barInterval)
+
+  // A 1m/3m/… chart opened at a long range (3M/6M/1Y) would ask for 100k bars
+  // — half a pixel per candle. Cap every range at a readable candle width
+  // (~5px) instead of rewriting the user's selected range to '1D'. Zooming
+  // out past this and panning left is still allowed.
+  const readableBarCap = isIntraday
+    ? Math.max(40, Math.floor((chartBox.w - 70) / 5))
+    : Infinity
+  const capReadable = (b) => {
+    if (b == null || !Number.isFinite(b) || b <= 0) return b
+    return Math.max(1, Math.round(b)) <= readableBarCap
+      ? b
+      : readableBarCap
+  }
+
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
 
   // Master kill: follow scan_meta.features.intraday_1m (+ VITE override).
@@ -9005,21 +9020,17 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     // Switching candle size resets zoom to the current range preset in that unit.
     // Prefer a useful default on coarse intervals (yearly 1M is only 1 bar).
     let nextRange = range
-    if (isIntraday && ['1Y','5Y','All','YTD','6M','3M','1M','5D'].includes(range)) nextRange = '1D'
-    else if (barInterval === 'Y' && ['1M','3M','6M','1Y'].includes(range)) nextRange = '5Y'
+    if (barInterval === 'Y' && ['1M','3M','6M','1Y'].includes(range)) nextRange = '5Y'
     else if (barInterval === 'M' && range === '1M') nextRange = '1Y'
     if (nextRange !== range) setRange(nextRange)
     const bars = nextRange==='YTD' ? null : rangeBars[nextRange]
     let next = bars!=null
       ? Math.max(1, bars)
       : (rangeBars['1Y'] ?? RANGE_BARS_BY_INTERVAL.D['1Y'])
-    if (isIntraday) {
-      // A 1m chart opened on 5D meant ~1900 candles across the plot, i.e. half
-      // a pixel each. Open at a width that is actually readable — zooming out
-      // from here is still allowed.
-      const readable = Math.max(40, Math.floor((chartBox.w - 70) / 5))
-      next = Math.min(next, readable)
-    }
+    // Intraday + a long range (3M/6M/1Y/All) would ask for 100k candles, i.e.
+    // half a pixel each. Cap the width instead of resetting the range to 1D —
+    // the user's chosen range stays selected in the toolbar.
+    next = capReadable(next)
     setZoomBars(next)
     setPanOffset(0)
   },[barInterval]) // eslint-disable-line react-hooks/exhaustive-deps
