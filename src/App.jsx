@@ -7993,6 +7993,7 @@ function intradayStampLabel(raw, { withDate = true } = {}) {
  */
 const INDICATOR_BUNDLES = {
   lakshmimata: [
+    { id: 'ma', label: 'EMA Lines (9 / 21 / 50 / 150 / 200)' },
     { id: 'guppy', label: 'Guppy cloud (GMMA)' },
     { id: 'squeeze', label: 'Squeeze Pro dots (BB / 3× KC)' },
     { id: 'hilo52', label: '52-week high / low flags' },
@@ -10177,13 +10178,14 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   const chartIndicatorsAll = [
     // Main price overlay — the parent row for the EMA lines and Guppy cloud.
     { id:'lakshmimata', group:'Overlays', label:'Lakshmi Mata', short:'Lakshmi',
-      desc:'Complete Pine study: GMMA, compression, S/R, Bollinger Bands, Bullish/Bearish, UC/LC and volume signals',
+      desc:'Complete Pine study: EMAs, GMMA, compression, S/R, Bollinger Bands, Bullish/Bearish, UC/LC and volume signals',
       on: (INDICATOR_BUNDLES.lakshmimata||[]).some(x=>indicatorEnabled(x.id)),
-      visible: showGuppy || showSqueeze || showHiLo52 || showSR || showBB
+      visible: showMA || showGuppy || showSqueeze || showHiLo52 || showSR || showBB
         || showBuySell || showCircuit || showPatterns || showCandleColors || showBullSnort,
       set: (v)=>{
         const current = (INDICATOR_BUNDLES.lakshmimata||[]).some(x=>indicatorEnabled(x.id))
         const next = typeof v === 'function' ? v(current) : v
+        setShowMA(next)
         setShowGuppy(next)
         setShowSqueeze(next)
         setShowHiLo52(next)
@@ -10196,7 +10198,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         setShowBullSnort(next)
       } },
     { id:'ma', group:'Overlays', label:'EMA Lines (Moving Averages)', short:'EMA',
-      desc:'EMA 9 / 21 / 50 / 150 / 200 plus SMA 20 / 50 / 200 on the price pane', on:indicatorEnabled('ma'), visible:showMA, set:setShowMA },
+      desc:'EMA 9 / 21 / 50 / 150 / 200 on the price pane', on:indicatorEnabled('ma'), visible:showMA, set:setShowMA },
     { id:'guppy', group:'Overlays', label:'Guppy Crossover (GMMA)', short:'Guppy', desc:'GMMA ribbon + crossover markers — short vs long EMA band', on:indicatorEnabled('guppy'), visible:showGuppy, set:setShowGuppy },
     { id:'squeeze', group:'Overlays', label:'Squeeze Pro Dots', short:'Squeeze Pro', desc:'John Carter compression tiers — high / mid / low coil + momentum bias', on:indicatorEnabled('squeeze'), visible:showSqueeze, set:setShowSqueeze },
     { id:'hilo52', group:'Overlays', label:'52-Week High / Low Flags', short:'52W', desc:'Marks fresh 52-week high / low events on the chart', on:indicatorEnabled('hilo52'), visible:showHiLo52, set:setShowHiLo52 },
