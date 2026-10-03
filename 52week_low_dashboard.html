@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>52-Week Low Dashboard — Lakshmimata</title>
+<style>
+  :root{
+    --bg:#0e1117; --card:#171c26; --card2:#1d2433; --border:#2a3342;
+    --text:#e6e9ef; --muted:#8b94a3; --accent:#4f8cff; --green:#22c58b;
+    --red:#ff5d5d; --yellow:#f5c542; --pink:#ff6bb0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+       background:var(--bg);color:var(--text);}
+  .wrap{max-width:1280px;margin:0 auto;padding:18px}
+  header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font-size:20px;margin:0;font-weight:800;letter-spacing:.3px}
+  .badge{background:var(--pink);color:#fff;font-size:11px;font-weight:800;
+         padding:2px 9px;border-radius:20px}
+  .sub{color:var(--muted);font-size:12px;margin:2px 0 14px}
+  /* Summary cards */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+         gap:12px;margin:8px 0 16px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;
+        padding:12px 14px}
+  .card .k{font-size:11px;color:var(--muted);text-transform:uppercase;
+           letter-spacing:.4px;margin:0 0 5px}
+  .card .v{font-size:26px;font-weight:800;line-height:1}
+  .card .d{font-size:11px;color:var(--muted);margin-top:5px}
+  /* Controls */
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  input[type=text],select{background:var(--card2);border:1px solid var(--border);
+        color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px}
+  button{background:var(--accent);color:#fff;border:none;border-radius:8px;
+         padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer}
+  button.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+  button.small{background:transparent;border:1px solid var(--border);color:var(--muted);
+         padding:4px 8px;font-size:11px;cursor:pointer}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)}
+  /* Table */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:var(--card2);color:var(--muted);text-align:left;padding:8px 10px;
+     border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;
+     user-select:none}
+  th .arr{opacity:.45}
+  td{padding:8px 10px;border-bottom:1px solid var(--border)}
+  tr:hover td{background:#1f2836}
+  .sym{font-weight:800;color:var(--accent)}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .low{color:var(--red);font-weight:700}
+  .pos{color:var(--green)}
+  .neg{color:var(--red)}
+  .tag{font-size:10px;padding:1px 7px;border-radius:10px;font-weight:800}
+  .tag.new{background:var(--red);color:#fff}
+  .tag.at{background:var(--yellow);color:#111}
+  .tag.bars{background:var(--card2);color:var(--muted)}
+  .hist{font-size:10px;color:var(--muted)}
+  .foot{color:var(--muted);font-size:12px;margin-top:6px}
+  .error{background:#3a1020;color:#ff8a8a;border:1px solid var(--red);
+         border-radius:10px;padding:10px 14px;white-space:pre-wrap}
+  #status{color:var(--muted);font-size:12px}
+  .hint{color:var(--muted);font-size:12px}
+  @media(max-width:720px){ table{font-size:12px} th,td{padding:6px 8px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>52-Week Low Scan</h1><span class="badge">Lakshmimata</span>
+    <span id="status" class="chip"></span>
+  </header>
+  <p class="sub">Stocks at / near their 52-week low from <code>public.stock_full_history</code>.
+      Everything is computed in your browser. <b>Offline mode:</b> if a
+      <code>52week_low_data.js</code> sits next to this file (from
+      <code>scripts/fifty_two_week_low.py --emit-js</code>) it loads automatically with no
+      network; otherwise edit the <b>CONFIG</b> block for live Supabase, or use <b>Load CSV…</b>.</p>
+
+  <!-- Summary cards -->
+  <div class="cards">
+    <div class="card"><div class="k">Symbols scanned</div><div class="v" id="cScan">–</div>
+        <div class="d" id="cScanSub">–</div></div>
+    <div class="card"><div class="k">New 52W low (window)</div><div class="v" id="cNew" style="color:var(--red)">–</div>
+        <div class="d" id="cNewSub">set a fresh 52-wk low</div></div>
+    <div class="card"><div class="k">At 52W low (≤ tol)</div><div class="v" id="cAt">–</div>
+        <div class="d" id="cAtSub">within tolerance right now</div></div>
+    <div class="card"><div class="k" style="color:var(--muted)">Latest low date</div><div class="v" id="cDate" style="font-size:20px">–</div>
+        <div class="d">most recent low in the window</div></div>
+  </div>
+
+  <!-- Controls -->
+  <div class="bar">
+    <input type="text" id="q" placeholder="Filter symbol…" spellcheck="false">
+    <select id="fTag">
+      <option value="all">All hits</option>
+      <option value="new">New 52W low only</option>
+      <option value="at">At low (within tol)</option>
+    </select>
+    <label class="chip">days:
+      <input type="number" id="days" value="30" min="1" style="width:56px">
+    </label>
+    <label class="chip">near %:
+      <input type="number" id="near" value="0" min="0" step="0.5" style="width:60px">
+    </label>
+    <button id="reload">⟳ Reload from Supabase</button>
+    <button id="csvOpen" class="ghost">Load CSV…</button>
+    <button id="csvExport" class="ghost">Export CSV</button>
+    <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
+  </div>
+
+  <div id="error" class="error" hidden></div>
+
+  <div style="overflow:auto;max-height:620px;border:1px solid var(--border);border-radius:10px">
+    <table id="tbl">
+      <thead><tr id="thead"></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+  <div class="foot" id="foot"></div>
+</div>
+<!-- Offline data sidecar, generated by:  scripts/fifty_two_week_low.py --emit-js
+     When present it loads from file:// (no network, no key) and the table shows
+     immediately. Without it the page falls back to live Supabase / Load CSV. -->
+<script src="52week_low_data.js"></script>
+<script>
+"use strict";
+/* ============================================================================
+   CONFIG — point this at your Supabase project (same values as .env.example:
+   SUPABASE_URL + anon key). The anon key is already public in your React app
+   (VITE_SUPABASE_ANON_KEY is served to the browser), so embedding it here is no
+   less safe than the existing frontend. Only READ queries are made.
+   ========================================================================== */
+const CONFIG = {
+  SUPABASE_URL: "https://fyhkxsaeylmhzzvmhgiu.supabase.co", // <-- your Supabase URL
+  SUPABASE_ANON_KEY: "PASTE_YOUR_ANON_KEY_HERE",            // <-- your anon key
+  PAGE: 1000,                                               // rows fetched per page
+};
+
+/* WINDOW_252 is the same trailing-252 (bar) window live_scan uses for l52/h52. */
+const WINDOW_252 = 252;
+
+/* ── state ──────────────────────────────────────────────────────────────── */
+let rows = [];        // raw {sym, dates, prices}
+let computed = [];    // enriched {sym, lowDate, lowClose, latest, pctFrom52, new52w, barsSinceLow, n, short}
+let filtered = [];
+let sortKey = "new52w"; let sortDir = -1;
+
+/* ── misc helpers ───────────────────────────────────────────────────────── */
+const $ = (id) => document.getElementById(id);
+const fmt = (x, d=2) => (x === null || x === undefined) ? "–" : x.toLocaleString("en-IN", {maximumFractionDigits:d, minimumFractionDigits:0});
+const pct = (x) => (x === null || x === undefined) ? "–" : (x > 0 ? "+" : "") + x.toLocaleString("en-IN", {maximumFractionDigits:2}) + "%";
+
+/* ── computation (mirrors scripts/fifty_two_week_low.py) ────────────────── */
+function fiftyTwoWeekLow(closes){
+  if (!closes || !closes.length) return null;
+  const win = closes.length >= WINDOW_252 ? closes.slice(-WINDOW_252) : closes;
+  return Math.min.apply(null, win);
+}
+function computeRow(sym, dates, closes){
+  const l52 = fiftyTwoWeekLow(closes);
+  if (l52 === null || l52 <= 0) return null;
+  const latest = closes[closes.length - 1];
+  const pctFrom52 = (latest / l52 - 1) * 100;
+  let lowIdx = -1;
+  for (let i = closes.length - 1; i >= 0; i--){
+    if (closes[i] <= l52 * (1 + 1e-9)) { lowIdx = i; break; }
+  }
+  const barsSinceLow = lowIdx >= 0 ? (closes.length - 1 - lowIdx) : (closes.length - 1);
+  const lowDate = (lowIdx >= 0 && dates && lowIdx < dates.length) ? dates[lowIdx] : null;
+  return {
+    sym, lowDate, lowClose: closes[lowIdx >= 0 ? lowIdx : closes.length - 1],
+    latest, pctFrom52, new52w: false, barsSinceLow,
+    n: closes.length, short: closes.length < WINDOW_252,
+  };
+}
+function applyWindow(){
+  const days = Math.max(1, parseInt($("days").value || "30", 10));
+  const near = Math.max(0, parseFloat($("near").value || "0") || 0);
+  computed = [];
+  for (const r of rows){
+    if (!r || !r.sym || !Array.isArray(r.prices) || !r.prices.length) continue;
+    const closes = r.prices.map(Number);
+    if (closes.some(x => Number.isNaN(x))) continue;
+    const rec = computeRow(r.sym, r.dates || [], closes);
+    if (!rec) continue;
+    const tail = closes.slice(-days);
+    rec.new52w = Math.min.apply(null, tail) <= rec.lowClose * (1 + 1e-9);
+    rec.pctFrom52 = (rec.latest / rec.lowClose - 1) * 100;
+    rec.atLow = rec.pctFrom52 <= near;
+    if (!(rec.new52w || rec.atLow)) continue;
+    computed.push(rec);
+  }
+  sortData(); render();
+}
+
+/* ── Supabase fetch (POSTgREST, paginated) ──────────────────────────────── */
+async function fetchSupabase(){
+  const base = CONFIG.SUPABASE_URL.replace(/\/+$/, "");
+  if (!base || !CONFIG.SUPABASE_ANON_KEY || CONFIG.SUPABASE_ANON_KEY.startsWith("PASTE")){
+    showError("Set CONFIG.SUPABASE_URL and CONFIG.SUPABASE_ANON_KEY in the source, then reload.");
+    return;
+  }
+  setStatus("Fetching from Supabase…");
+  const heads = {
+    "apikey": CONFIG.SUPABASE_ANON_KEY,
+    "Authorization": "Bearer " + CONFIG.SUPABASE_ANON_KEY,
+    "Accept": "application/json",
+  };
+  const all = [];
+  let offset = 0, total = 0;
+  try{
+    while (true){
+      const url = `${base}/rest/v1/stock_full_history?select=sym,dates,prices&limit=${CONFIG.PAGE}&offset=${offset}`;
+      const r = await fetch(url, { headers: heads });
+      if (!r.ok) throw new Error("HTTP " + r.status + " " + (await r.text()).slice(0, 200));
+      const page = await r.json();
+      if (!Array.isArray(page) || page.length === 0) break;
+      all.push(...page);
+      total = page.length;
+      offset += page.length;
+      setStatus(`Fetching… ${offset} rows`);
+      if (total < CONFIG.PAGE) break;
+    }
+  }catch(e){
+    showError("Fetch failed. Check CONFIG URL/key (anon key) and that this page is served over http(s).\n" + e);
+    return;
+  }
+  rows = all;
+  hideError();
+  setStatus(`Loaded ${rows.length} symbols`);
+  applyWindow();
+}
+/* ── CSV load (ingests the Python scanner's summary CSV as pre-computed rows) ─ */
+function parseCsv(text){
+  const lines = text.split(/\r?\n/).filter(l => l.trim().length);
+  if (lines.length < 2) return [];
+  const head = lines[0].split(",").map(s => s.trim().replace(/^"+|"+$/g, ""));
+  const out = [];
+  for (let i = 1; i < lines.length; i++){
+    const vals = lines[i].split(",").map(s => s.trim().replace(/^"+|"+$/g, ""));
+    if (vals.length < head.length) continue;
+    const r = {}; head.forEach((h, j) => r[h] = vals[j]); out.push(r);
+  }
+  return out;
+}
+function loadCsvInput(){
+  const f = $("csvFile").files[0];
+  if (!f){ setStatus("Choose a CSV first"); return; }
+  f.text().then(loadCsvText).catch(e => showError("Could not read file: " + e));
+}
+function loadCsvText(text){
+  const parsed = parseCsv(text);
+  computed = parsed.map(r => ({
+    sym: r.sym,
+    lowDate: r.low_date,
+    lowClose: toNum(r.low_close),
+    latest: toNum(r.latest_close),
+    pctFrom52: toNum(r.pct_from_52wl),
+    new52w: String(r.new_52w_low).toLowerCase() === "true",
+    atLow: false,
+    barsSinceLow: toInt(r.bars_since_low),
+    n: toInt(r.n_bars),
+    short: String(r.short_hist).toLowerCase() === "true",
+  })).filter(r => r.sym && r.latest !== null);
+  hideError();
+  setStatus(`Loaded CSV → ${computed.length} rows`);
+  sortData(); render();
+}
+function toNum(v){ const n = parseFloat(v); return Number.isFinite(n) ? n : null; }
+function toInt(v){ const n = parseInt(v, 10); return Number.isFinite(n) ? n : 0; }
+/* ── Export as CSV (same columns as the Python scanner) ────────────────────── */
+function exportCsv(){
+  if (!filtered.length){ setStatus("Nothing to export"); return; }
+  const esc = s => `"${String(s ?? "").replace(/"/g, '""')}"`;
+  const head = ["sym","low_date","low_close","latest_close","pct_from_52wl","new_52w_low","bars_since_low","n_bars","short_hist"];
+  const lines = [head.join(",")];
+  for (const r of filtered) lines.push([r.sym, r.lowDate, r.lowClose, r.latest, r.pctFrom52,
+    r.new52w ? "true" : "false", r.barsSinceLow, r.n, r.short ? "true" : "false"].map(esc).join(","));
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "52week_low_" + new Date().toISOString().slice(0, 10) + ".csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ── rendering ──────────────────────────────────────────────────────────── */
+const COLS = [
+  { k:"sym",            label:"Symbol",      sort:(a,b)=>a.sym.localeCompare(b.sym) },
+  { k:"lowDate",        label:"Low Date",    sort:(a,b)=>(a.lowDate||"").localeCompare(b.lowDate||"") },
+  { k:"lowClose",       label:"52W Low",     sort:(a,b)=>a.lowClose-b.lowClose, num:true },
+  { k:"latest",         label:"Latest",      sort:(a,b)=>a.latest-b.latest, num:true },
+  { k:"pctFrom52",      label:"% from low",  sort:(a,b)=>a.pctFrom52-b.pctFrom52, num:true },
+  { k:"barsSinceLow",   label:"Bars since low", sort:(a,b)=>a.barsSinceLow-b.barsSinceLow, num:true },
+];
+function sortData(){
+  const col = COLS.find(c => c.k === sortKey) || COLS[0];
+  filtered = computed.slice().sort((a, b) => col.sort(a, b) * sortDir);
+}
+function renderHeader(){
+  $("thead").innerHTML = COLS.map(c => `<th data-k="${c.k}">${c.label}<span class="arr">${sortKey===c.k?(sortDir<0?"▼":"▲"):""}</span></th>`).join("");
+}
+function render(){
+  renderHeader();
+  const q = $("q").value.trim().toUpperCase();
+  const tag = $("fTag").value;
+  let list = filtered;
+  if (q) list = list.filter(r => r.sym.includes(q));
+  if (tag === "new") list = list.filter(r => r.new52w);
+  if (tag === "at")  list = list.filter(r => r.atLow);
+
+  const tb = $("tbody");
+  if (!list.length){ tb.innerHTML = `<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:26px">No symbols match${computed.length?" this filter":" — load data first."}</td></tr>`; }
+  else{
+    tb.innerHTML = list.map(r => {
+      const tags = [];
+      if (r.new52w) tags.push(`<span class="tag new">NEW 52W LOW</span>`);
+      else if (r.atLow) tags.push(`<span class="tag at">AT LOW</span>`);
+      if (r.short) tags.push(`<span class="tag bars">short hist</span>`);
+      const cls = r.pctFrom52 === 0 ? "low" : (r.pctFrom52 < 2 ? "neg" : "pos");
+      return `<tr>
+        <td class="sym">${esc(r.sym)}</td>
+        <td>${esc(r.lowDate || "–")}</td>
+        <td class="num">${fmt(r.lowClose)}</td>
+        <td class="num">${fmt(r.latest)}</td>
+        <td class="num ${cls}">${pct(r.pctFrom52)}</td>
+        <td class="num">${r.barsSinceLow}<span class="hist"> d</span></td>
+        <td class="num">${tags.join("")}</td>
+      </tr>`;
+    }).join("");
+  }
+  $("foot").textContent = `Showing ${list.length.toLocaleString("en-IN")} of ${computed.length.toLocaleString("en-IN")} symbol(s). Click a column header to sort.`;
+  renderCards(list);
+}
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function renderCards(list){
+  $("cScan").textContent = rows.length ? rows.length.toLocaleString("en-IN") : (computed.length ? computed.length.toLocaleString("en-IN") : "–");
+  $("cScanSub").textContent = "rows in table";
+  $("cNew").textContent = computed.filter(r => r.new52w).length.toLocaleString("en-IN");
+  $("cAt").textContent = computed.filter(r => r.atLow).length.toLocaleString("en-IN");
+  $("cAtSub").textContent = "within " + ($("near").value || "0") + "% of low";
+  const dates = computed.map(r => r.lowDate).filter(Boolean).sort();
+  $("cDate").textContent = dates.length ? dates[dates.length - 1] : "–";
+  $("cDate").nextElementSibling.textContent = "most recent low bar";
+}
+function setStatus(msg){ $("status").textContent = msg; }
+function showError(msg){ const e=$("error"); e.hidden=false; e.textContent=msg; }
+function hideError(){ $("error").hidden=true; }
+
+/* ── events / init ──────────────────────────────────────────────────────── */
+function hook(){
+  $("thead").onclick = (ev) => {
+    const th = ev.target.closest ? ev.target.closest("th[data-k]") : null;
+    const k = th && th.dataset.k;
+    if (!k) return;
+    if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = -1; }
+    sortData(); render();
+  };
+  $("reload").onclick   = fetchSupabase;
+  $("csvOpen").onclick  = () => $("csvFile").click();
+  $("csvFile").onchange = loadCsvInput;
+  $("csvExport").onclick = exportCsv;
+  $("q").oninput        = render;
+  $("fTag").onchange    = render;
+  $("days").onchange    = applyWindow;
+  $("near").onchange    = applyWindow;
+  const embedded = window.LOW_DASH_DATA;
+  if (Array.isArray(embedded) && embedded.length){
+    computed = embedded.slice();
+    sortData(); render();
+    setStatus("Offline data loaded → " + computed.length + " symbols");
+  } else if (CONFIG.SUPABASE_ANON_KEY && !CONFIG.SUPABASE_ANON_KEY.startsWith("PASTE")){
+    fetchSupabase();
+  } else {
+    setStatus("No local 52week_low_data.js found. Set the CONFIG key for live data, or open 'Load CSV…'.");
+    render();
+  }
+}
+hook();
+</script>
+</body>
+</html>
