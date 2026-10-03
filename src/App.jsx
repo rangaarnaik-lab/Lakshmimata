@@ -9267,15 +9267,20 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   // Reserve strip above Super Cycle for the TV-style RS rating history table.
   // Reserve strip for the TV-style RS rating history table. Fall back to an
   // estimate until the first measurement lands, then use the real content
-  // height so every row is visible. Overlay can be taller because it costs
-  // the panes nothing; a reserved strip is capped so candles still fit.
-  // Row labels wrap onto two lines at narrow widths, so the fallback estimate
-  // has to assume a wrapped row — otherwise the first paint clips the last rows
-  // until the ResizeObserver reports back.
-  const scTableEstH = clean ? (isMobile ? 168 : 156) : (isMobile ? 200 : 188)
+  // height so every row is visible.
+  // The estimate is derived from the row count and the compact row height used
+  // by the table itself, so the first paint reserves the right amount of space.
+  // The cap used to be 0.42 of the chart, which was smaller than the table's own
+  // natural height — rows were clipped and only reachable via scrollbar.
+  const SC_ROWS = 10 // header + 9 metric rows
+  const scRowH = clean ? 13 : 15
+  const scLegH = clean ? 11 : 13
+  const scTableEstH = SC_ROWS * scRowH + scLegH + 2
+  // Overlay floats over the pane so it may be generous; a reserved strip is
+  // still capped so candles keep a usable share of the chart.
   const scTableBoxH = Math.min(
     Math.max(60, scTableNatH || scTableEstH),
-    Math.max(80, Math.round(H * (scTableOverlay ? 0.62 : 0.42))),
+    Math.max(scTableEstH, Math.round(H * (scTableOverlay ? 0.62 : 0.55))),
   )
   const scTableH = scShowTable && !scTableOverlay && !scTableBelow ? scTableBoxH : 0
   const scTableFootH = scShowTable && scTableBelow ? scTableBoxH : 0
@@ -11592,36 +11597,42 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           const arrow = prev == null ? '' : curr > prev ? '↑' : curr < prev ? '↓' : '·'
           return `${curr}${arrow}`
         }
-        const cellPad = clean ? '1px 3px' : (isMobile ? '2px 3px' : '3px 5px')
-const cellFont = clean ? 8 : (isMobile ? 8 : 9)
-        const labFont = clean ? 8 : (isMobile ? 8 : 9)
-        // Row labels wrap instead of truncating. "OUTPERFORM"/"SMALLCAP" were
-        // being clipped by the nowrap + narrow label track, so the row names were
-        // unreadable — same defect the volume metrics table had.
+        // Compact TradingView-style metrics: every row one line, no wrapping, so the
+        // whole strip (header + 8 rows + legend) fits without scrolling or clipping.
+        const cellPad = clean ? '0 3px' : (isMobile ? '1px 3px' : '1px 4px')
+        const cellFont = clean ? 7.5 : (isMobile ? 8 : 8.5)
+        const labFont = clean ? 7.5 : (isMobile ? 8 : 8.5)
+        // One shared row height keeps the grid columns aligned across all rows.
+        const rowH = scRowH
         const th = (txt) => (
           <div key={txt} style={{
-            padding: cellPad, fontSize: cellFont, fontWeight: 700,
+            padding: cellPad, height: rowH, lineHeight: 1,
+            fontSize: cellFont, fontWeight: 700,
             color: '#fff', background: COL.hdr, textAlign: 'center',
             borderRight: '1px solid #2A2A3E',
+            whiteSpace: 'nowrap',
           }} title={txt}>{txt}</div>
         )
+        // Labels stay on ONE line — wrapping made the strip taller than the pane
+        // and pushed rows out of view.
         const lab = (txt) => (
           <div style={{
-            padding: cellPad, fontSize: labFont, fontWeight: 700,
+            padding: cellPad, height: rowH, lineHeight: 1,
+            fontSize: labFont, fontWeight: 700,
             color: '#fff', background: COL.label,
             borderRight: '1px solid #2A2A3E', borderTop: '1px solid #2A2A3E',
-            lineHeight: 1.15, overflowWrap: 'anywhere', textAlign: 'right',
+            textAlign: 'right', whiteSpace: 'nowrap',
           }} title={txt}>{txt}</div>
         )
         const td = (txt, color, opts={}) => (
           <div style={{
-            padding: cellPad,
-            fontSize: opts.big ? (clean ? 9.5 : (isMobile ? 10 : 11)) : cellFont,
+            padding: cellPad, height: rowH, lineHeight: 1,
+            fontSize: opts.big ? (clean ? 8.5 : (isMobile ? 9 : 10)) : cellFont,
             fontWeight: 800,
             color: color || COL.white, background: COL.cell, textAlign: 'center',
             borderRight: '1px solid #2A2A3E', borderTop: '1px solid #2A2A3E',
             letterSpacing: opts.big ? '0.02em' : undefined,
-            fontVariantNumeric: 'tabular-nums',
+            fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
           }}>{txt}</div>
         )
         const rows = [
@@ -11638,21 +11649,14 @@ const cellFont = clean ? 8 : (isMobile ? 8 : 9)
             cells: scRsTable.map(d => ({ text: ratingCell(d.sml, d.prevS), color: ratingColor(d.sml) })),
           },
           {
-            label: 'IN CYCLE',
+            label: 'CYCLE',
             cells: scRsTable.map(d => ({ ...cycleCell(d.cycle, d.prevCycle), big: true })),
           },
           {
-            label: 'OUTPERFORM',
+            label: 'RS vs MA',
             cells: scRsTable.map(d => ({
-              text: d.aboveMA ? 'YES' : 'NO',
-              color: d.aboveMA ? COL.lime : COL.red,
-            })),
-          },
-          {
-            label: 'VCP',
-            cells: scRsTable.map(d => ({
-              text: d.vcpDepth == null ? '—' : `${d.vcpDepth.toFixed(0)}%${d.vcpTightening ? '↓' : ''}`,
-              color: d.vcpDepth == null ? COL.gray : d.vcpTightening ? COL.lime : COL.orange,
+              text: d.aboveMA ? '●' : '○',
+              color: d.aboveMA ? COL.lime : COL.gray,
             })),
           },
           {
@@ -11669,11 +11673,25 @@ const cellFont = clean ? 8 : (isMobile ? 8 : 9)
               color: d.cond >= 3 ? COL.lime : d.cond >= 2 ? COL.orange : COL.red,
             })),
           },
+          {
+            label: 'OUTPERFORM',
+            cells: scRsTable.map(d => ({
+              text: d.aboveMA ? 'YES' : 'NO',
+              color: d.aboveMA ? COL.lime : COL.red,
+            })),
+          },
+          {
+            label: 'VCP %',
+            cells: scRsTable.map(d => ({
+              text: d.vcpDepth == null ? '—' : `${d.vcpDepth.toFixed(0)}%${d.vcpTightening ? '↓' : ''}`,
+              color: d.vcpDepth == null ? COL.gray : d.vcpTightening ? COL.lime : COL.orange,
+            })),
+          },
         ]
         // Overlay floats over the cycle pane TradingView-style, so it must not
         // be clipped to the pane — only kept inside the chart body.
-        const labW = clean ? 58 : 72
-        const colW = clean ? 28 : 36
+        const labW = clean ? 68 : 80
+        const colW = clean ? 26 : 30
         const boxTop = scTableOverlay
           ? Math.max(padT, Math.min(scTop + 1, H - axisPad - scTableBoxH - 2))
           : scTableTop
@@ -11714,22 +11732,21 @@ const cellFont = clean ? 8 : (isMobile ? 8 : 9)
                 </React.Fragment>
               ))}
             </div>
+            // Slim single-line legend. It used to wrap onto several lines and eat most of
+            // the strip, squeezing the data rows out of view.
             <div style={{
-              display: 'flex', gap: 8, padding: '2px 6px', fontSize: 7, color: COL.white,
-              borderTop: '1px solid #2A2A3E', background: COL.label, flexWrap: 'wrap',
-              position: 'sticky', bottom: 0,
+              display: 'flex', gap: 6, padding: '1px 4px', fontSize: 7, color: COL.white,
+              borderTop: '1px solid #2A2A3E', background: COL.label,
+              flexWrap: 'nowrap', overflow: 'hidden', alignItems: 'center',
+              height: rowH, lineHeight: 1, position: 'sticky', bottom: 0,
             }}>
-              <span><span style={{color:COL.red}}>■</span> &lt;50 Weak</span>
-              <span><span style={{color:'#FFD600'}}>■</span> 50–70 Avg</span>
-              <span><span style={{color:COL.lime}}>■</span> &gt;70 Strong</span>
-              <span style={{opacity:0.5}}>|</span>
-              <span><span style={{color:LAKSHMI_CYCLE_COLORS.POS_UP,fontWeight:800}}>+↑</span> pos↑</span>
-              <span><span style={{color:LAKSHMI_CYCLE_COLORS.POS_DOWN,fontWeight:800}}>+↓</span> pos↓</span>
-              <span><span style={{color:LAKSHMI_CYCLE_COLORS.NEG_DOWN,fontWeight:800}}>−↓</span> neg↓</span>
-              <span><span style={{color:LAKSHMI_CYCLE_COLORS.NEG_UP,fontWeight:800}}>−↑</span> neg↑</span>
-              <span style={{opacity:0.5}}>|</span>
-              <span title="Pullback depth of the contraction this bar sits in; ↓ means tighter than the one before">
-                VCP %↓ tightening
+              <span style={{whiteSpace:'nowrap'}}><span style={{color:COL.red}}>■</span> &lt;50</span>
+              <span style={{whiteSpace:'nowrap'}}><span style={{color:'#FFD600'}}>■</span> 50–70</span>
+              <span style={{whiteSpace:'nowrap'}}><span style={{color:COL.lime}}>■</span> &gt;70</span>
+              <span style={{opacity:0.4}}>|</span>
+              <span title="Relative Strength above its own moving average">OUTPERFORM = RS above its MA</span>
+              <span title="Pullback depth of the contraction this bar sits in; ↓ means tighter than the one before" style={{whiteSpace:'nowrap'}}>
+                VCP %↓ = tightening
               </span>
               {scRsLatest != null && (
                 <span style={{marginLeft:'auto', fontWeight:800, color: ratingColor(scRsLatest)}}>
