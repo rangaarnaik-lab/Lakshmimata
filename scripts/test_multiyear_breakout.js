@@ -30,7 +30,11 @@ const sandbox = {
   fetch: async () => { throw new Error('no network in tests') },
   FileReader: function(){},
 }
-nodes.years = { innerHTML: '', textContent: '', value: '1260', style: {}, querySelectorAll: () => [] }
+// Pre-create the ids the boot block and runScan() read, with the same defaults
+// the markup ships, so the scan runs against real values instead of ''.
+for (const [id, val] of [['years','1260'],['days','10'],['volx','1.5'],['near','2']]) {
+  nodes[id] = el(); nodes[id].value = val
+}
 vm.createContext(sandbox)
 vm.runInContext(pure, sandbox)
 const { computeRow } = sandbox
