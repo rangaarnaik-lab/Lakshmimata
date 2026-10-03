@@ -261,6 +261,15 @@ const APPEARANCES = [
   ['solar','Solar','🌇','#fdf6e3','#268bd2'],
 ]
 const C = {...THEMES.dark}
+/** Full-screen chart shell. Built as a function of the live theme so it picks
+ *  up theme switches while the overlay is open; no transformed ancestor in the
+ *  chart tree, so position:fixed escapes the panel's overflow clipping. */
+const chartFullscreenStyle = () => ({
+  position:'fixed', inset:0, zIndex:2400,
+  padding:'8px 10px', boxSizing:'border-box',
+  display:'flex', flexDirection:'column',
+  background:C.bg, overflow:'hidden',
+})
 /** True when the active theme is dark/black. On a black background the
  *  chart's horizontal chrome (grid lines, pane borders, S/R and circuit
  *  level lines) glares as visual noise, so dark mode suppresses them —
@@ -8354,6 +8363,27 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   const svgRef = useRef(null)
   const chartWrapRef = useRef(null)
   const plotRef = useRef(null)
+  // Full-screen chart, TradingView style. Pure CSS overlay (no Fullscreen API)
+  // so it also works inside the layout's floating panels and on mobile Safari.
+  const [chartFullscreen, setChartFullscreen] = useState(false)
+  const toggleChartFullscreen = useCallback(()=>setChartFullscreen(v=>!v),[])
+  useEffect(()=>{
+    if(!chartFullscreen) return
+    // Let a dialog (indicator settings etc.) keep Escape for itself first.
+    const onKey=(e)=>{
+      if(e.key!=='Escape') return
+      if(indSettingsId!=null || showIndMenu) return
+      setChartFullscreen(false)
+    }
+    document.addEventListener('keydown',onKey)
+    // Stop the page behind the overlay from scrolling while dragging the chart.
+    const prev=document.body.style.overflow
+    document.body.style.overflow='hidden'
+    return ()=>{
+      document.removeEventListener('keydown',onKey)
+      document.body.style.overflow=prev
+    }
+  },[chartFullscreen, indSettingsId, showIndMenu])
   const indMenuRef = useRef(null)
   const rafRef = useRef(null)
   useEffect(()=>{
@@ -8682,7 +8712,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     })
     ro.observe(el)
     return ()=>ro.disconnect()
-  },[loading, sym, chartExpanded, barInterval])
+  },[loading, sym, chartExpanded, barInterval, chartFullscreen])
 
   // Daily series (+ optional weekly/monthly/yearly aggregate).
   // Intraday intervals use stock_intraday_1m (+ client rollup to 3/5/15/30/60).
@@ -9075,7 +9105,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   }, [liveOverlay?.price, sym, userId])
 
   const fillShell=(child)=>(
-    <div ref={chartWrapRef} style={{
+    <div ref={chartWrapRef} style={chartFullscreen?chartFullscreenStyle():{
       padding:'8px 10px', height:isMobile?undefined:'100%', flex:isMobile?undefined:1,
       minHeight:isMobile?320:0, display:'flex', flexDirection:'column', boxSizing:'border-box',
     }}>{child}</div>
@@ -10152,7 +10182,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   const anyIndOn = activeIndicators.length > 0
 
   return (
-    <div ref={chartWrapRef} style={{
+    <div ref={chartWrapRef} style={chartFullscreen?chartFullscreenStyle():{
       padding:'8px 10px',
       height:isMobile?undefined:'100%',
       flex:isMobile?undefined:1,
@@ -10898,6 +10928,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         <span style={{fontSize:10,color:C.muted,marginLeft:'auto',opacity:0.85}}>
           {intervalMeta.label}
         </span>
+        {/* Full-screen chart (TradingView's expand). In full screen this becomes
+            the exit button, so the way out is always in the same spot. */}
+        <button type="button" onClick={toggleChartFullscreen}
+          title={chartFullscreen ? 'Exit full screen (Esc)' : 'Full screen chart'}
+          aria-label={chartFullscreen ? 'Exit full screen' : 'Full screen chart'}
+          style={{
+            marginLeft:8, padding:'3px 6px', borderRadius:3,
+            border:`1px solid ${C.border}`, background:'transparent',
+            color:C.muted, fontSize:10, fontWeight:700, cursor:'pointer',
+            fontFamily:'inherit', lineHeight:1, display:'flex', alignItems:'center',
+          }}>
+          {chartFullscreen ? '⤡ Exit full screen' : '⛶ Full screen'}
+        </button>
       </div>
 
       {/* Hover readout — denser TradingView-style OHLC strip */}
