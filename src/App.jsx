@@ -11928,14 +11928,21 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           const step = n > 1 ? Math.max(1, idxToX(1) - idxToX(0)) : Math.max(2, candleW + 1)
           const o = Math.min(0.45, Math.max(0.02, (Number(maP.rsBackgroundOpacity) || 25) / 100))
             * (clean ? 0.65 : 1)
-          const cPositive = maP.rsPositiveBgColor || '#b6f0ca'
-          const cNegative = maP.rsNegativeBgColor || '#f7bcbf'
+          // Dark-theme values, not the Pine script's light-theme pastels (#b6f0ca /
+          // #f7bcbf). On a dark pane those read as bright vertical stripes.
+          const cPositive = maP.rsPositiveBgColor || '#12321F'
+          const cNegative = maP.rsNegativeBgColor || '#3A1A1F'
           return (
             <g style={{ pointerEvents: 'none' }}>
               {vRsPerformance.map((rs, i) => {
                 if (rs == null || !Number.isFinite(rs) || rs === 0) return null
                 const x0 = idxToX(i) - step / 2
-                const x1 = x0 + step + 0.75
+                /* Exactly `step` wide, NOT step+0.75. The 0.75 overlap was there to
+                   avoid seams, but these are translucent, so overlapping neighbours
+                   double-composite at every bar boundary — that double-density seam
+                   is the bright vertical line. Butting them instead leaves no
+                   overlap and no artifact. */
+                const x1 = x0 + step
                 const x = Math.max(padL, x0)
                 const w = Math.min(padL + chartW, x1) - x
                 if (w <= 0) return null
@@ -12804,15 +12811,19 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
               if (!n) return null
               const step = n > 1 ? Math.max(1, idxToX(1) - idxToX(0)) : Math.max(2, candleW + 1)
               const o = Math.min(0.35, Math.max(0.02, (Number(scP.ratingBgOpacity) || 15) / 100))
-              const cStrong = scP.ratingBgStrongColor || '#00e676'
-              const cAvg = scP.ratingBgAvgColor || '#ffd600'
-              const cWeak = scP.ratingBgWeakColor || '#ff1744'
+              // Dark-theme shades. The saturated Pine defaults (#00e676 / #ffd600 /
+              // #ff1744) are fine in isolation but the adjacent-bar overlap below
+              // used to double-composite them into bright vertical seams.
+              const cStrong = scP.ratingBgStrongColor || '#0E3D22'
+              const cAvg = scP.ratingBgAvgColor || '#33300C'
+              const cWeak = scP.ratingBgWeakColor || '#3D1220'
               return (
                 <g style={{ pointerEvents: 'none' }}>
                   {ratings.map((r, i) => {
                     if (r == null || !Number.isFinite(r)) return null
                     const x0 = idxToX(i) - step / 2
-                    const x1 = x0 + step + 0.75
+                    // Butted, not overlapped — see the note at the RS backdrop above.
+                    const x1 = x0 + step
                     const x = Math.max(padL, x0)
                     const w = Math.min(padL + chartW, x1) - x
                     if (w <= 0) return null
