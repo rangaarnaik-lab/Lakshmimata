@@ -1,0 +1,518 @@
+﻿// One-shot generator for multiyear_breakout_dashboard.html.
+// Kept out of the repo build; run with: node scripts/gen_multiyear_breakout.js
+import { writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
+
+const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'multiyear_breakout_dashboard.html')
+
+const HEAD = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-Year Breakout Scan â€” Lakshmimata</title>
+<style>
+  :root{
+    --bg:#0e1117; --card:#171c26; --card2:#1d2433; --border:#2a3342;
+    --text:#e6e9ef; --muted:#8b94a3; --accent:#4f8cff; --green:#22c58b;
+    --red:#ff5d5d; --yellow:#f5c542; --pink:#ff6bb0; --cyan:#39d0d8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+       background:var(--bg);color:var(--text);}
+  .wrap{max-width:1400px;margin:0 auto;padding:18px}
+  header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font-size:20px;margin:0;font-weight:800;letter-spacing:.3px}
+  .badge{background:var(--cyan);color:#06282a;font-size:11px;font-weight:800;
+         padding:2px 9px;border-radius:20px}
+  .sub{color:var(--muted);font-size:12px;margin:2px 0 14px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+         gap:12px;margin:8px 0 16px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;
+        padding:12px 14px}
+  .card .k{font-size:11px;color:var(--muted);text-transform:uppercase;
+           letter-spacing:.4px;margin:0 0 5px}
+  .card .v{font-size:26px;font-weight:800;line-height:1}
+  .card .d{font-size:11px;color:var(--muted);margin-top:5px}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .bar label{color:var(--muted);font-size:12px}
+  input[type=number],select{background:var(--card2);border:1px solid var(--border);
+        color:var(--text);border-radius:8px;padding:7px 10px;font-size:13px}
+  input[type=number]{width:74px}
+  button{background:var(--accent);color:#fff;border:none;border-radius:8px;
+         padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer}
+  button.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+  button.small{background:transparent;border:1px solid var(--border);color:var(--muted);
+         padding:4px 8px;font-size:11px;cursor:pointer}
+  .chip{font-size:12px;color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:var(--card2);color:var(--muted);text-align:left;padding:8px 10px;
+     border-bottom:1px solid var(--border);cursor:pointer;white-space:nowrap;
+     user-select:none}
+  th .arr{opacity:.45}
+  td{padding:8px 10px;border-bottom:1px solid var(--border)}
+  tr:hover td{background:#1f2836}
+  .sym{font-weight:800;color:var(--accent)}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .pos{color:var(--green)}
+  .neg{color:var(--red)}
+  .tag{font-size:10px;padding:1px 7px;border-radius:10px;font-weight:800}
+  .tag.y3{background:var(--accent);color:#fff}
+  .tag.y5{background:var(--cyan);color:#06282a}
+  .tag.y10{background:var(--yellow);color:#111}
+  .tag.vol{background:var(--pink);color:#fff}
+  .tag.novol{background:var(--card2);color:var(--muted)}
+  .tag.long{background:#2b3a2f;color:#7ee2a8}
+  .tag.aty{background:#4a2f16;color:var(--yellow)}
+  .bar-cell{height:6px;background:var(--card2);border-radius:3px;overflow:hidden;min-width:56px}
+  .bar-cell i{display:block;height:100%;background:var(--accent)}
+  .foot{color:var(--muted);font-size:12px;margin-top:10px}
+  .error{background:#3a1020;color:#ff8a8a;border:1px solid var(--red);
+         border-radius:10px;padding:10px 14px;white-space:pre-wrap}
+  #status{color:var(--muted);font-size:12px}
+  .hint{color:var(--muted);font-size:12px}
+  @media(max-width:720px){ table{font-size:12px} th,td{padding:6px 8px} }
+</style>
+</head>
+`
+const BODY = `<body>
+<div class="wrap">
+  <header>
+    <h1>Multi-Year Breakout Scan</h1><span class="badge">Lakshmimata</span>
+    <span id="status" class="chip"></span>
+  </header>
+  <p class="sub">
+    Stocks breaking out above their <b>3-year</b>, <b>5-year</b> or <b>10-year</b>
+    closing high, with volume confirmation. Clearing a multi-year high is one of the
+    strongest trend signals there is. Use the lookback and volume controls to tune how
+    strict the scan is.
+  </p>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="bar">
+    <label for="years">Breakout window</label>
+    <select id="years">
+      <option value="756">3 years</option>
+      <option value="1260" selected>5 years</option>
+      <option value="2520">10 years</option>
+    </select>
+
+    <label for="days">Crossed within</label>
+    <input id="days" type="number" value="10" min="1" max="250" step="1">
+    <span class="hint">bars</span>
+
+    <label for="volx">Min volume &times;</label>
+    <input id="volx" type="number" value="1.5" min="0" max="10" step="0.1">
+    <span class="hint">of 50-bar avg</span>
+
+    <label for="near">Or within</label>
+    <input id="near" type="number" value="2" min="0" max="50" step="0.5">
+    <span class="hint">% of the high</span>
+
+    <button id="run">&#10227; Run scan</button>
+    <button class="ghost" id="reload">&#10227; Reload from Supabase</button>
+    <button class="small" id="csv">Load CSV&hellip;</button>
+    <input id="file" type="file" accept=".csv,text/csv" style="display:none">
+  </div>
+
+  <div id="err"></div>
+
+  <table id="tbl">
+    <thead><tr id="thr"></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+
+  <details style="margin-top:14px">
+    <summary class="hint" style="cursor:pointer">How the signal is computed</summary>
+    <div class="hint" style="margin-top:8px;line-height:1.65">
+      For each symbol with enough history:<br>
+      &bull; <b>Prior high</b> &mdash; the highest close over the trailing window
+        (756 / 1260 / 2520 bars, at ~252 trading days a year).<br>
+      &bull; <b>Broke out</b> &mdash; the latest close is above that prior high.<br>
+      &bull; <b>Freshness</b> &mdash; the cross happened within the last
+        <i>Crossed within</i> bars, not months ago.<br>
+      &bull; <b>Volume</b> &mdash; the breakout bar's volume against the 50-bar average
+        before it. At or above <i>Min volume &times;</i> is tagged
+        <span class="tag vol">VOL &#10003;</span>; below it the row shows
+        <span class="tag novol">LOW VOL</span>.<br>
+      &bull; <b>Or near</b> &mdash; rows are also kept when price sits within
+        <i>Or within</i>% of the multi-year high, flagged
+        <span class="tag aty">NEAR</span> &mdash; often the best setups, still basing
+        under resistance.<br>
+      &bull; <b>Long history</b> &mdash; <span class="tag long">LONG</span> means the
+        symbol has more bars than the window, so this is a genuine N-year high and not
+        just an all-time high over a short listing history.
+    </div>
+  </details>
+
+  <p class="foot" id="foot"></p>
+</div>
+`
+
+const JS1 = `<script>
+"use strict";
+/* ============================================================================
+   Multi-Year Breakout scan â€” standalone page, same shape as
+   52week_low_dashboard.html.
+
+   Reads public.stock_full_history (sym, dates, prices, volumes â€” the arrays are
+   aligned, newest bar LAST) over PostgREST and flags symbols breaking out above
+   their 3 / 5 / 10-year closing high.
+
+   Data source
+   -----------
+   Set CONFIG.SUPABASE_ANON_KEY to load live, or use "Load CSVâ€¦". The anon key is
+   already public in the React app (VITE_SUPABASE_ANON_KEY is served to the
+   browser), so embedding it here is no less safe than the existing frontend.
+   Only READ queries are made.
+   ========================================================================== */
+const CONFIG = {
+  SUPABASE_URL: "https://fyhkxsaeylmhzzvmhgiu.supabase.co", // <-- your Supabase URL
+  SUPABASE_ANON_KEY: "PASTE_YOUR_ANON_KEY_HERE",            // <-- your anon key
+  PAGE: 1000,                                               // rows fetched per page
+};
+
+/* Trailing windows in trading bars (~252 bars per year). */
+const YEAR_BARS = 252;
+const WINDOWS = { "756":"3Y", "1260":"5Y", "2520":"10Y" };
+const VOL_AVG = 50;   // bars averaged for the volume baseline
+
+/* â”€â”€ state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+let rows = [];        // raw {sym, dates, prices, volumes}
+let computed = [];    // enriched rows
+let filtered = [];
+let sortKey = "pctAbove"; let sortDir = -1;
+
+/* â”€â”€ small helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+const $ = (id) => document.getElementById(id);
+function fmt(x, d){
+  if (x === null || x === undefined || Number.isNaN(x)) return "â€“";
+  return Number(x).toLocaleString("en-IN", {maximumFractionDigits: (d === undefined ? 2 : d)});
+}
+function pct(x){
+  if (x === null || x === undefined || Number.isNaN(x)) return "â€“";
+  return (x > 0 ? "+" : "") + Number(x).toLocaleString("en-IN", {maximumFractionDigits:2}) + "%";
+}
+function setStatus(s){ $("status").textContent = s || ""; }
+function esc(s){
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+}
+function showError(m){ $("err").innerHTML = '<div class="error">' + esc(m) + "</div>"; }
+function clearError(){ $("err").innerHTML = ""; }
+
+/* â”€â”€ computation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+function computeRow(sym, dates, closes, vols, bars){
+  const n = closes.length;
+  if (n < 2) return null;
+  const latest = closes[n - 1];
+
+  // The prior high EXCLUDES the latest bar, so a stock sitting at its high right
+  // now still reports "broke out today" instead of being compared with itself.
+  const from = Math.max(0, n - 1 - bars);
+  const priorSlice = closes.slice(from, n - 1);
+  if (!priorSlice.length) return null;
+
+  let priorHigh = -Infinity;
+  for (let i = 0; i < priorSlice.length; i++) if (priorSlice[i] > priorHigh) priorHigh = priorSlice[i];
+  if (!isFinite(priorHigh) || priorHigh <= 0) return null;
+
+  const pctAbove = (latest / priorHigh - 1) * 100;
+
+  // First bar walking back from the latest that cleared the prior high, and how
+  // many bars ago that was (0 = today).
+  let crossPos = -1;
+  for (let i = priorSlice.length - 1; i >= 0; i--){
+    if (priorSlice[i] > priorHigh){ crossPos = i; break; }
+  }
+  const absIdx = from + (crossPos >= 0 ? crossPos : priorSlice.length - 1);
+  const crossDate = (dates && absIdx >= 0 && absIdx < dates.length) ? dates[absIdx] : null;
+  const barsSince = crossPos >= 0 ? (priorSlice.length - 1 - crossPos) : null;
+
+  // Volume confirmation: breakout-bar volume vs the 50-bar average before it.
+  let volRatio = null, volVal = null;
+  if (Array.isArray(vols) && vols.length === n){
+    const vv = Number(vols[absIdx]);
+    if (isFinite(vv)) volVal = vv;
+    const lo = Math.max(0, absIdx - VOL_AVG);
+    let sum = 0, cnt = 0;
+    for (let i = lo; i < absIdx; i++){
+      const x = Number(vols[i]);
+      if (isFinite(x) && x > 0){ sum += x; cnt++; }
+    }
+    const avg = cnt ? sum / cnt : 0;
+    if (avg > 0 && isFinite(vv)) volRatio = vv / avg;
+  }
+
+  return {
+    sym: sym, latest: latest, priorHigh: priorHigh, pctAbove: pctAbove,
+    crossDate: crossDate, barsSince: barsSince, volVal: volVal, volRatio: volRatio,
+    n: n, longHistory: n > bars,
+    brokeOut: pctAbove > 0,
+  };
+}
+
+function runScan(){
+  clearError();
+  const bars = parseInt($("years").value, 10) || 1260;
+  const days = Math.max(1, parseInt($("days").value || "10", 10));
+  const volx = Math.max(0, parseFloat($("volx").value || "0") || 0);
+  const nearPct = Math.max(0, parseFloat($("near").value || "0") || 0);
+  const label = WINDOWS[String(bars)] || ((bars / YEAR_BARS).toFixed(1) + "Y");
+
+  computed = [];
+  for (const r of rows){
+    if (!r || !r.sym || !Array.isArray(r.prices) || !r.prices.length) continue;
+    const closes = r.prices.map(Number);
+    if (closes.some((x) => Number.isNaN(x) || x <= 0)) continue;
+    const rec = computeRow(r.sym, r.dates || [], closes, r.volumes, bars);
+    if (!rec) continue;
+
+    // Keep it when it genuinely broke out recently, OR when it sits just under the
+    // multi-year high (the "about to fire" bucket).
+    const fresh = rec.brokeOut && rec.barsSince !== null && rec.barsSince < days;
+    const nearHigh = !rec.brokeOut && nearPct > 0 && (-rec.pctAbove) <= nearPct;
+    if (!(fresh || nearHigh)) continue;
+
+    rec.fresh = fresh;
+    rec.nearHigh = nearHigh;
+    rec.volOk = volx <= 0 ? true : (rec.volRatio !== null && rec.volRatio >= volx);
+    rec.window = label;
+    computed.push(rec);
+  }
+  sortData(); render();
+}
+
+/* â”€â”€ sorting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+const COLS = [
+  {k:"sym",       t:"Symbol",     num:false},
+  {k:"latest",    t:"Last",       num:true},
+  {k:"priorHigh", t:"Prior high", num:true},
+  {k:"pctAbove",  t:"% Above",    num:true},
+  {k:"volRatio",  t:"Vol",        num:true},
+  {k:"barsSince", t:"Bars ago",   num:true},
+  {k:"crossDate", t:"Cross date", num:false},
+  {k:"tags",      t:"Signals",    num:false},
+  {k:"n",         t:"Bars",       num:true},
+];
+
+function sortData(){
+  const c = COLS.find((x) => x.k === sortKey) || COLS[3];
+  filtered = computed.slice();
+  filtered.sort((a, b) => {
+    let x = a[c.k], y = b[c.k];
+    if (c.k === "tags"){ x = a.fresh ? 1 : 0; y = b.fresh ? 1 : 0; }
+    if (x === null || x === undefined) return 1;
+    if (y === null || y === undefined) return -1;
+    if (typeof x === "string" || typeof y === "string"){
+      return sortDir * String(x).localeCompare(String(y));
+    }
+    return sortDir * (x - y);
+  });
+}
+
+/* â”€â”€ render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+function renderCards(){
+  const fresh = computed.filter((r) => r.fresh).length;
+  const near = computed.filter((r) => r.nearHigh).length;
+  const volOk = computed.filter((r) => r.fresh && r.volOk).length;
+  const cards = [
+    ["Breakouts", fresh, (WINDOWS[$("years").value] || "?") + " high cleared"],
+    ["Near high", near, "within " + ($("near").value || 0) + "% of it"],
+    ["Volume-confirmed", volOk, "min " + ($("volx").value || 0) + "x avg"],
+    ["Scanned", rows.length, "symbols with history"],
+  ];
+  $("cards").innerHTML = cards.map((c) =>
+    '<div class="card"><div class="k">' + esc(c[0]) + '</div><div class="v">' +
+    c[1] + '</div><div class="d">' + esc(c[2]) + "</div></div>").join("");
+}
+
+function tagFor(r){
+  const out = [];
+  const cls = r.window === "3Y" ? "y3" : (r.window === "5Y" ? "y5" : "y10");
+  out.push('<span class="tag ' + cls + '">' + esc(r.window) + " HIGH</span>");
+  if (r.fresh) out.push('<span class="tag vol">BREAKOUT</span>');
+  if (r.nearHigh) out.push('<span class="tag aty">NEAR</span>');
+  if (r.fresh) out.push(r.volOk ? '<span class="tag vol">VOL OK</span>'
+                               : '<span class="tag novol">LOW VOL</span>');
+  if (r.volRatio === null && r.fresh) out.push('<span class="tag novol">NO VOL DATA</span>');
+  if (r.longHistory) out.push('<span class="tag long">LONG</span>');
+  return out.join(" ");
+}
+
+function render(){
+  renderCards();
+  $("thr").innerHTML = COLS.map((c) => {
+    const arr = sortKey === c.k ? '<span class="arr"> ' + (sortDir < 0 ? "â–¼" : "â–²") + "</span>" : "";
+    return '<th data-k="' + c.k + '" class="' + (c.num ? "num" : "") + '">' + esc(c.t) + arr + "</th>";
+  }).join("");
+
+  $("tbody").innerHTML = filtered.map((r) => {
+    const up = r.pctAbove > 0;
+    const volCell = (r.volRatio === null)
+      ? '<span style="color:var(--muted)">-</span>'
+      : '<span class="' + (r.volOk ? "pos" : "") + '">' + r.volRatio.toFixed(2) + "x</span>" +
+        '<div class="bar-cell" style="margin-top:3px"><i style="width:' +
+        Math.min(100, Math.round(r.volRatio / 3 * 100)) + '%"></i></div>';
+    return "<tr>" +
+      '<td class="sym">' + esc(r.sym) + "</td>" +
+      '<td class="num">' + fmt(r.latest) + "</td>" +
+      '<td class="num" style="color:var(--muted)">' + fmt(r.priorHigh) + "</td>" +
+      '<td class="num ' + (up ? "pos" : "neg") + '"><strong>' + pct(r.pctAbove) + "</strong></td>" +
+      '<td class="num">' + volCell + "</td>" +
+      '<td class="num">' + (r.barsSince === null ? "-" : r.barsSince) + "</td>" +
+      '<td style="color:var(--muted);font-size:12px">' + esc(r.crossDate || "-") + "</td>" +
+      "<td>" + tagFor(r) + "</td>" +
+      '<td class="num" style="color:var(--muted)">' + r.n + "</td>" +
+    "</tr>";
+  }).join("");
+
+  const w = WINDOWS[$("years").value] || $("years").value;
+  $("foot").textContent = filtered.length + " row" + (filtered.length === 1 ? "" : "s") +
+    " / window " + w + " / scanned " + rows.length +
+    " symbols / data: public.stock_full_history (read-only)";
+
+  document.querySelectorAll("#thr th").forEach((th) => {
+    th.onclick = () => {
+      const k = th.dataset.k;
+      if (sortKey === k) sortDir = -sortDir;
+      else { sortKey = k; sortDir = (k === "sym" || k === "crossDate") ? 1 : -1; }
+      sortData(); render();
+    };
+  });
+}
+
+/* â”€â”€ data loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+function supabaseReady(){
+  return !!(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY &&
+            !CONFIG.SUPABASE_ANON_KEY.startsWith("PASTE"));
+}
+
+/** Fetch every row of stock_full_history, paging through PostgREST. */
+async function fetchSupabase(){
+  if (!supabaseReady()){
+    showError("Set CONFIG.SUPABASE_URL and CONFIG.SUPABASE_ANON_KEY in the source, " +
+              "then Reload. (The anon key is public in the React app.)");
+    setStatus("");
+    return;
+  }
+  const base = CONFIG.SUPABASE_URL.replace(/\\/+$/, "");
+  const heads = {
+    apikey: CONFIG.SUPABASE_ANON_KEY,
+    Authorization: "Bearer " + CONFIG.SUPABASE_ANON_KEY,
+  };
+  const all = [];
+  let offset = 0;
+  try {
+    for (;;){
+      setStatus("Fetching from Supabase... " + all.length + " rows");
+      const url = base + "/rest/v1/stock_full_history" +
+                  "?select=sym,dates,prices,volumes" +
+                  "&order=sym.asc" +
+                  "&limit=" + CONFIG.PAGE +
+                  "&offset=" + offset;
+      const r = await fetch(url, { headers: heads });
+      if (!r.ok) throw new Error("HTTP " + r.status + " " + (await r.text()).slice(0, 200));
+      const page = await r.json();
+      if (!Array.isArray(page) || !page.length) break;
+      all.push.apply(all, page);
+      if (page.length < CONFIG.PAGE) break;
+      offset += page.length;
+    }
+    rows = all;
+    setStatus("");
+    if (!rows.length){
+      showError("Supabase returned no rows. Check the anon key and that " +
+                "public.stock_full_history is readable.");
+      return;
+    }
+    clearError();
+    runScan();
+  } catch (e){
+    showError("Fetch failed. Check the CONFIG URL/key and that this page is served over http(s).\\n" + e);
+    setStatus("");
+  }
+}
+
+/** Minimal CSV loader â€” expects a symbol + close header, one row per bar. */
+function parseCsv(text){
+  const lines = text.split(/\\r?\\n/).filter((s) => s.trim().length);
+  if (!lines.length) return [];
+  const split = (line) => {
+    const out = []; let cur = ""; let q = false;
+    for (const ch of line){
+      if (q){
+        if (ch === '"') q = false; else cur += ch;
+      } else if (ch === '"') q = true;
+      else if (ch === ","){ out.push(cur); cur = ""; }
+      else cur += ch;
+    }
+    out.push(cur);
+    return out.map((s) => s.trim());
+  };
+  const head = split(lines[0]).map((s) => s.toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const iSym = head.findIndex((h) => h === "sym" || h === "symbol" || h === "ticker");
+  const iDate = head.findIndex((h) => h.indexOf("date") >= 0);
+  const iClose = head.findIndex((h) => h === "close" || h === "price" || h === "adjclose");
+  const iVol = head.findIndex((h) => h === "volume" || h === "vol");
+  if (iSym < 0 || iClose < 0){
+    showError("CSV needs at least a symbol column and a close column.");
+    return [];
+  }
+  const bySym = new Map();
+  for (let i = 1; i < lines.length; i++){
+    const f = split(lines[i]);
+    if (f.length <= Math.max(iSym, iClose)) continue;
+    const sym = f[iSym];
+    const c = Number(f[iClose]);
+    if (!sym || !isFinite(c) || c <= 0) continue;
+    if (!bySym.has(sym)) bySym.set(sym, { sym: sym, dates: [], prices: [], volumes: [] });
+    const o = bySym.get(sym);
+    o.prices.push(c);
+    o.dates.push(iDate >= 0 && f[iDate] ? f[iDate] : "");
+    o.volumes.push(iVol >= 0 && isFinite(Number(f[iVol])) ? Number(f[iVol]) : null);
+  }
+  return Array.from(bySym.values());
+}
+
+function loadCsvText(text, label){
+  const parsed = parseCsv(text);
+  if (!parsed.length){
+    showError("No usable rows in " + label + ".");
+    return;
+  }
+  rows = parsed;
+  clearError();
+  setStatus("Loaded " + rows.length + " symbols from " + label);
+  runScan();
+}
+
+/* â”€â”€ boot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+$("run").onclick = () => runScan();
+$("reload").onclick = () => fetchSupabase();
+$("csv").onclick = () => $("file").click();
+$("file").onchange = (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => loadCsvText(String(ev.target.result), f.name);
+  reader.onerror = () => showError("Could not read " + f.name + ".");
+  reader.readAsText(f);
+  e.target.value = "";
+};
+["years","days","volx","near"].forEach((id) => {
+  const el = $(id);
+  el.addEventListener("change", () => { if (rows.length) runScan(); });
+});
+
+renderCards();
+if (supabaseReady()) fetchSupabase();
+else setStatus("Set CONFIG.SUPABASE_ANON_KEY, then Reload.");
+</` + 'script' + `>
+</body>
+</html>
+`
+
+writeFileSync(OUT, HEAD + BODY + JS1, 'utf8')
+console.log('wrote ' + OUT)

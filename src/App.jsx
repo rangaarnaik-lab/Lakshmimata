@@ -11108,8 +11108,13 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
             <div style={{
               width:'100%',
               height:active?2:1,
-              background:active?C.accent:C.border,
-              opacity:active?0.85:0.3,
+              // Idle dividers are fully transparent: a 1px full-width bar that
+              // sits at C.border is still visible against the pane fills and
+              // reads as a stray "white line" once several indicator panes
+              // stack up. The 11px hit area above is unchanged, so dragging
+              // and the double-click reset still work.
+              background:active?C.accent:'transparent',
+              opacity:active?0.85:0,
               borderRadius:2,
               transition:'opacity .12s',
             }}/>
