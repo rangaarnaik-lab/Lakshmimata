@@ -10199,7 +10199,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
       } },
     { id:'ma', group:'Overlays', label:'EMA Lines (Moving Averages)', short:'EMA',
       desc:'EMA 9 / 21 / 50 / 150 / 200 on the price pane', on:indicatorEnabled('ma'), visible:showMA, set:setShowMA },
-    { id:'guppy', group:'Overlays', label:'Guppy Crossover (GMMA)', short:'Guppy', desc:'GMMA ribbon + crossover markers — short vs long EMA band', on:indicatorEnabled('guppy'), visible:showGuppy, set:setShowGuppy },
+    { id:'guppy', group:'Overlays', label:'Guppy Crossover (GMMA)', short:'Guppy', desc:'GMMA cloud + crossover markers — short vs long EMA band', on:indicatorEnabled('guppy'), visible:showGuppy, set:setShowGuppy },
     { id:'squeeze', group:'Overlays', label:'Squeeze Pro Dots', short:'Squeeze Pro', desc:'John Carter compression tiers — high / mid / low coil + momentum bias', on:indicatorEnabled('squeeze'), visible:showSqueeze, set:setShowSqueeze },
     { id:'hilo52', group:'Overlays', label:'52-Week High / Low Flags', short:'52W', desc:'Marks fresh 52-week high / low events on the chart', on:indicatorEnabled('hilo52'), visible:showHiLo52, set:setShowHiLo52 },
     { id:'sr', group:'Overlays', label:'Support & Resistance', short:'S/R', desc:'Pivot-based support and resistance from swing highs/lows', on:indicatorEnabled('sr'), visible:showSR, set:setShowSR },
@@ -12127,37 +12127,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           ) : null
         )}
 
-        {/* Guppy GMMA — the cloud fill (trend state) plus the actual ribbon lines and
-            crossover markers. A crossover study needs the crossing itself to be
-            marked: the short-ribbon midpoint crossing the long-ribbon midpoint.
-            The cloud alone only tells you which side the ribbons are on. */}
+        {/* Guppy GMMA — the cloud fill (trend state) plus crossover markers, where the
+            short-ribbon midpoint crosses the long-ribbon midpoint. The ribbon
+            lines themselves are not drawn: 12 EMAs behind a fill was visual
+            noise that made the crossover hard to spot. */}
         {showGuppy && (
           <g>
-            {guppyP.showRibbon !== false && vGuppyShort.length > 0 && (() => {
-              const w = Math.min(4, Math.max(0.5, Number(guppyP.ribbonWidth) || 1))
-              const sCol = guppyP.ribbonShortColor || '#26a69a'
-              const lCol = guppyP.ribbonLongColor || '#ef5350'
-              const line = (series, color, dash) => {
-                const pts = []
-                for (let i = 0; i < series.length; i++) {
-                  const v = series[i]
-                  if (v == null || !Number.isFinite(v)) continue
-                  pts.push(`${idxToX(i)},${priceToY(v)}`)
-                }
-                if (pts.length < 2) return null
-                return (
-                  <polyline key={`gmma-${color}-${pts[0]}`} points={pts.join(' ')}
-                    fill="none" stroke={color} strokeWidth={w}
-                    strokeDasharray={dash} strokeLinejoin="round" strokeLinecap="round"/>
-                )
-              }
-              // Long ribbon dashed and thinner so the two ribbons stay separable
-              // where they overlap during compression.
-              return [
-                ...vGuppyLong.map((s, k) => line(s, lCol, `${w},${w * 1.6}`)),
-                ...vGuppyShort.map((s, k) => line(s, sCol, undefined)),
-              ]
-            })()}
             {guppyP.showCloud !== false && (() => {
               const segments = []
               let cur = null
@@ -12998,8 +12973,6 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         </span>}
         {showGuppy && (
           <span>
-            {guppyP.showRibbon !== false && <span><span style={{color:guppyP.ribbonShortColor || '#26a69a'}}>—</span> GMMA short</span>}
-            {guppyP.showRibbon !== false && <span><span style={{color:guppyP.ribbonLongColor || '#ef5350'}}>- -</span> GMMA long</span>}
             {guppyP.showCloud !== false && <span><span style={{color:guppyP.cloudUpColor || '#16a34a'}}>■</span> Guppy cloud</span>}
             {guppyP.showCrossover !== false && <span><span style={{color:guppyP.crossBullColor || '#00e676'}}>◆</span> GMMA cross</span>}
           </span>

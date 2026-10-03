@@ -1,4 +1,4 @@
-﻿// Verify the v12 MA migration and the SMA series math used by the chart.
+// Verify the v12 MA migration and the SMA series math used by the chart.
 import { normalizeChartIndicatorPrefs } from '../src/lib/chartIndicatorPrefs.js'
 import { calcSMASeries } from '../src/scanners/chartAnalysis.js'
 
@@ -40,7 +40,7 @@ ok('5 EMA lines on by default',
    fresh.params.showMa150, fresh.params.showMa200].every(v => v === true))
 ok('ma20Color is not the invisible #141414', fresh.params.ma20Color !== '#141414',
   `got ${fresh.params.ma20Color}`)
-ok('version 16', normalizeChartIndicatorPrefs(null).version === 16)
+ok('version 16', normalizeChartIndicatorPrefs(null).version === 17)
 
 console.log('\nMigration from an existing v11 profile')
 const old = {
@@ -54,7 +54,7 @@ const old = {
 const mig = normalizeChartIndicatorPrefs(old)
 ok('v11 -> #141414 recolored', mig.indicators.ma.params.ma20Color === '#2962ff',
   `got ${mig.indicators.ma.params.ma20Color}`)
-ok('v11 -> version bumped to 16', mig.version === 16)
+ok('v11 -> version bumped to 17', mig.version === 17)
 ok('v11 -> stale SMA keys stripped',
   !('sma20' in mig.indicators.ma.params) && !('showSma20' in mig.indicators.ma.params) &&
   !('smaDash' in mig.indicators.ma.params) && !('sma20Color' in mig.indicators.ma.params))
@@ -70,7 +70,7 @@ const v12 = normalizeChartIndicatorPrefs({
 })
 ok('v12 -> persisted sqShowOff:true cleared', v12.indicators.squeeze.params.sqShowOff === false,
   `got ${v12.indicators.squeeze.params.sqShowOff}`)
-ok('v12 -> version bumped to 16', v12.version === 16)
+ok('v12 -> version bumped to 17', v12.version === 17)
 
 console.log('\nUser overrides survive')
 const custom = {
@@ -88,23 +88,28 @@ ok('custom ma20Color kept', cust.ma20Color === '#ff00ff', `got ${cust.ma20Color}
 ok('removed SMA keys not resurrected by a saved profile',
   !('sma20' in cust) && !('showSma20' in cust))
 
-console.log('\nGuppy GMMA ribbon + crossovers (v14)')
+console.log('\nGuppy GMMA cloud + crossovers (v14, ribbon lines dropped in v17)')
 const gFresh = normalizeChartIndicatorPrefs(null).indicators.guppy.params
-ok('fresh: GMMA ribbon lines on', gFresh.showRibbon === true)
 ok('fresh: crossover markers on', gFresh.showCrossover === true)
 ok('fresh: cloud still on', gFresh.showCloud === true)
 ok('fresh: bull/bear cross colours distinct',
   gFresh.crossBullColor !== gFresh.crossBearColor)
+ok('fresh: no ribbon params', !('showRibbon' in gFresh) && !('ribbonWidth' in gFresh))
 const gMig = normalizeChartIndicatorPrefs({ version: 13, indicators: {} })
   .indicators.guppy.params
-ok('v13 -> ribbon seeded on', gMig.showRibbon === true)
 ok('v13 -> crossovers seeded on', gMig.showCrossover === true)
+ok('v16 profile -> ribbon keys stripped', !('showRibbon' in gMig))
+const gSavedRibbon = normalizeChartIndicatorPrefs({
+  version: 16, indicators: { guppy: { params: { showRibbon: true, ribbonWidth: 3 } } },
+}).indicators.guppy.params
+ok('v16 -> saved ribbon keys stripped',
+  !('showRibbon' in gSavedRibbon) && !('ribbonWidth' in gSavedRibbon))
 // A user who had deliberately switched the cloud off keeps that choice.
 const gOff = normalizeChartIndicatorPrefs({
   version: 13, indicators: { guppy: { params: { showCloud: false } } },
 }).indicators.guppy.params
 ok('v13 -> explicit showCloud:false respected', gOff.showCloud === false)
-ok('version 16', normalizeChartIndicatorPrefs(null).version === 16)
+ok('version 16', normalizeChartIndicatorPrefs(null).version === 17)
 
 console.log('\nBollinger Bands enabled by default (v15)')
 const bbFresh = normalizeChartIndicatorPrefs(null).indicators.bb

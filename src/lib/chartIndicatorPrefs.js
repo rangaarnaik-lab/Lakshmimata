@@ -55,10 +55,6 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'cloudUpColor', label: 'Cloud up', type: 'color', tab: 'style' },
     { key: 'cloudDnColor', label: 'Cloud down', type: 'color', tab: 'style' },
     { key: 'cloudOpacity', label: 'Cloud opacity %', min: 5, max: 80, step: 1, tab: 'style' },
-    { key: 'showRibbon', label: 'GMMA ribbon lines', type: 'bool', tab: 'style' },
-    { key: 'ribbonShortColor', label: 'Short ribbon', type: 'color', tab: 'style' },
-    { key: 'ribbonLongColor', label: 'Long ribbon', type: 'color', tab: 'style' },
-    { key: 'ribbonWidth', label: 'Ribbon line width', min: 0.5, max: 4, step: 0.1, tab: 'style' },
     { key: 'showCrossover', label: 'Crossover markers', type: 'bool', tab: 'style' },
     { key: 'crossBullColor', label: 'Bullish cross', type: 'color', tab: 'style' },
     { key: 'crossBearColor', label: 'Bearish cross', type: 'color', tab: 'style' },
@@ -302,10 +298,8 @@ const DEFAULT_PARAMS = {
   },
   guppy: {
     showCloud: true, cloudUpColor: '#16a34a', cloudDnColor: '#ef4444', cloudOpacity: 20,
-    // The GMMA ribbon (6 short + 6 long EMAs) and the crossover markers are
-    // what make this a crossover study — the cloud alone only shows trend state.
-    showRibbon: true, ribbonShortColor: '#26a69a', ribbonLongColor: '#ef5350',
-    ribbonWidth: 1,
+    // The cloud fill plus the crossover markers are what make this a crossover
+    // study. The GMMA ribbon lines (6 short + 6 long EMAs) are no longer drawn.
     showCrossover: true, crossBullColor: '#00e676', crossBearColor: '#ff5252',
     crossSize: 7, showCrossLabels: true,
   },
@@ -392,7 +386,7 @@ export function defaultChartIndicatorPrefs() {
       },
     }
   }
-  return { version: 16, indicators }
+  return { version: 17, indicators }
 }
 
 function clampNum(v, min, max, fallback) {
@@ -549,8 +543,6 @@ export function normalizeChartIndicatorPrefs(raw) {
   // Seed the ribbon and cross markers on for existing profiles.
   if (prevVer < 14) {
     Object.assign(base.indicators.guppy.params, {
-      showRibbon: true, ribbonShortColor: '#26a69a', ribbonLongColor: '#ef5350',
-      ribbonWidth: 1,
       showCrossover: true, crossBullColor: '#00e676', crossBearColor: '#ff5252',
       crossSize: 7, showCrossLabels: true,
     })
@@ -570,7 +562,13 @@ export function normalizeChartIndicatorPrefs(raw) {
       delete base.indicators.ma.params[k]
     }
   }
-  base.version = 16
+  // v17: the GMMA ribbon lines were dropped — Guppy is cloud + crossovers only.
+  if (prevVer < 17) {
+    for (const k of ['showRibbon', 'ribbonShortColor', 'ribbonLongColor', 'ribbonWidth']) {
+      delete base.indicators.guppy.params[k]
+    }
+  }
+  base.version = 17
   return base
 }
 
