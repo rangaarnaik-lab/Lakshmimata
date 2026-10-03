@@ -12647,9 +12647,12 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         {showMACD && (
           <g>
             <rect x={padL} y={macdTop} width={chartW} height={macdH} fill={C.card} opacity={0.4}/>
-            {/* Pane-top and zero separators removed (near-white C.border). */}
+            {/* Zero separator: was LAKSHMI_CYCLE_COLORS.ZERO (hardcoded
+                rgba(255,255,255,0.3)) with no UI_IS_DARK guard, so it read as
+                a bright white line across the dark pane. Now C.muted + guard. */}
             <line x1={padL} y1={macdToY(0)} x2={padL+chartW} y2={macdToY(0)}
-              stroke={LAKSHMI_CYCLE_COLORS.ZERO} strokeWidth={0.7} strokeDasharray="3,3" opacity={0.7}/>
+              stroke={C.muted} strokeWidth={0.7} strokeDasharray="3,3" opacity={0.5}
+              style={UI_IS_DARK?{display:'none'}:undefined}/>
             <text x={padL+4} y={macdTop+11} fontSize={8} fontWeight={700} fill={C.muted}>MACD {macdP.fast ?? 12},{macdP.slow ?? 26},{macdP.signal ?? 9}</text>
             {vMacdHist.map((h,i)=>{
               if (h==null) return null
@@ -12715,7 +12718,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
             {/* Pane-top separator removed — this one had no UI_IS_DARK guard, so it
             painted over the dark canvas too. */}
             <line x1={padL} y1={scToY(0)} x2={padL+chartW} y2={scToY(0)}
-              stroke={LAKSHMI_CYCLE_COLORS.ZERO} strokeWidth={0.7}/>
+              stroke={C.muted} strokeWidth={0.7} style={UI_IS_DARK?{display:'none'}:undefined}/>
             <text x={padL+4} y={scTop+11} fontSize={8} fontWeight={700} fill={C.muted}>
               Super Cycle{scRsLatest != null ? ` · RS ${scRsLatest}` : ''}
             </text>
