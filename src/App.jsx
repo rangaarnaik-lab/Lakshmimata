@@ -9699,12 +9699,33 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     ...vSMA20, ...vSMA50, ...vSMA200, ...guppyVals,
     ...(showBB ? [...vBBUpper, ...vBBLower] : []),
   ].filter(v=>v!=null)
+  // Overlays may stretch the price scale only so far. A long EMA (150/200, the
+  // Guppy long set, SMA200) is still warming up at the left edge of a zoomed
+  // window — it is seeded from the price many bars back. On an intraday chart
+  // that has risen since, that seed sits far below every visible bar, and
+  // letting it into min/max drags the axis down until the candles collapse
+  // into a thin strip at the top of the pane. TradingView clips an overlay at
+  // the pane edge instead of scaling to it, so anything more than half the
+  // visible range away from price keeps drawing but never sets the scale.
+  const rawHi = visibleHighs.length ? Math.max(...visibleHighs) : 0
+  const rawLo = visibleLows.length ? Math.min(...visibleLows) : 0
+  const rawRange = Math.max(1e-9, rawHi - rawLo)
+  const scaleMins = maVals.filter(v =>
+    v >= rawLo - rawRange * 0.5 && v <= rawHi + rawRange * 0.5)
   // The circuit band is a ±pct envelope off the daily close, so letting it
   // drive the price scale on a 1m/5m chart flattened the candles into a line.
   // The lines still draw; they just no longer stretch the axis there.
   const circuitScales = !!circuitBand && !isIntraday
-  let maxP = Math.max(...visibleHighs, ...maVals, sr.r1||0, sr.r2||0, (circuitScales && circuitBand.uc*1.02)||0)
-  let minP = Math.min(...visibleLows, ...(maVals.length?maVals:[Infinity]), sr.s1||Infinity, sr.s2||Infinity, (circuitScales && circuitBand.lc)||Infinity)
+  // S/R levels are "nearest two pivots on either side", computed over the FULL
+  // series — not the visible window. On a zoomed intraday chart that has run up
+  // hard, S2 is still sitting near the lows from many hours ago, so feeding it
+  // into min/max stretched the axis down ~2x and squashed every candle into a
+  // thin strip along the top of the pane (the blue line near the floor). The
+  // levels keep drawing — they just no longer set the scale on intraday, which
+  // matches TradingView, where S/R overlays are clipped rather than fitted.
+  const srScales = !isIntraday
+  let maxP = Math.max(...visibleHighs, ...scaleMins, (srScales && sr.r1)||0, (srScales && sr.r2)||0, (circuitScales && circuitBand.uc*1.02)||0)
+  let minP = Math.min(...visibleLows, ...(scaleMins.length?scaleMins:[Infinity]), (srScales && sr.s1)||Infinity, (srScales && sr.s2)||Infinity, (circuitScales && circuitBand.lc)||Infinity)
   if(!isFinite(minP)) minP = Math.min(...visibleLows)
   const pad = (maxP - minP) * 0.06 || 1
   maxP += pad; minP -= pad
