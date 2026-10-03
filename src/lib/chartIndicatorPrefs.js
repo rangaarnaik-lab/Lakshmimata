@@ -32,17 +32,27 @@ export const INDICATOR_PARAM_FIELDS = {
     { key: 'ma50', label: 'EMA 50 Day / 10 Week', min: 5, max: 200, step: 1 },
     { key: 'ma150', label: 'EMA 150 Day / 30 Week', min: 20, max: 300, step: 1 },
     { key: 'ma200', label: 'EMA 200 Day / 40 Week', min: 20, max: 400, step: 1 },
+    { key: 'sma20', label: 'SMA 20', min: 2, max: 200, step: 1 },
+    { key: 'sma50', label: 'SMA 50', min: 5, max: 250, step: 1 },
+    { key: 'sma200', label: 'SMA 200', min: 20, max: 400, step: 1 },
     { key: 'rsPeriod', label: 'RS Period', min: 1, max: 252, step: 1 },
     { key: 'ema9Color', label: 'Custom EMA 1 color', type: 'color', tab: 'style' },
     { key: 'ma20Color', label: 'Custom EMA 2 color', type: 'color', tab: 'style' },
     { key: 'ma50Color', label: 'EMA 50 color', type: 'color', tab: 'style' },
     { key: 'ma150Color', label: 'EMA 150 color', type: 'color', tab: 'style' },
     { key: 'ma200Color', label: 'EMA 200 color', type: 'color', tab: 'style' },
+    { key: 'sma20Color', label: 'SMA 20 color', type: 'color', tab: 'style' },
+    { key: 'sma50Color', label: 'SMA 50 color', type: 'color', tab: 'style' },
+    { key: 'sma200Color', label: 'SMA 200 color', type: 'color', tab: 'style' },
     { key: 'showEma9', label: 'Plot Custom EMA 1', type: 'bool', tab: 'style' },
     { key: 'showMa20', label: 'Plot Custom EMA 2', type: 'bool', tab: 'style' },
     { key: 'showMa50', label: 'Plot EMA 50', type: 'bool', tab: 'style' },
     { key: 'showMa150', label: 'Plot EMA 150', type: 'bool', tab: 'style' },
     { key: 'showMa200', label: 'Plot EMA 200', type: 'bool', tab: 'style' },
+    { key: 'showSma20', label: 'Plot SMA 20', type: 'bool', tab: 'style' },
+    { key: 'showSma50', label: 'Plot SMA 50', type: 'bool', tab: 'style' },
+    { key: 'showSma200', label: 'Plot SMA 200', type: 'bool', tab: 'style' },
+    { key: 'smaDash', label: 'SMA dashed', type: 'bool', tab: 'style' },
     { key: 'lineWidth', label: 'Line width', min: 0.5, max: 4, step: 0.1, tab: 'style' },
     { key: 'showScaleTags', label: 'Values on price scale', type: 'bool', tab: 'style' },
     { key: 'showRsBackground', label: 'Show Relative Strength (RS) Background', type: 'bool', tab: 'style' },
@@ -276,12 +286,20 @@ const DEFAULT_ENABLED = {
 
 const DEFAULT_PARAMS = {
   ma: {
-    // Exact Lakshmi_Mata.pine defaults: custom EMA 9/21 plus EMA 50/150/200.
+    // Five EMAs (9/21/50/150/200) match Lakshmi_Mata.pine and are on by default.
+    // Three SMAs (20/50/200) are the classic set, drawn thinner and dashed so the
+    // EMA band stays the dominant read.
     ema9: 9, ma20: 21, ma50: 50, ma150: 150, ma200: 200,
+    sma20: 20, sma50: 50, sma200: 200,
     rsPeriod: 65,
-    ema9Color: '#ff9800', ma20Color: '#141414', ma50Color: '#0fe616',
+    // Pine's ma20Color is #141414, which is invisible against the #0e1117 chart
+    // background — the EMA 21 line simply did not render. Use a visible blue.
+    ema9Color: '#ff9800', ma20Color: '#2962ff', ma50Color: '#0fe616',
     ma150Color: '#5b46e3', ma200Color: '#bd4dee',
+    sma20Color: '#00bcd4', sma50Color: '#ff5252', sma200Color: '#9e9e9e',
     showEma9: true, showMa20: true, showMa50: true, showMa150: true, showMa200: true,
+    showSma20: true, showSma50: true, showSma200: true,
+    smaDash: true,
     lineWidth: 1.3, showScaleTags: true,
     showRsBackground: true,
     rsPositiveBgColor: '#b6f0ca', rsNegativeBgColor: '#f7bcbf', rsBackgroundOpacity: 25,
@@ -368,7 +386,7 @@ export function defaultChartIndicatorPrefs() {
       },
     }
   }
-  return { version: 11, indicators }
+  return { version: 12, indicators }
 }
 
 function clampNum(v, min, max, fallback) {
@@ -505,7 +523,20 @@ export function normalizeChartIndicatorPrefs(raw) {
     base.indicators.circuit.enabled = true
     base.indicators.circuit.params.autoDetect = true
   }
-  base.version = 11
+  // v12: added SMA 20/50/200 alongside the EMA set, and Pine's ma20Color
+  // (#141414) was invisible on the dark chart bg so EMA 21 never showed. Seed
+  // the SMAs on and re-point ma20Color at a readable blue for existing users.
+  if (prevVer < 12) {
+    Object.assign(base.indicators.ma.params, {
+      sma20: 20, sma50: 50, sma200: 200,
+      showSma20: true, showSma50: true, showSma200: true, smaDash: true,
+      sma20Color: '#00bcd4', sma50Color: '#ff5252', sma200Color: '#9e9e9e',
+    })
+    if (base.indicators.ma.params.ma20Color === '#141414') {
+      base.indicators.ma.params.ma20Color = '#2962ff'
+    }
+  }
+  base.version = 12
   return base
 }
 

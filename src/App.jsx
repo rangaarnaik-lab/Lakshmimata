@@ -8245,6 +8245,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     ma50: maP.ma50Color || C.yellow,
     ma150: maP.ma150Color || '#5b46e3',
     ma200: maP.ma200Color || C.purple,
+    sma20: maP.sma20Color || '#00bcd4',
+    sma50: maP.sma50Color || '#ff5252',
+    sma200: maP.sma200Color || '#9e9e9e',
   }
   const maShowTags = maP.showScaleTags !== false
   const maVisible = {
@@ -8253,6 +8256,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     ma50: maP.showMa50 !== false,
     ma150: maP.showMa150 !== false,
     ma200: maP.showMa200 !== false,
+    sma20: maP.showSma20 !== false,
+    sma50: maP.showSma50 !== false,
+    sma200: maP.showSma200 !== false,
   }
   const guppyP = prefsN.indicators.guppy?.params || {}
   const sqP = prefsN.indicators.squeeze?.params || {}
@@ -8766,6 +8772,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     const closes = seriesData.closes, highs = seriesData.highs, lows = seriesData.lows
     const volumes = seriesData.volumes, opens = seriesData.opens
     const nBars = closes.length
+    // Guard the SMA window: a 0 or negative period would make calcSMASeries
+    // divide by zero / index negatively and throw on the whole chart.
+    const smaLen = (v, fb) => Math.max(1, Math.round(Number(v) || fb))
     // Intraday series can be thousands of bars — skip heavy detectors that
     // are not toggled on so 1↔3↔5 switches stay responsive.
     const heavyOk = !isIntraday || nBars <= 2500
@@ -8870,6 +8879,11 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
       ma50: showMA ? emaArr(closes, maP.ma50 ?? 50) : [],
       ma150: showMA ? emaArr(closes, maP.ma150 ?? 150) : [],
       ma200: showMA ? emaArr(closes, maP.ma200 ?? 200) : [],
+      // SMA set (20/50/200). calcSMASeries returns nulls before the first full
+      // window, so short ranges degrade to an empty line rather than throwing.
+      sma20: showMA ? calcSMASeries(closes, smaLen(maP.sma20, 20)) : [],
+      sma50: showMA ? calcSMASeries(closes, smaLen(maP.sma50, 50)) : [],
+      sma200: showMA ? calcSMASeries(closes, smaLen(maP.sma200, 200)) : [],
       ema9,
       bollinger,
       guppyShort: runGuppy ? GUPPY_SHORT_PERIODS.map(p => emaArr(closes, p)) : [],
@@ -9147,7 +9161,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     )
   }
 
-  const { ma20, ma50, ma150, ma200, ema9, bollinger, guppyShort, guppyLong, rsi, macd,
+  const { ma20, ma50, ma150, ma200, sma20, sma50, sma200, ema9, bollinger, guppyShort, guppyLong, rsi, macd,
     swings, sr, insideBars, ppDays, hyDays, htDays, ibvDays, bullSnortDays, nearEma9Days, vcp, cup,
     buyDays, sellDays, rsPerformance, superCycle, squeeze, hiLo52, candleBarColors, candleBarTags, lakshmiVol } = analysis
 
@@ -9355,6 +9369,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   const vMA150  = ma150.slice(start)
   const vMA200  = ma200.slice(start)
   const vEma9line = ema9.slice(start)
+  const vSMA20  = sma20.slice(start)
+  const vSMA50  = sma50.slice(start)
+  const vSMA200 = sma200.slice(start)
   const vBBBasis = (bollinger?.basis||[]).slice(start)
   const vBBUpper = (bollinger?.upper||[]).slice(start)
   const vBBLower = (bollinger?.lower||[]).slice(start)
@@ -9669,7 +9686,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
     ? [...vGuppyShort, ...vGuppyLong].flat().filter(v=>v!=null)
     : []
   const maVals = [
-    ...vMA20, ...vMA50, ...vMA150, ...vMA200, ...vEma9line, ...guppyVals,
+    ...vMA20, ...vMA50, ...vMA150, ...vMA200, ...vEma9line,
+    ...vSMA20, ...vSMA50, ...vSMA200, ...guppyVals,
     ...(showBB ? [...vBBUpper, ...vBBLower] : []),
   ].filter(v=>v!=null)
   // The circuit band is a ±pct envelope off the daily close, so letting it
@@ -10137,7 +10155,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         setShowCandleColors(next)
         setShowBullSnort(next)
       } },
-    { id:'ma', group:'Overlays', label:'Moving Average', short:'MA', desc:'EMA 9 / 21 / 50 / 150 / 200 (Lakshmi Mata Pine periods)', on:indicatorEnabled('ma'), visible:showMA, set:setShowMA },
+    { id:'ma', group:'Overlays', label:'Moving Averages', short:'MA', desc:'EMA 9 / 21 / 50 / 150 / 200 and SMA 20 / 50 / 200', on:indicatorEnabled('ma'), visible:showMA, set:setShowMA },
     { id:'guppy', group:'Overlays', label:'Guppy MMA', short:'Guppy', desc:'GMMA ribbon — compression vs expansion of the trend', on:indicatorEnabled('guppy'), visible:showGuppy, set:setShowGuppy },
     { id:'squeeze', group:'Overlays', label:'Squeeze Pro Dots', short:'Squeeze Pro', desc:'John Carter compression tiers — high / mid / low coil + momentum bias', on:indicatorEnabled('squeeze'), visible:showSqueeze, set:setShowSqueeze },
     { id:'hilo52', group:'Overlays', label:'52-Week High / Low Flags', short:'52W', desc:'Marks fresh 52-week high / low events on the chart', on:indicatorEnabled('hilo52'), visible:showHiLo52, set:setShowHiLo52 },
@@ -12180,17 +12198,25 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           )
         })()}
 
-        {/* Exact Pine EMA set: 9 / 21 / 50 / 150 / 200 */}
+        {/* Pine EMA set: 9 / 21 / 50 / 150 / 200, plus SMA 20 / 50 / 200 */}
         {showMA && [
           [vMA20,  maColors.ma20,  maVisible.ma20],
           [vMA50,  maColors.ma50,  maVisible.ma50],
           [vMA150, maColors.ma150, maVisible.ma150],
           [vMA200, maColors.ma200, maVisible.ma200],
           [vEma9line, maColors.ema9, maVisible.ema9],
-        ].map(([series,color,on],k)=>{
+          [vSMA20,  maColors.sma20,  maVisible.sma20,  true],
+          [vSMA50,  maColors.sma50,  maVisible.sma50,  true],
+          [vSMA200, maColors.sma200, maVisible.sma200, true],
+        ].map(([series,color,on,isSma],k)=>{
           if (!on) return null
           const pts = series.map((v,i)=> v!=null ? `${idxToX(i)},${priceToY(v)}` : null).filter(Boolean)
-          return pts.length>1 ? <polyline key={k} points={pts.join(' ')} fill="none" stroke={color} strokeWidth={maWidth} opacity={0.9}/> : null
+          if (pts.length<2) return null
+          // SMAs sit behind the EMA band visually: thinner and dashed (if enabled).
+          const w = isSma ? Math.max(0.5, maWidth * 0.8) : maWidth
+          const dash = isSma && maP.smaDash !== false ? `${w * 2},${w * 1.6}` : undefined
+          return <polyline key={k} points={pts.join(' ')} fill="none" stroke={color}
+            strokeWidth={w} strokeDasharray={dash} opacity={isSma ? 0.75 : 0.9}/>
         })}
 
         {/* Pine circuit limits — ± effective band from the previous Daily
@@ -12339,6 +12365,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
             maVisible.ma50  ? { v: lastOf(vMA50),  color: maColors.ma50 }  : null,
             maVisible.ma150 ? { v: lastOf(vMA150), color: maColors.ma150 } : null,
             maVisible.ma200 ? { v: lastOf(vMA200), color: maColors.ma200 } : null,
+            maVisible.sma20  ? { v: lastOf(vSMA20),  color: maColors.sma20 }  : null,
+            maVisible.sma50  ? { v: lastOf(vSMA50),  color: maColors.sma50 }  : null,
+            maVisible.sma200 ? { v: lastOf(vSMA200), color: maColors.sma200 } : null,
           ].filter(Boolean)
             .filter(t => t.v != null && Number.isFinite(t.v))
             .map(t => ({ ...t, y: priceToY(t.v) }))
@@ -12826,6 +12855,9 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           {maVisible.ma50 && <span><span style={{color:maColors.ma50}}>■</span> EMA{maP.ma50 ?? 50}</span>}
           {maVisible.ma150 && <span><span style={{color:maColors.ma150}}>■</span> EMA{maP.ma150 ?? 150}</span>}
           {maVisible.ma200 && <span><span style={{color:maColors.ma200}}>■</span> EMA{maP.ma200 ?? 200}</span>}
+          {maVisible.sma20 && <span title="Simple moving average"><span style={{color:maColors.sma20}}>┄</span> SMA{maP.sma20 ?? 20}</span>}
+          {maVisible.sma50 && <span title="Simple moving average"><span style={{color:maColors.sma50}}>┄</span> SMA{maP.sma50 ?? 50}</span>}
+          {maVisible.sma200 && <span title="Simple moving average"><span style={{color:maColors.sma200}}>┄</span> SMA{maP.sma200 ?? 200}</span>}
         </>}
         {showBB && <span>
           <span style={{color:bbP.basisColor||'#ff6d00'}}>—</span>
