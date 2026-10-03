@@ -7931,6 +7931,9 @@ const BAR_INTERVAL_META = {
   Y: { label:'12M', unit:'years', minBars:3,  minZoom:2,  swing:1 },
 }
 const INTRADAY_INTERVALS = new Set(['1','3','5','15','30','60'])
+// Coarse enough that a 6M window is a few hundred bars rather than thousands,
+// so the 6M preset can render without the readable-width cap.
+const COARSE_INTRADAY = new Set(['30','60'])
 const INTRADAY_TOOLBAR = [
   ['1','1','1 minute'],
   ['3','3','3 minutes'],
@@ -8455,11 +8458,16 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
   const [intradayKeys, setIntradayKeys] = useState(() => ['1','3','5','15','30','60'])
   const isIntraday = intradayFeatureOn && INTRADAY_INTERVALS.has(barInterval)
 
-  // A 1m/3m/… chart opened at a long range (3M/6M/1Y) would ask for 100k bars
-  // — half a pixel per candle. Cap every range at a readable candle width
-  // (~5px) instead of rewriting the user's selected range to '1D'. Zooming
-  // out past this and panning left is still allowed.
-  const readableBarCap = isIntraday
+  // A 1m/3m/5m chart opened at a long range (3M/6M/1Y) would ask for 100k bars
+  // — half a pixel per candle. Cap those at a readable candle width (~5px)
+  // instead of rewriting the user's selected range to '1D'. Zooming out past
+  // this and panning left is still allowed.
+  //
+  // 30m and 1H at 6M are exempt: that is only 750/375 bars, which fits at a
+  // usable candle width, so the six-month view renders in full. Their longer
+  // presets (1Y+) are still huge and keep the cap.
+  const capThisRange = isIntraday && !(COARSE_INTRADAY.has(barInterval) && range === '6M')
+  const readableBarCap = capThisRange
     ? Math.max(40, Math.floor((chartBox.w - 70) / 5))
     : Infinity
   const capReadable = (b) => {
