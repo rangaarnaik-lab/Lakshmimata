@@ -280,7 +280,9 @@ const DEFAULT_ENABLED = {
   squeeze: true, // Lakshmi Mata squeeze dot row under the candles
   hilo52: true, // 52-week break flags on the candles
   sr: true,
-  bb: false, // Pine default: Show Bollinger Bands is off; part of Lakshmi Mata settings.
+  // Bollinger Bands are a standard TradingView overlay and pair with the
+  // Squeeze indicator (which tests BB-inside-KC), so they now default on.
+  bb: true,
   rsi: true, // oscillator pane on by default
   macd: false,
   supercycle: true, // Super Cycle oscillator under volume — on by default
@@ -405,7 +407,7 @@ export function defaultChartIndicatorPrefs() {
       },
     }
   }
-  return { version: 14, indicators }
+  return { version: 15, indicators }
 }
 
 function clampNum(v, min, max, fallback) {
@@ -572,7 +574,13 @@ export function normalizeChartIndicatorPrefs(raw) {
       crossSize: 7, showCrossLabels: true,
     })
   }
-  base.version = 14
+  // v15: Bollinger Bands shipped disabled (matching the Pine source's default),
+  // so a stock opened with default settings never showed them even though the
+  // Squeeze indicator's whole test is BB-inside-KC. Turn them on.
+  if (prevVer < 15) {
+    base.indicators.bb.enabled = true
+  }
+  base.version = 15
   return base
 }
 

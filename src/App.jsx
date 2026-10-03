@@ -12916,8 +12916,8 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
           {maVisible.sma200 && <span title="Simple moving average"><span style={{color:maColors.sma200}}>┄</span> SMA{maP.sma200 ?? 200}</span>}
         </>}
         {showBB && <span>
-          <span style={{color:bbP.basisColor||'#ff6d00'}}>—</span>
-          /<span style={{color:bbP.bandColor||'#2962ff'}}>—</span> BB {bbP.length??20}
+          <span style={{color:bbP.basisColor||'#ff6d00'}}>—</span> BB basis {bbP.length??20}
+          <span style={{color:bbP.bandColor||'#2962ff'}}>—</span> BB {bbP.length??20} ± {bbP.mult??2}σ
         </span>}
         {showGuppy && (
           <span>
@@ -12930,7 +12930,7 @@ function CandlestickChart({sym, isMobile, isIndex, chartExpanded, userId=null, b
         {showHiLo52 && (
           <span title={`New ${Math.round((hlP.hlWindowDays ?? 365)/7)}-week high / low break`}>
             <span style={{color:hlP.hlHighColor || LAKSHMI_HILO_COLORS.HIGH}}>⚑</span>
-            /<span style={{color:hlP.hlLowColor || LAKSHMI_HILO_COLORS.LOW}}>⚑</span> 52W break
+            <span style={{color:hlP.hlLowColor || LAKSHMI_HILO_COLORS.LOW}}>⚑</span> 52W break
           </span>
         )}
         {showSqueeze && (()=>{

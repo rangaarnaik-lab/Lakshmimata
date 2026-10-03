@@ -41,7 +41,7 @@ ok('3 SMA lines on by default',
   [fresh.params.showSma20, fresh.params.showSma50, fresh.params.showSma200].every(v => v === true))
 ok('ma20Color is not the invisible #141414', fresh.params.ma20Color !== '#141414',
   `got ${fresh.params.ma20Color}`)
-ok('version 14', normalizeChartIndicatorPrefs(null).version === 14)
+ok('version 15', normalizeChartIndicatorPrefs(null).version === 15)
 
 console.log('\nMigration from an existing v11 profile')
 const old = {
@@ -61,7 +61,7 @@ ok('v11 -> SMA lines visible',
   mig.indicators.ma.params.showSma200 === true)
 ok('v11 -> #141414 recolored', mig.indicators.ma.params.ma20Color === '#2962ff',
   `got ${mig.indicators.ma.params.ma20Color}`)
-ok('v11 -> version bumped to 14', mig.version === 14)
+ok('v11 -> version bumped to 15', mig.version === 15)
 
 console.log('\nSqueeze dot row is not a continuous ribbon (v13)')
 ok('fresh: "dot on every bar" off by default',
@@ -74,7 +74,7 @@ const v12 = normalizeChartIndicatorPrefs({
 })
 ok('v12 -> persisted sqShowOff:true cleared', v12.indicators.squeeze.params.sqShowOff === false,
   `got ${v12.indicators.squeeze.params.sqShowOff}`)
-ok('v12 -> version bumped to 14', v12.version === 14)
+ok('v12 -> version bumped to 15', v12.version === 15)
 
 console.log('\nUser overrides survive')
 const custom = {
@@ -116,7 +116,16 @@ const gOff = normalizeChartIndicatorPrefs({
   version: 13, indicators: { guppy: { params: { showCloud: false } } },
 }).indicators.guppy.params
 ok('v13 -> explicit showCloud:false respected', gOff.showCloud === false)
-ok('version 14', normalizeChartIndicatorPrefs(null).version === 14)
+ok('version 15', normalizeChartIndicatorPrefs(null).version === 15)
+
+console.log('\nBollinger Bands enabled by default (v15)')
+const bbFresh = normalizeChartIndicatorPrefs(null).indicators.bb
+ok('fresh: bb enabled', bbFresh.enabled === true)
+ok('fresh: bb length 20 / mult 2',
+  bbFresh.params.length === 20 && bbFresh.params.mult === 2)
+ok('v14 -> bb turned on',
+  normalizeChartIndicatorPrefs({ version: 14, indicators: {} }).indicators.bb.enabled === true)
 
 console.log(`\n${pass} passed, ${fail} failed\n`)
 process.exit(fail ? 1 : 0)
+
